@@ -583,6 +583,9 @@ Existing Obsidian vault content (already exported) can be reorganized to match t
 
 ---
 
+# Visual part
+This type of connections and visual style for nodes would looks good - https://github.com/RodZill4/material-maker
+
 ## License
 
 MIT
