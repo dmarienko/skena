@@ -8,7 +8,7 @@
       "width": 300,
       "height": 200,
       "color": "4",
-      "text": "## Metals Strategy\n\nResearch canvas for the Metals mean-reverting strategy.\n\n- MACD based\n- Multi-timeframe filter\n- Binance USDT-M futures"
+      "text": "# Test title\r\n\r\n- 1. tests image\r\n- 2. tests image 2\r\n\r\n$$\\zeta(x) = \\frac{1}{a} \\sum^{N}_{k=0}{x^k}$$\r\n\r\n\r\n![Image](image.svg)\r\n"
     },
     {
       "id": "node2",
@@ -23,8 +23,8 @@
     {
       "id": "node3",
       "type": "link",
-      "x": 560,
-      "y": 136,
+      "x": 592,
+      "y": 104,
       "width": 300,
       "height": 120,
       "url": "https://github.com/xlydian/xmetals"
@@ -32,8 +32,8 @@
     {
       "id": "node4",
       "type": "cell",
-      "x": 104,
-      "y": 352,
+      "x": 112,
+      "y": 328,
       "width": 320,
       "height": 160,
       "color": "2",
@@ -52,11 +52,11 @@
       "label": "ATR experiments"
     },
     {
-      "id": "node-1774025196803-0",
+      "id": "node-1774042036432-0",
       "type": "file",
       "file": "test1.md",
-      "x": -448,
-      "y": -384,
+      "x": -456,
+      "y": -360,
       "width": 400,
       "height": 300
     }
@@ -79,18 +79,18 @@
       "toEnd": "arrow"
     },
     {
-      "id": "node1-node3-1774024754962",
-      "fromNode": "node1",
-      "fromSide": "bottom",
-      "toNode": "node3",
+      "id": "node-1774042036432-0-node1-1774042058632",
+      "fromNode": "node-1774042036432-0",
+      "fromSide": "right",
+      "toNode": "node1",
       "toSide": "left",
       "toEnd": "arrow"
     },
     {
-      "id": "node-1774025196803-0-node1-1774025554561",
-      "fromNode": "node-1774025196803-0",
-      "fromSide": "bottom",
-      "toNode": "node1",
+      "id": "node1-node3-1774042149853",
+      "fromNode": "node1",
+      "fromSide": "right",
+      "toNode": "node3",
       "toSide": "left",
       "toEnd": "arrow"
     }

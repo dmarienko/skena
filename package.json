@@ -12,9 +12,19 @@
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": ["Other"],
-  "keywords": ["canvas", "knowledge", "obsidian", "research", "markdown"],
-  "extensionKind": ["workspace"],
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "canvas",
+    "knowledge",
+    "obsidian",
+    "research",
+    "markdown"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
   "activationEvents": [],
   "main": "./dist/extension.js",
   "contributes": {
@@ -22,7 +32,11 @@
       {
         "viewType": "skena.canvasEditor",
         "displayName": "Skena Canvas",
-        "selector": [{ "filenamePattern": "*.canvas" }],
+        "selector": [
+          {
+            "filenamePattern": "*.canvas"
+          }
+        ],
         "priority": "default"
       }
     ],
@@ -70,25 +84,47 @@
           "items": {
             "type": "object",
             "properties": {
-              "name": { "type": "string" },
-              "path": { "type": "string" }
+              "name": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
             },
-            "required": ["name", "path"]
+            "required": [
+              "name",
+              "path"
+            ]
           }
         },
         "skena.vaultDirectories": {
           "type": "array",
-          "default": ["alpha", "knowledge", "logs", "inbox"],
+          "default": [
+            "alpha",
+            "knowledge",
+            "logs",
+            "inbox"
+          ],
           "description": "Directories to scan in each vault"
         },
         "skena.workspacePatterns": {
           "type": "array",
-          "default": ["**/*.ipynb", "**/*.py", "**/*.yaml", "**/*.md"],
+          "default": [
+            "**/*.ipynb",
+            "**/*.py",
+            "**/*.yaml",
+            "**/*.md"
+          ],
           "description": "File patterns to index in workspace"
         },
         "skena.excludePatterns": {
           "type": "array",
-          "default": ["**/node_modules/**", "**/.git/**", "**/__pycache__/**", "**/dist/**"],
+          "default": [
+            "**/node_modules/**",
+            "**/.git/**",
+            "**/__pycache__/**",
+            "**/dist/**"
+          ],
           "description": "Patterns to exclude from indexing"
         },
         "skena.autoSaveDelay": {
@@ -98,12 +134,18 @@
         },
         "skena.notion": {
           "type": "object",
-          "default": { "enabled": false, "mcpServerUrl": "http://localhost:3000" },
+          "default": {
+            "enabled": false,
+            "mcpServerUrl": "http://localhost:3000"
+          },
           "description": "Notion MCP server integration for vault://notion/<page-id> URIs"
         },
         "skena.chat": {
           "type": "object",
-          "default": { "backend": "claude", "model": "claude-opus-4-5" },
+          "default": {
+            "backend": "claude",
+            "model": "claude-opus-4-5"
+          },
           "description": "AI chat node backend. backend: claude | ollama | openai"
         },
         "skena.colors": {
@@ -141,14 +183,18 @@
     "typescript": "^5.3.0"
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
     "@xyflow/react": "^12.0.0",
     "chokidar": "^3.5.3",
     "fuse.js": "^7.0.0",
     "gray-matter": "^4.0.3",
+    "monaco-vim": "^0.4.4",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-markdown": "^9.0.0",
+    "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.0",
+    "remark-math": "^6.0.0",
     "shiki": "^1.0.0"
   }
 }

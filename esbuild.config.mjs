@@ -49,6 +49,16 @@ const webviewConfig = {
   define: {
     'process.env.NODE_ENV': production ? '"production"' : '"development"',
   },
+  loader: {
+    // - inline fonts as data URIs: Monaco codicon (.ttf) + KaTeX math fonts (.woff2/.woff)
+    '.ttf':   'dataurl',
+    '.woff2': 'dataurl',
+    '.woff':  'dataurl',
+  },
+  alias: {
+    // - monaco-vim imports without the .js extension; alias to the real path
+    'monaco-editor/esm/vs/editor/editor.api': 'monaco-editor/esm/vs/editor/editor.api.js',
+  },
 };
 
 if (watch) {

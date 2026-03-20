@@ -245,6 +245,28 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
     return () => window.removeEventListener('skena:nodesFromDrop', handler);
   }, [setNodes, scheduleSave]);
 
+  // - listen for text edits committed by TextNodeComponent's Monaco editor
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { id, text } = (e as CustomEvent<{ id: string; text: string }>).detail;
+      const original = canvasRef.current.nodes.find(n => n.id === id);
+      if (!original || original.type !== 'text') return;
+      const updatedNode = { ...original, text };
+      const updated: CanvasData = {
+        ...canvasRef.current,
+        nodes: canvasRef.current.nodes.map(n => n.id === id ? updatedNode : n),
+      };
+      canvasRef.current = updated;
+      // - update React Flow node data so markdown re-renders immediately
+      setNodes(nds => nds.map(n =>
+        n.id === id ? { ...n, data: { ...n.data, text } } : n
+      ));
+      scheduleSave(updated);
+    };
+    window.addEventListener('skena:nodeTextEdit', handler);
+    return () => window.removeEventListener('skena:nodeTextEdit', handler);
+  }, [setNodes, scheduleSave]);
+
   return (
     <ReactFlow
       nodes={nodes}
