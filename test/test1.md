@@ -8,8 +8,9 @@ Some text
 
 [some-link](http://xlydian.com)
 
+![my-image](image.svg)
+
 ```python
 def foo():
     print("")
 ```
-![ddd](./image.svg)

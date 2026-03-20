@@ -63,7 +63,7 @@ export function FileNodeComponent({ data }: NodeProps): JSX.Element {
         <ScrollableContent>
           {status === 'loading' && <div className="skena-loading">Loading...</div>}
           {status === 'error'   && <div className="skena-error">{error === 'TOO_LARGE' ? 'File too large to preview' : `Error: ${error}`}</div>}
-          {status === 'loaded'  && renderContent(fileType, content, resourceUri, zoom)}
+          {status === 'loaded'  && renderContent(fileType, content, resourceUri, zoom, node.file)}
         </ScrollableContent>
       )}
     </div>
@@ -75,9 +75,10 @@ function renderContent(
   content: string,
   resourceUri: string | undefined,
   zoom: string,
+  baseUri?: string,
 ): JSX.Element {
   switch (fileType) {
-    case 'markdown': return <MarkdownRenderer content={content} />;
+    case 'markdown': return <MarkdownRenderer content={content} baseUri={baseUri} />;
     case 'notebook': return <NotebookRenderer parsedJson={content} zoom={zoom} />;
     case 'python':
     case 'yaml':     return <CodeRenderer content={content} language={fileType === 'yaml' ? 'yaml' : 'python'} />;

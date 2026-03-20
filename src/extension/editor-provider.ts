@@ -197,7 +197,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
 
     try {
       const stat = await fs.stat(resolved.fsPath);
-      if (stat.size > MAX_FILE_SIZE_BYTES) {
+      // - size limit only applies to text files (markdown, python, yaml);
+      // - images are sent as self-contained data URIs so size is not a display issue
+      if (resolved.fileType !== 'image' && stat.size > MAX_FILE_SIZE_BYTES) {
         send({ type: 'fileError', requestId: msg.requestId, uri: msg.uri, error: 'TOO_LARGE' });
         return;
       }
@@ -206,8 +208,21 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       let resourceUri: string | undefined;
 
       if (resolved.fileType === 'image') {
-        // - for images, send the vscode-resource:// URI (not the raw bytes)
-        resourceUri = resolver.toWebviewUri(resolved.fsPath, panel.webview);
+        // - encode image as base64 data URI — works on Remote SSH, web extension,
+        // - and avoids localResourceRoots/CSP issues with vscode-resource:// for
+        // - inline images embedded inside markdown content
+        const ext = path.extname(resolved.fsPath).toLowerCase();
+        const mimeMap: Record<string, string> = {
+          '.png':  'image/png',
+          '.jpg':  'image/jpeg',
+          '.jpeg': 'image/jpeg',
+          '.gif':  'image/gif',
+          '.svg':  'image/svg+xml',
+          '.webp': 'image/webp',
+        };
+        const mime = mimeMap[ext] ?? 'application/octet-stream';
+        const bytes = await fs.readFile(resolved.fsPath);
+        resourceUri = `data:${mime};base64,${bytes.toString('base64')}`;
         content = '';
       } else if (resolved.fileType === 'notebook') {
         const raw = await fs.readFile(resolved.fsPath, 'utf-8');
@@ -216,6 +231,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         content = await fs.readFile(resolved.fsPath, 'utf-8');
       }
 
+      console.log(`[Skena] handleRequestFile: uri=${msg.uri} fileType=${resolved.fileType} resourceUri=${resourceUri ? resourceUri.slice(0, 40) + '…' : 'none'}`);
       send({
         type: 'fileContent',
         requestId: msg.requestId,
@@ -225,6 +241,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         resourceUri,
       });
     } catch (e) {
+      console.error(`[Skena] handleRequestFile error for ${msg.uri}:`, e);
       send({ type: 'fileError', requestId: msg.requestId, uri: msg.uri, error: String(e) });
     }
   }
