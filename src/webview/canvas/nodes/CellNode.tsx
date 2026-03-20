@@ -5,16 +5,23 @@
  */
 
 import React from 'react';
-import { NodeProps, Handle, Position } from '@xyflow/react';
+import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import { CellNode } from '../../../shared/types';
 import { MarkdownRenderer } from '../../renderers/MarkdownRenderer';
 
-export function CellNodeComponent({ data }: NodeProps): JSX.Element {
+export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as CellNode & { accentColor?: string };
   const borderColor = node.accentColor ?? '#454545';
 
   return (
     <div className="skena-node" style={{ border: `1.5px solid ${borderColor}`, height: '100%', borderRadius: 6, overflow: 'hidden', background: 'var(--vscode-editorWidget-background)', padding: 8 }}>
+      <NodeResizer
+        minWidth={100} minHeight={60}
+        isVisible={selected}
+        onResizeEnd={(_, p) => window.dispatchEvent(new CustomEvent('skena:nodeResize', {
+          detail: { id, width: Math.round(p.width), height: Math.round(p.height) },
+        }))}
+      />
       <Handle type="source" position={Position.Top}    id="top"    />
       <Handle type="source" position={Position.Right}  id="right"  />
       <Handle type="source" position={Position.Bottom} id="bottom" />

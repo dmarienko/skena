@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { NodeProps, Handle, Position } from '@xyflow/react';
+import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import { LinkNode } from '../../../shared/types';
 
 function vscodePostMessage(msg: unknown) {
@@ -24,7 +24,7 @@ function getHostname(url: string): string {
   try { return new URL(url).hostname; } catch { return url; }
 }
 
-export function LinkNodeComponent({ data }: NodeProps): JSX.Element {
+export function LinkNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as LinkNode & { accentColor?: string };
   const borderColor = node.accentColor ?? '#454545';
   const favicon = getFaviconUrl(node.url);
@@ -36,6 +36,13 @@ export function LinkNodeComponent({ data }: NodeProps): JSX.Element {
       className="skena-node" style={{ border: `1.5px solid ${borderColor}`, height: '100%', borderRadius: 6, overflow: 'hidden', background: 'var(--vscode-editorWidget-background)', padding: '8px 10px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 6 }}
       onClick={open}
     >
+      <NodeResizer
+        minWidth={100} minHeight={60}
+        isVisible={selected}
+        onResizeEnd={(_, p) => window.dispatchEvent(new CustomEvent('skena:nodeResize', {
+          detail: { id, width: Math.round(p.width), height: Math.round(p.height) },
+        }))}
+      />
       <Handle type="source" position={Position.Top}    id="top"    />
       <Handle type="source" position={Position.Right}  id="right"  />
       <Handle type="source" position={Position.Bottom} id="bottom" />

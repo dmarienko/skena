@@ -8,7 +8,7 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { NodeProps, Handle, Position } from '@xyflow/react';
+import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import Editor, { OnMount } from '@monaco-editor/react';
 import { initVimMode } from 'monaco-vim';
 import { TextNode } from '../../../shared/types';
@@ -103,6 +103,13 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
         }
       }}
     >
+      <NodeResizer
+        minWidth={120} minHeight={80}
+        isVisible={selected && !editing}
+        onResizeEnd={(_, p) => window.dispatchEvent(new CustomEvent('skena:nodeResize', {
+          detail: { id, width: Math.round(p.width), height: Math.round(p.height) },
+        }))}
+      />
       <Handle type="source" position={Position.Top}    id="top"    />
       <Handle type="source" position={Position.Right}  id="right"  />
       <Handle type="source" position={Position.Bottom} id="bottom" />

@@ -5,7 +5,7 @@
  */
 
 import React, { useCallback } from 'react';
-import { NodeProps, Handle, Position } from '@xyflow/react';
+import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import { FileNode } from '../../../shared/types';
 import { useFileContent } from '../../hooks/useFileContent';
 import { useZoomLevel } from '../../hooks/useZoomLevel';
@@ -20,7 +20,7 @@ function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
 }
 
-export function FileNodeComponent({ data }: NodeProps): JSX.Element {
+export function FileNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as FileNode & { accentColor?: string };
   const { status, content, fileType, resourceUri, error } = useFileContent(node.file);
   const zoom = useZoomLevel();
@@ -44,6 +44,13 @@ export function FileNodeComponent({ data }: NodeProps): JSX.Element {
       style={{ border: `1.5px solid ${borderColor}`, height: '100%', display: 'flex', flexDirection: 'column', borderRadius: 6, overflow: 'hidden' }}
       onClick={onCmdClick}
     >
+      <NodeResizer
+        minWidth={120} minHeight={80}
+        isVisible={selected}
+        onResizeEnd={(_, p) => window.dispatchEvent(new CustomEvent('skena:nodeResize', {
+          detail: { id, width: Math.round(p.width), height: Math.round(p.height) },
+        }))}
+      />
       {/* - connection handles on all 4 sides */}
       <Handle type="source" position={Position.Top}    id="top"    />
       <Handle type="source" position={Position.Right}  id="right"  />

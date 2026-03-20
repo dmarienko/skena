@@ -4,12 +4,13 @@
  * handles user interactions (drag, connect, delete) and saves back to host.
  */
 
-import React, { useCallback, useMemo, useEffect, useRef } from 'react';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
 import {
   ReactFlow,
   ReactFlowProvider,
   Background,
   Controls,
+  ControlButton,
   MiniMap,
   Node,
   Edge,
@@ -123,6 +124,7 @@ interface CanvasViewProps {
 function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
   const [nodes, setNodes, onNodesChange] = useNodesState(canvas.nodes.map(toFlowNode));
   const [edges, setEdges, onEdgesChange] = useEdgesState(canvas.edges.map(toFlowEdge));
+  const [showMinimap, setShowMinimap] = useState(false);
 
   // - track current canvas data for save (avoid stale closures)
   const canvasRef = useRef<CanvasData>(canvas);
@@ -291,9 +293,6 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
     };
 
     const handler = (e: KeyboardEvent) => {
-      const dir = keyToDir(e.key);
-      if (!dir) return;
-
       // - don't intercept while user is typing in Monaco, an input, or textarea
       const active = document.activeElement;
       if (
@@ -301,6 +300,27 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
         active instanceof HTMLTextAreaElement ||
         active?.closest('.monaco-editor')
       ) return;
+
+      // - Enter: open non-text selected node in VS Code editor
+      if (e.key === 'Enter') {
+        const current = nodesRef.current.find(n => n.selected && n.type !== 'group');
+        // - text nodes handle Enter themselves via their own onKeyDown
+        if (!current || current.type === 'text') return;
+        e.preventDefault();
+        const d = current.data as Record<string, unknown>;
+        if (current.type === 'file') {
+          vscodePostMessage({ type: 'openFile', uri: (d.file as string) ?? '' });
+        } else if (current.type === 'portal') {
+          vscodePostMessage({ type: 'openFile', uri: (d.canvas as string) ?? '' });
+        } else if (current.type === 'link') {
+          const url = (d.url as string) ?? '';
+          if (url) vscodePostMessage({ type: 'openFile', uri: url });
+        }
+        return;
+      }
+
+      const dir = keyToDir(e.key);
+      if (!dir) return;
 
       const current = nodesRef.current.find(n => n.selected && n.type !== 'group');
       if (!current) return;
@@ -317,6 +337,21 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [setNodes]); // - setNodes is stable; nodesRef carries live state
+
+  // - listen for node resize-end events dispatched by NodeResizer inside each node component
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { id, width, height } = (e as CustomEvent<{ id: string; width: number; height: number }>).detail;
+      const updated: CanvasData = {
+        ...canvasRef.current,
+        nodes: canvasRef.current.nodes.map(n => n.id === id ? { ...n, width, height } : n),
+      };
+      canvasRef.current = updated;
+      scheduleSave(updated);
+    };
+    window.addEventListener('skena:nodeResize', handler);
+    return () => window.removeEventListener('skena:nodeResize', handler);
+  }, [scheduleSave]);
 
   // - listen for text edits committed by TextNodeComponent's Monaco editor
   useEffect(() => {
@@ -367,12 +402,27 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
       elevateEdgesOnSelect
     >
       <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="var(--vscode-editorIndentGuide-background)" />
-      <Controls showInteractive={false} />
-      <MiniMap
-        nodeColor={n => (n.data as { accentColor?: string }).accentColor ?? '#888'}
-        maskColor="rgba(0,0,0,0.3)"
-        style={{ background: 'var(--vscode-sideBar-background)' }}
-      />
+      <Controls showInteractive={false}>
+        {/* - minimap toggle button — appended after the built-in zoom/fit buttons */}
+        <ControlButton
+          onClick={() => setShowMinimap(v => !v)}
+          title={showMinimap ? 'Hide minimap' : 'Show minimap'}
+          style={{ opacity: showMinimap ? 1 : 0.45 }}
+        >
+          {/* - simple map icon: outer rect + inner viewport rect */}
+          <svg viewBox="0 0 16 16" fill="currentColor">
+            <rect x="1" y="1" width="14" height="14" rx="1" fill="none" stroke="currentColor" strokeWidth="1.5" />
+            <rect x="4" y="4" width="5" height="4" rx="0.5" />
+          </svg>
+        </ControlButton>
+      </Controls>
+      {showMinimap && (
+        <MiniMap
+          nodeColor={n => (n.data as { accentColor?: string }).accentColor ?? '#888'}
+          maskColor="rgba(0,0,0,0.3)"
+          style={{ background: 'var(--vscode-sideBar-background)' }}
+        />
+      )}
     </ReactFlow>
   );
 }
