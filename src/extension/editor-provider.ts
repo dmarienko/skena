@@ -140,7 +140,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     // - onDidSaveTextDocument fires whenever any file is saved in the VS Code editor
     // - this is the primary live-update trigger for "edit file → see canvas update"
     const saveDisposable = vscode.workspace.onDidSaveTextDocument(doc => {
-      send({ type: 'fileChanged', uri: toCanvasUri(doc.uri.fsPath) });
+      const uri = toCanvasUri(doc.uri.fsPath);
+      console.log(`[Skena] file saved: ${doc.uri.fsPath} → canvas URI: ${uri}`);
+      send({ type: 'fileChanged', uri });
     });
 
     // - file system watcher covers external changes (git pull, Obsidian, other editors)

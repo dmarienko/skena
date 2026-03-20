@@ -24,6 +24,11 @@ const LOADING: FileContentState = { status: 'loading', content: '', fileType: 'u
 // - module-level cache: uri → resolved content
 const cache = new Map<string, FileContentState>();
 
+/** - normalize relative URIs so "./foo.md" and "foo.md" are the same cache key */
+function normalizeUri(uri: string): string {
+  return uri.startsWith('./') ? uri.slice(2) : uri;
+}
+
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
 }
@@ -38,15 +43,16 @@ function generateRequestId(): string {
  * @param uri  - vault:// URI or project-relative path. Undefined = skip.
  */
 export function useFileContent(uri: string | undefined): FileContentState {
+  const key = uri ? normalizeUri(uri) : undefined;
   const [state, setState] = useState<FileContentState>(() =>
-    uri ? (cache.get(uri) ?? IDLE) : IDLE
+    key ? (cache.get(key) ?? IDLE) : IDLE
   );
 
   const requestIdRef = useRef<string | null>(null);
 
   // - extracted so we can call it both on mount and on invalidation
   const fetchContent = useCallback(() => {
-    if (!uri) return;
+    if (!uri || !key) return;
     const requestId = generateRequestId();
     requestIdRef.current = requestId;
     setState(LOADING);
@@ -64,7 +70,7 @@ export function useFileContent(uri: string | undefined): FileContentState {
           resourceUri: msg.resourceUri,
           error:       undefined,
         };
-        cache.set(uri, resolved);
+        cache.set(key, resolved);
         if (requestIdRef.current === requestId) setState(resolved);
       } else {
         const errState: FileContentState = {
@@ -80,14 +86,14 @@ export function useFileContent(uri: string | undefined): FileContentState {
     };
 
     window.addEventListener('skena:fileResponse', handler);
-  }, [uri]);
+  }, [uri, key]);
 
   // - initial load (or when uri changes)
   useEffect(() => {
-    if (!uri) return;
+    if (!key) return;
 
     // - cache hit — use immediately, but still listen for invalidation below
-    const cached = cache.get(uri);
+    const cached = cache.get(key);
     if (cached?.status === 'loaded') {
       setState(cached);
     } else {
@@ -95,7 +101,7 @@ export function useFileContent(uri: string | undefined): FileContentState {
     }
 
     return () => { requestIdRef.current = null; };
-  }, [uri, fetchContent]);
+  }, [key, fetchContent]);
 
   // - re-fetch when file changes on disk
   useEffect(() => {
@@ -103,20 +109,20 @@ export function useFileContent(uri: string | undefined): FileContentState {
 
     const handler = (e: Event) => {
       const changedUri = (e as CustomEvent<string>).detail;
-      if (changedUri !== uri) return;
-      // - bust cache and re-fetch
-      cache.delete(uri);
+      const changedKey = normalizeUri(changedUri);
+      if (changedKey !== key) return;
+      cache.delete(key);
       fetchContent();
     };
 
     window.addEventListener('skena:fileInvalidated', handler);
     return () => window.removeEventListener('skena:fileInvalidated', handler);
-  }, [uri, fetchContent]);
+  }, [key, fetchContent]);
 
   return state;
 }
 
 /** - manually invalidate a cached URI (e.g. after external edit) */
 export function invalidateFileCache(uri: string): void {
-  cache.delete(uri);
+  cache.delete(normalizeUri(uri));
 }

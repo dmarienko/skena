@@ -45,8 +45,8 @@ export function App(): JSX.Element {
           window.dispatchEvent(new CustomEvent('skena:fileResponse', { detail: msg }));
           break;
         case 'fileChanged':
+          console.log('[Skena webview] fileChanged received, uri:', msg.uri);
           dispatch({ type: 'FILE_CHANGED', uri: msg.uri });
-          // - also tell useFileContent hooks to invalidate + re-fetch this URI
           window.dispatchEvent(new CustomEvent('skena:fileInvalidated', { detail: msg.uri }));
           break;
         case 'searchResults':
