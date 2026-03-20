@@ -32,7 +32,7 @@
 
 /* - selection ring on top of accent border */
 .react-flow__node.selected .skena-node {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55), 0 0 0 2px var(--vscode-focusBorder, #007acc);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55), 0 0 0 3px var(--vscode-focusBorder, #007acc);
 }
 
 /* ─── Handles ─────────────────────────────────────────────────────────────── */

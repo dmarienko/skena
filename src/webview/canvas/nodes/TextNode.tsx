@@ -7,14 +7,14 @@
  * Exit edit mode:   Esc / Ctrl+Cmd+Enter / click outside — all save content
  */
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { NodeProps, Handle, Position } from '@xyflow/react';
 import Editor, { OnMount } from '@monaco-editor/react';
 import { initVimMode } from 'monaco-vim';
 import { TextNode } from '../../../shared/types';
 import { MarkdownRenderer } from '../../renderers/MarkdownRenderer';
 
-export function TextNodeComponent({ data, id }: NodeProps): JSX.Element {
+export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as TextNode & { accentColor?: string };
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(node.text);
@@ -69,6 +69,16 @@ export function TextNodeComponent({ data, id }: NodeProps): JSX.Element {
 
   const enterEdit = useCallback(() => setEditing(true), []);
 
+  // - receive DOM focus when keyboard navigation lands on this node
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { id: targetId } = (e as CustomEvent<{ id: string }>).detail;
+      if (targetId === id) wrapperRef.current?.focus();
+    };
+    window.addEventListener('skena:focusNode', handler);
+    return () => window.removeEventListener('skena:focusNode', handler);
+  }, [id]);
+
   return (
     <div
       ref={wrapperRef}
@@ -84,9 +94,9 @@ export function TextNodeComponent({ data, id }: NodeProps): JSX.Element {
       }}
       tabIndex={0}
       onDoubleClick={enterEdit}
-      // - Enter key while node is focused/selected → enter edit mode
+      // - Enter key while node is React-Flow-selected AND DOM-focused → enter edit mode
       onKeyDown={e => {
-        if (!editing && e.key === 'Enter') {
+        if (!editing && selected && e.key === 'Enter') {
           e.stopPropagation();
           e.preventDefault();
           enterEdit();

@@ -245,6 +245,79 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
     return () => window.removeEventListener('skena:nodesFromDrop', handler);
   }, [setNodes, scheduleSave]);
 
+  // ─── keyboard navigation between nodes (hjkl / arrow keys) ──────────────────
+
+  // - use a ref so the stable keydown handler always sees current nodes
+  const nodesRef = useRef(nodes);
+  useEffect(() => { nodesRef.current = nodes; });
+
+  useEffect(() => {
+    const keyToDir = (key: string): 'left' | 'right' | 'up' | 'down' | null => {
+      switch (key) {
+        case 'h': case 'ArrowLeft':  return 'left';
+        case 'l': case 'ArrowRight': return 'right';
+        case 'k': case 'ArrowUp':    return 'up';
+        case 'j': case 'ArrowDown':  return 'down';
+        default: return null;
+      }
+    };
+
+    const centerOf = (n: Node) => ({
+      x: n.position.x + Number(n.style?.width  ?? 200) / 2,
+      y: n.position.y + Number(n.style?.height ?? 150) / 2,
+    });
+
+    // - find closest node in direction using weighted distance:
+    // - primary-axis dist + 2.5× perpendicular dist so off-axis nodes are deprioritised
+    const findNearest = (from: Node, dir: 'left' | 'right' | 'up' | 'down'): string | null => {
+      const fc = centerOf(from);
+      let bestId: string | null = null;
+      let bestScore = Infinity;
+      for (const node of nodesRef.current) {
+        if (node.id === from.id || node.type === 'group') continue;
+        const nc = centerOf(node);
+        const dx = nc.x - fc.x;
+        const dy = nc.y - fc.y;
+        const inDir = dir === 'left'  ? dx < 0 :
+                      dir === 'right' ? dx > 0 :
+                      dir === 'up'    ? dy < 0 : dy > 0;
+        if (!inDir) continue;
+        const score = (dir === 'left' || dir === 'right')
+          ? Math.abs(dx) + Math.abs(dy) * 2.5
+          : Math.abs(dy) + Math.abs(dx) * 2.5;
+        if (score < bestScore) { bestScore = score; bestId = node.id; }
+      }
+      return bestId;
+    };
+
+    const handler = (e: KeyboardEvent) => {
+      const dir = keyToDir(e.key);
+      if (!dir) return;
+
+      // - don't intercept while user is typing in Monaco, an input, or textarea
+      const active = document.activeElement;
+      if (
+        active instanceof HTMLInputElement ||
+        active instanceof HTMLTextAreaElement ||
+        active?.closest('.monaco-editor')
+      ) return;
+
+      const current = nodesRef.current.find(n => n.selected && n.type !== 'group');
+      if (!current) return;
+
+      const targetId = findNearest(current, dir);
+      if (!targetId) return;
+
+      e.preventDefault();
+      setNodes(nds => nds.map(n => ({ ...n, selected: n.id === targetId })));
+      // - focus the target node's DOM element so Enter-to-edit works immediately
+      window.dispatchEvent(new CustomEvent('skena:focusNode', { detail: { id: targetId } }));
+    };
+
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [setNodes]); // - setNodes is stable; nodesRef carries live state
+
   // - listen for text edits committed by TextNodeComponent's Monaco editor
   useEffect(() => {
     const handler = (e: Event) => {
@@ -281,6 +354,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
       onEdgesDelete={onEdgesDelete}
       onNodeDoubleClick={onNodeDoubleClick}
       connectionMode={ConnectionMode.Loose}
+      disableKeyboardA11y={true}
       onDragOver={onDragOver}
       onDrop={onDrop}
       fitView

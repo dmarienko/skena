@@ -3,28 +3,18 @@
     {
       "id": "node1",
       "type": "text",
-      "x": 112,
-      "y": 88,
+      "x": 88,
+      "y": -336,
       "width": 300,
       "height": 200,
       "color": "4",
-      "text": "# Test title\r\n\r\n- 1. tests image\r\n- 2. tests image 2\r\n\r\n$$\\zeta(x) = \\frac{1}{a} \\sum^{N}_{k=0}{x^k}$$\r\n\r\n\r\n![Image](image.svg)\r\n"
-    },
-    {
-      "id": "node2",
-      "type": "group",
-      "x": 50,
-      "y": 50,
-      "width": 900,
-      "height": 500,
-      "color": "5",
-      "label": "Storm Research"
+      "text": "# Backtest model1\r\n\r\n- 1. tests image\r\n- 2. tests image 2\r\n- 3. tests sentence 3\r\n\r\n\r\n$$\\zeta(x) = \\frac{1}{a} \\sum^{N}_{k=0}{x^k}$$\r\n\r\n\r\n![Image](image.svg)\r\n\r\n"
     },
     {
       "id": "node3",
       "type": "link",
-      "x": 592,
-      "y": 104,
+      "x": 584,
+      "y": -296,
       "width": 300,
       "height": 120,
       "url": "https://github.com/xlydian/xmetals"
@@ -33,7 +23,7 @@
       "id": "node4",
       "type": "cell",
       "x": 112,
-      "y": 328,
+      "y": 0,
       "width": 320,
       "height": 160,
       "color": "2",
@@ -43,8 +33,8 @@
     {
       "id": "node5",
       "type": "portal",
-      "x": 592,
-      "y": 344,
+      "x": 608,
+      "y": -112,
       "width": 250,
       "height": 140,
       "color": "5",
@@ -57,6 +47,15 @@
       "file": "test1.md",
       "x": -456,
       "y": -360,
+      "width": 400,
+      "height": 300
+    },
+    {
+      "id": "node-1774044086358-0",
+      "type": "file",
+      "file": "test1.md",
+      "x": -400,
+      "y": 32,
       "width": 400,
       "height": 300
     }
