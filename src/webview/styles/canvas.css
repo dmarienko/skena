@@ -1,0 +1,53 @@
+/* React Flow canvas customizations */
+
+.react-flow__background { background: var(--vscode-editor-background); }
+.react-flow__minimap    { border-radius: 4px; overflow: hidden; }
+.react-flow__controls   { background: var(--vscode-sideBar-background); border: 1px solid var(--vscode-editorWidget-border); border-radius: 4px; }
+.react-flow__controls-button { background: transparent; color: var(--vscode-foreground); border-bottom: 1px solid var(--vscode-editorWidget-border); }
+.react-flow__controls-button:hover { background: var(--vscode-list-hoverBackground); }
+.react-flow__controls-button svg { fill: var(--vscode-foreground); }
+
+/* ─── Node base card style ────────────────────────────────────────────────── */
+/*
+ * All nodes share this card appearance.
+ * --vscode-editorWidget-background is typically #252526 in dark themes —
+ * visibly elevated above the #1e1e1e editor background.
+ * The box-shadow gives depth; the accent border color is applied inline per node.
+ */
+.skena-node {
+  /*
+   * Fallback chain: widget bg → sidebar bg → hardcoded #2a2a2a (dark) / #f3f3f3 (light).
+   * The final hardcoded value ensures nodes are NEVER transparent.
+   */
+  background: var(--vscode-editorWidget-background,
+               var(--vscode-sideBar-background,
+               #2a2a2a)) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+}
+
+.skena-node:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+/* - selection ring on top of accent border */
+.react-flow__node.selected .skena-node {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55), 0 0 0 2px var(--vscode-focusBorder, #007acc);
+}
+
+/* ─── Handles ─────────────────────────────────────────────────────────────── */
+.react-flow__handle {
+  width: 10px;
+  height: 10px;
+  background: var(--vscode-focusBorder, #007acc);
+  border: 2px solid var(--vscode-editorWidget-background, var(--vscode-sideBar-background, #2a2a2a));
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.react-flow__node:hover .react-flow__handle { opacity: 0.7; }
+.react-flow__handle:hover,
+.react-flow__handle.connecting {
+  opacity: 1 !important;
+  transform: scale(1.3);
+}

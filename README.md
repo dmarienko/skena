@@ -53,7 +53,7 @@ Skena brings the spatial canvas experience into VS Code, reading the same `.canv
 │  │  - Drag, zoom, pan, connect                     │ │
 │  │  - Context menus for CRUD                       │ │
 │  └────────────────────┬────────────────────────────┘ │
-│                       │ message passing               │
+│                       │ message passing              │
 │  ┌────────────────────▼────────────────────────────┐ │
 │  │  Extension Host (Node.js)                       │ │
 │  │  - Vault indexer (scans .md frontmatter)        │ │
@@ -62,7 +62,7 @@ Skena brings the spatial canvas experience into VS Code, reading the same `.canv
 │  │  - File watcher (chokidar)                      │ │
 │  │  - Frontmatter parser (gray-matter)             │ │
 │  └────────────────────┬────────────────────────────┘ │
-│                       │ filesystem                    │
+│                       │ filesystem                   │
 │         ┌─────────────┴──────────────┐               │
 │    ~/vault/ (.md)          project/ (.canvas,        │
 │                             .ipynb, .py, .yaml)      │
@@ -73,10 +73,11 @@ Skena brings the spatial canvas experience into VS Code, reading the same `.canv
 
 | Tool | Access method |
 |---|---|
-| **VS Code + Skena** | Direct filesystem - React Flow canvas |
-| **Obsidian app** | Native - it's a standard vault + JSON Canvas |
+| **VS Code + Skena** | Direct filesystem — React Flow canvas |
+| **Obsidian app** | Native — standard vault + JSON Canvas (Skena-specific node types silently ignored) |
 | **Claude Code / AIX MCP** | Reads/writes `.md` + `.canvas` files directly |
 | **Claude.ai** | Via Obsidian MCP server |
+| **Notion** | Via Notion API — `vault://notion/<page-id>` nodes (read-only render) |
 | **Remote headless server** | Same files via git sync or shared mount |
 
 ---
@@ -207,13 +208,20 @@ Skena reads and writes standard [JSON Canvas 1.0](https://jsoncanvas.org/spec/1.
 }
 ```
 
-For vault files, `file` is relative to vault root.
-For project files, `file` is relative to project root (or absolute).
+**Path resolution — URI scheme:**
 
-The extension resolves paths by checking:
-1. Relative to `.canvas` file location
-2. Relative to vault root (configured in settings)
-3. Relative to workspace root
+Skena uses an explicit URI scheme to avoid ambiguity:
+
+- **Vault files**: `vault://<vault-name>/path/to/file.md`
+  - Example: `vault://v1/alpha/storm.md`, `vault://work/knowledge/kalman-atr.md`
+  - Resolved against the matching entry in `skena.vaults[]`
+- **Notion pages**: `vault://notion/<page-id>`
+  - Fetched via Notion API, rendered as read-only markdown node
+- **Project files**: relative path from the `.canvas` file location
+  - Example: `../models/storm/m0.py`, `../../configs/storm/storm.v0.yaml`
+- **Absolute paths**: supported as fallback
+
+The `file` field in JSON Canvas uses these URIs directly.
 
 **Text nodes** — inline notes, TODOs, annotations:
 ```json
@@ -250,6 +258,9 @@ The extension resolves paths by checking:
 }
 ```
 
+**Skena extension node types** — `cell`, `chat`, `portal` (see Phase 5 & 6 for full spec).
+These are extensions to the JSON Canvas spec. Obsidian silently ignores unknown node types, so `.canvas` files remain fully interoperable.
+
 **Edges** — connections between nodes:
 ```json
 {
@@ -262,6 +273,78 @@ The extension resolves paths by checking:
   "label": "next steps"
 }
 ```
+
+---
+
+## Message Protocol (Extension Host ↔ Webview)
+
+All communication between the Node.js extension host and the React webview uses VS Code's `postMessage` API. Messages are typed via `shared/types.ts`.
+
+### Host → Webview
+
+```typescript
+// Canvas loaded or reloaded from disk
+{ type: 'canvasLoaded', canvas: CanvasData }
+
+// File content response (for file node rendering)
+{ type: 'fileContent', requestId: string, path: string, content: string, fileType: FileType }
+
+// File content error (file not found, access denied, etc.)
+{ type: 'fileError', requestId: string, path: string, error: string }
+
+// Vault index ready / updated (for fuzzy search)
+{ type: 'vaultIndex', entries: VaultEntry[] }
+
+// Notion page content response
+{ type: 'notionContent', requestId: string, pageId: string, markdown: string, meta: NotionMeta }
+
+// File changed on disk — re-render this node
+{ type: 'fileChanged', path: string }
+
+// Canvas file changed externally (Obsidian edit) — reload
+{ type: 'canvasChanged' }
+
+// Agent chat response chunk (streaming)
+{ type: 'chatChunk', nodeId: string, delta: string, done: boolean }
+
+// Agent created a new node (from chat)
+{ type: 'agentNodeCreated', chatNodeId: string, newNode: CanvasNode }
+```
+
+### Webview → Host
+
+```typescript
+// Request file content for rendering a node
+{ type: 'requestFile', requestId: string, path: string }
+
+// Request Notion page content
+{ type: 'requestNotion', requestId: string, pageId: string }
+
+// Save canvas after user edit (drag, resize, new node, delete)
+{ type: 'saveCanvas', canvas: CanvasData }
+
+// Open a file in VS Code editor tab
+{ type: 'openFile', path: string }
+
+// Fuzzy search query
+{ type: 'searchVault', query: string, requestId: string }
+
+// Search results request resolved
+{ type: 'searchResults', requestId: string, results: VaultEntry[] }
+
+// Send message to AI agent in a chat node
+{ type: 'chatMessage', nodeId: string, message: string, canvasContext: CanvasContext }
+
+// Request vault index refresh
+{ type: 'refreshVault' }
+```
+
+### Key design rules
+
+- Every request/response pair shares a `requestId` (UUID) for correlation — the webview can have multiple nodes loading in parallel
+- `saveCanvas` is debounced 500ms in the webview before sending (not the host)
+- File content is sent as raw string; the webview owns rendering (no HTML from host)
+- Large files (> 500KB): host sends `{ type: 'fileError', error: 'TOO_LARGE' }` → webview shows a truncated preview indicator
 
 ---
 
@@ -279,24 +362,33 @@ The extension resolves paths by checking:
 
 **File node rendering by type**:
 
+- **Notion pages** (`vault://notion/<page-id>`):
+  - Fetched via **Notion MCP server** (extension talks to running MCP, no token in settings)
+  - Rendered as markdown using the same `MarkdownRenderer`
+  - Thin header bar: Notion icon + page title + last edited date
+  - Read-only (no write-back to Notion)
+  - At low zoom: title + icon only
+  - Cached in memory per session; stale indicator shown if MCP unreachable
+
 - **Markdown files** (`.md`):
   - Render full markdown content inside the node using a markdown renderer
   - Support: headings, bold/italic, tables, lists, code blocks, blockquotes
-  - Render embedded images (relative paths resolved to vault/project)
+  - Render embedded images (relative paths resolved against vault/project root)
   - Frontmatter is NOT shown in the rendered content (parsed separately)
   - Thin header bar at top: status badge + type label + title (from frontmatter)
   - Scrollable content area when content exceeds node height
-  - At low zoom levels (zoomed out): collapse to title + first paragraph preview
-  - At high zoom levels (zoomed in): full rendered content, readable
+  - At low zoom levels: title + status badge only (no content preview)
+  - At high zoom levels: full rendered content, readable
 
 - **Jupyter Notebooks** (`.ipynb`):
   - Parse notebook JSON, render cells in order:
     - Markdown cells: rendered as markdown (same as above)
     - Code cells: rendered with syntax highlighting (Python)
-    - Output cells: render text output, and **display images** (PNG/SVG outputs from matplotlib, plotly static exports, etc.)
+    - Output cells: render text output and **base64-encoded images** (`image/png`, `image/svg+xml`)
+    - Non-image outputs (plotly JSON, widgets): show placeholder `[interactive output]`
   - Thin header bar: notebook icon + filename + kernel name + cell count
   - Scrollable content area
-  - At low zoom: show filename + first markdown cell + first image output (thumbnail)
+  - At low zoom: title + kernel name only
 
 - **Python files** (`.py`):
   - Render with syntax highlighting (like a code preview)
@@ -306,6 +398,7 @@ The extension resolves paths by checking:
 - **YAML/config files** (`.yaml`):
   - Render with syntax highlighting
   - Thin header bar: config icon + filename
+  - when click on node - open VSCode editor (as modal panel)
 
 - **Image files** (`.png`, `.jpg`, `.svg`):
   - Render the image directly, scaled to fit node dimensions
@@ -327,7 +420,7 @@ The extension resolves paths by checking:
 - URL displayed with favicon (fetched async)
 - If URL points to a known site (GitHub, Medium, TradingView), show site-specific icon
 - Title extracted from URL metadata if available (Open Graph tags, cached)
-- Click → opens URL in default browser
+- Click → opens URL in VSCode HTML browser
 
 **Edge rendering**:
 - Arrows between node connection points (fromSide/toSide from JSON Canvas)
@@ -341,14 +434,14 @@ This is critical for performance with large canvases:
 | Zoom level | Node rendering |
 |---|---|
 | < 0.3 (very zoomed out) | Colored rectangle + title text only |
-| 0.3 – 0.6 (overview) | Title + status badge + first paragraph/image thumbnail |
+| 0.3 – 0.6 (overview) | Title + status badge only (no content) |
 | 0.6 – 1.0 (reading) | Full markdown render, images at reduced resolution |
 | > 1.0 (detail) | Full render, full resolution images, scrollable content |
 
 **Canvas interaction**:
 - Zoom / pan / minimap (React Flow built-in)
 - Click node → highlight with glow border, show details in side tooltip
-- Cmd+click file node → open referenced file in VS Code editor tab
+- Cmd+click file node → open referenced file in VS Code editor tab or 
 - Double-click text node → switch to inline markdown editor
 - Drag nodes → updates position in `.canvas` JSON (auto-save with debounce)
 - Resize nodes → drag corner handles → updates width/height in `.canvas` JSON
@@ -367,7 +460,7 @@ This is critical for performance with large canvases:
 
 ### Phase 2: Fuzzy Search + Add Node
 
-**Command**: `Skena: Add Node from Vault` (keyboard shortcut: `Cmd+Shift+A` in canvas)
+**Command**: `Skena: Add Node from Vaults` (keyboard shortcut: `Cmd+Shift+A` in canvas)
 
 **Vault indexer**:
 - On activation, scan configured vault path for all `.md` files
@@ -400,8 +493,8 @@ This is critical for performance with large canvases:
 - "New Text Note" → adds inline text node to canvas
 
 **Link nodes**:
-- Drag from node handle to another node → creates edge in `.canvas`
-- Also adds to `links:` frontmatter array in both `.md` files (bidirectional)
+- Drag from node handle to another node → creates edge in `.canvas` only
+- Does NOT modify `links:` frontmatter in referenced `.md` files (canvas is the source of truth for connections)
 
 **Edit from canvas**:
 - Right-click file node → "Edit Status" → QuickPick with status options → updates frontmatter
@@ -413,12 +506,77 @@ This is critical for performance with large canvases:
 - Right-click → "Remove from canvas" (same)
 - Right-click → "Delete file" → confirmation dialog → removes both node and file
 
-### Phase 4: Notebook Integration (future)
+### Phase 4: Notebook Integration
 
 - `.ipynb` file nodes show: notebook name, kernel, cell count, last modified
-- Expandable preview of markdown cells / output images
+- Expandable preview of markdown cells / output images (base64 PNG/SVG only)
 - "Run notebook" action from canvas context menu
 - Parse notebook outputs for key metrics (Sharpe, drawdown) to display on node
+
+### Phase 5: AI Chat Nodes + Cell Nodes
+
+**Chat node** — an agent conversation terminal embedded in the canvas:
+- User types in the node; response streams in
+- Agent receives the full canvas as context: all node titles, types, and content summaries
+- Agent can produce artifacts: creates `.md` in vault/project and adds a new connected node to canvas
+- Chat history saved as `.chat.json` alongside the `.canvas` file
+- Multiple chat nodes per canvas (different agents / different topics)
+- Backend configurable: `skena.chat.backend: "claude" | "ollama" | "openai"` (default: `"claude"`)
+
+**Chat node config in canvas JSON** (Skena extension):
+```json
+{
+  "id": "a7890123456789de",
+  "type": "chat",
+  "agent": "claude",
+  "model": "claude-opus-4-5",
+  "title": "Storm regime analysis",
+  "x": 1100, "y": 200,
+  "width": 400, "height": 500
+}
+```
+
+**Cell nodes** — standalone output cells for pasting results directly onto canvas:
+- Content stored **inline in `.canvas` JSON** (Skena extension node type, no sidecar files)
+- Formats: `markdown` (tables, text), `image` (base64 PNG/SVG), `html`
+- Created via: paste from clipboard, "Add cell" context menu, or agent artifact output
+- Editable in place (double-click)
+
+**Cell node in canvas JSON**:
+```json
+{
+  "id": "f6789012345678cd",
+  "type": "cell",
+  "format": "markdown",
+  "content": "| Metric | Value |\n|---|---|\n| Sharpe | 1.8 |\n| MaxDD | -12% |",
+  "x": 900, "y": 300,
+  "width": 350, "height": 200
+}
+```
+
+### Phase 6: Canvas Portals
+
+**Behavior**:
+- Select nodes → right-click → "Extract to new canvas"
+  - Selected nodes are **moved** (removed from parent canvas) into a new `.canvas` file
+  - A **Portal node** is placed at the bounding box position of the removed nodes
+  - Edges that crossed the boundary become dangling — user resolves manually
+- Click portal node → opens linked canvas in a new VS Code tab
+- Portal renders a static minimap thumbnail of the linked canvas (refreshed on open)
+
+**Portal node in canvas JSON** (Skena extension):
+```json
+{
+  "id": "b8901234567890ef",
+  "type": "portal",
+  "canvas": "./sub-research.canvas",
+  "label": "Storm sub-research",
+  "x": 500, "y": 700,
+  "width": 300, "height": 180
+}
+```
+
+Enables hierarchical organization: top-level overview canvas with portals → per-strategy deep-dive canvases.
 
 ---
 
@@ -427,25 +585,35 @@ This is critical for performance with large canvases:
 ```jsonc
 // .vscode/settings.json
 {
-  // Path to Obsidian vault (absolute or relative to workspace)
-  "skena.vaultPath": "~/vault",
-  
-  // Directories to scan in vault (relative to vault root)
+  // Named vaults — supports multiple. URI format: vault://<name>/path/to/file.md
+  "skena.vaults": [
+    { "name": "v1", "path": "~/vault" },
+    { "name": "work", "path": "~/work-vault" }
+  ],
+
+  // Notion integration — vault://notion/<page-id> URIs
+  // Resolved via a running Notion MCP server (no token stored in extension)
+  "skena.notion": {
+    "enabled": false,
+    "mcpServerUrl": "http://localhost:3000"   // URL of the Notion MCP server
+  },
+
+  // Directories to scan in each vault (relative to vault root)
   "skena.vaultDirectories": ["alpha", "knowledge", "logs", "inbox"],
-  
+
   // File patterns to index in workspace (for project files)
   "skena.workspacePatterns": ["**/*.ipynb", "**/*.py", "**/*.yaml", "**/*.md"],
-  
+
   // Excluded patterns
   "skena.excludePatterns": ["**/node_modules/**", "**/.git/**", "**/__pycache__/**"],
-  
+
   // Auto-save canvas changes (ms debounce)
   "skena.autoSaveDelay": 500,
-  
+
   // Node appearance
   "skena.nodeWidth": 400,
   "skena.nodeHeight": 250,
-  
+
   // Color scheme (matches Obsidian canvas color codes 1-6)
   "skena.colors": {
     "1": "#fb464c",  // red
@@ -486,18 +654,22 @@ skena/
   tsconfig.json
   esbuild.config.mjs             ← Build config for extension + webview
   src/
-    extension/                    ← Extension host (Node.js)
+    extension/                    ← Extension host (Node.js only)
       extension.ts                ← Activation, commands, custom editor provider
-      vault-indexer.ts            ← Scan vault, parse frontmatter, build index
+      vault-indexer.ts            ← Scan vault, parse frontmatter, build fuse.js index
       canvas-io.ts                ← Read/write JSON Canvas files
       file-watcher.ts             ← chokidar watchers for vault + workspace
-      file-resolver.ts            ← Resolve file paths (vault:// vs project-relative)
-      search.ts                   ← fuse.js search over index
+      file-resolver.ts            ← Resolve vault:// URIs + project-relative paths
+      notebook-parser.ts          ← Parse .ipynb JSON, extract cells + base64 images (Node.js only)
+      notion-client.ts            ← Fetch Notion pages, convert to markdown (vault://notion/...)
+      chat-manager.ts             ← AI chat node state, agent calls, node creation from agent
+      search.ts                   ← fuse.js search over vault + workspace index
       commands/
         add-node.ts               ← "Add from vault" command
         create-entry.ts           ← "New strategy/knowledge/log" commands
         edit-properties.ts        ← Status/score/tag editing
-    webview/                      ← React app (runs in webview)
+        extract-to-canvas.ts      ← Selection → new canvas + portal node
+    webview/                      ← React app (runs in webview sandbox)
       App.tsx                     ← Root component
       canvas/
         CanvasView.tsx            ← React Flow setup + event handlers
@@ -506,13 +678,17 @@ skena/
           TextNode.tsx            ← Inline text node (editable markdown)
           GroupNode.tsx           ← Group container component
           LinkNode.tsx            ← URL node component
+          CellNode.tsx            ← Standalone output cell (table / chart / image)
+          ChatNode.tsx            ← AI chat terminal node
+          PortalNode.tsx          ← Link to another .canvas file (minimap preview)
         edges/
           LabeledEdge.tsx         ← Edge with label rendering
-      renderers/                  ← Content renderers for file types
+      renderers/                  ← Content renderers (webview side only)
         MarkdownRenderer.tsx      ← .md content → rendered HTML (react-markdown)
-        NotebookRenderer.tsx      ← .ipynb → rendered cells (md + code + outputs)
+        NotebookRenderer.tsx      ← .ipynb → rendered cells (md + code + base64 outputs)
         CodeRenderer.tsx          ← .py / .yaml → syntax highlighted code (Shiki)
         ImageRenderer.tsx         ← .png/.jpg/.svg → scaled image display
+        NotionRenderer.tsx        ← Notion markdown → rendered HTML
         LODWrapper.tsx            ← Zoom-adaptive level-of-detail wrapper
       components/
         StatusBadge.tsx           ← Colored status indicator
@@ -521,41 +697,85 @@ skena/
         NodeHeader.tsx            ← Thin top bar (icon + title + badges)
         NodeTooltip.tsx           ← Hover detail panel
         ScrollableContent.tsx     ← Scrollable container for node content
+        ChatMessages.tsx          ← Chat message list + input for ChatNode
       hooks/
         useCanvasData.ts          ← Canvas state management
         useVaultIndex.ts          ← Vault search state
-        useFileContent.ts         ← Load + cache file content for rendering
+        useFileContent.ts         ← Request + cache file content via postMessage
         useZoomLevel.ts           ← Track zoom for LOD switching
+        useChat.ts                ← Chat node message state + streaming
       styles/
         canvas.css                ← React Flow customizations
         nodes.css                 ← Node component styles
         markdown.css              ← Markdown rendering styles (dark/light theme)
         code.css                  ← Syntax highlighting theme
-    shared/
-      types.ts                    ← Shared types (CanvasNode, VaultEntry, etc.)
-      constants.ts                ← Colors, defaults
-      notebook-parser.ts          ← Parse .ipynb JSON, extract cells + base64 images
+    shared/                       ← Types and constants only (no Node.js APIs)
+      types.ts                    ← CanvasNode, VaultEntry, MessageProtocol types, etc.
+      constants.ts                ← Colors, defaults, node type enum
 ```
 
 ---
 
 ## Development Setup
 
+### Remote development (VS Code Remote SSH)
+
+Skena is developed on a remote machine via VS Code Remote SSH. **Everything runs on the remote** — Node.js, npm, esbuild, the extension host, and the webview sandbox. No local toolchain needed.
+
+```
+Local machine          Remote machine
+──────────────         ───────────────────────────────────────
+VS Code UI      ──→    Extension host (Node.js) + Webview
+                       ~/devs/skena/   (source)
+                       ~/vault/        (vault files)
+```
+
+`extensionKind` in `package.json` must be `["workspace"]` (default for filesystem extensions) — this ensures VS Code runs the extension on the remote, not locally.
+
 ```bash
-# Clone and install
+# Clone and install (on remote)
 git clone https://github.com/dmarienko/skena.git
 cd skena
 npm install
 
-# Development (watch mode)
+# Development (watch mode — runs on remote)
 npm run dev          # builds extension + webview, watches for changes
 
 # Debug in VS Code
-# Press F5 → launches Extension Development Host
+# Press F5 → launches Extension Development Host as a second remote window
+# (VS Code opens a new window, also connected to remote — this is normal)
 
 # Package
-npm run package      # creates .vsix file
+npm run package      # creates .vsix on remote, install via "Install from VSIX..."
 ```
+
+### Webview DevTools on remote
+
+Chrome DevTools are not available directly. Use VS Code's built-in webview inspector:
+
+```
+Help → Toggle Developer Tools   (opens VS Code's own DevTools)
+```
+
+For webview-specific debugging, add `?vscode-resource` logging or use `console.log` in the webview — output appears in the **Webview Developer Tools** panel (not the main DevTools). Alternatively:
+
+```
+Ctrl+Shift+P → "Open Webview Developer Tools"
+```
+
+This works correctly over Remote SSH.
+
+### Webview resource URIs (important)
+
+When serving local files (images, fonts) into the webview, **never use raw filesystem paths**. Convert them:
+
+```typescript
+// - in extension host, before sending path to webview
+const uri = panel.webview.asWebviewUri(vscode.Uri.file('/home/quant0/vault/img.png'));
+// - result: vscode-resource://... (works both local and remote)
+```
+
+This is critical for image rendering inside file nodes — raw `file://` paths are blocked by the webview sandbox.
 
 ---
 

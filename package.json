@@ -1,0 +1,154 @@
+{
+  "name": "skena",
+  "displayName": "Skena",
+  "description": "Visual research canvas for VS Code — renders JSON Canvas files as interactive node graphs with rich content previews, connected to a markdown knowledge vault.",
+  "version": "0.1.0",
+  "publisher": "dmarienko",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dmarienko/skena.git"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "keywords": ["canvas", "knowledge", "obsidian", "research", "markdown"],
+  "extensionKind": ["workspace"],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "skena.canvasEditor",
+        "displayName": "Skena Canvas",
+        "selector": [{ "filenamePattern": "*.canvas" }],
+        "priority": "default"
+      }
+    ],
+    "commands": [
+      {
+        "command": "skena.openCanvas",
+        "title": "Skena: Open Canvas"
+      },
+      {
+        "command": "skena.addNode",
+        "title": "Skena: Add Node from Vault"
+      },
+      {
+        "command": "skena.quickSearch",
+        "title": "Skena: Quick Search Vault"
+      },
+      {
+        "command": "skena.newStrategy",
+        "title": "Skena: New Strategy Entry"
+      },
+      {
+        "command": "skena.newKnowledge",
+        "title": "Skena: New Knowledge Entry"
+      },
+      {
+        "command": "skena.newResearchLog",
+        "title": "Skena: New Research Log"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "skena.addNode",
+        "key": "ctrl+shift+a",
+        "mac": "cmd+shift+a",
+        "when": "activeCustomEditorId == skena.canvasEditor"
+      }
+    ],
+    "configuration": {
+      "title": "Skena",
+      "properties": {
+        "skena.vaults": {
+          "type": "array",
+          "default": [],
+          "description": "Named vaults. URI format: vault://<name>/path/to/file.md",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "path": { "type": "string" }
+            },
+            "required": ["name", "path"]
+          }
+        },
+        "skena.vaultDirectories": {
+          "type": "array",
+          "default": ["alpha", "knowledge", "logs", "inbox"],
+          "description": "Directories to scan in each vault"
+        },
+        "skena.workspacePatterns": {
+          "type": "array",
+          "default": ["**/*.ipynb", "**/*.py", "**/*.yaml", "**/*.md"],
+          "description": "File patterns to index in workspace"
+        },
+        "skena.excludePatterns": {
+          "type": "array",
+          "default": ["**/node_modules/**", "**/.git/**", "**/__pycache__/**", "**/dist/**"],
+          "description": "Patterns to exclude from indexing"
+        },
+        "skena.autoSaveDelay": {
+          "type": "number",
+          "default": 500,
+          "description": "Canvas auto-save debounce delay in ms"
+        },
+        "skena.notion": {
+          "type": "object",
+          "default": { "enabled": false, "mcpServerUrl": "http://localhost:3000" },
+          "description": "Notion MCP server integration for vault://notion/<page-id> URIs"
+        },
+        "skena.chat": {
+          "type": "object",
+          "default": { "backend": "claude", "model": "claude-opus-4-5" },
+          "description": "AI chat node backend. backend: claude | ollama | openai"
+        },
+        "skena.colors": {
+          "type": "object",
+          "default": {
+            "1": "#fb464c",
+            "2": "#e9973f",
+            "3": "#e0de71",
+            "4": "#44cf6e",
+            "5": "#53dfdd",
+            "6": "#a882ff"
+          },
+          "description": "Canvas color palette (matches Obsidian color codes 1-6)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "dev": "node esbuild.config.mjs --watch",
+    "build": "node esbuild.config.mjs",
+    "package": "vsce package --no-dependencies",
+    "lint": "eslint src --ext ts,tsx",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.0.0",
+    "@types/react-dom": "^18.0.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "@vscode/vsce": "^2.22.0",
+    "esbuild": "^0.20.0",
+    "eslint": "^8.0.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "@xyflow/react": "^12.0.0",
+    "chokidar": "^3.5.3",
+    "fuse.js": "^7.0.0",
+    "gray-matter": "^4.0.3",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-markdown": "^9.0.0",
+    "remark-gfm": "^4.0.0",
+    "shiki": "^1.0.0"
+  }
+}
