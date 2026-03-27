@@ -355,7 +355,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       `script-src ${webview.cspSource} 'unsafe-inline'`,
       `style-src ${webview.cspSource} 'unsafe-inline'`,
       `img-src ${webview.cspSource} data: blob:`,
-      `font-src ${webview.cspSource}`,
+      `font-src ${webview.cspSource} data:`,
     ].join('; ');
 
     return `<!DOCTYPE html>

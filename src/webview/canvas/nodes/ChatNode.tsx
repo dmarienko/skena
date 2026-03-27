@@ -16,7 +16,7 @@ export function ChatNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
         minWidth={160} minHeight={100}
         isVisible={selected}
         onResizeEnd={(_, p) => window.dispatchEvent(new CustomEvent('skena:nodeResize', {
-          detail: { id, width: Math.round(p.width), height: Math.round(p.height) },
+          detail: { id, x: Math.round(p.x), y: Math.round(p.y), width: Math.round(p.width), height: Math.round(p.height) },
         }))}
       />
       <Handle type="source" position={Position.Top}    id="top"    />

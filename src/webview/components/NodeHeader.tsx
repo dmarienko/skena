@@ -5,7 +5,7 @@
 
 import React, { useMemo } from 'react';
 import { FileType } from '../../shared/types';
-import { FILE_TYPE_ICONS, STATUS_COLORS } from '../../shared/constants';
+import { FILE_TYPE_COLORS, FILE_TYPE_ICONS, STATUS_COLORS } from '../../shared/constants';
 import { StatusBadge } from './StatusBadge';
 
 interface NodeHeaderProps {
@@ -50,10 +50,12 @@ export function NodeHeader({ fileType, uri, content, accentColor, onOpen }: Node
   const fm = useMemo(() => (fileType === 'markdown' ? extractFrontmatter(content) : {}), [content, fileType]);
   const title = fm.title ?? filenameFromUri(uri);
   const icon = FILE_TYPE_ICONS[fileType] ?? 'file';
+  // - type-based tint for background; accent color stays on the border only
+  const typeColor = FILE_TYPE_COLORS[fileType] ?? FILE_TYPE_COLORS['unknown'];
 
   return (
     <div
-      style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderBottom: `1px solid ${accentColor}40`, background: `${accentColor}12`, flexShrink: 0, minHeight: 26 }}
+      style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderBottom: `1px solid ${accentColor}40`, background: `${typeColor}22`, flexShrink: 0, minHeight: 26 }}
     >
       {/* - codicon icon */}
       <span className={`codicon codicon-${icon}`} style={{ fontSize: 12, opacity: 0.7, flexShrink: 0 }} />

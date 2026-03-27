@@ -57,3 +57,14 @@ export const FILE_TYPE_ICONS: Record<string, string> = {
   notion:   'book',
   unknown:  'file',
 };
+
+/** - file type → header accent color (used as low-opacity tint in NodeHeader) */
+export const FILE_TYPE_COLORS: Record<string, string> = {
+  markdown: '#4b9ef5',  //  — documents / notes
+  notebook: '#f59e0b',  //  — Jupyter notebooks
+  python:   '#3fb950',  //  — Python source
+  yaml:     '#a78bfa',  //  — config / data
+  image:    '#727df4',  //  — visual assets
+  notion:   '#e2e8f0',  //  — Notion pages
+  unknown:  '#6b7280',  //  — unrecognised files
+};

@@ -16,6 +16,7 @@ import {
   Edge,
   Connection,
   ConnectionMode,
+  OnConnectEnd,
   useNodesState,
   useEdgesState,
   useReactFlow,
@@ -174,6 +175,45 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
     scheduleSave(updated);
   }, [setEdges, scheduleSave]);
 
+  // - drop connection on node body (not on a specific handle) → connect to nearest side
+  const onConnectEnd: OnConnectEnd = useCallback((event, connectionState) => {
+    // - valid connections (dropped on a handle) are handled by onConnect above
+    if (connectionState.isValid || !connectionState.fromNode) return;
+
+    // - find the node element under the drop position
+    const mouseEvent = 'clientX' in event ? event as MouseEvent : (event as TouchEvent).changedTouches[0];
+    const el = document.elementFromPoint(mouseEvent.clientX, mouseEvent.clientY);
+    const nodeEl = el?.closest<HTMLElement>('[data-id]');
+    const targetNodeId = nodeEl?.dataset.id;
+    if (!targetNodeId || targetNodeId === connectionState.fromNode.id) return;
+
+    // - infer nearest side from drop point relative to node bounding box
+    const rect = nodeEl!.getBoundingClientRect();
+    const dx = mouseEvent.clientX - (rect.left + rect.width  / 2);
+    const dy = mouseEvent.clientY - (rect.top  + rect.height / 2);
+    const toSide: CanvasEdge['fromSide'] = Math.abs(dx) > Math.abs(dy)
+      ? (dx > 0 ? 'right' : 'left')
+      : (dy > 0 ? 'bottom' : 'top');
+
+    const fromSide = (connectionState.fromHandle?.id ?? 'right') as CanvasEdge['fromSide'];
+
+    const newEdge: CanvasEdge = {
+      id:       `${connectionState.fromNode.id}-${targetNodeId}-${Date.now()}`,
+      fromNode: connectionState.fromNode.id,
+      fromSide,
+      toNode:   targetNodeId,
+      toSide,
+      toEnd:    'arrow',
+    };
+    setEdges(eds => addEdge(toFlowEdge(newEdge), eds));
+    const updated: CanvasData = {
+      ...canvasRef.current,
+      edges: [...canvasRef.current.edges, newEdge],
+    };
+    canvasRef.current = updated;
+    scheduleSave(updated);
+  }, [setEdges, scheduleSave]);
+
   const onNodesDelete = useCallback((deleted: Node[]) => {
     const deletedIds = new Set(deleted.map(n => n.id));
     const updated: CanvasData = {
@@ -204,7 +244,11 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
 
   // ─── file drop from VS Code Explorer ────────────────────────────────────────
 
-  const { screenToFlowPosition } = useReactFlow();
+  const rfInstance = useReactFlow();
+  const { screenToFlowPosition } = rfInstance;
+  // - keep a ref so the stable navigation useEffect can call setCenter / getViewport
+  const rfRef = useRef(rfInstance);
+  useEffect(() => { rfRef.current = rfInstance; });
 
   const onDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -332,6 +376,26 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
       setNodes(nds => nds.map(n => ({ ...n, selected: n.id === targetId })));
       // - focus the target node's DOM element so Enter-to-edit works immediately
       window.dispatchEvent(new CustomEvent('skena:focusNode', { detail: { id: targetId } }));
+
+      // - pan viewport to keep the target node visible
+      const target = nodesRef.current.find(n => n.id === targetId);
+      if (target) {
+        const nodeCenter = {
+          x: target.position.x + Number(target.style?.width  ?? 200) / 2,
+          y: target.position.y + Number(target.style?.height ?? 150) / 2,
+        };
+        const { x: vx, y: vy, zoom } = rfRef.current.getViewport();
+        const margin = 80 / zoom;                         // - 80px screen-space margin
+        const left   = -vx / zoom + margin;
+        const top    = -vy / zoom + margin;
+        const right  = left + window.innerWidth  / zoom - margin * 2;
+        const bottom = top  + window.innerHeight / zoom - margin * 2;
+        const inView = nodeCenter.x > left && nodeCenter.x < right &&
+                       nodeCenter.y > top  && nodeCenter.y < bottom;
+        if (!inView) {
+          rfRef.current.setCenter(nodeCenter.x, nodeCenter.y, { duration: 250, zoom });
+        }
+      }
     };
 
     window.addEventListener('keydown', handler);
@@ -339,12 +403,13 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
   }, [setNodes]); // - setNodes is stable; nodesRef carries live state
 
   // - listen for node resize-end events dispatched by NodeResizer inside each node component
+  // - params include x/y because top-left resize moves the node origin as well as changing size
   useEffect(() => {
     const handler = (e: Event) => {
-      const { id, width, height } = (e as CustomEvent<{ id: string; width: number; height: number }>).detail;
+      const { id, x, y, width, height } = (e as CustomEvent<{ id: string; x: number; y: number; width: number; height: number }>).detail;
       const updated: CanvasData = {
         ...canvasRef.current,
-        nodes: canvasRef.current.nodes.map(n => n.id === id ? { ...n, width, height } : n),
+        nodes: canvasRef.current.nodes.map(n => n.id === id ? { ...n, x, y, width, height } : n),
       };
       canvasRef.current = updated;
       scheduleSave(updated);
@@ -385,10 +450,12 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
       onEdgesChange={onEdgesChange}
       onNodeDragStop={onNodeDragStop}
       onConnect={onConnect}
+      onConnectEnd={onConnectEnd}
       onNodesDelete={onNodesDelete}
       onEdgesDelete={onEdgesDelete}
       onNodeDoubleClick={onNodeDoubleClick}
       connectionMode={ConnectionMode.Loose}
+      connectionRadius={35}
       disableKeyboardA11y={true}
       onDragOver={onDragOver}
       onDrop={onDrop}

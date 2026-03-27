@@ -8,13 +8,21 @@ import { EdgeProps, BaseEdge, EdgeLabelRenderer, getStraightPath, getBezierPath 
 export function LabeledEdgeComponent({
   id, sourceX, sourceY, targetX, targetY,
   sourcePosition, targetPosition,
-  style, label, markerEnd,
+  style, label, markerEnd, selected,
 }: EdgeProps): JSX.Element {
   const [edgePath, labelX, labelY] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
 
+  const activeStyle = selected
+    ? {
+        ...style,
+        strokeWidth: (Number(style?.strokeWidth) || 1.5) + 1,
+        filter: `drop-shadow(0 0 4px ${style?.stroke ?? '#888888'})`,
+      }
+    : style;
+
   return (
     <>
-      <BaseEdge id={id} path={edgePath} style={style} markerEnd={markerEnd} />
+      <BaseEdge id={id} path={edgePath} style={activeStyle} markerEnd={markerEnd} />
       {label && (
         <EdgeLabelRenderer>
           <div

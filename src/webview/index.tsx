@@ -37,6 +37,7 @@ import { App } from './App';
 import './styles/canvas.css';
 import './styles/markdown.css';
 import 'katex/dist/katex.min.css';
+import '@vscode/codicons/dist/codicon.css';
 
 // - VS Code API is injected by the webview host at runtime
 declare function acquireVsCodeApi(): {
