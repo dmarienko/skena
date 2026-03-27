@@ -82,6 +82,34 @@ export function activate(context: vscode.ExtensionContext): void {
       const panel = SkenaEditorProvider.activePanel;
       if (!panel) return;
       panel.webview.postMessage({ type: 'addNodeTrigger' });
+    }),
+
+    // - Ctrl+Shift+J / Ctrl+Shift+K overrides: VS Code intercepts these globally
+    // - ("Toggle Panel" / "Delete Line") before the webview keydown handler fires.
+    // - Route them through commands with `when: activeCustomEditorId == skena.canvasEditor`.
+    vscode.commands.registerCommand('skena.addTextNodeDown', () => {
+      const panel = SkenaEditorProvider.activePanel;
+      if (!panel) return;
+      panel.webview.postMessage({ type: 'addTextNodeTrigger', direction: 'J' });
+    }),
+
+    vscode.commands.registerCommand('skena.addTextNodeUp', () => {
+      const panel = SkenaEditorProvider.activePanel;
+      if (!panel) return;
+      panel.webview.postMessage({ type: 'addTextNodeTrigger', direction: 'K' });
+    }),
+
+    // - Ctrl+Shift+Left / Ctrl+Shift+Right: intercepted by VS Code ("select word")
+    vscode.commands.registerCommand('skena.addTextNodeLeft', () => {
+      const panel = SkenaEditorProvider.activePanel;
+      if (!panel) return;
+      panel.webview.postMessage({ type: 'addTextNodeTrigger', direction: 'H' });
+    }),
+
+    vscode.commands.registerCommand('skena.addTextNodeRight', () => {
+      const panel = SkenaEditorProvider.activePanel;
+      if (!panel) return;
+      panel.webview.postMessage({ type: 'addTextNodeTrigger', direction: 'L' });
     })
   );
 

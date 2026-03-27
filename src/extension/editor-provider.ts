@@ -22,6 +22,9 @@ import {
   CanvasNode,
   CanvasEdge,
   FileNode,
+  TextNode,
+  LinkNode,
+  PortalNode,
   HostToWebview,
   WebviewToHost,
   MsgRequestFile,
@@ -389,6 +392,10 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     resolver:  FileResolver,
     send:      (m: HostToWebview) => void,
   ): Promise<void> {
+    // - sentinel values for special "create" items
+    const NEW_TEXT_NOTE = '__skena_new_text_note__';
+    const NEW_URL       = '__skena_new_url__';
+
     // - vault entries
     const vaultEntries = this.indexer.all();
 
@@ -403,6 +410,18 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const vaultPaths = new Set(vaultEntries.map(e => e.fsPath).filter(Boolean));
 
     type Item = vscode.QuickPickItem & { canvasUri: string };
+
+    // - special items: create an inline text node or a URL/link node
+    const newTextItem: Item = {
+      label:       '$(edit)  New text note',
+      description: 'Inline markdown note (no file)',
+      canvasUri:   NEW_TEXT_NOTE,
+    };
+    const newUrlItem: Item = {
+      label:       '$(link)  New URL',
+      description: 'External link node (http/https)',
+      canvasUri:   NEW_URL,
+    };
 
     const vaultItems: Item[] = vaultEntries.map(e => ({
       label:       e.title,
@@ -423,6 +442,10 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       }));
 
     const items: Item[] = [
+      // - create options at the top so they're always visible without scrolling
+      { label: 'Create', kind: vscode.QuickPickItemKind.Separator, canvasUri: '' },
+      newTextItem,
+      newUrlItem,
       ...(vaultItems.length ? [
         { label: 'Vault', kind: vscode.QuickPickItemKind.Separator, canvasUri: '' },
         ...vaultItems,
@@ -434,7 +457,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     ];
 
     const picked = await vscode.window.showQuickPick(items, {
-      placeHolder:       'Search vault and workspace files to add…',
+      placeHolder:        'Add node — search vault / workspace, or create text note…',
       matchOnDescription: true,
       matchOnDetail:      true,
     });
@@ -442,15 +465,34 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     if (!picked || !picked.canvasUri) return; // - cancelled or separator clicked
 
     const nodeId = `node-${Date.now()}`;
-    const newNode: FileNode = {
-      id:     nodeId,
-      type:   'file',
-      file:   picked.canvasUri,
-      x:      Math.round(msg.position.x),
-      y:      Math.round(msg.position.y),
-      width:  400,
-      height: 300,
-    };
+    const x      = Math.round(msg.position.x);
+    const y      = Math.round(msg.position.y);
+
+    let newNode: FileNode | TextNode | LinkNode | PortalNode;
+    let autoEdit = false;
+
+    if (picked.canvasUri === NEW_TEXT_NOTE) {
+      // - inline text node — opens Monaco immediately so the user can start typing
+      newNode = { id: nodeId, type: 'text', text: '', x, y, width: 400, height: 300 };
+      autoEdit = true;
+    } else if (picked.canvasUri === NEW_URL) {
+      // - prompt for URL, then create a link node
+      const url = await vscode.window.showInputBox({
+        prompt:            'Enter URL',
+        placeHolder:       'https://example.com',
+        validateInput: v => {
+          if (!v.trim()) return 'URL cannot be empty';
+          try { new URL(v.trim()); return undefined; } catch { return 'Enter a valid URL (https://…)'; }
+        },
+      });
+      if (!url) return; // - user cancelled the input box
+      newNode = { id: nodeId, type: 'link', url: url.trim(), x, y, width: 320, height: 80 };
+    } else if (picked.canvasUri.endsWith('.canvas')) {
+      // - .canvas file → portal node (circle shape, opens linked canvas on click)
+      newNode = { id: nodeId, type: 'portal', canvas: picked.canvasUri, x, y, width: 200, height: 200 };
+    } else {
+      newNode = { id: nodeId, type: 'file', file: picked.canvasUri, x, y, width: 400, height: 300 };
+    }
 
     let edge: CanvasEdge | undefined;
     if (msg.fromNodeId && msg.fromSide && msg.toSide) {
@@ -464,7 +506,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       };
     }
 
-    send({ type: 'addNodeResult', node: newNode, edge });
+    send({ type: 'addNodeResult', node: newNode, edge, autoEdit });
   }
 
   private async handleChatMessage(

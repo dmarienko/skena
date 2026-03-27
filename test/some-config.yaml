@@ -6,7 +6,6 @@ description:
   - Entry threshold 0.8, cancel 0.5, leverage-based sizing
   - Backtest period matches model evaluation window (2025-01-01 to 2025-06-01)
   - Universe — BTCUSDT + ETHUSDT (Binance UM)
-
 strategy: xmetals.reversion.meta.metatrader0.MetaTraderLeverage
 
 tags:

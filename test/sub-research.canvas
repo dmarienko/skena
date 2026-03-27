@@ -17,6 +17,51 @@
       "y": 607,
       "width": 402,
       "height": 395
+    },
+    {
+      "id": "node-1774624125112",
+      "type": "text",
+      "text": "# Next steps\r\n- Wake up",
+      "x": 242,
+      "y": 1050,
+      "width": 400,
+      "height": 104
+    },
+    {
+      "id": "text-mn935ze1-vxk6",
+      "type": "text",
+      "text": "# Hello",
+      "x": 242,
+      "y": 1202,
+      "width": 400,
+      "height": 300
+    },
+    {
+      "id": "node-1774627144192",
+      "type": "file",
+      "file": "./some-config.yaml",
+      "x": 242,
+      "y": 1550,
+      "width": 400,
+      "height": 300
+    },
+    {
+      "id": "node-1774627147825",
+      "type": "file",
+      "file": "./test1.md",
+      "x": 690,
+      "y": 1550,
+      "width": 400,
+      "height": 300
+    },
+    {
+      "id": "node-1774627160066",
+      "type": "file",
+      "file": "./sample.canvas",
+      "x": 846,
+      "y": 655,
+      "width": 400,
+      "height": 300
     }
   ],
   "edges": [
@@ -26,6 +71,46 @@
       "fromSide": "bottom",
       "toNode": "node-1774618743797-0",
       "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1774624125112",
+      "fromNode": "node-1774618743797-0",
+      "fromSide": "bottom",
+      "toNode": "node-1774624125112",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "node-1774624125112-text-mn935ze1-vxk6-1774627117417",
+      "fromNode": "node-1774624125112",
+      "fromSide": "bottom",
+      "toNode": "text-mn935ze1-vxk6",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1774627144192",
+      "fromNode": "text-mn935ze1-vxk6",
+      "fromSide": "bottom",
+      "toNode": "node-1774627144192",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1774627147825",
+      "fromNode": "node-1774627144192",
+      "fromSide": "right",
+      "toNode": "node-1774627147825",
+      "toSide": "left",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1774627160066",
+      "fromNode": "node-1774618743797-0",
+      "fromSide": "right",
+      "toNode": "node-1774627160066",
+      "toSide": "left",
       "toEnd": "arrow"
     }
   ]

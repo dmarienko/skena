@@ -80,6 +80,16 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
     return () => window.removeEventListener('skena:focusNode', handler);
   }, [id]);
 
+  // - auto-open Monaco when a new text note is created via QuickPick
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { id: targetId } = (e as CustomEvent<{ id: string }>).detail;
+      if (targetId === id) setEditing(true);
+    };
+    window.addEventListener('skena:enterEdit', handler);
+    return () => window.removeEventListener('skena:enterEdit', handler);
+  }, [id]);
+
   return (
     <div
       ref={wrapperRef}

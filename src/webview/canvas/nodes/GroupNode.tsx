@@ -22,7 +22,7 @@ export function GroupNodeComponent({ data, id, selected }: NodeProps): JSX.Eleme
         }))}
       />
       {node.label && (
-        <span style={{ position: 'absolute', top: 8, left: 10, fontWeight: 600, fontSize: 11, color: node.accentColor ?? 'var(--vscode-foreground)', opacity: 0.7, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        <span style={{ position: 'absolute', top: 8, left: 10, fontWeight: 600, fontSize: 16, color: node.accentColor ?? 'var(--vscode-foreground)', opacity: 0.7, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
           {node.label}
         </span>
       )}

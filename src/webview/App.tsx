@@ -99,6 +99,10 @@ export function App(): JSX.Element {
           // - tell CanvasView to compute viewport centre and send addNodeRequest
           window.dispatchEvent(new CustomEvent('skena:addNodeTrigger'));
           break;
+        case 'addTextNodeTrigger':
+          // - VS Code commands skena.addTextNodeDown/Up fired (ctrl+shift+j/k overrides)
+          window.dispatchEvent(new CustomEvent('skena:addTextNodeTrigger', { detail: { direction: msg.direction } }));
+          break;
         case 'chatChunk':
         case 'agentNodeCreated':
           window.dispatchEvent(new CustomEvent('skena:chat', { detail: msg }));

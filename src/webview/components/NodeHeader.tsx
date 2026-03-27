@@ -55,13 +55,13 @@ export function NodeHeader({ fileType, uri, content, accentColor, onOpen }: Node
 
   return (
     <div
-      style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderBottom: `1px solid ${accentColor}40`, background: `${typeColor}22`, flexShrink: 0, minHeight: 26 }}
+      style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 10px', borderBottom: `1px solid ${accentColor}40`, background: `${typeColor}22`, flexShrink: 0, minHeight: 34 }}
     >
       {/* - codicon icon */}
-      <span className={`codicon codicon-${icon}`} style={{ fontSize: 12, opacity: 0.7, flexShrink: 0 }} />
+      <span className={`codicon codicon-${icon}`} style={{ fontSize: 16, opacity: 0.7, flexShrink: 0 }} />
 
       <span
-        style={{ flex: 1, fontSize: 11, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}
+        style={{ flex: 1, fontSize: 16, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}
         onClick={onOpen}
         title={uri}
       >
@@ -69,7 +69,7 @@ export function NodeHeader({ fileType, uri, content, accentColor, onOpen }: Node
       </span>
 
       {fm.status && <StatusBadge status={fm.status} />}
-      {fm.type   && <span style={{ fontSize: 9, opacity: 0.5, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{fm.type}</span>}
+      {fm.type   && <span style={{ fontSize: 11, opacity: 0.5, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{fm.type}</span>}
     </div>
   );
 }

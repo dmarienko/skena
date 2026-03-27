@@ -4,9 +4,9 @@
       "id": "node1",
       "type": "text",
       "x": 132,
-      "y": -1186,
-      "width": 412,
-      "height": 360,
+      "y": -1257,
+      "width": 411,
+      "height": 534,
       "color": "4",
       "text": "# Backtest trend following model\r\n\r\n- 1. tests image\r\n---\r\n\r\n- 2. tests image 2\r\n---\r\n\r\n- 3. tests sentence 3\r\n---\r\n\r\n- 4. Test anything\r\n---\r\n\r\n\r\n$$\\zeta(x) = \\frac{1}{a} \\sum^{N}_{k=0}{x^k}$$\r\n\r\n\r\n![Image](image.svg)\r\n\r\n\r\nCool here we can write different content !\r\n\r\n# I've another great idea to share !\r\n\r\n  - Meta strategy — HeritageReverseStrategy 15min, CUSUM 0.05 targets\r\n  - Two alpha nodes (Long + Short), equal weights 1.0\r\n  - RandomForest 500 estimators, ECDF transform, weekly walk-forward retrain\r\n  - Entry threshold 0.8, cancel 0.5, leverage-based sizing\r\n  - Backtest period matches model evaluation window (2025-01-01 to 2025-06-01)\r\n  - Universe — BTCUSDT + ETHUSDT (Binance UM)\r\n  - nemesis"
     },
@@ -31,22 +31,11 @@
       "content": "### Latest Backtest\n\n| Metric | Value |\n|---|---|\n| Sharpe | -0.85 |\n| MaxDD | 55.4% |\n| Period | 2021–2026 |"
     },
     {
-      "id": "node5",
-      "type": "portal",
-      "x": -291,
-      "y": -638,
-      "width": 250,
-      "height": 140,
-      "color": "5",
-      "canvas": "./sub-research.canvas",
-      "label": "ATR experiments"
-    },
-    {
       "id": "node-1774042036432-0",
       "type": "file",
       "file": "test1.md",
       "x": -1358,
-      "y": -2076,
+      "y": -2068,
       "width": 904,
       "height": 1095
     },
@@ -55,7 +44,7 @@
       "type": "file",
       "file": "image.svg",
       "x": 138,
-      "y": -638,
+      "y": -558,
       "width": 400,
       "height": 300
     },
@@ -64,7 +53,7 @@
       "type": "file",
       "file": "some-config.yaml",
       "x": 138,
-      "y": -1635,
+      "y": -1620,
       "width": 400,
       "height": 300
     },
@@ -72,19 +61,64 @@
       "id": "node-1774621572860",
       "type": "file",
       "file": "./my-notebook.ipynb",
-      "x": 826,
-      "y": -1790,
+      "x": 876,
+      "y": -1620,
       "width": 400,
       "height": 300
     },
     {
-      "id": "node-1774622177920",
-      "type": "file",
-      "file": "./some-config.yaml",
-      "x": -291,
-      "y": -2207,
+      "id": "node-1774627877759",
+      "type": "link",
+      "url": "https://github.com/neurotrader888/market-structure/blob/main/hierarchical_extremes.py",
+      "x": -1833,
+      "y": -1560,
+      "width": 320,
+      "height": 80
+    },
+    {
+      "id": "node-1774628532830",
+      "type": "portal",
+      "canvas": "./sub-research.canvas",
+      "x": 1515,
+      "y": -1173,
+      "width": 200,
+      "height": 200
+    },
+    {
+      "id": "node-1774628735461",
+      "type": "text",
+      "text": "# backtest new config\r\n\r\nz is new parameter value",
+      "x": -1401,
+      "y": -817,
       "width": 400,
       "height": 300
+    },
+    {
+      "id": "node-1774628749547",
+      "type": "file",
+      "file": "./some-config.yaml",
+      "x": -659,
+      "y": -858,
+      "width": 400,
+      "height": 300
+    },
+    {
+      "id": "node-1774628807372",
+      "type": "file",
+      "file": "./my-notebook.ipynb",
+      "x": -1412,
+      "y": -510,
+      "width": 528,
+      "height": 580
+    },
+    {
+      "id": "node-1774628840438",
+      "type": "link",
+      "url": "https://xlydian.com",
+      "x": -619,
+      "y": -448,
+      "width": 320,
+      "height": 80
     }
   ],
   "edges": [
@@ -121,14 +155,6 @@
       "toEnd": "arrow"
     },
     {
-      "id": "node1-node5-1774618824723",
-      "fromNode": "node1",
-      "fromSide": "bottom",
-      "toNode": "node5",
-      "toSide": "top",
-      "toEnd": "arrow"
-    },
-    {
       "id": "node3-node-1774042036432-0-1774619544538",
       "fromNode": "node3",
       "fromSide": "bottom",
@@ -142,6 +168,54 @@
       "fromSide": "right",
       "toNode": "node-1774621572860",
       "toSide": "left",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1774627878904",
+      "fromNode": "node-1774042036432-0",
+      "fromSide": "left",
+      "toNode": "node-1774627877759",
+      "toSide": "right",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "node-1774621572860-node-1774628532830-1774628599875",
+      "fromNode": "node-1774621572860",
+      "fromSide": "bottom",
+      "toNode": "node-1774628532830",
+      "toSide": "left",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1774628735461",
+      "fromNode": "node-1774042036432-0",
+      "fromSide": "bottom",
+      "toNode": "node-1774628735461",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1774628749547",
+      "fromNode": "node-1774628735461",
+      "fromSide": "right",
+      "toNode": "node-1774628749547",
+      "toSide": "left",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1774628807372",
+      "fromNode": "node-1774628735461",
+      "fromSide": "bottom",
+      "toNode": "node-1774628807372",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1774628848513",
+      "fromNode": "node-1774628749547",
+      "fromSide": "bottom",
+      "toNode": "node-1774628840438",
+      "toSide": "top",
       "toEnd": "arrow"
     }
   ]

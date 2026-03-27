@@ -194,6 +194,51 @@ function getHelperLines(
   return { horizontal, vertical, snapX, snapY };
 }
 
+// ─── layout helpers ───────────────────────────────────────────────────────────
+
+/**
+ * Starting from (x, y), move in the push direction until the proposed
+ * newW × newH bounding-box doesn't overlap any existing node.
+ *
+ * pushX / pushY is the movement direction: -1, 0, or +1.
+ * When both are 0 (no preferred direction) the function returns immediately
+ * because there is nowhere to push.
+ */
+function findFreePosition(
+  existingNodes: Node[],
+  x:     number,
+  y:     number,
+  newW:  number,
+  newH:  number,
+  pushX: -1 | 0 | 1,
+  pushY: -1 | 0 | 1,
+  gap = 48,
+): { x: number; y: number } {
+  if (pushX === 0 && pushY === 0) return { x: Math.round(x), y: Math.round(y) };
+
+  for (let iter = 0; iter < 40; iter++) {
+    const hit = existingNodes.find(n => {
+      if (n.type === 'group') return false;
+      const nw = Number(n.style?.width  ?? 200);
+      const nh = Number(n.style?.height ?? 150);
+      return x         < n.position.x + nw + gap &&
+             x + newW  > n.position.x - gap      &&
+             y         < n.position.y + nh + gap  &&
+             y + newH  > n.position.y - gap;
+    });
+    if (!hit) break;
+
+    // - jump past the hit node in the push direction
+    const nw = Number(hit.style?.width  ?? 200);
+    const nh = Number(hit.style?.height ?? 150);
+    if (pushX > 0) x = hit.position.x + nw + gap;
+    if (pushX < 0) x = hit.position.x - newW - gap;
+    if (pushY > 0) y = hit.position.y + nh + gap;
+    if (pushY < 0) y = hit.position.y - newH - gap;
+  }
+  return { x: Math.round(x), y: Math.round(y) };
+}
+
 // ─── per-canvas focus memory (survives canvas reloads within a session) ──────
 
 /**
@@ -512,6 +557,60 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
     return bestId;
   }, []); // - rfRef + nodesRef always current
 
+  // ─── add text node in direction (shared by keyboard and VS Code command paths) ─
+
+  /**
+   * Creates an empty TextNode connected to the currently focused node,
+   * placed in direction dir (H=left, J=down, K=up, L=right), collision-free.
+   * Reuses the skena:addNodeResult handler for wiring (nodes, edges, save, focus, autoEdit).
+   */
+  const addTextNodeInDirection = useCallback((dir: 'H' | 'J' | 'K' | 'L') => {
+    const current = nodesRef.current.find(n => n.selected && n.type !== 'group');
+    if (!current) return;
+
+    const cw = Number(current.style?.width  ?? 400);
+    const ch = Number(current.style?.height ?? 300);
+    const nw = 400, nh = 300, GAP = 40;
+
+    const dirMap: Record<string, { dx: number; dy: number; pushX: -1|0|1; pushY: -1|0|1; fromSide: NodeSide; toSide: NodeSide }> = {
+      L: { dx:  cw + GAP, dy: 0,         pushX:  1, pushY:  0, fromSide: 'right',  toSide: 'left'   },
+      H: { dx: -nw - GAP, dy: 0,         pushX: -1, pushY:  0, fromSide: 'left',   toSide: 'right'  },
+      J: { dx: 0,         dy:  ch + GAP, pushX:  0, pushY:  1, fromSide: 'bottom', toSide: 'top'    },
+      K: { dx: 0,         dy: -nh - GAP, pushX:  0, pushY: -1, fromSide: 'top',    toSide: 'bottom' },
+    };
+    const { dx, dy, pushX, pushY, fromSide, toSide } = dirMap[dir];
+
+    const rawX = current.position.x + dx;
+    const rawY = current.position.y + dy;
+    const { x, y } = findFreePosition(nodesRef.current, rawX, rawY, nw, nh, pushX, pushY);
+
+    const nodeId = `text-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const newTextNode: CanvasNode = { id: nodeId, type: 'text', text: '', x, y, width: nw, height: nh };
+    const newTextEdge: CanvasEdge = {
+      id:       `${current.id}-${nodeId}-${Date.now()}`,
+      fromNode: current.id,
+      fromSide,
+      toNode:   nodeId,
+      toSide,
+      toEnd:    'arrow',
+    };
+
+    // - reuse the addNodeResult event handler: handles nodes/edges/save/focus/autoEdit
+    window.dispatchEvent(new CustomEvent('skena:addNodeResult', {
+      detail: { type: 'addNodeResult', node: newTextNode, edge: newTextEdge, autoEdit: true } satisfies MsgAddNodeResult,
+    }));
+  }, []); // - only uses nodesRef (always current)
+
+  // - VS Code command path for Ctrl+Shift+J / Ctrl+Shift+K (intercepted before webview)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { direction } = (e as CustomEvent<{ direction: 'H' | 'J' | 'K' | 'L' }>).detail;
+      addTextNodeInDirection(direction);
+    };
+    window.addEventListener('skena:addTextNodeTrigger', handler);
+    return () => window.removeEventListener('skena:addTextNodeTrigger', handler);
+  }, [addTextNodeInDirection]);
+
   // ─── keyboard navigation ──────────────────────────────────────────────────
 
   useEffect(() => {
@@ -562,6 +661,41 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
         active?.closest('.monaco-editor')
       ) return;
 
+      // - z / Z: zoom in / out centred on viewport centre
+      if (!e.ctrlKey && !e.metaKey && !e.shiftKey && e.key === 'z') {
+        e.preventDefault();
+        const STEP = 0.15;
+        const { x: tx, y: ty, zoom } = rfRef.current.getViewport();
+        const newZoom = Math.max(0.05, Math.min(3, zoom * (1 + STEP)));
+        const scale   = newZoom / zoom;
+        const cx = window.innerWidth  / 2;
+        const cy = window.innerHeight / 2;
+        rfRef.current.setViewport({ x: cx - (cx - tx) * scale, y: cy - (cy - ty) * scale, zoom: newZoom });
+        return;
+      }
+      if (!e.ctrlKey && !e.metaKey && e.shiftKey && e.key === 'Z') {
+        e.preventDefault();
+        const STEP = 0.15;
+        const { x: tx, y: ty, zoom } = rfRef.current.getViewport();
+        const newZoom = Math.max(0.05, Math.min(3, zoom / (1 + STEP)));
+        const scale   = newZoom / zoom;
+        const cx = window.innerWidth  / 2;
+        const cy = window.innerHeight / 2;
+        rfRef.current.setViewport({ x: cx - (cx - tx) * scale, y: cy - (cy - ty) * scale, zoom: newZoom });
+        return;
+      }
+
+      // - Ctrl+Shift+{H,L}: add empty text node left/right via keydown.
+      // - J and K are NOT handled here — VS Code fires the command (skena.addTextNodeDown/Up)
+      // - AND delivers the keydown to the webview, which would cause double node creation.
+      // - J/K arrive exclusively through the skena:addTextNodeTrigger event handler below.
+      if (e.ctrlKey && e.shiftKey && ['H', 'L'].includes(e.key)) {
+        if (!nodesRef.current.some(n => n.selected && n.type !== 'group')) return;
+        e.preventDefault();
+        addTextNodeInDirection(e.key as 'H' | 'L');
+        return;
+      }
+
       // - Shift+{H,J,K,L}: add node beside the focused node and connect it
       if (e.shiftKey && ['H', 'J', 'K', 'L'].includes(e.key)) {
         const current = nodesRef.current.find(n => n.selected && n.type !== 'group');
@@ -572,17 +706,23 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
         const ch = Number(current.style?.height ?? 300);
         const nw = 400, nh = 300, GAP = 40;
 
-        const dirMap: Record<string, { dx: number; dy: number; fromSide: NodeSide; toSide: NodeSide }> = {
-          L: { dx:  cw + GAP,       dy: 0,            fromSide: 'right',  toSide: 'left'   },
-          H: { dx: -nw - GAP,       dy: 0,            fromSide: 'left',   toSide: 'right'  },
-          J: { dx: 0,               dy:  ch + GAP,    fromSide: 'bottom', toSide: 'top'    },
-          K: { dx: 0,               dy: -nh - GAP,    fromSide: 'top',    toSide: 'bottom' },
+        type PD = -1 | 0 | 1;
+        const dirMap: Record<string, { dx: number; dy: number; pushX: PD; pushY: PD; fromSide: NodeSide; toSide: NodeSide }> = {
+          L: { dx:  cw + GAP, dy: 0,        pushX:  1, pushY:  0, fromSide: 'right',  toSide: 'left'   },
+          H: { dx: -nw - GAP, dy: 0,        pushX: -1, pushY:  0, fromSide: 'left',   toSide: 'right'  },
+          J: { dx: 0,         dy:  ch + GAP, pushX:  0, pushY:  1, fromSide: 'bottom', toSide: 'top'    },
+          K: { dx: 0,         dy: -nh - GAP, pushX:  0, pushY: -1, fromSide: 'top',    toSide: 'bottom' },
         };
-        const { dx, dy, fromSide, toSide } = dirMap[e.key];
+        const { dx, dy, pushX, pushY, fromSide, toSide } = dirMap[e.key];
+
+        // - find the first collision-free position in the placement direction
+        const rawX = current.position.x + dx;
+        const rawY = current.position.y + dy;
+        const { x, y } = findFreePosition(nodesRef.current, rawX, rawY, nw, nh, pushX, pushY);
 
         vscodePostMessage({
           type:       'addNodeRequest',
-          position:   { x: current.position.x + dx, y: current.position.y + dy },
+          position:   { x, y },
           fromNodeId: current.id,
           fromSide,
           toSide,
@@ -633,24 +773,22 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [setNodes, focusNodeById, pickViewportNode]); // - nodesRef carries live state
+  }, [setNodes, focusNodeById, pickViewportNode, addTextNodeInDirection]); // - nodesRef carries live state
 
   // - handle skena:addNodeTrigger from VS Code ctrl+n command override
-  // - compute viewport centre in flow coords and send addNodeRequest to extension
+  // - compute viewport centre in flow coords, avoid overlaps, send addNodeRequest
   useEffect(() => {
     const handler = () => {
       const { x: tx, y: ty, zoom } = rfRef.current.getViewport();
-      vscodePostMessage({
-        type:     'addNodeRequest',
-        position: {
-          x: (window.innerWidth  / 2 - tx) / zoom - 200,
-          y: (window.innerHeight / 2 - ty) / zoom - 150,
-        },
-      });
+      const rawX = (window.innerWidth  / 2 - tx) / zoom - 200;
+      const rawY = (window.innerHeight / 2 - ty) / zoom - 150;
+      // - push right if viewport centre is occupied
+      const { x, y } = findFreePosition(nodesRef.current, rawX, rawY, 400, 300, 1, 0);
+      vscodePostMessage({ type: 'addNodeRequest', position: { x, y } });
     };
     window.addEventListener('skena:addNodeTrigger', handler);
     return () => window.removeEventListener('skena:addNodeTrigger', handler);
-  }, []); // - rfRef always current
+  }, []); // - rfRef + nodesRef always current
 
   // - listen for node resize-end events dispatched by NodeResizer inside each node component
   // - params include x/y because top-left resize moves the node origin as well as changing size
@@ -734,7 +872,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
   // - receive add-node result from QuickPick (Ctrl+N / Shift+hjkl)
   useEffect(() => {
     const handler = (e: Event) => {
-      const { node: cn, edge: ce } = (e as CustomEvent<MsgAddNodeResult>).detail;
+      const { node: cn, edge: ce, autoEdit } = (e as CustomEvent<MsgAddNodeResult>).detail;
 
       // - deselect everything, then add the new node as selected
       setNodes(nds => [
@@ -760,14 +898,22 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
       scheduleSave(canvasRef.current);
 
       // - focus DOM + pan viewport to the new node
-      window.dispatchEvent(new CustomEvent('skena:focusNode', { detail: { id: cn.id } }));
+      focusNodeById(cn.id);
       const { zoom } = rfRef.current.getViewport();
       rfRef.current.setCenter(cn.x + cn.width / 2, cn.y + cn.height / 2, { duration: 250, zoom });
+
+      // - for new text notes: open Monaco immediately so the user can start typing
+      if (autoEdit) {
+        // - short delay to let the TextNodeComponent mount and attach its listener
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('skena:enterEdit', { detail: { id: cn.id } }));
+        }, 80);
+      }
     };
 
     window.addEventListener('skena:addNodeResult', handler);
     return () => window.removeEventListener('skena:addNodeResult', handler);
-  }, [setNodes, setEdges, scheduleSave]);
+  }, [setNodes, setEdges, scheduleSave, focusNodeById]);
 
   return (
     <div ref={wrapperRef} style={{ width: '100%', height: '100%' }}>

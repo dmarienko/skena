@@ -64,6 +64,22 @@
       {
         "command": "skena.newResearchLog",
         "title": "Skena: New Research Log"
+      },
+      {
+        "command": "skena.addTextNodeDown",
+        "title": "Skena: Add Text Node Below"
+      },
+      {
+        "command": "skena.addTextNodeUp",
+        "title": "Skena: Add Text Node Above"
+      },
+      {
+        "command": "skena.addTextNodeLeft",
+        "title": "Skena: Add Text Node Left"
+      },
+      {
+        "command": "skena.addTextNodeRight",
+        "title": "Skena: Add Text Node Right"
       }
     ],
     "keybindings": [
@@ -71,6 +87,42 @@
         "command": "skena.addNode",
         "key": "ctrl+n",
         "mac": "cmd+n",
+        "when": "activeCustomEditorId == skena.canvasEditor"
+      },
+      {
+        "command": "skena.addTextNodeDown",
+        "key": "ctrl+shift+j",
+        "mac": "cmd+shift+j",
+        "when": "activeCustomEditorId == skena.canvasEditor"
+      },
+      {
+        "command": "skena.addTextNodeDown",
+        "key": "ctrl+shift+down",
+        "mac": "cmd+shift+down",
+        "when": "activeCustomEditorId == skena.canvasEditor"
+      },
+      {
+        "command": "skena.addTextNodeUp",
+        "key": "ctrl+shift+k",
+        "mac": "cmd+shift+k",
+        "when": "activeCustomEditorId == skena.canvasEditor"
+      },
+      {
+        "command": "skena.addTextNodeUp",
+        "key": "ctrl+shift+up",
+        "mac": "cmd+shift+up",
+        "when": "activeCustomEditorId == skena.canvasEditor"
+      },
+      {
+        "command": "skena.addTextNodeLeft",
+        "key": "ctrl+shift+left",
+        "mac": "cmd+shift+left",
+        "when": "activeCustomEditorId == skena.canvasEditor"
+      },
+      {
+        "command": "skena.addTextNodeRight",
+        "key": "ctrl+shift+right",
+        "mac": "cmd+shift+right",
         "when": "activeCustomEditorId == skena.canvasEditor"
       }
     ],

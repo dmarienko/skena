@@ -19,11 +19,24 @@ export function PortalNodeComponent({ data, id, selected }: NodeProps): JSX.Elem
 
   return (
     <div
-      style={{ border: `2px dashed ${borderColor}`, height: '100%', borderRadius: 8, overflow: 'hidden', background: `${borderColor}0a`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', gap: 6 }}
+      style={{
+        border:         `2px solid ${borderColor}`,
+        height:         '100%',
+        borderRadius:   '50%',              // - circle shape
+        overflow:       'hidden',           // - clip content to circle
+        background:     `${borderColor}12`,
+        display:        'flex',
+        flexDirection:  'column',
+        alignItems:     'center',
+        justifyContent: 'center',
+        cursor:         'pointer',
+        gap:            4,
+        padding:        '12%',             // - keep text clear of the curved edges
+      }}
       onClick={open}
     >
       <NodeResizer
-        minWidth={100} minHeight={80}
+        minWidth={80} minHeight={80}
         isVisible={selected}
         onResizeEnd={(_, p) => window.dispatchEvent(new CustomEvent('skena:nodeResize', {
           detail: { id, x: Math.round(p.x), y: Math.round(p.y), width: Math.round(p.width), height: Math.round(p.height) },
@@ -34,9 +47,10 @@ export function PortalNodeComponent({ data, id, selected }: NodeProps): JSX.Elem
       <Handle type="source" position={Position.Bottom} id="bottom" />
       <Handle type="source" position={Position.Left}   id="left"   />
 
-      <span style={{ fontSize: 22, opacity: 0.7 }}>🔮</span>
-      <span style={{ fontSize: 12, fontWeight: 600, opacity: 0.8 }}>{node.label ?? node.canvas}</span>
-      <span style={{ fontSize: 10, opacity: 0.4 }}>click to open canvas</span>
+      <span style={{ fontSize: 18, fontWeight: 600, opacity: 0.85, textAlign: 'center', wordBreak: 'break-word', lineHeight: 1.2 }}>
+        {node.label ?? node.canvas}
+      </span>
+      <span style={{ fontSize: 11, opacity: 0.4, textAlign: 'center' }}>canvas</span>
     </div>
   );
 }

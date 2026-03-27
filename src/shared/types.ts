@@ -233,7 +233,8 @@ export type HostToWebview =
   | MsgSearchResults
   | MsgMarkdownConfig
   | MsgAddNodeResult
-  | MsgAddNodeTrigger;
+  | MsgAddNodeTrigger
+  | MsgAddTextNodeTrigger;
 
 // - Webview → Host messages
 
@@ -350,9 +351,14 @@ export interface MsgAddNodeRequest {
 
 /** Host → Webview: QuickPick resolved — add this node (and optional edge) to canvas. */
 export interface MsgAddNodeResult {
-  type:  'addNodeResult';
-  node:  CanvasNode;
-  edge?: CanvasEdge;
+  type:      'addNodeResult';
+  node:      CanvasNode;
+  edge?:     CanvasEdge;
+  /**
+   * When true the webview should immediately open the node in its native
+   * editor (Monaco for text nodes). Used for newly-created empty text notes.
+   */
+  autoEdit?: boolean;
 }
 
 /**
@@ -361,6 +367,17 @@ export interface MsgAddNodeResult {
  */
 export interface MsgAddNodeTrigger {
   type: 'addNodeTrigger';
+}
+
+/**
+ * Host → Webview: VS Code command skena.addTextNode{Down,Up} was triggered.
+ * VS Code intercepts Ctrl+Shift+J / Ctrl+Shift+K before the webview sees them,
+ * so we route them through a command with a `when` context guard.
+ * direction: uppercase HJKL matching the keyboard handler convention.
+ */
+export interface MsgAddTextNodeTrigger {
+  type:      'addTextNodeTrigger';
+  direction: 'H' | 'J' | 'K' | 'L';
 }
 
 // ─── Markdown config ─────────────────────────────────────────────────────────
