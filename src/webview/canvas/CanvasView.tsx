@@ -17,6 +17,8 @@ import {
   Connection,
   ConnectionMode,
   OnConnectEnd,
+  NodeChange,
+  NodePositionChange,
   useNodesState,
   useEdgesState,
   useReactFlow,
@@ -39,6 +41,7 @@ import { CellNodeComponent }  from './nodes/CellNode';
 import { ChatNodeComponent }  from './nodes/ChatNode';
 import { PortalNodeComponent } from './nodes/PortalNode';
 import { LabeledEdgeComponent } from './edges/LabeledEdge';
+import { HelperLines } from './HelperLines';
 
 const NODE_TYPES: NodeTypes = {
   file:   FileNodeComponent,
@@ -113,6 +116,84 @@ function patchCanvasNode(original: CanvasNode, rfNode: Node): CanvasNode {
   };
 }
 
+// ─── alignment guide helpers ──────────────────────────────────────────────────
+
+const GRID = 8; // - manual grid snap (replaces ReactFlow snapToGrid)
+
+function snapGrid(v: number): number {
+  return Math.round(v / GRID) * GRID;
+}
+
+type HelperLinesState = { horizontal?: number; vertical?: number };
+
+/**
+ * For the node being dragged, compare its six anchors (top/center/bottom,
+ * left/center/right) against the same anchors of every other node.
+ * Returns the closest matching guide line and the snapped origin position.
+ */
+function getHelperLines(
+  change: NodePositionChange,
+  nodes:  Node[],
+  threshold = 16,
+): { horizontal?: number; vertical?: number; snapX?: number; snapY?: number } {
+  const node = nodes.find(n => n.id === change.id);
+  if (!node || !change.position) return {};
+
+  const w = node.measured?.width  ?? Number(node.style?.width  ?? 200);
+  const h = node.measured?.height ?? Number(node.style?.height ?? 150);
+  const { x, y } = change.position;
+
+  let horizontal: number | undefined;
+  let vertical:   number | undefined;
+  let snapX:      number | undefined;
+  let snapY:      number | undefined;
+
+  for (const other of nodes) {
+    if (other.id === node.id || other.type === 'group') continue;
+
+    const ow = other.measured?.width  ?? Number(other.style?.width  ?? 200);
+    const oh = other.measured?.height ?? Number(other.style?.height ?? 150);
+    const ox = other.position.x;
+    const oy = other.position.y;
+
+    // - [dragged anchor, static guide line, resulting snap origin y]
+    const hCandidates: [number, number, number][] = [
+      [y,         oy,          oy],               // - top  ↔ top
+      [y + h,     oy + oh,     oy + oh - h],      // - btm  ↔ btm
+      [y + h / 2, oy + oh / 2, oy + oh / 2 - h / 2], // - mid  ↔ mid
+      [y,         oy + oh,     oy + oh],          // - top  ↔ other btm
+      [y + h,     oy,          oy - h],           // - btm  ↔ other top
+    ];
+    for (const [anchor, guide, snapped] of hCandidates) {
+      if (Math.abs(anchor - guide) < threshold) {
+        if (horizontal === undefined || Math.abs(anchor - guide) < Math.abs(anchor - horizontal)) {
+          horizontal = guide;
+          snapY = snapped;
+        }
+      }
+    }
+
+    // - [dragged anchor, static guide line, resulting snap origin x]
+    const vCandidates: [number, number, number][] = [
+      [x,         ox,          ox],               // - left  ↔ left
+      [x + w,     ox + ow,     ox + ow - w],      // - right ↔ right
+      [x + w / 2, ox + ow / 2, ox + ow / 2 - w / 2], // - mid   ↔ mid
+      [x,         ox + ow,     ox + ow],          // - left  ↔ other right
+      [x + w,     ox,          ox - w],           // - right ↔ other left
+    ];
+    for (const [anchor, guide, snapped] of vCandidates) {
+      if (Math.abs(anchor - guide) < threshold) {
+        if (vertical === undefined || Math.abs(anchor - guide) < Math.abs(anchor - vertical)) {
+          vertical = guide;
+          snapX = snapped;
+        }
+      }
+    }
+  }
+
+  return { horizontal, vertical, snapX, snapY };
+}
+
 // ─── props ────────────────────────────────────────────────────────────────────
 
 interface CanvasViewProps {
@@ -125,7 +206,30 @@ interface CanvasViewProps {
 function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
   const [nodes, setNodes, onNodesChange] = useNodesState(canvas.nodes.map(toFlowNode));
   const [edges, setEdges, onEdgesChange] = useEdgesState(canvas.edges.map(toFlowEdge));
-  const [showMinimap, setShowMinimap] = useState(false);
+  const [showMinimap,  setShowMinimap]  = useState(false);
+  const [helperLines,  setHelperLines]  = useState<HelperLinesState>({});
+
+  // - intercept onNodesChange to compute alignment guides + manual grid snap
+  // - (snapToGrid is removed from <ReactFlow> so both can coexist cleanly)
+  const customOnNodesChange = useCallback((changes: NodeChange[]) => {
+    const posChange = changes.find(
+      (c): c is NodePositionChange => c.type === 'position' && !!c.dragging && !!c.position
+    );
+
+    if (posChange?.position) {
+      const { horizontal, vertical, snapX, snapY } = getHelperLines(posChange, nodesRef.current);
+      setHelperLines({ horizontal, vertical });
+      // - snap to alignment guide if within threshold, otherwise snap to grid
+      posChange.position = {
+        x: snapX !== undefined ? snapX : snapGrid(posChange.position.x),
+        y: snapY !== undefined ? snapY : snapGrid(posChange.position.y),
+      };
+    } else if (!changes.some(c => c.type === 'position' && (c as NodePositionChange).dragging)) {
+      setHelperLines({});
+    }
+
+    onNodesChange(changes);
+  }, [onNodesChange]); // - nodesRef always current via its own useEffect
 
   // - track current canvas data for save (avoid stale closures)
   const canvasRef = useRef<CanvasData>(canvas);
@@ -149,13 +253,30 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
   const onNodeDragStop = useCallback((_: React.MouseEvent, node: Node) => {
     const original = canvasRef.current.nodes.find(n => n.id === node.id);
     if (!original) return;
+
+    // - final snap: wider threshold (20px) so a near-miss still lands on the line
+    const { snapX, snapY } = getHelperLines(
+      { type: 'position', id: node.id, position: node.position, dragging: false },
+      nodesRef.current,
+      40,
+    );
+    const finalPosition = {
+      x: snapX !== undefined ? snapX : node.position.x,
+      y: snapY !== undefined ? snapY : node.position.y,
+    };
+    if (snapX !== undefined || snapY !== undefined) {
+      setNodes(nds => nds.map(n => n.id === node.id ? { ...n, position: finalPosition } : n));
+    }
+
     const updated: CanvasData = {
       ...canvasRef.current,
-      nodes: canvasRef.current.nodes.map(n => n.id === node.id ? patchCanvasNode(n, node) : n),
+      nodes: canvasRef.current.nodes.map(n =>
+        n.id === node.id ? patchCanvasNode(n, { ...node, position: finalPosition }) : n
+      ),
     };
     canvasRef.current = updated;
     scheduleSave(updated);
-  }, [scheduleSave]);
+  }, [setNodes, scheduleSave]);
 
   const onConnect = useCallback((connection: Connection) => {
     const newEdge: CanvasEdge = {
@@ -418,6 +539,47 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
     return () => window.removeEventListener('skena:nodeResize', handler);
   }, [scheduleSave]);
 
+  // ─── custom wheel zoom (smaller step, cursor-centred) ────────────────────────
+
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = wrapperRef.current;
+    if (!el) return;
+
+    const handler = (e: WheelEvent) => {
+      // - if the event originates inside a scrollable node content area,
+      // - let ScrollableContent's own handler deal with it
+      if ((e.target as HTMLElement).closest('.skena-scrollable')) return;
+
+      // - intercept before D3 sees it and apply a finer zoom step
+      e.stopPropagation();
+      e.preventDefault();
+
+      const STEP = 0.06; // - 6% per scroll notch (D3 default ≈ 15%)
+      const { x: tx, y: ty, zoom } = rfRef.current.getViewport();
+      const dir     = e.deltaY > 0 ? -1 : 1;
+      const newZoom = Math.max(0.05, Math.min(3, zoom * (1 + STEP * dir)));
+      const scale   = newZoom / zoom;
+
+      // - keep the flow point under the cursor stationary:
+      // - localX/Y are cursor coords relative to the ReactFlow container
+      const rect = el.getBoundingClientRect();
+      const lx = e.clientX - rect.left;
+      const ly = e.clientY - rect.top;
+      rfRef.current.setViewport({
+        x:    lx - (lx - tx) * scale,
+        y:    ly - (ly - ty) * scale,
+        zoom: newZoom,
+      });
+    };
+
+    // - capture: fires before D3's bubble-phase listener on the inner pane
+    // - passive: false so we can call preventDefault (prevents browser scroll-zoom)
+    el.addEventListener('wheel', handler, { capture: true, passive: false });
+    return () => el.removeEventListener('wheel', handler, { capture: true });
+  }, []); // - rfRef always current; wrapperRef is stable
+
   // - listen for text edits committed by TextNodeComponent's Monaco editor
   useEffect(() => {
     const handler = (e: Event) => {
@@ -441,12 +603,13 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
   }, [setNodes, scheduleSave]);
 
   return (
+    <div ref={wrapperRef} style={{ width: '100%', height: '100%' }}>
     <ReactFlow
       nodes={nodes}
       edges={edges}
       nodeTypes={NODE_TYPES}
       edgeTypes={EDGE_TYPES}
-      onNodesChange={onNodesChange}
+      onNodesChange={customOnNodesChange}
       onEdgesChange={onEdgesChange}
       onNodeDragStop={onNodeDragStop}
       onConnect={onConnect}
@@ -460,8 +623,6 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
       onDragOver={onDragOver}
       onDrop={onDrop}
       fitView
-      snapToGrid
-      snapGrid={[8, 8]}
       minZoom={0.05}
       maxZoom={3}
       deleteKeyCode="Delete"
@@ -469,6 +630,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
       elevateEdgesOnSelect
     >
       <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="var(--vscode-editorIndentGuide-background)" />
+      <HelperLines horizontal={helperLines.horizontal} vertical={helperLines.vertical} />
       <Controls showInteractive={false}>
         {/* - minimap toggle button — appended after the built-in zoom/fit buttons */}
         <ControlButton
@@ -491,6 +653,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
         />
       )}
     </ReactFlow>
+    </div>
   );
 }
 

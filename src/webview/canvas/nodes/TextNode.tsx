@@ -13,6 +13,7 @@ import Editor, { OnMount } from '@monaco-editor/react';
 import { initVimMode } from 'monaco-vim';
 import { TextNode } from '../../../shared/types';
 import { MarkdownRenderer } from '../../renderers/MarkdownRenderer';
+import { ScrollableContent } from '../../components/ScrollableContent';
 
 export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as TextNode & { accentColor?: string };
@@ -163,9 +164,9 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
         </div>
       ) : (
         // - baseUri="." so relative image paths (./img.png) resolve against canvas dir
-        <div style={{ padding: 8, overflow: 'auto', flex: 1 }}>
+        <ScrollableContent style={{ padding: 8 }}>
           <MarkdownRenderer content={draft} baseUri="." />
-        </div>
+        </ScrollableContent>
       )}
     </div>
   );

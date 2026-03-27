@@ -84,6 +84,17 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             document.updateFromDisk(canvas);
             send({ type: 'canvasLoaded', canvas, canvasPath: document.uri.fsPath });
             send({ type: 'vaultIndex', entries: this.indexer.all() });
+            // - forward VS Code markdown preview settings so the webview matches the editor look
+            const mdPreview = vscode.workspace.getConfiguration('markdown.preview');
+            const md        = vscode.workspace.getConfiguration('markdown');
+            send({
+              type: 'markdownConfig',
+              config: {
+                fontFamily: mdPreview.get<string>('fontFamily'),
+                fontSize:   mdPreview.get<number>('fontSize'),
+                styles:     md.get<string[]>('styles') ?? [],
+              },
+            });
           } catch (e) {
             vscode.window.showErrorMessage(`Skena: failed to open canvas: ${e}`);
           }
@@ -350,12 +361,14 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     );
 
     // - Content Security Policy: allow scripts from extension dist + vscode-resource
+    // - https: in style-src / font-src is required for user-configured markdown.styles
+    // - (e.g. cdn.jsdelivr.net CSS that may also reference external fonts)
     const csp = [
       `default-src 'none'`,
       `script-src ${webview.cspSource} 'unsafe-inline'`,
-      `style-src ${webview.cspSource} 'unsafe-inline'`,
-      `img-src ${webview.cspSource} data: blob:`,
-      `font-src ${webview.cspSource} data:`,
+      `style-src ${webview.cspSource} 'unsafe-inline' https:`,
+      `img-src ${webview.cspSource} data: blob: https:`,
+      `font-src ${webview.cspSource} data: https:`,
     ].join('; ');
 
     return `<!DOCTYPE html>

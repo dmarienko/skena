@@ -230,7 +230,8 @@ export type HostToWebview =
   | MsgCanvasChanged
   | MsgChatChunk
   | MsgAgentNodeCreated
-  | MsgSearchResults;
+  | MsgSearchResults
+  | MsgMarkdownConfig;
 
 // - Webview → Host messages
 
@@ -324,6 +325,20 @@ export interface CanvasContext {
     toId: string;
     label?: string;
   }>;
+}
+
+// ─── Markdown config ─────────────────────────────────────────────────────────
+
+/** - mirrors the subset of VS Code's markdown.preview.* settings we consume */
+export interface MarkdownConfig {
+  fontFamily?: string;   // - markdown.preview.fontFamily
+  fontSize?:   number;   // - markdown.preview.fontSize
+  styles:      string[]; // - markdown.styles (external CSS URLs)
+}
+
+export interface MsgMarkdownConfig {
+  type:   'markdownConfig';
+  config: MarkdownConfig;
 }
 
 // ─── LOD ─────────────────────────────────────────────────────────────────────

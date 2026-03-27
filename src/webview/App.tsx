@@ -9,10 +9,11 @@
  *   4. App switches from loading screen to CanvasView
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { CanvasView } from './canvas/CanvasView';
 import { useCanvasData } from './hooks/useCanvasData';
-import { HostToWebview } from '../shared/types';
+import { HostToWebview, MarkdownConfig } from '../shared/types';
+import { MarkdownConfigContext, DEFAULT_MARKDOWN_CONFIG } from './context/MarkdownConfigContext';
 
 type VsCodeApi = { postMessage: (msg: unknown) => void };
 
@@ -20,9 +21,36 @@ function getVsCodeApi(): VsCodeApi {
   return (window as unknown as Record<string, VsCodeApi>)['vscodeApi'];
 }
 
+/** - inject / update <link> tags for user-configured markdown.styles CSS URLs */
+function syncMarkdownStyleLinks(urls: string[]): void {
+  const ATTR = 'data-skena-md-style';
+
+  // - remove links that are no longer in the list
+  document.head.querySelectorAll<HTMLLinkElement>(`link[${ATTR}]`).forEach(el => {
+    if (!urls.includes(el.href)) el.remove();
+  });
+
+  // - add new links for URLs not yet present
+  const existing = new Set(
+    Array.from(document.head.querySelectorAll<HTMLLinkElement>(`link[${ATTR}]`)).map(el => el.href)
+  );
+  for (const url of urls) {
+    if (!existing.has(url)) {
+      const link = document.createElement('link');
+      link.rel  = 'stylesheet';
+      link.href = url;
+      link.setAttribute(ATTR, '');
+      document.head.appendChild(link);
+    }
+  }
+}
+
 export function App(): JSX.Element {
   const { canvas, canvasPath, dispatch } = useCanvasData();
   const [ready, setReady] = useState(false);
+  const [mdConfig, setMdConfig] = useState<MarkdownConfig>(DEFAULT_MARKDOWN_CONFIG);
+  // - track injected style URLs so we can clean up on config change
+  const styleUrlsRef = useRef<string[]>([]);
 
   useEffect(() => {
     const handler = (event: MessageEvent<HostToWebview>) => {
@@ -39,6 +67,14 @@ export function App(): JSX.Element {
         case 'vaultIndex':
           dispatch({ type: 'SET_VAULT_INDEX', entries: msg.entries });
           break;
+        case 'markdownConfig': {
+          setMdConfig(msg.config);
+          // - inject / remove <link> tags for external CSS URLs
+          const urls = msg.config.styles.filter(s => s.startsWith('http'));
+          syncMarkdownStyleLinks(urls);
+          styleUrlsRef.current = urls;
+          break;
+        }
         case 'fileContent':
         case 'fileError':
           // - forwarded to useFileContent hooks via a custom event
@@ -78,5 +114,9 @@ export function App(): JSX.Element {
     );
   }
 
-  return <CanvasView canvas={canvas} canvasPath={canvasPath} />;
+  return (
+    <MarkdownConfigContext.Provider value={mdConfig}>
+      <CanvasView canvas={canvas} canvasPath={canvasPath} />
+    </MarkdownConfigContext.Provider>
+  );
 }

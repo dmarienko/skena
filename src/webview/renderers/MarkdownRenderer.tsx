@@ -14,6 +14,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import { useFileContent } from '../hooks/useFileContent';
+import { useMarkdownConfig } from '../context/MarkdownConfigContext';
 
 interface MarkdownRendererProps {
   content: string;
@@ -80,6 +81,8 @@ function InlineImage({ uri, alt }: { uri: string; alt: string }): JSX.Element {
 }
 
 export function MarkdownRenderer({ content, baseUri }: MarkdownRendererProps): JSX.Element {
+  const { fontFamily, fontSize } = useMarkdownConfig();
+
   // - memoize components so React preserves InlineImage identity across re-renders:
   // - if components.img is a new function reference each render, React unmounts and
   // - remounts InlineImage, resetting its useFileContent state → persistent [img]
@@ -109,8 +112,13 @@ export function MarkdownRenderer({ content, baseUri }: MarkdownRendererProps): J
     },
   }), [baseUri]);
 
+  // - apply VS Code markdown.preview.* font settings when provided
+  const fontStyle: React.CSSProperties = {};
+  if (fontFamily) fontStyle.fontFamily = fontFamily;
+  if (fontSize)   fontStyle.fontSize   = fontSize;
+
   return (
-    <div className="skena-markdown">
+    <div className="skena-markdown" style={fontStyle}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeKatex]}

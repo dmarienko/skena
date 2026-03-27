@@ -3,18 +3,18 @@
     {
       "id": "node1",
       "type": "text",
-      "x": 176,
-      "y": -712,
+      "x": 131,
+      "y": -755,
       "width": 412,
       "height": 360,
       "color": "4",
-      "text": "# Backtest trend following model\r\n\r\n- 1. tests image\r\n---\r\n\r\n- 2. tests image 2\r\n---\r\n\r\n- 3. tests sentence 3\r\n---\r\n\r\n- 4. Test anything\r\n---\r\n\r\n\r\n$$\\zeta(x) = \\frac{1}{a} \\sum^{N}_{k=0}{x^k}$$\r\n\r\n\r\n![Image](image.svg)\r\n\r\nCool here we can write different content !\r\n> Hey \r\n- a\r\n\r\n## Another great Idea !"
+      "text": "# Backtest trend following model\r\n\r\n- 1. tests image\r\n---\r\n\r\n- 2. tests image 2\r\n---\r\n\r\n- 3. tests sentence 3\r\n---\r\n\r\n- 4. Test anything\r\n---\r\n\r\n\r\n$$\\zeta(x) = \\frac{1}{a} \\sum^{N}_{k=0}{x^k}$$\r\n\r\n\r\n![Image](image.svg)\r\n\r\n\r\nCool here we can write different content !\r\n> Hey \r\n- a\r\n\r\n# I've another great idea to share !"
     },
     {
       "id": "node3",
       "type": "link",
-      "x": 840,
-      "y": -1032,
+      "x": 979,
+      "y": -235,
       "width": 212,
       "height": 60,
       "url": "https://github.com/dmarienko/"
@@ -22,8 +22,8 @@
     {
       "id": "node4",
       "type": "cell",
-      "x": 544,
-      "y": -232,
+      "x": 758,
+      "y": -36,
       "width": 320,
       "height": 160,
       "color": "2",
@@ -33,8 +33,8 @@
     {
       "id": "node5",
       "type": "portal",
-      "x": 816,
-      "y": -856,
+      "x": 1191,
+      "y": -795,
       "width": 250,
       "height": 140,
       "color": "5",
@@ -45,17 +45,17 @@
       "id": "node-1774042036432-0",
       "type": "file",
       "file": "test1.md",
-      "x": -1448,
-      "y": -1352,
-      "width": 1336,
-      "height": 1292
+      "x": -1358,
+      "y": -2074,
+      "width": 904,
+      "height": 1095
     },
     {
       "id": "node-1774044460725-0",
       "type": "file",
       "file": "image.svg",
-      "x": -1032,
-      "y": 200,
+      "x": 138,
+      "y": -36,
       "width": 400,
       "height": 300
     },
@@ -63,21 +63,22 @@
       "id": "node-1774612152413-0",
       "type": "file",
       "file": "some-config.yaml",
-      "x": 128,
-      "y": -1184,
+      "x": 138,
+      "y": -1141,
+      "width": 400,
+      "height": 300
+    },
+    {
+      "id": "node-1774618282037-0",
+      "type": "file",
+      "file": "my-notebook.ipynb",
+      "x": 711,
+      "y": -1119,
       "width": 400,
       "height": 300
     }
   ],
   "edges": [
-    {
-      "id": "node3-node5-1774024031484",
-      "fromNode": "node3",
-      "fromSide": "bottom",
-      "toNode": "node5",
-      "toSide": "top",
-      "toEnd": "arrow"
-    },
     {
       "id": "node-1774042036432-0-node1-1774042058632",
       "fromNode": "node-1774042036432-0",
@@ -111,18 +112,34 @@
       "toEnd": "arrow"
     },
     {
-      "id": "node-1774042036432-0-node-1774044460725-0-1774613280399",
+      "id": "node-1774042036432-0-node1-1774614865663",
       "fromNode": "node-1774042036432-0",
+      "fromSide": "bottom",
+      "toNode": "node1",
+      "toSide": "left",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "node3-node5-1774617930699",
+      "fromNode": "node3",
+      "fromSide": "right",
+      "toNode": "node5",
+      "toSide": "left",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "node1-node-1774044460725-0-1774618041473",
+      "fromNode": "node1",
       "fromSide": "bottom",
       "toNode": "node-1774044460725-0",
       "toSide": "top",
       "toEnd": "arrow"
     },
     {
-      "id": "node-1774042036432-0-node1-1774613469214",
-      "fromNode": "node-1774042036432-0",
-      "fromSide": "bottom",
-      "toNode": "node1",
+      "id": "node1-node-1774618282037-0-1774618295441",
+      "fromNode": "node1",
+      "fromSide": "right",
+      "toNode": "node-1774618282037-0",
       "toSide": "left",
       "toEnd": "arrow"
     }
