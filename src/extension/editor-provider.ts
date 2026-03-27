@@ -33,6 +33,7 @@ import {
   MsgSearchVault,
   MsgChatMessage,
   MsgAddNodeRequest,
+  MsgMoveToSubCanvas,
 } from '../shared/types';
 import { MAX_FILE_SIZE_BYTES } from '../shared/constants';
 
@@ -98,12 +99,14 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             // - forward VS Code markdown preview settings so the webview matches the editor look
             const mdPreview = vscode.workspace.getConfiguration('markdown.preview');
             const md        = vscode.workspace.getConfiguration('markdown');
+            const nbCfg     = vscode.workspace.getConfiguration('skena').get<{ showSourceCells?: boolean }>('notebook') ?? {};
             send({
               type: 'markdownConfig',
               config: {
-                fontFamily: mdPreview.get<string>('fontFamily'),
-                fontSize:   mdPreview.get<number>('fontSize'),
-                styles:     md.get<string[]>('styles') ?? [],
+                fontFamily:         mdPreview.get<string>('fontFamily'),
+                fontSize:           mdPreview.get<number>('fontSize'),
+                styles:             md.get<string[]>('styles') ?? [],
+                notebookShowSource: nbCfg.showSourceCells ?? false,
               },
             });
           } catch (e) {
@@ -127,6 +130,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         case 'chatMessage':  await this.handleChatMessage(msg, panel); break;
         case 'dropFiles':    this.handleDropFiles(msg.uris, msg.position, canvasDir, resolver, send); break;
         case 'addNodeRequest': await this.handleAddNodeRequest(msg, canvasDir, resolver, send); break;
+        case 'moveToSubCanvas': await this.handleMoveToSubCanvas(msg, canvasDir, send); break;
       }
     });
 
@@ -507,6 +511,48 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     }
 
     send({ type: 'addNodeResult', node: newNode, edge, autoEdit });
+  }
+
+  private async handleMoveToSubCanvas(
+    msg:       MsgMoveToSubCanvas,
+    canvasDir: string,
+    send:      (m: HostToWebview) => void,
+  ): Promise<void> {
+    const name = await vscode.window.showInputBox({
+      prompt:        'New canvas name',
+      placeHolder:   'sub-canvas',
+      validateInput: v => v.trim() ? undefined : 'Name cannot be empty',
+    });
+    if (!name) return; // - user cancelled
+
+    // - auto-append .canvas if the user didn't include it
+    const filename = name.trim().endsWith('.canvas') ? name.trim() : `${name.trim()}.canvas`;
+
+    // - normalize node positions so they start near (40, 40) in the new canvas
+    const minX = Math.min(...msg.nodes.map(n => n.x));
+    const minY = Math.min(...msg.nodes.map(n => n.y));
+    const normalized = msg.nodes.map(n => ({ ...n, x: n.x - minX + 40, y: n.y - minY + 40 }));
+
+    const newCanvasPath = path.join(canvasDir, filename);
+    await writeCanvas(newCanvasPath, { nodes: normalized, edges: msg.edges });
+
+    const relPath = `./${filename}`;
+    const nodeId  = `node-${Date.now()}`;
+    const portalNode: import('../shared/types').PortalNode = {
+      id:     nodeId,
+      type:   'portal',
+      canvas: relPath,
+      x:      msg.position.x,
+      y:      msg.position.y,
+      width:  200,
+      height: 200,
+    };
+
+    send({
+      type:         'subCanvasCreated',
+      portalNode,
+      movedNodeIds: msg.nodes.map(n => n.id),
+    });
   }
 
   private async handleChatMessage(

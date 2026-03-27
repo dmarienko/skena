@@ -200,6 +200,13 @@
           },
           "description": "AI chat node backend. backend: claude | ollama | openai"
         },
+        "skena.notebook": {
+          "type": "object",
+          "default": {
+            "showSourceCells": false
+          },
+          "description": "Notebook rendering options. showSourceCells: show code source alongside output (default false — outputs only)"
+        },
         "skena.colors": {
           "type": "object",
           "default": {

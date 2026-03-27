@@ -1,0 +1,32 @@
+{
+  "nodes": [
+    {
+      "id": "node-1774628840438",
+      "type": "link",
+      "url": "https://xlydian.com",
+      "x": 80,
+      "y": 440,
+      "width": 320,
+      "height": 80
+    },
+    {
+      "id": "node-1774629118609",
+      "type": "file",
+      "file": "./meta-simulation.yaml",
+      "x": 40,
+      "y": 40,
+      "width": 400,
+      "height": 300
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-1774629118609",
+      "fromNode": "node-1774628840438",
+      "fromSide": "top",
+      "toNode": "node-1774629118609",
+      "toSide": "bottom",
+      "toEnd": "arrow"
+    }
+  ]
+}

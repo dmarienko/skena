@@ -13,8 +13,8 @@
     {
       "id": "node3",
       "type": "link",
-      "x": -1012,
-      "y": -2267,
+      "x": -1840,
+      "y": -1843,
       "width": 212,
       "height": 60,
       "url": "https://github.com/dmarienko/"
@@ -49,19 +49,10 @@
       "height": 300
     },
     {
-      "id": "node-1774612152413-0",
-      "type": "file",
-      "file": "some-config.yaml",
-      "x": 138,
-      "y": -1620,
-      "width": 400,
-      "height": 300
-    },
-    {
       "id": "node-1774621572860",
       "type": "file",
       "file": "./my-notebook.ipynb",
-      "x": 876,
+      "x": 911,
       "y": -1620,
       "width": 400,
       "height": 300
@@ -79,46 +70,82 @@
       "id": "node-1774628532830",
       "type": "portal",
       "canvas": "./sub-research.canvas",
-      "x": 1515,
-      "y": -1173,
+      "x": 1590,
+      "y": -1560,
       "width": 200,
       "height": 200
-    },
-    {
-      "id": "node-1774628735461",
-      "type": "text",
-      "text": "# backtest new config\r\n\r\nz is new parameter value",
-      "x": -1401,
-      "y": -817,
-      "width": 400,
-      "height": 300
-    },
-    {
-      "id": "node-1774628749547",
-      "type": "file",
-      "file": "./some-config.yaml",
-      "x": -659,
-      "y": -858,
-      "width": 400,
-      "height": 300
     },
     {
       "id": "node-1774628807372",
       "type": "file",
       "file": "./my-notebook.ipynb",
-      "x": -1412,
-      "y": -510,
-      "width": 528,
-      "height": 580
+      "x": -1405,
+      "y": -478,
+      "width": 635,
+      "height": 770
     },
     {
-      "id": "node-1774628840438",
-      "type": "link",
-      "url": "https://xlydian.com",
-      "x": -619,
-      "y": -448,
-      "width": 320,
-      "height": 80
+      "id": "node-1774629108544",
+      "type": "file",
+      "file": "./meta-simulation.yaml",
+      "x": 138,
+      "y": -1720,
+      "width": 400,
+      "height": 300
+    },
+    {
+      "id": "node-1774629174498",
+      "type": "text",
+      "text": "# Next steps\r\n\r\n1. run\r\n2. analyse\r\n3. test",
+      "x": -1266,
+      "y": -791,
+      "width": 400,
+      "height": 300
+    },
+    {
+      "id": "node-1774630443412",
+      "type": "portal",
+      "canvas": "./h1-experiments.canvas",
+      "x": -423,
+      "y": -791,
+      "width": 200,
+      "height": 200
+    },
+    {
+      "id": "node-1774630604173",
+      "type": "text",
+      "text": "# Results\r\n\r\n  alpha[0] long:  MAE=0.000078  max_diff=0.007  n_bars=863  ✅ \r\n  alpha[1] short: MAE=0.000071  max_diff=0.010  n_bars=863  ✅\r\n  \r\n  No fold-boundary spikes on either model. The earlier nan result was because the previous combo.dropna() was too aggressive — the fix adds:                             \r\n  - n_emitted / n_static counts so you can see if the simulation emitted predictions at all                                                                              \r\n  - is_empty guard with a clear warning message when no bars match (e.g. no primary signals in the window)                                                               \r\n  - Descriptive __repr__ that differentiates between \"empty — try different date range\" vs normal results with MAE/max_diff/n_bars          ",
+      "x": -665,
+      "y": -478,
+      "width": 684,
+      "height": 247
+    },
+    {
+      "id": "node-1774630646766",
+      "type": "portal",
+      "canvas": "./sub-research.canvas",
+      "x": 409,
+      "y": -12,
+      "width": 200,
+      "height": 200
+    },
+    {
+      "id": "node-1774632805824",
+      "type": "file",
+      "file": "./my-notebook.ipynb",
+      "x": -523,
+      "y": -12,
+      "width": 529,
+      "height": 750
+    },
+    {
+      "id": "node-1774633629627",
+      "type": "file",
+      "file": "./Inside the black box.md",
+      "x": -2203,
+      "y": -2812,
+      "width": 937,
+      "height": 683
     }
   ],
   "edges": [
@@ -139,35 +166,11 @@
       "toEnd": "arrow"
     },
     {
-      "id": "node1-node-1774612152413-0-1774612176288",
-      "fromNode": "node1",
-      "fromSide": "top",
-      "toNode": "node-1774612152413-0",
-      "toSide": "bottom",
-      "toEnd": "arrow"
-    },
-    {
       "id": "node1-node-1774044460725-0-1774618041473",
       "fromNode": "node1",
       "fromSide": "bottom",
       "toNode": "node-1774044460725-0",
       "toSide": "top",
-      "toEnd": "arrow"
-    },
-    {
-      "id": "node3-node-1774042036432-0-1774619544538",
-      "fromNode": "node3",
-      "fromSide": "bottom",
-      "toNode": "node-1774042036432-0",
-      "toSide": "top",
-      "toEnd": "arrow"
-    },
-    {
-      "id": "edge-1774621572860",
-      "fromNode": "node-1774612152413-0",
-      "fromSide": "right",
-      "toNode": "node-1774621572860",
-      "toSide": "left",
       "toEnd": "arrow"
     },
     {
@@ -179,43 +182,83 @@
       "toEnd": "arrow"
     },
     {
-      "id": "node-1774621572860-node-1774628532830-1774628599875",
-      "fromNode": "node-1774621572860",
-      "fromSide": "bottom",
-      "toNode": "node-1774628532830",
-      "toSide": "left",
+      "id": "edge-1774629108544",
+      "fromNode": "node1",
+      "fromSide": "top",
+      "toNode": "node-1774629108544",
+      "toSide": "bottom",
       "toEnd": "arrow"
     },
     {
-      "id": "edge-1774628735461",
+      "id": "edge-1774629174498",
       "fromNode": "node-1774042036432-0",
       "fromSide": "bottom",
-      "toNode": "node-1774628735461",
+      "toNode": "node-1774629174498",
       "toSide": "top",
       "toEnd": "arrow"
     },
     {
-      "id": "edge-1774628749547",
-      "fromNode": "node-1774628735461",
-      "fromSide": "right",
-      "toNode": "node-1774628749547",
-      "toSide": "left",
-      "toEnd": "arrow"
-    },
-    {
-      "id": "edge-1774628807372",
-      "fromNode": "node-1774628735461",
+      "id": "node-1774629174498-node-1774628807372-1774629234697",
+      "fromNode": "node-1774629174498",
       "fromSide": "bottom",
       "toNode": "node-1774628807372",
       "toSide": "top",
       "toEnd": "arrow"
     },
     {
-      "id": "edge-1774628848513",
-      "fromNode": "node-1774628749547",
+      "id": "node-1774042036432-0-node3-1774629720648",
+      "fromNode": "node-1774042036432-0",
+      "fromSide": "left",
+      "toNode": "node3",
+      "toSide": "right",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "node-1774042036432-0-node-1774630443412-1774630479572",
+      "fromNode": "node-1774042036432-0",
       "fromSide": "bottom",
-      "toNode": "node-1774628840438",
+      "toNode": "node-1774630443412",
       "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1774630604173",
+      "fromNode": "node-1774630443412",
+      "fromSide": "bottom",
+      "toNode": "node-1774630604173",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1774630646766",
+      "fromNode": "node-1774630604173",
+      "fromSide": "bottom",
+      "toNode": "node-1774630646766",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1774632805824",
+      "fromNode": "node-1774630604173",
+      "fromSide": "bottom",
+      "toNode": "node-1774632805824",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "node-1774621572860-node-1774628532830-1774632882840",
+      "fromNode": "node-1774621572860",
+      "fromSide": "right",
+      "toNode": "node-1774628532830",
+      "toSide": "left",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1774633629627",
+      "fromNode": "node3",
+      "fromSide": "top",
+      "toNode": "node-1774633629627",
+      "toSide": "bottom",
       "toEnd": "arrow"
     }
   ]

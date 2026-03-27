@@ -1,0 +1,39 @@
+name: Meta.Heritage.cusum_005_wwfl_001
+
+strategy: xmetals.reversion.meta.metatrader0.MetaTraderLeverage
+
+description:
+  - Meta strategy combining 4 weighted Heritage mean-reversion
+  - CUSUM 0.05 threshold targets
+  - Alphas (Long2D-1d=0.4, Long2D-2d=0.15, Long4D-4d=0.15, Short1D-1d=0.3)
+  - BaggingClassifier with 500 estimators trained on top15 dynamic
+  - Trained with min_weight_fraction_leaf 0.01
+  - Entry threshold - 0.8 (80% confidence), Cancel - 0.5, scale_out=false (full entry/exit only)
+  - Position sizing Leverage-based, max 20% per symbol, 150% total leverage, 1.2× risk target
+  - Universe Weekly refit (SUN 23:59), daily model refresh, starting with BTC only
+  - Universe removes asset only after position closed
+  - Backtest - 2021-01-11 to now, $100k capital, Binance VIP0 commissions, 1h OHLC
+
+parameters:
+  universe_schedule: "SUN @ 23:59"
+  model_check_interval: 1d
+  reset_universe_policy: "wait_for_close"
+
+  max_signal_value: 2.0
+
+  enable_probability_scaling: true
+  probability_scaling_factor: 3.0
+  enable_signal_scaling: true
+  model_entry_threshold: 0.8
+  model_cancel_threshold: 0.5
+
+  forecast_sma_period: 168 # - SMA period for forecast smoothing 7 x 24 = 7 days
+  max_forecast: 3.0        # - GLOBAL maximum forecast clipping (after aggregation, lean naming)
+  fdm_min_observations: 20 # - minimum observations for FDM calculation
+
+  target_risk: 1.2
+  max_symbol_leverage: 0.2
+  max_total_leverage: 1.5
+  buffer: 0.1
+  buffering_method: leverage
+  scale_out: false

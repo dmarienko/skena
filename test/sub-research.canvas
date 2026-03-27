@@ -55,11 +55,20 @@
       "height": 300
     },
     {
-      "id": "node-1774627160066",
-      "type": "file",
-      "file": "./sample.canvas",
-      "x": 846,
-      "y": 655,
+      "id": "node-1774631740880",
+      "type": "text",
+      "text": "#feature\r\n\r\n- retest this notebook",
+      "x": 742,
+      "y": 765,
+      "width": 400,
+      "height": 300
+    },
+    {
+      "id": "node-1774631777691",
+      "type": "text",
+      "text": "- test another approach",
+      "x": 744,
+      "y": 917,
       "width": 400,
       "height": 300
     }
@@ -106,10 +115,18 @@
       "toEnd": "arrow"
     },
     {
-      "id": "edge-1774627160066",
+      "id": "edge-1774631740880",
       "fromNode": "node-1774618743797-0",
       "fromSide": "right",
-      "toNode": "node-1774627160066",
+      "toNode": "node-1774631740880",
+      "toSide": "left",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1774631777691",
+      "fromNode": "node-1774618743797-0",
+      "fromSide": "right",
+      "toNode": "node-1774631777691",
       "toSide": "left",
       "toEnd": "arrow"
     }

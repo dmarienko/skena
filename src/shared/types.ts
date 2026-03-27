@@ -234,7 +234,8 @@ export type HostToWebview =
   | MsgMarkdownConfig
   | MsgAddNodeResult
   | MsgAddNodeTrigger
-  | MsgAddTextNodeTrigger;
+  | MsgAddTextNodeTrigger
+  | MsgSubCanvasCreated;
 
 // - Webview → Host messages
 
@@ -300,7 +301,8 @@ export type WebviewToHost =
   | MsgRefreshVault
   | MsgWebviewReady
   | MsgDropFiles
-  | MsgAddNodeRequest;
+  | MsgAddNodeRequest
+  | MsgMoveToSubCanvas;
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────
 
@@ -380,13 +382,38 @@ export interface MsgAddTextNodeTrigger {
   direction: 'H' | 'J' | 'K' | 'L';
 }
 
+// ─── Sub-canvas extraction ────────────────────────────────────────────────────
+
+/**
+ * Webview → Host: extract selected nodes into a new .canvas file.
+ * position: where to place the resulting portal node in the source canvas.
+ */
+export interface MsgMoveToSubCanvas {
+  type:     'moveToSubCanvas';
+  nodes:    CanvasNode[];
+  edges:    CanvasEdge[];
+  position: { x: number; y: number };
+}
+
+/**
+ * Host → Webview: sub-canvas file created; replace moved nodes with a portal.
+ * movedNodeIds: IDs to remove from current canvas (all edges touching them are also removed).
+ */
+export interface MsgSubCanvasCreated {
+  type:         'subCanvasCreated';
+  portalNode:   PortalNode;
+  movedNodeIds: string[];
+}
+
 // ─── Markdown config ─────────────────────────────────────────────────────────
 
 /** - mirrors the subset of VS Code's markdown.preview.* settings we consume */
 export interface MarkdownConfig {
-  fontFamily?: string;   // - markdown.preview.fontFamily
-  fontSize?:   number;   // - markdown.preview.fontSize
-  styles:      string[]; // - markdown.styles (external CSS URLs)
+  fontFamily?:          string;   // - markdown.preview.fontFamily
+  fontSize?:            number;   // - markdown.preview.fontSize
+  styles:               string[]; // - markdown.styles (external CSS URLs)
+  /** - when false (default) notebook code cells show outputs only, source is hidden */
+  notebookShowSource?:  boolean;  // - skena.notebook.showSourceCells
 }
 
 export interface MsgMarkdownConfig {

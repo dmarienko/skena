@@ -10,9 +10,10 @@ import React, { createContext, useContext } from 'react';
 import { MarkdownConfig } from '../../shared/types';
 
 export const DEFAULT_MARKDOWN_CONFIG: MarkdownConfig = {
-  fontFamily: undefined,
-  fontSize:   undefined,
-  styles:     [],
+  fontFamily:         undefined,
+  fontSize:           undefined,
+  styles:             [],
+  notebookShowSource: false,
 };
 
 export const MarkdownConfigContext = createContext<MarkdownConfig>(DEFAULT_MARKDOWN_CONFIG);
