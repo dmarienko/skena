@@ -30,7 +30,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
-import { CanvasData, CanvasNode, CanvasEdge } from '../../shared/types';
+import { CanvasData, CanvasNode, CanvasEdge, MsgAddNodeResult, NodeSide } from '../../shared/types';
 import { CANVAS_COLORS } from '../../shared/constants';
 
 import { FileNodeComponent }  from './nodes/FileNode';
@@ -194,6 +194,14 @@ function getHelperLines(
   return { horizontal, vertical, snapX, snapY };
 }
 
+// ─── per-canvas focus memory (survives canvas reloads within a session) ──────
+
+/**
+ * Remembers the last keyboard-focused node id for each canvas file path.
+ * Module-level so it outlives component remounts triggered by external reloads.
+ */
+const lastFocusedNodeId = new Map<string, string>();
+
 // ─── props ────────────────────────────────────────────────────────────────────
 
 interface CanvasViewProps {
@@ -235,12 +243,24 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
   const canvasRef = useRef<CanvasData>(canvas);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // - sync when canvas reloads from host
+  // - sync when canvas reloads from host; restore focus after fitView settles
   useEffect(() => {
     setNodes(canvas.nodes.map(toFlowNode));
     setEdges(canvas.edges.map(toFlowEdge));
     canvasRef.current = canvas;
-  }, [canvas, setNodes, setEdges]);
+
+    // - fitView runs asynchronously after the layout pass; defer focus so the
+    // - viewport is correct when pickViewportNode computes visible nodes
+    const t = setTimeout(() => {
+      const stored  = lastFocusedNodeId.get(canvasPath);
+      const exists  = stored && nodesRef.current.some(n => n.id === stored);
+      const focusId = exists ? stored : pickViewportNode();
+      if (focusId) focusNodeById(focusId);
+    }, 80);
+    return () => clearTimeout(t);
+  // - focusNodeById / pickViewportNode are stable useCallbacks; declared below
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canvas, canvasPath, setNodes, setEdges]);
 
   // - debounced save
   const scheduleSave = useCallback((updatedCanvas: CanvasData) => {
@@ -343,6 +363,33 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
     };
     canvasRef.current = updated;
     scheduleSave(updated);
+
+    // - auto-focus nearest surviving node so spatial navigation resumes immediately
+    const nonGroupDeleted = deleted.filter(n => n.type !== 'group');
+    if (nonGroupDeleted.length === 0) return;
+
+    // - centroid of deleted nodes used as reference point
+    const cx = nonGroupDeleted.reduce((s, n) => s + n.position.x + Number(n.style?.width  ?? 200) / 2, 0) / nonGroupDeleted.length;
+    const cy = nonGroupDeleted.reduce((s, n) => s + n.position.y + Number(n.style?.height ?? 150) / 2, 0) / nonGroupDeleted.length;
+
+    // - nearest non-deleted, non-group node to that centroid
+    let bestId:   string | null = null;
+    let bestDist  = Infinity;
+    for (const n of nodesRef.current) {
+      if (deletedIds.has(n.id) || n.type === 'group') continue;
+      const nx = n.position.x + Number(n.style?.width  ?? 200) / 2;
+      const ny = n.position.y + Number(n.style?.height ?? 150) / 2;
+      const d  = Math.hypot(nx - cx, ny - cy);
+      if (d < bestDist) { bestDist = d; bestId = n.id; }
+    }
+
+    // - defer one frame so React Flow finishes removing the deleted nodes first
+    if (bestId) {
+      const id = bestId;
+      requestAnimationFrame(() => focusNodeById(id));
+    }
+  // - focusNodeById is a stable useCallback declared below; nodesRef always current
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scheduleSave]);
 
   const onEdgesDelete = useCallback((deleted: Edge[]) => {
@@ -418,6 +465,55 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
   const nodesRef = useRef(nodes);
   useEffect(() => { nodesRef.current = nodes; });
 
+  // ─── shared focus helpers ─────────────────────────────────────────────────
+
+  /**
+   * Select + DOM-focus a node by id and pan the viewport to it if it is
+   * off-screen. Also persists the id in lastFocusedNodeId for restoration.
+   */
+  const focusNodeById = useCallback((id: string) => {
+    lastFocusedNodeId.set(canvasPath, id);
+    setNodes(nds => nds.map(n => ({ ...n, selected: n.id === id })));
+    window.dispatchEvent(new CustomEvent('skena:focusNode', { detail: { id } }));
+    const node = nodesRef.current.find(n => n.id === id);
+    if (!node) return;
+    const nc = {
+      x: node.position.x + Number(node.style?.width  ?? 200) / 2,
+      y: node.position.y + Number(node.style?.height ?? 150) / 2,
+    };
+    const { x: vx, y: vy, zoom } = rfRef.current.getViewport();
+    const margin = 80 / zoom;
+    const left   = -vx / zoom + margin;
+    const top    = -vy / zoom + margin;
+    const right  = left + window.innerWidth  / zoom - margin * 2;
+    const bottom = top  + window.innerHeight / zoom - margin * 2;
+    if (nc.x <= left || nc.x >= right || nc.y <= top || nc.y >= bottom) {
+      rfRef.current.setCenter(nc.x, nc.y, { duration: 250, zoom });
+    }
+  }, [setNodes, canvasPath]); // - nodesRef + rfRef are always current
+
+  /**
+   * Returns the id of the non-group node whose center is closest to the
+   * current viewport center. Returns null if no eligible nodes exist.
+   */
+  const pickViewportNode = useCallback((): string | null => {
+    const { x: vx, y: vy, zoom } = rfRef.current.getViewport();
+    const vpCx = (window.innerWidth  / 2 - vx) / zoom;
+    const vpCy = (window.innerHeight / 2 - vy) / zoom;
+    let bestId:   string | null = null;
+    let bestDist  = Infinity;
+    for (const n of nodesRef.current) {
+      if (n.type === 'group') continue;
+      const cx   = n.position.x + Number(n.style?.width  ?? 200) / 2;
+      const cy   = n.position.y + Number(n.style?.height ?? 150) / 2;
+      const dist = Math.hypot(cx - vpCx, cy - vpCy);
+      if (dist < bestDist) { bestDist = dist; bestId = n.id; }
+    }
+    return bestId;
+  }, []); // - rfRef + nodesRef always current
+
+  // ─── keyboard navigation ──────────────────────────────────────────────────
+
   useEffect(() => {
     const keyToDir = (key: string): 'left' | 'right' | 'up' | 'down' | null => {
       switch (key) {
@@ -466,6 +562,34 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
         active?.closest('.monaco-editor')
       ) return;
 
+      // - Shift+{H,J,K,L}: add node beside the focused node and connect it
+      if (e.shiftKey && ['H', 'J', 'K', 'L'].includes(e.key)) {
+        const current = nodesRef.current.find(n => n.selected && n.type !== 'group');
+        if (!current) return;
+        e.preventDefault();
+
+        const cw = Number(current.style?.width  ?? 400);
+        const ch = Number(current.style?.height ?? 300);
+        const nw = 400, nh = 300, GAP = 40;
+
+        const dirMap: Record<string, { dx: number; dy: number; fromSide: NodeSide; toSide: NodeSide }> = {
+          L: { dx:  cw + GAP,       dy: 0,            fromSide: 'right',  toSide: 'left'   },
+          H: { dx: -nw - GAP,       dy: 0,            fromSide: 'left',   toSide: 'right'  },
+          J: { dx: 0,               dy:  ch + GAP,    fromSide: 'bottom', toSide: 'top'    },
+          K: { dx: 0,               dy: -nh - GAP,    fromSide: 'top',    toSide: 'bottom' },
+        };
+        const { dx, dy, fromSide, toSide } = dirMap[e.key];
+
+        vscodePostMessage({
+          type:       'addNodeRequest',
+          position:   { x: current.position.x + dx, y: current.position.y + dy },
+          fromNodeId: current.id,
+          fromSide,
+          toSide,
+        });
+        return;
+      }
+
       // - Enter / Ctrl+Enter: open non-text selected node in VS Code editor
       // - Ctrl+Enter → modal (maximize editor group); Enter → beside preview
       if (e.key === 'Enter') {
@@ -489,41 +613,44 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
       const dir = keyToDir(e.key);
       if (!dir) return;
 
-      const current = nodesRef.current.find(n => n.selected && n.type !== 'group');
-      if (!current) return;
+      let current = nodesRef.current.find(n => n.selected && n.type !== 'group');
+
+      // - no focused node: establish focus on the viewport-nearest node first;
+      // - the user can press the key again to navigate from there
+      if (!current) {
+        e.preventDefault();
+        const id = pickViewportNode();
+        if (id) focusNodeById(id);
+        return;
+      }
 
       const targetId = findNearest(current, dir);
       if (!targetId) return;
 
       e.preventDefault();
-      setNodes(nds => nds.map(n => ({ ...n, selected: n.id === targetId })));
-      // - focus the target node's DOM element so Enter-to-edit works immediately
-      window.dispatchEvent(new CustomEvent('skena:focusNode', { detail: { id: targetId } }));
-
-      // - pan viewport to keep the target node visible
-      const target = nodesRef.current.find(n => n.id === targetId);
-      if (target) {
-        const nodeCenter = {
-          x: target.position.x + Number(target.style?.width  ?? 200) / 2,
-          y: target.position.y + Number(target.style?.height ?? 150) / 2,
-        };
-        const { x: vx, y: vy, zoom } = rfRef.current.getViewport();
-        const margin = 80 / zoom;                         // - 80px screen-space margin
-        const left   = -vx / zoom + margin;
-        const top    = -vy / zoom + margin;
-        const right  = left + window.innerWidth  / zoom - margin * 2;
-        const bottom = top  + window.innerHeight / zoom - margin * 2;
-        const inView = nodeCenter.x > left && nodeCenter.x < right &&
-                       nodeCenter.y > top  && nodeCenter.y < bottom;
-        if (!inView) {
-          rfRef.current.setCenter(nodeCenter.x, nodeCenter.y, { duration: 250, zoom });
-        }
-      }
+      focusNodeById(targetId);
     };
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [setNodes]); // - setNodes is stable; nodesRef carries live state
+  }, [setNodes, focusNodeById, pickViewportNode]); // - nodesRef carries live state
+
+  // - handle skena:addNodeTrigger from VS Code ctrl+n command override
+  // - compute viewport centre in flow coords and send addNodeRequest to extension
+  useEffect(() => {
+    const handler = () => {
+      const { x: tx, y: ty, zoom } = rfRef.current.getViewport();
+      vscodePostMessage({
+        type:     'addNodeRequest',
+        position: {
+          x: (window.innerWidth  / 2 - tx) / zoom - 200,
+          y: (window.innerHeight / 2 - ty) / zoom - 150,
+        },
+      });
+    };
+    window.addEventListener('skena:addNodeTrigger', handler);
+    return () => window.removeEventListener('skena:addNodeTrigger', handler);
+  }, []); // - rfRef always current
 
   // - listen for node resize-end events dispatched by NodeResizer inside each node component
   // - params include x/y because top-left resize moves the node origin as well as changing size
@@ -603,6 +730,44 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
     window.addEventListener('skena:nodeTextEdit', handler);
     return () => window.removeEventListener('skena:nodeTextEdit', handler);
   }, [setNodes, scheduleSave]);
+
+  // - receive add-node result from QuickPick (Ctrl+N / Shift+hjkl)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { node: cn, edge: ce } = (e as CustomEvent<MsgAddNodeResult>).detail;
+
+      // - deselect everything, then add the new node as selected
+      setNodes(nds => [
+        ...nds.map(n => ({ ...n, selected: false })),
+        { ...toFlowNode(cn), selected: true },
+      ]);
+
+      // - persist node to canvas JSON
+      canvasRef.current = {
+        ...canvasRef.current,
+        nodes: [...canvasRef.current.nodes, cn],
+      };
+
+      // - add connecting edge if present (Shift+hjkl case)
+      if (ce) {
+        setEdges(eds => addEdge(toFlowEdge(ce), eds));
+        canvasRef.current = {
+          ...canvasRef.current,
+          edges: [...canvasRef.current.edges, ce],
+        };
+      }
+
+      scheduleSave(canvasRef.current);
+
+      // - focus DOM + pan viewport to the new node
+      window.dispatchEvent(new CustomEvent('skena:focusNode', { detail: { id: cn.id } }));
+      const { zoom } = rfRef.current.getViewport();
+      rfRef.current.setCenter(cn.x + cn.width / 2, cn.y + cn.height / 2, { duration: 250, zoom });
+    };
+
+    window.addEventListener('skena:addNodeResult', handler);
+    return () => window.removeEventListener('skena:addNodeResult', handler);
+  }, [setNodes, setEdges, scheduleSave]);
 
   return (
     <div ref={wrapperRef} style={{ width: '100%', height: '100%' }}>

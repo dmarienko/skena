@@ -72,6 +72,16 @@ export function activate(context: vscode.ExtensionContext): void {
 
     vscode.commands.registerCommand('skena.newResearchLog', () => {
       vscode.window.showInformationMessage('Skena: New Research Log — coming in Phase 3');
+    }),
+
+    // - Ctrl+N override: VS Code intercepts ctrl+n ("New File") before the webview sees it.
+    // - This command is bound to ctrl+n when a canvas editor is active (see package.json
+    // - keybindings). It sends an addNodeTrigger to the active panel; the webview
+    // - computes the viewport centre and sends back an addNodeRequest.
+    vscode.commands.registerCommand('skena.addNode', () => {
+      const panel = SkenaEditorProvider.activePanel;
+      if (!panel) return;
+      panel.webview.postMessage({ type: 'addNodeTrigger' });
     })
   );
 

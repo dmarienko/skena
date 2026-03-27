@@ -20,6 +20,7 @@ import { parseNotebook } from './notebook-parser';
 import {
   CanvasData,
   CanvasNode,
+  CanvasEdge,
   FileNode,
   HostToWebview,
   WebviewToHost,
@@ -28,11 +29,18 @@ import {
   MsgOpenFile,
   MsgSearchVault,
   MsgChatMessage,
+  MsgAddNodeRequest,
 } from '../shared/types';
 import { MAX_FILE_SIZE_BYTES } from '../shared/constants';
 
 export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDocument> {
   static readonly viewType = 'skena.canvasEditor';
+
+  /**
+   * Active panel reference — updated via onDidChangeViewState so the
+   * skena.addNode VS Code command can post a trigger to the focused canvas.
+   */
+  static activePanel: vscode.WebviewPanel | null = null;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -115,6 +123,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         }
         case 'chatMessage':  await this.handleChatMessage(msg, panel); break;
         case 'dropFiles':    this.handleDropFiles(msg.uris, msg.position, canvasDir, resolver, send); break;
+        case 'addNodeRequest': await this.handleAddNodeRequest(msg, canvasDir, resolver, send); break;
       }
     });
 
@@ -162,7 +171,18 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       send({ type: 'fileChanged', uri: toCanvasUri(uri.fsPath) });
     });
 
+    // - track the most-recently-focused canvas panel for the skena.addNode command
+    SkenaEditorProvider.activePanel = panel;
+    panel.onDidChangeViewState(({ webviewPanel }) => {
+      if (webviewPanel.active) {
+        SkenaEditorProvider.activePanel = webviewPanel;
+      }
+    });
+
     panel.onDidDispose(() => {
+      if (SkenaEditorProvider.activePanel === panel) {
+        SkenaEditorProvider.activePanel = null;
+      }
       canvasWatcher.dispose();
       workspaceWatcher.dispose();
       saveDisposable.dispose();
@@ -361,6 +381,90 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     if (nodes.length > 0) {
       send({ type: 'nodesFromDrop', nodes });
     }
+  }
+
+  async handleAddNodeRequest(
+    msg:       MsgAddNodeRequest,
+    canvasDir: string,
+    resolver:  FileResolver,
+    send:      (m: HostToWebview) => void,
+  ): Promise<void> {
+    // - vault entries
+    const vaultEntries = this.indexer.all();
+
+    // - workspace files (limit 300, exclude noise)
+    const wsUris = await vscode.workspace.findFiles(
+      '**/*.{md,ipynb,py,yaml,yml,canvas}',
+      '{**/node_modules/**,**/.git/**,**/__pycache__/**,**/.venv/**}',
+      300,
+    );
+
+    // - build a set of vault fsPath for deduplication
+    const vaultPaths = new Set(vaultEntries.map(e => e.fsPath).filter(Boolean));
+
+    type Item = vscode.QuickPickItem & { canvasUri: string };
+
+    const vaultItems: Item[] = vaultEntries.map(e => ({
+      label:       e.title,
+      description: e.type ?? '',
+      detail:      e.tags.length ? e.tags.join('  ·  ') : undefined,
+      canvasUri:   e.uri,
+    }));
+
+    const wsItems: Item[] = wsUris
+      .filter(u => !vaultPaths.has(u.fsPath))
+      .map(u => ({
+        label:       path.basename(u.fsPath),
+        description: vscode.workspace.asRelativePath(u.fsPath),
+        canvasUri:   (() => {
+          const rel = path.relative(canvasDir, u.fsPath).replace(/\\/g, '/');
+          return rel.startsWith('.') ? rel : `./${rel}`;
+        })(),
+      }));
+
+    const items: Item[] = [
+      ...(vaultItems.length ? [
+        { label: 'Vault', kind: vscode.QuickPickItemKind.Separator, canvasUri: '' },
+        ...vaultItems,
+      ] : []),
+      ...(wsItems.length ? [
+        { label: 'Workspace', kind: vscode.QuickPickItemKind.Separator, canvasUri: '' },
+        ...wsItems,
+      ] : []),
+    ];
+
+    const picked = await vscode.window.showQuickPick(items, {
+      placeHolder:       'Search vault and workspace files to add…',
+      matchOnDescription: true,
+      matchOnDetail:      true,
+    });
+
+    if (!picked || !picked.canvasUri) return; // - cancelled or separator clicked
+
+    const nodeId = `node-${Date.now()}`;
+    const newNode: FileNode = {
+      id:     nodeId,
+      type:   'file',
+      file:   picked.canvasUri,
+      x:      Math.round(msg.position.x),
+      y:      Math.round(msg.position.y),
+      width:  400,
+      height: 300,
+    };
+
+    let edge: CanvasEdge | undefined;
+    if (msg.fromNodeId && msg.fromSide && msg.toSide) {
+      edge = {
+        id:       `edge-${Date.now()}`,
+        fromNode: msg.fromNodeId,
+        fromSide: msg.fromSide,
+        toNode:   nodeId,
+        toSide:   msg.toSide,
+        toEnd:    'arrow',
+      };
+    }
+
+    send({ type: 'addNodeResult', node: newNode, edge });
   }
 
   private async handleChatMessage(

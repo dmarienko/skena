@@ -231,7 +231,9 @@ export type HostToWebview =
   | MsgChatChunk
   | MsgAgentNodeCreated
   | MsgSearchResults
-  | MsgMarkdownConfig;
+  | MsgMarkdownConfig
+  | MsgAddNodeResult
+  | MsgAddNodeTrigger;
 
 // - Webview → Host messages
 
@@ -296,7 +298,8 @@ export type WebviewToHost =
   | MsgChatMessage
   | MsgRefreshVault
   | MsgWebviewReady
-  | MsgDropFiles;
+  | MsgDropFiles
+  | MsgAddNodeRequest;
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────
 
@@ -327,6 +330,37 @@ export interface CanvasContext {
     toId: string;
     label?: string;
   }>;
+}
+
+// ─── Add-node flow ───────────────────────────────────────────────────────────
+
+/**
+ * Webview → Host: user triggered "add node" (Ctrl+N or Shift+hjkl).
+ * position is in flow-canvas coordinates.
+ * fromNodeId/fromSide/toSide are set for the Shift+hjkl case so the host
+ * can create a connecting edge automatically.
+ */
+export interface MsgAddNodeRequest {
+  type:        'addNodeRequest';
+  position:    { x: number; y: number };
+  fromNodeId?: string;
+  fromSide?:   NodeSide;
+  toSide?:     NodeSide;
+}
+
+/** Host → Webview: QuickPick resolved — add this node (and optional edge) to canvas. */
+export interface MsgAddNodeResult {
+  type:  'addNodeResult';
+  node:  CanvasNode;
+  edge?: CanvasEdge;
+}
+
+/**
+ * Host → Webview: VS Code command "skena.addNode" was triggered.
+ * Webview computes viewport centre and sends back an addNodeRequest.
+ */
+export interface MsgAddNodeTrigger {
+  type: 'addNodeTrigger';
 }
 
 // ─── Markdown config ─────────────────────────────────────────────────────────

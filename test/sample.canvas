@@ -3,8 +3,8 @@
     {
       "id": "node1",
       "type": "text",
-      "x": 134,
-      "y": -1156,
+      "x": 132,
+      "y": -1186,
       "width": 412,
       "height": 360,
       "color": "4",
@@ -22,8 +22,8 @@
     {
       "id": "node4",
       "type": "cell",
-      "x": 758,
-      "y": -36,
+      "x": 669,
+      "y": -638,
       "width": 320,
       "height": 160,
       "color": "2",
@@ -33,8 +33,8 @@
     {
       "id": "node5",
       "type": "portal",
-      "x": -334,
-      "y": -176,
+      "x": -291,
+      "y": -638,
       "width": 250,
       "height": 140,
       "color": "5",
@@ -55,7 +55,7 @@
       "type": "file",
       "file": "image.svg",
       "x": 138,
-      "y": -176,
+      "y": -638,
       "width": 400,
       "height": 300
     },
@@ -69,13 +69,22 @@
       "height": 300
     },
     {
-      "id": "node-1774618282037-0",
+      "id": "node-1774621572860",
       "type": "file",
-      "file": "my-notebook.ipynb",
-      "x": 758,
-      "y": -1783,
-      "width": 676,
-      "height": 597
+      "file": "./my-notebook.ipynb",
+      "x": 826,
+      "y": -1790,
+      "width": 400,
+      "height": 300
+    },
+    {
+      "id": "node-1774622177920",
+      "type": "file",
+      "file": "./some-config.yaml",
+      "x": -291,
+      "y": -2207,
+      "width": 400,
+      "height": 300
     }
   ],
   "edges": [
@@ -104,27 +113,11 @@
       "toEnd": "arrow"
     },
     {
-      "id": "node-1774042036432-0-node1-1774614865663",
-      "fromNode": "node-1774042036432-0",
-      "fromSide": "bottom",
-      "toNode": "node1",
-      "toSide": "left",
-      "toEnd": "arrow"
-    },
-    {
       "id": "node1-node-1774044460725-0-1774618041473",
       "fromNode": "node1",
       "fromSide": "bottom",
       "toNode": "node-1774044460725-0",
       "toSide": "top",
-      "toEnd": "arrow"
-    },
-    {
-      "id": "node1-node-1774618282037-0-1774618295441",
-      "fromNode": "node1",
-      "fromSide": "right",
-      "toNode": "node-1774618282037-0",
-      "toSide": "left",
       "toEnd": "arrow"
     },
     {
@@ -141,6 +134,14 @@
       "fromSide": "bottom",
       "toNode": "node-1774042036432-0",
       "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1774621572860",
+      "fromNode": "node-1774612152413-0",
+      "fromSide": "right",
+      "toNode": "node-1774621572860",
+      "toSide": "left",
       "toEnd": "arrow"
     }
   ]

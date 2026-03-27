@@ -91,6 +91,14 @@ export function App(): JSX.Element {
         case 'nodesFromDrop':
           window.dispatchEvent(new CustomEvent('skena:nodesFromDrop', { detail: msg.nodes }));
           break;
+        case 'addNodeResult':
+          window.dispatchEvent(new CustomEvent('skena:addNodeResult', { detail: msg }));
+          break;
+        case 'addNodeTrigger':
+          // - VS Code command skena.addNode fired (ctrl+n override);
+          // - tell CanvasView to compute viewport centre and send addNodeRequest
+          window.dispatchEvent(new CustomEvent('skena:addNodeTrigger'));
+          break;
         case 'chatChunk':
         case 'agentNodeCreated':
           window.dispatchEvent(new CustomEvent('skena:chat', { detail: msg }));

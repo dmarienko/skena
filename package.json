@@ -69,8 +69,8 @@
     "keybindings": [
       {
         "command": "skena.addNode",
-        "key": "ctrl+shift+a",
-        "mac": "cmd+shift+a",
+        "key": "ctrl+n",
+        "mac": "cmd+n",
         "when": "activeCustomEditorId == skena.canvasEditor"
       }
     ],
