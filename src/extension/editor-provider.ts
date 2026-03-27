@@ -32,7 +32,7 @@ import {
 import { MAX_FILE_SIZE_BYTES } from '../shared/constants';
 
 export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDocument> {
-  private static readonly viewType = 'skena.canvasEditor';
+  static readonly viewType = 'skena.canvasEditor';
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -288,10 +288,36 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const resolved = resolver.resolve(msg.uri, canvasDir);
     if (!resolved || resolved.isNotion) return;
 
+    const fsUri = vscode.Uri.file(resolved.fsPath);
+    const ext   = path.extname(resolved.fsPath).toLowerCase();
+
+    // - Enter        → open beside the canvas (split view, preview tab)
+    // - Ctrl+Enter   → open in the same column as the canvas (overlay tab, like Settings)
+    //   The canvas tab remains accessible; closing the file returns to the canvas.
+    const viewColumn = msg.modal ? vscode.ViewColumn.Active : vscode.ViewColumn.Beside;
+
     try {
-      const doc = await vscode.workspace.openTextDocument(resolved.fsPath);
-      // - open beside the canvas, not replacing it
-      await vscode.window.showTextDocument(doc, { preview: true, viewColumn: vscode.ViewColumn.Beside });
+      if (ext === '.ipynb') {
+        // - open in Jupyter notebook editor (not raw text)
+        const nb = await vscode.workspace.openNotebookDocument(fsUri);
+        await vscode.window.showNotebookDocument(nb, {
+          viewColumn,
+          preserveFocus: false,
+          preview: !msg.modal,
+        });
+      } else if (ext === '.canvas') {
+        // - open in Skena canvas editor (not raw JSON)
+        await vscode.commands.executeCommand(
+          'vscode.openWith',
+          fsUri,
+          SkenaEditorProvider.viewType,
+          { viewColumn, preview: !msg.modal },
+        );
+      } else {
+        // - .md and all other text files → open in text editor (edit mode)
+        const doc = await vscode.workspace.openTextDocument(resolved.fsPath);
+        await vscode.window.showTextDocument(doc, { viewColumn, preview: !msg.modal });
+      }
     } catch (e) {
       vscode.window.showErrorMessage(`Skena: cannot open file: ${e}`);
     }

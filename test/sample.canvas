@@ -3,18 +3,18 @@
     {
       "id": "node1",
       "type": "text",
-      "x": 131,
-      "y": -755,
+      "x": 134,
+      "y": -1156,
       "width": 412,
       "height": 360,
       "color": "4",
-      "text": "# Backtest trend following model\r\n\r\n- 1. tests image\r\n---\r\n\r\n- 2. tests image 2\r\n---\r\n\r\n- 3. tests sentence 3\r\n---\r\n\r\n- 4. Test anything\r\n---\r\n\r\n\r\n$$\\zeta(x) = \\frac{1}{a} \\sum^{N}_{k=0}{x^k}$$\r\n\r\n\r\n![Image](image.svg)\r\n\r\n\r\nCool here we can write different content !\r\n> Hey \r\n- a\r\n\r\n# I've another great idea to share !"
+      "text": "# Backtest trend following model\r\n\r\n- 1. tests image\r\n---\r\n\r\n- 2. tests image 2\r\n---\r\n\r\n- 3. tests sentence 3\r\n---\r\n\r\n- 4. Test anything\r\n---\r\n\r\n\r\n$$\\zeta(x) = \\frac{1}{a} \\sum^{N}_{k=0}{x^k}$$\r\n\r\n\r\n![Image](image.svg)\r\n\r\n\r\nCool here we can write different content !\r\n\r\n# I've another great idea to share !\r\n\r\n  - Meta strategy — HeritageReverseStrategy 15min, CUSUM 0.05 targets\r\n  - Two alpha nodes (Long + Short), equal weights 1.0\r\n  - RandomForest 500 estimators, ECDF transform, weekly walk-forward retrain\r\n  - Entry threshold 0.8, cancel 0.5, leverage-based sizing\r\n  - Backtest period matches model evaluation window (2025-01-01 to 2025-06-01)\r\n  - Universe — BTCUSDT + ETHUSDT (Binance UM)\r\n  - nemesis"
     },
     {
       "id": "node3",
       "type": "link",
-      "x": 979,
-      "y": -235,
+      "x": -1012,
+      "y": -2267,
       "width": 212,
       "height": 60,
       "url": "https://github.com/dmarienko/"
@@ -33,8 +33,8 @@
     {
       "id": "node5",
       "type": "portal",
-      "x": 1191,
-      "y": -795,
+      "x": -334,
+      "y": -176,
       "width": 250,
       "height": 140,
       "color": "5",
@@ -55,7 +55,7 @@
       "type": "file",
       "file": "image.svg",
       "x": 138,
-      "y": -36,
+      "y": -176,
       "width": 400,
       "height": 300
     },
@@ -64,7 +64,7 @@
       "type": "file",
       "file": "some-config.yaml",
       "x": 138,
-      "y": -1141,
+      "y": -1635,
       "width": 400,
       "height": 300
     },
@@ -72,10 +72,10 @@
       "id": "node-1774618282037-0",
       "type": "file",
       "file": "my-notebook.ipynb",
-      "x": 711,
-      "y": -1119,
-      "width": 400,
-      "height": 300
+      "x": 758,
+      "y": -1783,
+      "width": 676,
+      "height": 597
     }
   ],
   "edges": [
@@ -84,14 +84,6 @@
       "fromNode": "node-1774042036432-0",
       "fromSide": "right",
       "toNode": "node1",
-      "toSide": "left",
-      "toEnd": "arrow"
-    },
-    {
-      "id": "node1-node3-1774042149853",
-      "fromNode": "node1",
-      "fromSide": "right",
-      "toNode": "node3",
       "toSide": "left",
       "toEnd": "arrow"
     },
@@ -120,14 +112,6 @@
       "toEnd": "arrow"
     },
     {
-      "id": "node3-node5-1774617930699",
-      "fromNode": "node3",
-      "fromSide": "right",
-      "toNode": "node5",
-      "toSide": "left",
-      "toEnd": "arrow"
-    },
-    {
       "id": "node1-node-1774044460725-0-1774618041473",
       "fromNode": "node1",
       "fromSide": "bottom",
@@ -141,6 +125,22 @@
       "fromSide": "right",
       "toNode": "node-1774618282037-0",
       "toSide": "left",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "node1-node5-1774618824723",
+      "fromNode": "node1",
+      "fromSide": "bottom",
+      "toNode": "node5",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "node3-node-1774042036432-0-1774619544538",
+      "fromNode": "node3",
+      "fromSide": "bottom",
+      "toNode": "node-1774042036432-0",
+      "toSide": "top",
       "toEnd": "arrow"
     }
   ]

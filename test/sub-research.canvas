@@ -1,4 +1,32 @@
 {
-  "nodes": [],
-  "edges": []
+  "nodes": [
+    {
+      "id": "node-1774618733261-0",
+      "type": "file",
+      "file": "some-config.yaml",
+      "x": 242,
+      "y": 252,
+      "width": 400,
+      "height": 300
+    },
+    {
+      "id": "node-1774618743797-0",
+      "type": "file",
+      "file": "my-notebook.ipynb",
+      "x": 242,
+      "y": 607,
+      "width": 402,
+      "height": 395
+    }
+  ],
+  "edges": [
+    {
+      "id": "node-1774618733261-0-node-1774618743797-0-1774618750961",
+      "fromNode": "node-1774618733261-0",
+      "fromSide": "bottom",
+      "toNode": "node-1774618743797-0",
+      "toSide": "top",
+      "toEnd": "arrow"
+    }
+  ]
 }

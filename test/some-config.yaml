@@ -11,7 +11,6 @@ strategy: xmetals.reversion.meta.metatrader0.MetaTraderLeverage
 
 tags:
   - meta
-  - nemesis
   - heritage
   - 15min
   - cusum005

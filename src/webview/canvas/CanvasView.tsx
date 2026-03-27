@@ -466,20 +466,22 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
         active?.closest('.monaco-editor')
       ) return;
 
-      // - Enter: open non-text selected node in VS Code editor
+      // - Enter / Ctrl+Enter: open non-text selected node in VS Code editor
+      // - Ctrl+Enter → modal (maximize editor group); Enter → beside preview
       if (e.key === 'Enter') {
         const current = nodesRef.current.find(n => n.selected && n.type !== 'group');
         // - text nodes handle Enter themselves via their own onKeyDown
         if (!current || current.type === 'text') return;
         e.preventDefault();
+        const modal = e.ctrlKey || e.metaKey;
         const d = current.data as Record<string, unknown>;
         if (current.type === 'file') {
-          vscodePostMessage({ type: 'openFile', uri: (d.file as string) ?? '' });
+          vscodePostMessage({ type: 'openFile', uri: (d.file as string) ?? '', modal });
         } else if (current.type === 'portal') {
-          vscodePostMessage({ type: 'openFile', uri: (d.canvas as string) ?? '' });
+          vscodePostMessage({ type: 'openFile', uri: (d.canvas as string) ?? '', modal });
         } else if (current.type === 'link') {
           const url = (d.url as string) ?? '';
-          if (url) vscodePostMessage({ type: 'openFile', uri: url });
+          if (url) vscodePostMessage({ type: 'openFile', uri: url, modal });
         }
         return;
       }

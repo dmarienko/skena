@@ -3,6 +3,7 @@ Some text
 
 ## Report data
 
+
 **Chat node** — an agent conversation terminal embedded in the canvas:
 1. file1
 2. file2

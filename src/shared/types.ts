@@ -250,6 +250,8 @@ export interface MsgOpenFile {
   type: 'openFile';
   /** - resolved fs path or vault URI */
   uri: string;
+  /** - true → maximize the editor group after opening (Ctrl+Enter "modal" mode) */
+  modal?: boolean;
 }
 
 export interface MsgSearchVault {
