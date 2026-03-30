@@ -25,6 +25,12 @@ export interface CanvasNodeBase {
   width: number;
   height: number;
   color?: CanvasColor;
+  /**
+   * Short reference label auto-assigned by Skena (e.g. N3, M12, J5).
+   * Lets you refer to nodes by label when talking to an AI agent.
+   * Persisted in the .canvas file; ignored by Obsidian.
+   */
+  nodeLabel?: string;
 }
 
 export interface FileNode extends CanvasNodeBase {

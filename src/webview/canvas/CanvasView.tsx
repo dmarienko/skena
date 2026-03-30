@@ -33,6 +33,7 @@ import '@xyflow/react/dist/style.css';
 import { CanvasData, CanvasNode, CanvasEdge, MsgAddNodeResult, MsgSubCanvasCreated, NodeSide } from '../../shared/types';
 import { ContextMenu } from './ContextMenu';
 import { CANVAS_COLORS } from '../../shared/constants';
+import { ensureLabels, assignLabel } from './nodeLabels';
 
 import { FileNodeComponent }  from './nodes/FileNode';
 import { TextNodeComponent }  from './nodes/TextNode';
@@ -261,7 +262,9 @@ interface CanvasViewProps {
 // ─── inner component (needs ReactFlowProvider context) ────────────────────────
 
 function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
-  const [nodes, setNodes, onNodesChange] = useNodesState(canvas.nodes.map(toFlowNode));
+  // - ensure every node has a reference label (N1, M3, J2 …); save if any were missing
+  const initialNodes = ensureLabels(canvas.nodes);
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes.map(toFlowNode));
   const [edges, setEdges, onEdgesChange] = useEdgesState(canvas.edges.map(toFlowEdge));
   const [showMinimap,  setShowMinimap]  = useState(false);
   const [helperLines,  setHelperLines]  = useState<HelperLinesState>({});
@@ -292,14 +295,16 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
   }, [onNodesChange]); // - nodesRef always current via its own useEffect
 
   // - track current canvas data for save (avoid stale closures)
-  const canvasRef = useRef<CanvasData>(canvas);
+  // - initialNodes already has labels assigned; if any were missing, they need a save
+  const canvasRef = useRef<CanvasData>({ ...canvas, nodes: initialNodes });
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // - sync when canvas reloads from host; restore focus after fitView settles
   useEffect(() => {
-    setNodes(canvas.nodes.map(toFlowNode));
+    const labeled = ensureLabels(canvas.nodes);
+    setNodes(labeled.map(toFlowNode));
     setEdges(canvas.edges.map(toFlowEdge));
-    canvasRef.current = canvas;
+    canvasRef.current = { ...canvas, nodes: labeled };
 
     // - fitView runs asynchronously after the layout pass; defer focus so the
     // - viewport is correct when pickViewportNode computes visible nodes
@@ -320,6 +325,15 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
     saveTimerRef.current = setTimeout(() => {
       vscodePostMessage({ type: 'saveCanvas', canvas: updatedCanvas });
     }, 500);
+  }, []);
+
+  // - if labels were missing on load, persist them immediately
+  useEffect(() => {
+    if (initialNodes !== canvas.nodes) {
+      scheduleSave(canvasRef.current);
+    }
+  // - run once on mount only; scheduleSave is stable
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const onNodeDragStop = useCallback((_: React.MouseEvent, node: Node) => {
@@ -674,9 +688,14 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
     const idMap = new Map<string, string>();
     clipboard.nodes.forEach((n, i) => idMap.set(n.id, `node-paste-${Date.now()}-${i}`));
 
-    const newNodes: CanvasNode[] = clipboard.nodes.map(n => ({
+    // - pasted nodes get new IDs and fresh labels (copies aren't the same node)
+    const rawPasted: CanvasNode[] = clipboard.nodes.map(n => ({
       ...n, id: idMap.get(n.id)!, x: n.x + OFFSET, y: n.y + OFFSET,
+      nodeLabel: undefined, // - strip old label so assignLabel gives a new one
     }));
+    const allAfterPaste = [...canvasRef.current.nodes, ...rawPasted];
+    const newNodes: CanvasNode[] = ensureLabels(allAfterPaste).slice(canvasRef.current.nodes.length);
+
     const newEdges: CanvasEdge[] = clipboard.edges.map((e, i) => ({
       ...e,
       id:       `edge-paste-${Date.now()}-${i}`,
@@ -979,7 +998,10 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
   // - receive add-node result from QuickPick (Ctrl+N / Shift+hjkl)
   useEffect(() => {
     const handler = (e: Event) => {
-      const { node: cn, edge: ce, autoEdit } = (e as CustomEvent<MsgAddNodeResult>).detail;
+      const { node: rawNode, edge: ce, autoEdit } = (e as CustomEvent<MsgAddNodeResult>).detail;
+
+      // - assign a reference label (N1, M3 …) if the node doesn't have one yet
+      const cn = assignLabel(rawNode, canvasRef.current.nodes);
 
       // - deselect everything, then add the new node as selected
       setNodes(nds => [

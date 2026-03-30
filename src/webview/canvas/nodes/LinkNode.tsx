@@ -6,6 +6,7 @@
 import React from 'react';
 import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import { LinkNode } from '../../../shared/types';
+import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -32,6 +33,8 @@ export function LinkNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
   const open = () => vscodePostMessage({ type: 'openFile', uri: node.url });
 
   return (
+    <>
+    <NodeLabelBadge label={node.nodeLabel} />
     <div
       className="skena-node" style={{ border: `1.5px solid ${borderColor}`, height: '100%', borderRadius: 6, overflow: 'hidden', background: 'var(--vscode-editorWidget-background)', padding: '8px 10px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 6 }}
       onClick={open}
@@ -56,5 +59,6 @@ export function LinkNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
       </div>
       <div style={{ fontSize: 12, wordBreak: 'break-all', opacity: 0.85 }}>{node.url}</div>
     </div>
+    </>
   );
 }

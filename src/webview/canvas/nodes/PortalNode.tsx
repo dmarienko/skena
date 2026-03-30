@@ -6,6 +6,7 @@
 import React from 'react';
 import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import { PortalNode } from '../../../shared/types';
+import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -18,6 +19,8 @@ export function PortalNodeComponent({ data, id, selected }: NodeProps): JSX.Elem
   const open = () => vscodePostMessage({ type: 'openFile', uri: node.canvas });
 
   return (
+    <>
+    <NodeLabelBadge label={node.nodeLabel} />
     <div
       style={{
         border:         `2px solid ${borderColor}`,
@@ -52,5 +55,6 @@ export function PortalNodeComponent({ data, id, selected }: NodeProps): JSX.Elem
       </span>
       <span style={{ fontSize: 11, opacity: 0.4, textAlign: 'center' }}>canvas</span>
     </div>
+    </>
   );
 }

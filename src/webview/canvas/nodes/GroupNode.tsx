@@ -6,6 +6,7 @@
 import React from 'react';
 import { NodeProps, NodeResizer } from '@xyflow/react';
 import { GroupNode } from '../../../shared/types';
+import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 
 export function GroupNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as GroupNode & { accentColor?: string };
@@ -13,6 +14,8 @@ export function GroupNodeComponent({ data, id, selected }: NodeProps): JSX.Eleme
   const border = node.accentColor ?? 'rgba(255,255,255,0.12)';
 
   return (
+    <>
+    <NodeLabelBadge label={node.nodeLabel} />
     <div style={{ width: '100%', height: '100%', border: `1px dashed ${border}`, borderRadius: 8, background: bg, position: 'relative' }}>
       <NodeResizer
         minWidth={160} minHeight={120}
@@ -27,5 +30,6 @@ export function GroupNodeComponent({ data, id, selected }: NodeProps): JSX.Eleme
         </span>
       )}
     </div>
+    </>
   );
 }

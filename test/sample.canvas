@@ -8,7 +8,8 @@
       "width": 411,
       "height": 534,
       "color": "4",
-      "text": "# Backtest trend following model\r\n\r\n- 1. tests image\r\n---\r\n\r\n- 2. tests image 2\r\n---\r\n\r\n- 3. tests sentence 3\r\n---\r\n\r\n- 4. Test anything\r\n---\r\n\r\n\r\n$$\\zeta(x) = \\frac{1}{a} \\sum^{N}_{k=0}{x^k}$$\r\n\r\n\r\n![Image](image.svg)\r\n\r\n\r\nCool here we can write different content !\r\n\r\n# I've another great idea to share !\r\n\r\n  - Meta strategy — HeritageReverseStrategy 15min, CUSUM 0.05 targets\r\n  - Two alpha nodes (Long + Short), equal weights 1.0\r\n  - RandomForest 500 estimators, ECDF transform, weekly walk-forward retrain\r\n  - Entry threshold 0.8, cancel 0.5, leverage-based sizing\r\n  - Backtest period matches model evaluation window (2025-01-01 to 2025-06-01)\r\n  - Universe — BTCUSDT + ETHUSDT (Binance UM)\r\n  - nemesis"
+      "text": "# Backtest trend following model\r\n\r\n- 1. tests image\r\n---\r\n\r\n- 2. tests image 2\r\n---\r\n\r\n- 3. tests sentence 3\r\n---\r\n\r\n- 4. Test anything\r\n---\r\n\r\n\r\n$$\\zeta(x) = \\frac{1}{a} \\sum^{N}_{k=0}{x^k}$$\r\n\r\n\r\n![Image](image.svg)\r\n\r\n\r\nCool here we can write different content !\r\n\r\n# I've another great idea to share !\r\n\r\n  - Meta strategy — HeritageReverseStrategy 15min, CUSUM 0.05 targets\r\n  - Two alpha nodes (Long + Short), equal weights 1.0\r\n  - RandomForest 500 estimators, ECDF transform, weekly walk-forward retrain\r\n  - Entry threshold 0.8, cancel 0.5, leverage-based sizing\r\n  - Backtest period matches model evaluation window (2025-01-01 to 2025-06-01)\r\n  - Universe — BTCUSDT + ETHUSDT (Binance UM)\r\n  - nemesis",
+      "nodeLabel": "N1"
     },
     {
       "id": "node3",
@@ -17,7 +18,8 @@
       "y": -1843,
       "width": 212,
       "height": 60,
-      "url": "https://github.com/dmarienko/"
+      "url": "https://github.com/dmarienko/",
+      "nodeLabel": "L1"
     },
     {
       "id": "node4",
@@ -28,16 +30,18 @@
       "height": 160,
       "color": "2",
       "format": "markdown",
-      "content": "### Latest Backtest\n\n| Metric | Value |\n|---|---|\n| Sharpe | -0.85 |\n| MaxDD | 55.4% |\n| Period | 2021–2026 |"
+      "content": "### Latest Backtest\n\n| Metric | Value |\n|---|---|\n| Sharpe | -0.85 |\n| MaxDD | 55.4% |\n| Period | 2021–2026 |",
+      "nodeLabel": "C1"
     },
     {
       "id": "node-1774042036432-0",
       "type": "file",
       "file": "test1.md",
-      "x": -1358,
-      "y": -2068,
+      "x": -1327,
+      "y": -2017,
       "width": 904,
-      "height": 1095
+      "height": 1095,
+      "nodeLabel": "M1"
     },
     {
       "id": "node-1774044460725-0",
@@ -46,16 +50,18 @@
       "x": 138,
       "y": -558,
       "width": 400,
-      "height": 300
+      "height": 300,
+      "nodeLabel": "I1"
     },
     {
       "id": "node-1774621572860",
       "type": "file",
       "file": "./my-notebook.ipynb",
-      "x": 911,
-      "y": -1620,
+      "x": 934,
+      "y": -1610,
       "width": 400,
-      "height": 300
+      "height": 300,
+      "nodeLabel": "J1"
     },
     {
       "id": "node-1774627877759",
@@ -64,7 +70,8 @@
       "x": -1833,
       "y": -1560,
       "width": 320,
-      "height": 80
+      "height": 80,
+      "nodeLabel": "L2"
     },
     {
       "id": "node-1774628532830",
@@ -73,16 +80,18 @@
       "x": 1590,
       "y": -1560,
       "width": 200,
-      "height": 200
+      "height": 200,
+      "nodeLabel": "R1"
     },
     {
       "id": "node-1774628807372",
       "type": "file",
       "file": "./my-notebook.ipynb",
       "x": -1405,
-      "y": -478,
-      "width": 635,
-      "height": 770
+      "y": -327,
+      "width": 617,
+      "height": 541,
+      "nodeLabel": "J2"
     },
     {
       "id": "node-1774629108544",
@@ -91,7 +100,8 @@
       "x": 138,
       "y": -1720,
       "width": 400,
-      "height": 300
+      "height": 300,
+      "nodeLabel": "Y1"
     },
     {
       "id": "node-1774629174498",
@@ -100,7 +110,8 @@
       "x": -1266,
       "y": -791,
       "width": 400,
-      "height": 300
+      "height": 300,
+      "nodeLabel": "N2"
     },
     {
       "id": "node-1774630443412",
@@ -109,7 +120,8 @@
       "x": -423,
       "y": -791,
       "width": 200,
-      "height": 200
+      "height": 200,
+      "nodeLabel": "R2"
     },
     {
       "id": "node-1774630604173",
@@ -118,7 +130,8 @@
       "x": -665,
       "y": -478,
       "width": 684,
-      "height": 247
+      "height": 247,
+      "nodeLabel": "N3"
     },
     {
       "id": "node-1774630646766",
@@ -127,7 +140,8 @@
       "x": 409,
       "y": -12,
       "width": 200,
-      "height": 200
+      "height": 200,
+      "nodeLabel": "R3"
     },
     {
       "id": "node-1774632805824",
@@ -136,16 +150,28 @@
       "x": -523,
       "y": -12,
       "width": 529,
-      "height": 750
+      "height": 750,
+      "nodeLabel": "J3"
     },
     {
-      "id": "node-1774633629627",
-      "type": "file",
-      "file": "./Inside the black box.md",
-      "x": -2203,
-      "y": -2812,
-      "width": 937,
-      "height": 683
+      "id": "node-1774880170104",
+      "type": "text",
+      "text": "# How cusum is applied\r\n\r\nPipeline order (from source): \r\nsignals → BasicProcessor → trades → minimal_return filter → CUSUM filter → weights → label\r\n\r\n## CUSUM mechanics:                                                                                                         \r\nthreshold(t) = vol(t) × cusum_threshold × close(t)    [in price/dollar units]\r\naccumulate D[close] until sum > threshold → fire event, reset \r\n→ trade only survives if its entry_time hits a CUSUM event \r\n\r\n For cusum_threshold=0.05, volatility_timeframe=4h:\r\n - vol ≈ 1% of price → threshold ≈ 1% × 0.05 × price = 0.05% of price                                                      \r\n - At BTC = $64k → threshold ≈ $31                                                                                                                           \r\n  The real finding — CUSUM is nearly inactive at 15min                                                                   \r\n                                                                                                                            \r\n  ┌─────────────────┬───────────────────┬─────────────────┐                                                               \r\n  │                 │       15min       │       1H        │                                                                 \r\n  ├─────────────────┼───────────────────┼─────────────────┤                                                               \r\n  │ vol used        │ 4h vol = 0.99%    │ 1d vol = 2.56%  │                                                                 \r\n  ├─────────────────┼───────────────────┼─────────────────┤                                                               \r\n  │ CUSUM threshold │ $31               │ $86             │                                                                 \r\n  ├─────────────────┼───────────────────┼─────────────────┤\r\n  │ Median bar move │ $81               │ $156            │                                                                 \r\n  ├─────────────────┼───────────────────┼─────────────────┤                                                               \r\n  │ Threshold / bar │ 0.39×             │ 0.55×           │\r\n  ├─────────────────┼───────────────────┼─────────────────┤                                                                 \r\n  │ CUSUM pass rate │ 80%               │ 73%             │\r\n  ├─────────────────┼───────────────────┼─────────────────┤                                                                 \r\n  │ Fires every     │ 1.2 bars (19 min) │ 1.4 bars (1.4h) │                                                               \r\n  └─────────────────┴───────────────────┴─────────────────┘                                                                 \r\n    \r\n  CUSUM fires every 1-2 bars at 15min — the threshold ($31) is smaller than a single typical bar move ($81), so it resets   \r\n  and re-fires constantly. It's barely filtering anything (80% of bars are \"events\").                                     \r\n                                                                                                                            \r\n  Neither timeframe is doing meaningful CUSUM filtering (73–80% pass rates), but 15min is worse. For CUSUM to be a useful   \r\n  filter you'd want ~20–30% pass rate — which would require raising cusum_threshold to roughly 0.3–0.5 at 15min.",
+      "x": -394,
+      "y": -2622,
+      "width": 400,
+      "height": 300,
+      "nodeLabel": "N4"
+    },
+    {
+      "id": "node-1774880609230",
+      "type": "text",
+      "text": "# Targets generation for 15 min \r\n\r\n- validation of targets \r\n",
+      "x": -1065,
+      "y": -2983,
+      "width": 400,
+      "height": 300,
+      "nodeLabel": "N5"
     }
   ],
   "edges": [
@@ -254,11 +280,11 @@
       "toEnd": "arrow"
     },
     {
-      "id": "edge-1774633629627",
-      "fromNode": "node3",
-      "fromSide": "top",
-      "toNode": "node-1774633629627",
-      "toSide": "bottom",
+      "id": "node-1774880609230-node-1774880170104-1774880644373",
+      "fromNode": "node-1774880609230",
+      "fromSide": "right",
+      "toNode": "node-1774880170104",
+      "toSide": "left",
       "toEnd": "arrow"
     }
   ]

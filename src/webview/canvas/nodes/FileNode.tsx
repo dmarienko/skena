@@ -10,6 +10,7 @@ import { FileNode } from '../../../shared/types';
 import { useFileContent } from '../../hooks/useFileContent';
 import { useZoomLevel } from '../../hooks/useZoomLevel';
 import { NodeHeader } from '../../components/NodeHeader';
+import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { ScrollableContent } from '../../components/ScrollableContent';
 import { MarkdownRenderer } from '../../renderers/MarkdownRenderer';
 import { NotebookRenderer } from '../../renderers/NotebookRenderer';
@@ -39,6 +40,8 @@ export function FileNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
   const borderColor = node.accentColor ?? '#454545';
 
   return (
+    <>
+    <NodeLabelBadge label={node.nodeLabel} />
     <div
       className="skena-node skena-node--file"
       style={{ border: `1.5px solid ${borderColor}`, height: '100%', display: 'flex', flexDirection: 'column', borderRadius: 6, overflow: 'hidden' }}
@@ -74,6 +77,7 @@ export function FileNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
         </ScrollableContent>
       )}
     </div>
+    </>
   );
 }
 

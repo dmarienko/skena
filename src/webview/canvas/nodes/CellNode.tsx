@@ -7,6 +7,7 @@
 import React from 'react';
 import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import { CellNode } from '../../../shared/types';
+import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { MarkdownRenderer } from '../../renderers/MarkdownRenderer';
 import { ScrollableContent } from '../../components/ScrollableContent';
 
@@ -15,6 +16,8 @@ export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
   const borderColor = node.accentColor ?? '#454545';
 
   return (
+    <>
+    <NodeLabelBadge label={node.nodeLabel} />
     <div className="skena-node" style={{ border: `1.5px solid ${borderColor}`, height: '100%', borderRadius: 6, overflow: 'hidden', background: 'var(--vscode-editorWidget-background)', display: 'flex', flexDirection: 'column' }}>
       <NodeResizer
         minWidth={100} minHeight={60}
@@ -34,5 +37,6 @@ export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
         {node.format === 'html'     && <div dangerouslySetInnerHTML={{ __html: node.content }} />}
       </ScrollableContent>
     </div>
+    </>
   );
 }

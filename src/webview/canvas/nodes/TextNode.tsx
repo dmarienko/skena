@@ -12,6 +12,7 @@ import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import Editor, { OnMount } from '@monaco-editor/react';
 import { initVimMode } from 'monaco-vim';
 import { TextNode } from '../../../shared/types';
+import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { MarkdownRenderer } from '../../renderers/MarkdownRenderer';
 import { ScrollableContent } from '../../components/ScrollableContent';
 
@@ -91,6 +92,8 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
   }, [id]);
 
   return (
+    <>
+    <NodeLabelBadge label={node.nodeLabel} />
     <div
       ref={wrapperRef}
       className="skena-node"
@@ -179,5 +182,6 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
         </ScrollableContent>
       )}
     </div>
+    </>
   );
 }
