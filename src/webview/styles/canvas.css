@@ -53,11 +53,11 @@
 
 /* ─── Resize controls ─────────────────────────────────────────────────────── */
 .react-flow__resize-control.handle {
-  width: 8px;
-  height: 8px;
+  width:  14px;
+  height: 14px;
   background: var(--vscode-focusBorder, #007acc);
   border: 2px solid var(--vscode-editorWidget-background, var(--vscode-sideBar-background, #2a2a2a));
-  border-radius: 2px;
+  border-radius: 3px;
 }
 .react-flow__resize-control.line {
   border-color: var(--vscode-focusBorder, #007acc);

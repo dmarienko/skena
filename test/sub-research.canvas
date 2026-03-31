@@ -1,16 +1,6 @@
 {
   "nodes": [
     {
-      "id": "node-1774618733261-0",
-      "type": "file",
-      "file": "some-config.yaml",
-      "x": 242,
-      "y": 252,
-      "width": 400,
-      "height": 300,
-      "nodeLabel": "Y1"
-    },
-    {
       "id": "node-1774618743797-0",
       "type": "file",
       "file": "my-notebook.ipynb",
@@ -41,21 +31,11 @@
       "nodeLabel": "N2"
     },
     {
-      "id": "node-1774627144192",
-      "type": "file",
-      "file": "./some-config.yaml",
-      "x": 242,
-      "y": 1550,
-      "width": 400,
-      "height": 300,
-      "nodeLabel": "Y2"
-    },
-    {
       "id": "node-1774627147825",
       "type": "file",
       "file": "./test1.md",
-      "x": 690,
-      "y": 1550,
+      "x": 742,
+      "y": 1593,
       "width": 400,
       "height": 300,
       "nodeLabel": "M1"
@@ -79,17 +59,29 @@
       "width": 400,
       "height": 300,
       "nodeLabel": "N4"
+    },
+    {
+      "id": "node-1774964584826-0",
+      "type": "file",
+      "file": "meta-simulation.yaml",
+      "x": 242,
+      "y": 1593,
+      "width": 400,
+      "height": 300,
+      "nodeLabel": "Y2"
+    },
+    {
+      "id": "node-1774964928341",
+      "type": "file",
+      "file": "./meta-simulation.yaml",
+      "x": 242,
+      "y": 259,
+      "width": 400,
+      "height": 300,
+      "nodeLabel": "Y1"
     }
   ],
   "edges": [
-    {
-      "id": "node-1774618733261-0-node-1774618743797-0-1774618750961",
-      "fromNode": "node-1774618733261-0",
-      "fromSide": "bottom",
-      "toNode": "node-1774618743797-0",
-      "toSide": "top",
-      "toEnd": "arrow"
-    },
     {
       "id": "edge-1774624125112",
       "fromNode": "node-1774618743797-0",
@@ -107,22 +99,6 @@
       "toEnd": "arrow"
     },
     {
-      "id": "edge-1774627144192",
-      "fromNode": "text-mn935ze1-vxk6",
-      "fromSide": "bottom",
-      "toNode": "node-1774627144192",
-      "toSide": "top",
-      "toEnd": "arrow"
-    },
-    {
-      "id": "edge-1774627147825",
-      "fromNode": "node-1774627144192",
-      "fromSide": "right",
-      "toNode": "node-1774627147825",
-      "toSide": "left",
-      "toEnd": "arrow"
-    },
-    {
       "id": "edge-1774631740880",
       "fromNode": "node-1774618743797-0",
       "fromSide": "right",
@@ -137,11 +113,35 @@
       "toNode": "node-1774631777691",
       "toSide": "left",
       "toEnd": "arrow"
+    },
+    {
+      "id": "text-mn935ze1-vxk6-node-1774964584826-0-1774964588922",
+      "fromNode": "text-mn935ze1-vxk6",
+      "fromSide": "bottom",
+      "toNode": "node-1774964584826-0",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "node-1774964584826-0-node-1774627147825-1774964594357",
+      "fromNode": "node-1774964584826-0",
+      "fromSide": "right",
+      "toNode": "node-1774627147825",
+      "toSide": "left",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1774964928341",
+      "fromNode": "node-1774618743797-0",
+      "fromSide": "top",
+      "toNode": "node-1774964928341",
+      "toSide": "bottom",
+      "toEnd": "arrow"
     }
   ],
   "viewport": {
-    "x": -62.45744680851067,
-    "y": -87.97872340425533,
-    "zoom": 0.7340425531914894
+    "x": 60.4515659574468,
+    "y": -264.39677446808514,
+    "zoom": 0.8247702127659575
   }
 }

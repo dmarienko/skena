@@ -524,8 +524,15 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
   // - listen for resolved nodes coming back from host after drop
   useEffect(() => {
     const handler = (e: Event) => {
-      const nodes = (e as CustomEvent<CanvasNode[]>).detail;
-      nodes.forEach(cn => {
+      const incoming = (e as CustomEvent<CanvasNode[]>).detail;
+      // - assign labels to all dropped nodes, avoiding collisions with each other
+      // - and with existing canvas nodes (same logic as addNodeResult path)
+      const labelled: CanvasNode[] = [];
+      incoming.forEach(cn => {
+        const existing = [...canvasRef.current.nodes, ...labelled];
+        labelled.push(assignLabel(cn, existing));
+      });
+      labelled.forEach(cn => {
         setNodes(nds => [...nds, toFlowNode(cn)]);
         canvasRef.current = {
           ...canvasRef.current,

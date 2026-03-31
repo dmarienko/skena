@@ -14,8 +14,8 @@
     {
       "id": "node3",
       "type": "link",
-      "x": -1840,
-      "y": -1843,
+      "x": -1725,
+      "y": -1780,
       "width": 212,
       "height": 60,
       "url": "https://github.com/dmarienko/",
@@ -37,8 +37,8 @@
       "id": "node-1774042036432-0",
       "type": "file",
       "file": "test1.md",
-      "x": -1065,
-      "y": -1686,
+      "x": -998,
+      "y": -2067,
       "width": 904,
       "height": 1095,
       "nodeLabel": "M1"
@@ -57,8 +57,8 @@
       "id": "node-1774621572860",
       "type": "file",
       "file": "./my-notebook.ipynb",
-      "x": 538,
-      "y": -2161,
+      "x": 409,
+      "y": -2172,
       "width": 395,
       "height": 270,
       "nodeLabel": "J1"
@@ -68,7 +68,7 @@
       "type": "link",
       "url": "https://github.com/neurotrader888/market-structure/blob/main/hierarchical_extremes.py",
       "x": -1833,
-      "y": -1560,
+      "y": -1670,
       "width": 320,
       "height": 80,
       "nodeLabel": "L2"
@@ -169,58 +169,39 @@
       "text": "# Targets generation for 15 min \r\n\r\n- validation of targets \r\n",
       "x": -1065,
       "y": -2986,
-      "width": 400,
-      "height": 300,
+      "width": 444,
+      "height": 96,
       "nodeLabel": "N5"
-    },
-    {
-      "id": "node-1774958461117-0",
-      "type": "file",
-      "file": "ito.md",
-      "x": -1647,
-      "y": -2700,
-      "width": 534,
-      "height": 809,
-      "nodeLabel": "M2"
     },
     {
       "id": "node-1774958487524",
       "type": "text",
       "text": "# Simplest formula\r\n$$\r\n\\begin{equation*}\r\nd x_{i}=a_{i}(\\mathbf{x}, t) d t+b_{i \\alpha}(\\mathbf{x}, t) \\delta W_{\\alpha}, \\tag{6.4}\r\n\\end{equation*}\r\n$$",
-      "x": -1021,
-      "y": -2613,
+      "x": -1049,
+      "y": -2628,
       "width": 413,
       "height": 162,
       "nodeLabel": "N6"
     },
     {
-      "id": "node-1774958743226",
-      "type": "text",
-      "text": "# In",
-      "x": -608,
-      "y": -2353,
-      "width": 245,
-      "height": 116,
-      "nodeLabel": "N8"
-    },
-    {
       "id": "node-1774961140308",
       "type": "text",
       "text": "# Note 2",
-      "x": -820,
-      "y": -1986,
+      "x": -523,
+      "y": -2594,
       "width": 462,
       "height": 95,
       "nodeLabel": "N9"
     },
     {
-      "id": "node-1774963553443-0",
-      "type": "file",
-      "file": "ito.md",
-      "x": -1706,
-      "y": -2817,
-      "width": 400,
-      "height": 300
+      "id": "node-1774965277833",
+      "type": "text",
+      "text": "# Feller process\r\n\r\n$$\r\ndx = -\\beta \\cdot (x - \\alpha) dt + \\sigma \\sqrt{x} \\delta W(1)\r\n$$\r\n",
+      "x": -1029,
+      "y": -2330,
+      "width": 427,
+      "height": 184,
+      "nodeLabel": "N8"
     }
   ],
   "edges": [
@@ -337,24 +318,8 @@
       "toEnd": "arrow"
     },
     {
-      "id": "edge-1774958487524",
-      "fromNode": "node-1774958461117-0",
-      "fromSide": "right",
-      "toNode": "node-1774958487524",
-      "toSide": "left",
-      "toEnd": "arrow"
-    },
-    {
-      "id": "edge-1774958743226",
-      "fromNode": "node-1774958461117-0",
-      "fromSide": "right",
-      "toNode": "node-1774958743226",
-      "toSide": "left",
-      "toEnd": "arrow"
-    },
-    {
-      "id": "node-1774958461117-0-node-1774961140308-1774963037590",
-      "fromNode": "node-1774958461117-0",
+      "id": "node-1774958487524-node-1774961140308-1774965318094",
+      "fromNode": "node-1774958487524",
       "fromSide": "right",
       "toNode": "node-1774961140308",
       "toSide": "left",
@@ -362,8 +327,8 @@
     }
   ],
   "viewport": {
-    "x": 1700.7222719481006,
-    "y": 2769.9080782783412,
-    "zoom": 0.9480546682383071
+    "x": 1865.265959761778,
+    "y": 2048.2349159663468,
+    "zoom": 0.8611870650100287
   }
 }

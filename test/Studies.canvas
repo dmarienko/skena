@@ -1,0 +1,103 @@
+{
+  "nodes": [
+    {
+      "id": "node-1774966751296-0",
+      "type": "file",
+      "file": "Options/research_study_plan.md",
+      "x": 98,
+      "y": 136,
+      "width": 1103,
+      "height": 516,
+      "nodeLabel": "M1"
+    },
+    {
+      "id": "node-1774966833757",
+      "type": "file",
+      "file": "./Options/SC01_Continuous_Processes_Brownian_Motion.md",
+      "x": 275,
+      "y": 782,
+      "width": 748,
+      "height": 655,
+      "nodeLabel": "M2"
+    },
+    {
+      "id": "node-1774966884033-0",
+      "type": "file",
+      "file": "Options/SC01_Blotter.ipynb",
+      "x": 1504,
+      "y": 221,
+      "width": 637,
+      "height": 648,
+      "nodeLabel": "J1"
+    },
+    {
+      "id": "node-1774966923614",
+      "type": "text",
+      "text": "# 2.3 Convergence Properties\r\n\r\naddition is random var: $Y = \\pm  1/\\sqrt{n}$\r\n\r\nit's expectation: $E[Y] = 1/2 \\frac{1}{\\sqrt{n}} - 1/2 \\frac{1}{\\sqrt{n}}$ = 0\r\n\r\nvariation: $Var(Y) = E[(Y - E[Y])^2] = E[Y^2]$ \r\n\r\n$E[Y^2] = 1/n$ as prob. that we see Y^2 is always 1\r\n\r\nNow for this \r\n$$\r\n\r\nW_n\\left(\\frac{i}{n}\\right) = W_n\\left(\\frac{i-1}{n}\\right) + \\frac{X_i}{\\sqrt{n}}, \\quad \\text{for all } i \\geq 1\r\n\\tag{sc01.f.1.1}\r\n\r\n$$\r\n\r\n",
+      "x": 1201,
+      "y": 1004,
+      "width": 532,
+      "height": 211,
+      "nodeLabel": "N1"
+    },
+    {
+      "id": "node-1774967027103",
+      "type": "text",
+      "text": "# What's $E[W_n(1)]$  (here 1 means i=n) ?\r\n\r\n$E[W_n(1)] = E[W_n((n-1)/n)] + 0 = E[W_n((n-2)/n) + 0] + 0 = ... = E[W_n(1/n)] = E[X_1/\\sqrt{n}] = E[Y] = 0$ \r\n",
+      "x": 1837,
+      "y": 1063,
+      "width": 660,
+      "height": 93,
+      "nodeLabel": "N2"
+    },
+    {
+      "id": "node-1774967125889",
+      "type": "text",
+      "text": "# 2. What's $Var[W_n(1)]$ ?\r\n\r\n$$\r\nVar[W_n(1)] = Var(W_n(\\frac{n-1}{n}) + Y) = Var(W_n(\\frac{n-1}{n})) + 2 Cov(W_n(\\frac{n-1}{n}), Y) + Var(Y) = Var(W_n(\\frac{n-1}{n})) + 1/n = ... = 1/n + 1/n + ... = n \\cdot 1/n = 1 \r\n\r\n$$",
+      "x": 1837,
+      "y": 1281,
+      "width": 948,
+      "height": 98,
+      "nodeLabel": "N3"
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-1774966833757",
+      "fromNode": "node-1774966751296-0",
+      "fromSide": "bottom",
+      "toNode": "node-1774966833757",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1774966923614",
+      "fromNode": "node-1774966833757",
+      "fromSide": "right",
+      "toNode": "node-1774966923614",
+      "toSide": "left",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "node-1774966923614-node-1774967027103-1774967067730",
+      "fromNode": "node-1774966923614",
+      "fromSide": "right",
+      "toNode": "node-1774967027103",
+      "toSide": "left",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "node-1774967027103-node-1774967125889-1774967173394",
+      "fromNode": "node-1774967027103",
+      "fromSide": "bottom",
+      "toNode": "node-1774967125889",
+      "toSide": "top",
+      "toEnd": "arrow"
+    }
+  ],
+  "viewport": {
+    "x": -493.8994201050016,
+    "y": -240.1092451404122,
+    "zoom": 0.8499684037139708
+  }
+}
