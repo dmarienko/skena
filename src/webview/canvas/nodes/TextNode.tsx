@@ -5,16 +5,83 @@
  *
  * Enter edit mode:  double-click OR press Enter while node is focused/selected
  * Exit edit mode:   Esc / Ctrl+Cmd+Enter / click outside — all save content
+ *
+ * Clipboard (vim mode):
+ *   VS Code webview sandbox blocks navigator.clipboard, so all clipboard I/O is
+ *   relayed through the extension host via vscode.env.clipboard.
+ *
+ *   Vim's `+` and `*` registers (system clipboard) are wired to the extension host:
+ *     set(text) → writeClipboard → vscode.env.clipboard.writeText
+ *     get()     → returns clipboardCache (populated by requestClipboardRead)
+ *
+ *   clipboard=unnamedplus makes all unnamed y/p operations use `+` (system clipboard),
+ *   so `yy` writes to system clipboard and `p` pastes from it — the standard vim way.
+ *
+ *   Clipboard cache is refreshed:
+ *     • when editing starts (so `p` works immediately)
+ *     • every time Monaco gains focus (so external copies are picked up)
+ *
+ *   Ctrl+V (non-vim fallback): sends requestClipboardRead and inserts on response.
+ *   Note: in vim normal/visual mode Ctrl+V is intercepted by vim itself (visual block)
+ *   so this only fires in Monaco's own insert/non-vim context.
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import Editor, { OnMount } from '@monaco-editor/react';
-import { initVimMode } from 'monaco-vim';
+import type { editor as MonacoEditor } from 'monaco-editor';
+import { initVimMode, VimMode } from 'monaco-vim';
 import { TextNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { MarkdownRenderer } from '../../renderers/MarkdownRenderer';
 import { ScrollableContent } from '../../components/ScrollableContent';
+
+function vscodePostMessage(msg: unknown) {
+  (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
+}
+
+// ─── module-level clipboard state ────────────────────────────────────────────
+// - shared across all TextNode instances; only one Monaco editor is active at a time
+
+/** - cached system clipboard text; vim's + register get() reads this synchronously */
+let clipboardCache: { text: string; linewise: boolean } = { text: '', linewise: false };
+
+/**
+ * - true when Ctrl+V was pressed and we're waiting for the async clipboard response.
+ * - The clipboardContent handler checks this flag and inserts text into Monaco.
+ */
+let pendingPaste = false;
+
+// ─── vim clipboard wiring (run once at module load) ──────────────────────────
+// - VimMode.Vim is the underlying CodeMirror Vim singleton.
+// - We define vim's system-clipboard registers (+/*) to relay through extension host.
+// - clipboard=unnamedplus makes all unnamed y/p go through these registers,
+// - giving `yy` / `p` the same effect as `"+yy` / `"+p` in a full vim setup.
+(function setupVimClipboard() {
+  const Vim = (VimMode as unknown as Record<string, unknown>).Vim as
+    | { defineRegister: (n: string, r: unknown) => void; setOption: (k: string, v: string) => void }
+    | undefined;
+  if (!Vim?.defineRegister) return;
+
+  const sysReg = {
+    set(text: string, linewise: boolean) {
+      clipboardCache = { text, linewise };
+      vscodePostMessage({ type: 'writeClipboard', text });
+    },
+    get() {
+      return { text: clipboardCache.text, linewise: clipboardCache.linewise };
+    },
+  };
+
+  // - + = system clipboard, * = X11 primary selection — both wired to host clipboard
+  Vim.defineRegister('+', sysReg);
+  Vim.defineRegister('*', sysReg);
+
+  // - make unnamed register (`y`/`p`) behave like `"+y`/`"+p`
+  try { Vim.setOption('clipboard', 'unnamedplus'); } catch { /* option may not exist */ }
+})();
+
+// ─── component ────────────────────────────────────────────────────────────────
 
 export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as TextNode & { accentColor?: string };
@@ -22,6 +89,8 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
   const [draft, setDraft] = useState(node.text);
   const vimStatusRef = useRef<HTMLDivElement | null>(null);
   const wrapperRef   = useRef<HTMLDivElement | null>(null);
+  // - stable ref to the Monaco instance so the clipboard event handler can reach it
+  const editorRef    = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
 
   const borderColor = node.accentColor ?? '#454545';
   const isDark = document.body.classList.contains('vscode-dark') ||
@@ -29,6 +98,7 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
 
   const commitEdit = useCallback((text: string) => {
     setEditing(false);
+    editorRef.current = null;
     setDraft(text);
     if (text !== node.text) {
       window.dispatchEvent(new CustomEvent('skena:nodeTextEdit', { detail: { id, text } }));
@@ -37,15 +107,52 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
     requestAnimationFrame(() => wrapperRef.current?.focus());
   }, [node.text, id]);
 
-  const onEditorMount: OnMount = useCallback((editor, monacoInstance) => {
-    editor.focus();
+  // ─── clipboard response handler ─────────────────────────────────────────
+  // - permanent (component lifetime) listener:
+  //   • always updates clipboardCache so vim's + register get() is up-to-date
+  //   • if pendingPaste is set (Ctrl+V was pressed), inserts text into Monaco
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const text = (e as CustomEvent<string>).detail ?? '';
+      clipboardCache = { text, linewise: false };
+
+      if (pendingPaste) {
+        pendingPaste = false;
+        const ed = editorRef.current;
+        if (!ed) return;
+        const sel = ed.getSelection();
+        if (!sel) return;
+        ed.executeEdits('system-paste', [{ range: sel, text, forceMoveMarkers: true }]);
+        ed.focus();
+      }
+    };
+    window.addEventListener('skena:clipboardContent', handler);
+    return () => window.removeEventListener('skena:clipboardContent', handler);
+  }, []);
+
+  // - eagerly refresh clipboard when entering edit mode so `p` works immediately
+  useEffect(() => {
+    if (editing) vscodePostMessage({ type: 'requestClipboardRead' });
+  }, [editing]);
+
+  // ─── Monaco setup ─────────────────────────────────────────────────────────
+
+  const onEditorMount: OnMount = useCallback((editorInstance, monacoInstance) => {
+    editorRef.current = editorInstance;
+    editorInstance.focus();
+
+    // - refresh clipboard cache whenever Monaco gains focus (covers copy-outside-then-back)
+    editorInstance.onDidFocusEditorText(() => {
+      vscodePostMessage({ type: 'requestClipboardRead' });
+    });
 
     // - initialise vim mode; status bar shows current vim mode / pending commands
-    const vimMode = initVimMode(editor, vimStatusRef.current ?? undefined);
+    const vimMode = initVimMode(editorInstance, vimStatusRef.current ?? undefined);
 
     // - Ctrl/Cmd+Enter → save and close from any mode
-    editor.addCommand(monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.Enter, () => {
-      commitEdit(editor.getValue());
+    editorInstance.addCommand(monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.Enter, () => {
+      commitEdit(editorInstance.getValue());
     });
 
     // - Double-Esc to exit:
@@ -53,20 +160,42 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
     //   still shows the current mode at keydown time.
     //   First Esc:  status = "-- INSERT --" → do nothing → vim transitions to NORMAL
     //   Second Esc: status = ""             → normal mode → commit and close
-    editor.onKeyDown(e => {
+    editorInstance.onKeyDown(e => {
       if (e.browserEvent.key === 'Escape') {
         const status = vimStatusRef.current?.textContent ?? '';
         const inNormalMode = !status.includes('INSERT') &&
                              !status.includes('VISUAL') &&
                              !status.includes('REPLACE');
         if (inNormalMode) {
-          commitEdit(editor.getValue());
+          commitEdit(editorInstance.getValue());
         }
       }
     });
 
+    // ─── Ctrl+V fallback paste (fires only when vim doesn't intercept it) ──
+    // - in vim NORMAL mode Ctrl+V = visual block (vim wins); in non-vim / insert
+    // - contexts Monaco's addCommand fires and we relay through the host.
+    editorInstance.addCommand(monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyV, () => {
+      pendingPaste = true;
+      vscodePostMessage({ type: 'requestClipboardRead' });
+    });
+
+    // - Ctrl+C fallback copy — fires when vim doesn't intercept (e.g. Monaco-only context)
+    editorInstance.addCommand(monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyC, () => {
+      const sel   = editorInstance.getSelection();
+      const model = editorInstance.getModel();
+      if (!sel || !model) return;
+      const text = sel.isEmpty()
+        ? model.getLineContent(sel.startLineNumber) + '\n'
+        : model.getValueInRange(sel);
+      if (text) {
+        clipboardCache = { text, linewise: sel.isEmpty() };
+        vscodePostMessage({ type: 'writeClipboard', text });
+      }
+    });
+
     // - clean up vim mode when the Monaco editor is destroyed
-    editor.onDidDispose(() => vimMode.dispose());
+    editorInstance.onDidDispose(() => vimMode.dispose());
   }, [commitEdit]);
 
   const enterEdit = useCallback(() => setEditing(true), []);

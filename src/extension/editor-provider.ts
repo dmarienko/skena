@@ -132,6 +132,16 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         case 'dropFiles':    this.handleDropFiles(msg.uris, msg.position, canvasDir, resolver, send); break;
         case 'addNodeRequest': await this.handleAddNodeRequest(msg, canvasDir, resolver, send); break;
         case 'moveToSubCanvas': await this.handleMoveToSubCanvas(msg, canvasDir, send); break;
+        // - clipboard relay: webview sandbox blocks navigator.clipboard; route through host
+        case 'requestClipboardRead': {
+          const text = await vscode.env.clipboard.readText();
+          send({ type: 'clipboardContent', text });
+          break;
+        }
+        case 'writeClipboard': {
+          await vscode.env.clipboard.writeText(msg.text);
+          break;
+        }
       }
     });
 

@@ -244,6 +244,12 @@ export interface MsgNodesFromDrop {
   nodes: CanvasNode[];
 }
 
+/** - host → webview: system clipboard text in response to requestClipboardRead */
+export interface MsgClipboardContent {
+  type: 'clipboardContent';
+  text: string;
+}
+
 export type HostToWebview =
   | MsgCanvasLoaded
   | MsgNodesFromDrop
@@ -259,7 +265,8 @@ export type HostToWebview =
   | MsgAddNodeResult
   | MsgAddNodeTrigger
   | MsgAddTextNodeTrigger
-  | MsgSubCanvasCreated;
+  | MsgSubCanvasCreated
+  | MsgClipboardContent;
 
 // - Webview → Host messages
 
@@ -316,6 +323,17 @@ export interface MsgDropFiles {
   position: { x: number; y: number };
 }
 
+/** - webview → host: request system clipboard text (navigator.clipboard is sandboxed) */
+export interface MsgRequestClipboardRead {
+  type: 'requestClipboardRead';
+}
+
+/** - webview → host: write text to system clipboard via vscode.env.clipboard */
+export interface MsgWriteClipboard {
+  type: 'writeClipboard';
+  text: string;
+}
+
 export type WebviewToHost =
   | MsgRequestFile
   | MsgSaveCanvas
@@ -326,7 +344,9 @@ export type WebviewToHost =
   | MsgWebviewReady
   | MsgDropFiles
   | MsgAddNodeRequest
-  | MsgMoveToSubCanvas;
+  | MsgMoveToSubCanvas
+  | MsgRequestClipboardRead
+  | MsgWriteClipboard;
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────
 

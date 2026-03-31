@@ -106,6 +106,10 @@ export function App(): JSX.Element {
         case 'subCanvasCreated':
           window.dispatchEvent(new CustomEvent('skena:subCanvasCreated', { detail: msg }));
           break;
+        case 'clipboardContent':
+          // - response to requestClipboardRead: deliver to whichever editor is waiting
+          window.dispatchEvent(new CustomEvent('skena:clipboardContent', { detail: msg.text }));
+          break;
         case 'chatChunk':
         case 'agentNodeCreated':
           window.dispatchEvent(new CustomEvent('skena:chat', { detail: msg }));
