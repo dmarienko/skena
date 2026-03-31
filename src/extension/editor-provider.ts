@@ -17,6 +17,7 @@ import { FileResolver } from './file-resolver';
 import { VaultIndexer } from './vault-indexer';
 import { FileWatcher } from './file-watcher';
 import { parseNotebook } from './notebook-parser';
+import { renderMarkdownToHtml } from './markdown-html';
 import {
   CanvasData,
   CanvasNode,
@@ -35,7 +36,7 @@ import {
   MsgAddNodeRequest,
   MsgMoveToSubCanvas,
 } from '../shared/types';
-import { MAX_FILE_SIZE_BYTES } from '../shared/constants';
+import { MAX_FILE_FULL_BYTES, MAX_FILE_PREVIEW_BYTES, MAX_NOTEBOOK_BYTES } from '../shared/constants';
 
 export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDocument> {
   static readonly viewType = 'skena.canvasEditor';
@@ -235,15 +236,11 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
 
     try {
       const stat = await fs.stat(resolved.fsPath);
-      // - size limit only applies to text files (markdown, python, yaml);
-      // - images are sent as self-contained data URIs so size is not a display issue
-      if (resolved.fileType !== 'image' && stat.size > MAX_FILE_SIZE_BYTES) {
-        send({ type: 'fileError', requestId: msg.requestId, uri: msg.uri, error: 'TOO_LARGE' });
-        return;
-      }
 
       let content: string;
       let resourceUri: string | undefined;
+      let truncated: boolean | undefined;
+      let totalSize: number | undefined;
 
       if (resolved.fileType === 'image') {
         // - encode image as base64 data URI — works on Remote SSH, web extension,
@@ -263,13 +260,59 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         resourceUri = `data:${mime};base64,${bytes.toString('base64')}`;
         content = '';
       } else if (resolved.fileType === 'notebook') {
+        // - notebooks: hard limit (pre-parsed JSON can be large)
+        if (stat.size > MAX_NOTEBOOK_BYTES) {
+          send({ type: 'fileError', requestId: msg.requestId, uri: msg.uri, error: 'TOO_LARGE' });
+          return;
+        }
         const raw = await fs.readFile(resolved.fsPath, 'utf-8');
         content = JSON.stringify(parseNotebook(raw));
-      } else {
+      } else if (stat.size <= MAX_FILE_FULL_BYTES) {
+        // - file fits within the full-render limit — send as-is
         content = await fs.readFile(resolved.fsPath, 'utf-8');
+      } else {
+        // - file is too large to render fully; send first MAX_FILE_PREVIEW_BYTES
+        // - so the user sees a meaningful preview rather than an error
+        const fd = await fs.open(resolved.fsPath, 'r');
+        try {
+          const buf = Buffer.alloc(MAX_FILE_PREVIEW_BYTES);
+          const { bytesRead } = await fd.read(buf, 0, MAX_FILE_PREVIEW_BYTES, 0);
+          // - decode and trim to the last newline so we don't cut mid-character or mid-word
+          let raw = buf.slice(0, bytesRead).toString('utf-8');
+          const lastNl = raw.lastIndexOf('\n');
+          if (lastNl > 0) raw = raw.slice(0, lastNl + 1);
+          content   = raw;
+          truncated = true;
+          totalSize = stat.size;
+        } finally {
+          await fd.close();
+        }
       }
 
-      console.log(`[Skena] handleRequestFile: uri=${msg.uri} fileType=${resolved.fileType} resourceUri=${resourceUri ? resourceUri.slice(0, 40) + '…' : 'none'}`);
+      // - render markdown to HTML in the extension host (Node.js, off UI thread)
+      // - so the webview never has to run ReactMarkdown on large files
+      let html: string | undefined;
+      if (resolved.fileType === 'markdown' && content) {
+        try {
+          // - resolve relative image src attrs to vscode-resource:// URIs via
+          // - asWebviewUri — pure string transformation, zero I/O, no base64 blobs.
+          // - The browser fetches these natively; the IPC message stays compact.
+          const mdDir = path.dirname(resolved.fsPath);
+          html = await renderMarkdownToHtml(content, (src) => {
+            try {
+              const imgPath = path.resolve(mdDir, src);
+              return panel.webview.asWebviewUri(vscode.Uri.file(imgPath)).toString();
+            } catch {
+              return undefined; // - leave src unchanged if path can't be resolved
+            }
+          });
+        } catch (e) {
+          // - fall back to raw content if rendering fails; webview uses ReactMarkdown
+          console.warn(`[Skena] markdown render failed for ${msg.uri}:`, e);
+        }
+      }
+
+      console.log(`[Skena] handleRequestFile: uri=${msg.uri} fileType=${resolved.fileType} size=${stat.size}${truncated ? ` (truncated)` : ''}${html ? ' (html rendered)' : ''}`);
       send({
         type: 'fileContent',
         requestId: msg.requestId,
@@ -277,6 +320,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         fileType: resolved.fileType,
         content,
         resourceUri,
+        truncated,
+        totalSize,
+        html,
       });
     } catch (e) {
       console.error(`[Skena] handleRequestFile error for ${msg.uri}:`, e);

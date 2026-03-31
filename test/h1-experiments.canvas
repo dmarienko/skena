@@ -4,19 +4,41 @@
       "id": "node-1774628840438",
       "type": "link",
       "url": "https://xlydian.com",
-      "x": 80,
-      "y": 440,
+      "x": 174,
+      "y": 479,
       "width": 320,
-      "height": 80
+      "height": 80,
+      "nodeLabel": "L1"
     },
     {
       "id": "node-1774629118609",
       "type": "file",
       "file": "./meta-simulation.yaml",
-      "x": 40,
-      "y": 40,
+      "x": 134,
+      "y": 92,
+      "width": 264,
+      "height": 156,
+      "nodeLabel": "Y1"
+    },
+    {
+      "id": "node-1774958204080",
+      "type": "text",
+      "text": "# My new idea \r\n1. run backtest",
+      "x": 582,
+      "y": 92,
+      "width": 334,
+      "height": 91,
+      "nodeLabel": "N1"
+    },
+    {
+      "id": "node-1774958242069",
+      "type": "file",
+      "file": "./my-notebook.ipynb",
+      "x": 1030,
+      "y": 92,
       "width": 400,
-      "height": 300
+      "height": 300,
+      "nodeLabel": "J1"
     }
   ],
   "edges": [
@@ -26,6 +48,22 @@
       "fromSide": "top",
       "toNode": "node-1774629118609",
       "toSide": "bottom",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1774958204080",
+      "fromNode": "node-1774629118609",
+      "fromSide": "right",
+      "toNode": "node-1774958204080",
+      "toSide": "left",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1774958242069",
+      "fromNode": "node-1774958204080",
+      "fromSide": "right",
+      "toNode": "node-1774958242069",
+      "toSide": "left",
       "toEnd": "arrow"
     }
   ]

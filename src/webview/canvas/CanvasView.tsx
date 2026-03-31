@@ -34,6 +34,7 @@ import { CanvasData, CanvasNode, CanvasEdge, MsgAddNodeResult, MsgSubCanvasCreat
 import { ContextMenu } from './ContextMenu';
 import { CANVAS_COLORS } from '../../shared/constants';
 import { ensureLabels, assignLabel } from './nodeLabels';
+import { ZoomLevelProvider } from '../context/ZoomLevelContext';
 
 import { FileNodeComponent }  from './nodes/FileNode';
 import { TextNodeComponent }  from './nodes/TextNode';
@@ -75,7 +76,11 @@ function toFlowNode(cn: CanvasNode): Node {
     id:       cn.id,
     type:     cn.type,
     position: { x: cn.x, y: cn.y },
+    // - RF v12: set both style AND direct width/height so measured values are
+    // - pre-seeded without waiting for a DOM measurement pass after reload
     style:    { width: cn.width, height: cn.height },
+    width:    cn.width,
+    height:   cn.height,
     data:     { ...cn, accentColor: resolveColor(cn.color) },
     // - groups are non-interactive drag targets (they expand to contain nodes visually)
     draggable:   cn.type !== 'group',
@@ -306,9 +311,17 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
     setEdges(canvas.edges.map(toFlowEdge));
     canvasRef.current = { ...canvas, nodes: labeled };
 
-    // - fitView runs asynchronously after the layout pass; defer focus so the
-    // - viewport is correct when pickViewportNode computes visible nodes
+    // - restore saved viewport immediately (external reload; defaultViewport only fires on mount)
+    if (canvas.viewport) {
+      rfRef.current.setViewport(canvas.viewport, { duration: 0 });
+    }
+
+    // - fitView / focus: defer so the layout pass is done before we query positions
     const t = setTimeout(() => {
+      if (!canvas.viewport) {
+        // - no saved viewport → fitView so the canvas isn't off-screen
+        rfRef.current.fitView({ padding: 0.1 });
+      }
       const stored  = lastFocusedNodeId.get(canvasPath);
       const exists  = stored && nodesRef.current.some(n => n.id === stored);
       const focusId = exists ? stored : pickViewportNode();
@@ -921,6 +934,13 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
   useEffect(() => {
     const handler = (e: Event) => {
       const { id, x, y, width, height } = (e as CustomEvent<{ id: string; x: number; y: number; width: number; height: number }>).detail;
+      // - sync RF node state so in-memory dimensions match the resized size
+      // - (RF's NodeResizer updates its own internal store, but we must also
+      // -  update width/height on the node object for focusNodeById calculations)
+      setNodes(nds => nds.map(n => n.id === id
+        ? { ...n, position: { x, y }, style: { ...n.style, width, height }, width, height }
+        : n
+      ));
       const updated: CanvasData = {
         ...canvasRef.current,
         nodes: canvasRef.current.nodes.map(n => n.id === id ? { ...n, x, y, width, height } : n),
@@ -930,7 +950,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
     };
     window.addEventListener('skena:nodeResize', handler);
     return () => window.removeEventListener('skena:nodeResize', handler);
-  }, [scheduleSave]);
+  }, [setNodes, scheduleSave]);
 
   // ─── custom wheel zoom (smaller step, cursor-centred) ────────────────────────
 
@@ -1066,6 +1086,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
   }, [setNodes, setEdges, scheduleSave, focusNodeById]);
 
   return (
+    <ZoomLevelProvider>
     <div ref={wrapperRef} style={{ width: '100%', height: '100%' }} onContextMenu={handleContextMenu}>
       <ReactFlow
         nodes={nodes}
@@ -1085,7 +1106,14 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
         disableKeyboardA11y={true}
         onDragOver={onDragOver}
         onDrop={onDrop}
-        fitView
+        // - viewport persistence: restore saved position/zoom; fitView only when no saved viewport
+        defaultViewport={canvas.viewport ?? { x: 0, y: 0, zoom: 1 }}
+        fitView={!canvas.viewport}
+        // - save viewport to canvas JSON whenever the user stops panning/zooming
+        onMoveEnd={(_e, viewport) => {
+          canvasRef.current = { ...canvasRef.current, viewport };
+          scheduleSave(canvasRef.current);
+        }}
         minZoom={0.05}
         maxZoom={3}
         deleteKeyCode="Delete"
@@ -1132,6 +1160,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
         />
       )}
     </div>
+    </ZoomLevelProvider>
   );
 }
 

@@ -11,8 +11,9 @@ export async function readCanvas(fsPath: string): Promise<CanvasData> {
   const raw = await fs.readFile(fsPath, 'utf-8');
   const parsed = JSON.parse(raw) as Partial<CanvasData>;
   return {
-    nodes: parsed.nodes ?? [],
-    edges: parsed.edges ?? [],
+    nodes:    parsed.nodes    ?? [],
+    edges:    parsed.edges    ?? [],
+    viewport: parsed.viewport,
   };
 }
 

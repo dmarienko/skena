@@ -1,10 +1,27 @@
 /**
  * FileNode — renders a vault:// or project-relative file reference.
  * Dispatches to the correct renderer based on fileType.
- * Handles LOD switching via useZoomLevel.
+ *
+ * Re-render isolation layers (outermost → innermost):
+ *
+ *  FileNodeComponent  = memo(FileNodeInner)
+ *    → only re-renders when data/id/selected change (node data or user selection)
+ *    → does NOT consume ZoomLevelContext, so viewport zoom never reaches it
+ *
+ *  ZoomGate           = plain component (context consumer)
+ *    → re-renders when ZoomLevelContext changes (zoom level threshold crossing)
+ *    → tiny: just reads zoom, handles LOD cut, renders ScrollableContent shell
+ *
+ *  MemoContent        = memo(FileNodeContent)
+ *    → only re-renders when fileType/content/resourceUri/zoom/baseUri change
+ *    → zoom prop change causes a re-render here but NOT in MarkdownRenderer
+ *
+ *  MarkdownRenderer   = memo(MarkdownRendererInner)
+ *    → only re-renders when content/baseUri change
+ *    → zoom does NOT reach here: skips the full ReactMarkdown pipeline
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, memo } from 'react';
 import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import { FileNode } from '../../../shared/types';
 import { useFileContent } from '../../hooks/useFileContent';
@@ -21,10 +38,114 @@ function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
 }
 
-export function FileNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
-  const node = data as unknown as FileNode & { accentColor?: string };
-  const { status, content, fileType, resourceUri, error } = useFileContent(node.file);
+// ─── innermost: heavy content renderer (memoized by content identity) ─────────
+
+interface ContentProps {
+  fileType:    string;
+  content:     string;
+  resourceUri: string | undefined;
+  zoom:        string;
+  baseUri?:    string;
+  file:        string;
+  truncated?:  boolean;
+  totalSize?:  number;
+  /** - pre-rendered HTML from extension host; bypasses ReactMarkdown entirely */
+  html?:       string;
+}
+
+const MemoContent = memo(function FileNodeContent({
+  fileType, content, resourceUri, zoom, baseUri, file, truncated, totalSize, html,
+}: ContentProps): JSX.Element {
+  return (
+    <>
+      {fileType === 'markdown' && html && (
+        // - pre-rendered by extension host (Node.js) — zero cost in the UI thread
+        <div className="skena-markdown" dangerouslySetInnerHTML={{ __html: html }} />
+      )}
+      {fileType === 'markdown' && !html && <MarkdownRenderer content={content} baseUri={baseUri} />}
+      {fileType === 'notebook' && <NotebookRenderer parsedJson={content} zoom={zoom} />}
+      {(fileType === 'python' || fileType === 'yaml') && (
+        <CodeRenderer content={content} language={fileType === 'yaml' ? 'yaml' : 'python'} />
+      )}
+      {fileType === 'image' && <ImageRenderer resourceUri={resourceUri ?? ''} />}
+      {fileType !== 'markdown' && fileType !== 'notebook' && fileType !== 'python' &&
+       fileType !== 'yaml' && fileType !== 'image' && (
+        <div className="skena-unknown">No preview available</div>
+      )}
+      {/* - truncation notice: file was too large to send fully */}
+      {truncated && totalSize && (
+        <div style={{
+          marginTop: 8, padding: '5px 8px',
+          background:   'rgba(245,158,11,0.12)',
+          border:       '1px solid rgba(245,158,11,0.35)',
+          borderRadius: 4, fontSize: 11,
+          color:        'rgba(245,158,11,0.9)',
+          display:      'flex', alignItems: 'center', gap: 8,
+        }}>
+          <span>⚠ Preview truncated — showing first 200 KB of {(totalSize / 1024 / 1024).toFixed(1)} MB</span>
+          <button
+            onClick={e => { e.stopPropagation(); vscodePostMessage({ type: 'openFile', uri: file }); }}
+            style={{
+              marginLeft: 'auto', padding: '2px 8px',
+              background:   'rgba(245,158,11,0.2)', border: '1px solid rgba(245,158,11,0.5)',
+              borderRadius: 3, cursor: 'pointer', color: 'inherit', fontSize: 11,
+            }}
+          >Open full file</button>
+        </div>
+      )}
+    </>
+  );
+});
+
+// ─── middle: zoom-aware LOD gate (the ONLY ZoomLevelContext consumer here) ─────
+//
+// By isolating useZoomLevel() in this thin component, FileNodeInner is NOT a
+// context consumer. Zoom level changes cause only ZoomGate to re-render — NOT
+// the full FileNodeInner tree (NodeHeader, handles, callbacks, etc.).
+
+interface ZoomGateProps {
+  id:         string;
+  status:     string;
+  content:    string;
+  fileType:   string;
+  resourceUri: string | undefined;
+  error:      string | undefined;
+  truncated?: boolean;
+  totalSize?: number;
+  file:       string;
+  html?:      string;
+}
+
+function ZoomGate({ id, status, content, fileType, resourceUri, error, truncated, totalSize, file, html }: ZoomGateProps): JSX.Element {
   const zoom = useZoomLevel();
+
+  // - LOD: hide content at low zoom levels but keep the fiber tree mounted.
+  // - Returning null would UNMOUNT MarkdownRenderer's subtree, forcing a full
+  // - ReactMarkdown re-parse (200 KB → 10k+ fibers) every time the user zooms
+  // - back in. CSS display:none hides without unmounting — zoom-in just flips
+  // - a style property, no React work and no ReactMarkdown work at all.
+  const hidden = zoom === 'minimal' || zoom === 'overview';
+
+  return (
+    <ScrollableContent scrollKey={id} hidden={hidden} contentLoaded={status === 'loaded'}>
+      {status === 'loading' && <div className="skena-loading">Loading...</div>}
+      {status === 'error'   && <div className="skena-error">{error === 'TOO_LARGE' ? 'File too large to preview' : `Error: ${error}`}</div>}
+      {status === 'loaded'  && (
+        <MemoContent
+          fileType={fileType} content={content} resourceUri={resourceUri}
+          zoom={zoom} baseUri={file} file={file}
+          truncated={truncated} totalSize={totalSize} html={html}
+        />
+      )}
+    </ScrollableContent>
+  );
+}
+
+// ─── outer: full node shell (NOT a context consumer) ──────────────────────────
+
+function FileNodeInner({ data, id, selected }: NodeProps): JSX.Element {
+  const node = data as unknown as FileNode & { accentColor?: string };
+  const { status, content, fileType, resourceUri, error, truncated, totalSize, html } = useFileContent(node.file);
 
   const openInEditor = useCallback(() => {
     vscodePostMessage({ type: 'openFile', uri: node.file });
@@ -54,7 +175,6 @@ export function FileNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
           detail: { id, x: Math.round(p.x), y: Math.round(p.y), width: Math.round(p.width), height: Math.round(p.height) },
         }))}
       />
-      {/* - connection handles on all 4 sides */}
       <Handle type="source" position={Position.Top}    id="top"    />
       <Handle type="source" position={Position.Right}  id="right"  />
       <Handle type="source" position={Position.Bottom} id="bottom" />
@@ -68,32 +188,19 @@ export function FileNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
         onOpen={openInEditor}
       />
 
-      {/* - LOD: minimal / overview → title only (header already shown above) */}
-      {(zoom === 'minimal' || zoom === 'overview') ? null : (
-        <ScrollableContent>
-          {status === 'loading' && <div className="skena-loading">Loading...</div>}
-          {status === 'error'   && <div className="skena-error">{error === 'TOO_LARGE' ? 'File too large to preview' : `Error: ${error}`}</div>}
-          {status === 'loaded'  && renderContent(fileType, content, resourceUri, zoom, node.file)}
-        </ScrollableContent>
-      )}
+      <ZoomGate
+        id={id} status={status} content={content} fileType={fileType}
+        resourceUri={resourceUri} error={error}
+        truncated={truncated} totalSize={totalSize} file={node.file} html={html}
+      />
     </div>
     </>
   );
 }
 
-function renderContent(
-  fileType: string,
-  content: string,
-  resourceUri: string | undefined,
-  zoom: string,
-  baseUri?: string,
-): JSX.Element {
-  switch (fileType) {
-    case 'markdown': return <MarkdownRenderer content={content} baseUri={baseUri} />;
-    case 'notebook': return <NotebookRenderer parsedJson={content} zoom={zoom} />;
-    case 'python':
-    case 'yaml':     return <CodeRenderer content={content} language={fileType === 'yaml' ? 'yaml' : 'python'} />;
-    case 'image':    return <ImageRenderer resourceUri={resourceUri ?? ''} />;
-    default:         return <div className="skena-unknown">No preview available</div>;
-  }
-}
+// - memo: React Flow may re-render all visible nodes on store changes (edge
+// - updates, another node resize, etc.). With memo, FileNodeComponent skips
+// - re-rendering when its own data/id/selected props are unchanged.
+// - NOTE: FileNodeInner does NOT call useZoomLevel(), so it is not a
+// - ZoomLevelContext consumer — viewport zoom never causes it to re-render.
+export const FileNodeComponent = memo(FileNodeInner);

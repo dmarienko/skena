@@ -7,7 +7,8 @@
       "x": 242,
       "y": 252,
       "width": 400,
-      "height": 300
+      "height": 300,
+      "nodeLabel": "Y1"
     },
     {
       "id": "node-1774618743797-0",
@@ -16,7 +17,8 @@
       "x": 242,
       "y": 607,
       "width": 402,
-      "height": 395
+      "height": 395,
+      "nodeLabel": "J1"
     },
     {
       "id": "node-1774624125112",
@@ -25,7 +27,8 @@
       "x": 242,
       "y": 1050,
       "width": 400,
-      "height": 104
+      "height": 104,
+      "nodeLabel": "N1"
     },
     {
       "id": "text-mn935ze1-vxk6",
@@ -34,7 +37,8 @@
       "x": 242,
       "y": 1202,
       "width": 400,
-      "height": 300
+      "height": 300,
+      "nodeLabel": "N2"
     },
     {
       "id": "node-1774627144192",
@@ -43,7 +47,8 @@
       "x": 242,
       "y": 1550,
       "width": 400,
-      "height": 300
+      "height": 300,
+      "nodeLabel": "Y2"
     },
     {
       "id": "node-1774627147825",
@@ -52,7 +57,8 @@
       "x": 690,
       "y": 1550,
       "width": 400,
-      "height": 300
+      "height": 300,
+      "nodeLabel": "M1"
     },
     {
       "id": "node-1774631740880",
@@ -60,17 +66,19 @@
       "text": "#feature\r\n\r\n- retest this notebook",
       "x": 742,
       "y": 765,
-      "width": 400,
-      "height": 300
+      "width": 370,
+      "height": 125,
+      "nodeLabel": "N3"
     },
     {
       "id": "node-1774631777691",
       "type": "text",
       "text": "- test another approach",
-      "x": 744,
-      "y": 917,
+      "x": 742,
+      "y": 952,
       "width": 400,
-      "height": 300
+      "height": 300,
+      "nodeLabel": "N4"
     }
   ],
   "edges": [
@@ -130,5 +138,10 @@
       "toSide": "left",
       "toEnd": "arrow"
     }
-  ]
+  ],
+  "viewport": {
+    "x": -62.45744680851067,
+    "y": -87.97872340425533,
+    "zoom": 0.7340425531914894
+  }
 }

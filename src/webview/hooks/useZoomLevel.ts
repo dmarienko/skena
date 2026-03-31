@@ -1,20 +1,9 @@
 /**
- * Tracks React Flow viewport zoom and maps it to a discrete ZoomLevel
- * for LOD (Level of Detail) rendering decisions.
+ * useZoomLevel — reads the current discrete zoom level from ZoomLevelContext.
+ *
+ * The single useOnViewportChange listener lives in ZoomLevelProvider
+ * (rendered once at canvas level). Node components import this hook to
+ * get the level without each registering their own viewport listener.
  */
 
-import { useState, useCallback } from 'react';
-import { useOnViewportChange, Viewport } from '@xyflow/react';
-import { ZoomLevel, zoomToLevel } from '../../shared/types';
-
-export function useZoomLevel(): ZoomLevel {
-  const [level, setLevel] = useState<ZoomLevel>('reading');
-
-  useOnViewportChange({
-    onChange: useCallback((vp: Viewport) => {
-      setLevel(zoomToLevel(vp.zoom));
-    }, []),
-  });
-
-  return level;
-}
+export { useZoomLevel } from '../context/ZoomLevelContext';

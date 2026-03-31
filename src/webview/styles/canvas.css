@@ -24,6 +24,22 @@
                #202020)) !important;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.06);
   border-radius: 6px;
+  /*
+   * CSS containment: each node is a self-contained layout/paint boundary.
+   * Tells the browser that nothing inside affects layout or paint outside,
+   * enabling aggressive skip-optimisations during canvas zoom/pan.
+   * Safe here because overflow:hidden is already set on every .skena-node.
+   */
+  contain: layout style paint;
+  /*
+   * GPU compositor layer: promotes every node to its own GPU texture.
+   * Without this, the browser re-rasterizes all node content on every zoom
+   * step (60×/sec) because the ReactFlow viewport scales the entire canvas
+   * as one giant paint layer. With will-change, each node is a separate
+   * GPU texture — pan/zoom just moves/scales the cached textures, no repaint.
+   * Tiled rasterization means even large nodes only upload the visible tile.
+   */
+  will-change: transform;
 }
 
 .skena-node:hover {

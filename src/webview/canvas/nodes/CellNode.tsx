@@ -31,7 +31,7 @@ export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
       <Handle type="source" position={Position.Bottom} id="bottom" />
       <Handle type="source" position={Position.Left}   id="left"   />
 
-      <ScrollableContent>
+      <ScrollableContent scrollKey={id}>
         {node.format === 'markdown' && <MarkdownRenderer content={node.content} />}
         {node.format === 'image'    && <img src={node.content} alt="cell" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />}
         {node.format === 'html'     && <div dangerouslySetInnerHTML={{ __html: node.content }} />}

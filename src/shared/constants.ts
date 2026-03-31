@@ -15,8 +15,18 @@ export const CANVAS_COLORS: Record<string, string> = {
 export const DEFAULT_NODE_WIDTH  = 400;
 export const DEFAULT_NODE_HEIGHT = 250;
 
-/** - max file content size sent to webview (500 KB) */
-export const MAX_FILE_SIZE_BYTES = 500 * 1024;
+/**
+ * File size thresholds for webview preview.
+ *   ≤ MAX_FILE_FULL_BYTES    → sent in full
+ *   > MAX_FILE_FULL_BYTES    → first MAX_FILE_PREVIEW_BYTES sent; truncated=true in response
+ * Notebooks use a separate lower limit (they are pre-parsed JSON, not raw source).
+ */
+export const MAX_FILE_FULL_BYTES    = 2 * 1024 * 1024; // - 2 MB: render completely
+export const MAX_FILE_PREVIEW_BYTES =   200 * 1024;     // - 200 KB shown for oversized files
+export const MAX_NOTEBOOK_BYTES     =   500 * 1024;     // - 500 KB notebook source
+
+/** @deprecated kept for any external callers; equals MAX_FILE_FULL_BYTES */
+export const MAX_FILE_SIZE_BYTES = MAX_FILE_FULL_BYTES;
 
 /** - vault URI prefix */
 export const VAULT_SCHEME = 'vault://';

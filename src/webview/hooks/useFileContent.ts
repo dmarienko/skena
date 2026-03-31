@@ -25,6 +25,12 @@ export interface FileContentState {
   fileType:    FileType;
   resourceUri: string | undefined;
   error:       string | undefined;
+  /** - true when file exceeded MAX_FILE_FULL_BYTES and content was truncated */
+  truncated?:  boolean;
+  /** - original file size in bytes (present when truncated=true) */
+  totalSize?:  number;
+  /** - pre-rendered HTML from extension host; use dangerouslySetInnerHTML when present */
+  html?:       string;
 }
 
 const IDLE: FileContentState    = { status: 'idle',    content: '', fileType: 'unknown', resourceUri: undefined, error: undefined };
@@ -96,6 +102,9 @@ export function useFileContent(uri: string | undefined): FileContentState {
           fileType:    msg.fileType,
           resourceUri: msg.resourceUri,
           error:       undefined,
+          truncated:   msg.truncated,
+          totalSize:   msg.totalSize,
+          html:        msg.html,
         };
         cache.set(key, resolved);
         setState(resolved);

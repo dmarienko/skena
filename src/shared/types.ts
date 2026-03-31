@@ -103,9 +103,17 @@ export interface CanvasEdge {
   label?: string;
 }
 
+export interface CanvasViewport {
+  x:    number;
+  y:    number;
+  zoom: number;
+}
+
 export interface CanvasData {
-  nodes: CanvasNode[];
-  edges: CanvasEdge[];
+  nodes:     CanvasNode[];
+  edges:     CanvasEdge[];
+  /** - last known viewport; persisted so the canvas reopens at the same position */
+  viewport?: CanvasViewport;
 }
 
 // ─── Vault / file resolution ──────────────────────────────────────────────────
@@ -177,6 +185,16 @@ export interface MsgFileContent {
    * - undefined for text content
    */
   resourceUri?: string;
+  /** - true when file exceeded MAX_FILE_FULL_BYTES; content is the first MAX_FILE_PREVIEW_BYTES */
+  truncated?:  boolean;
+  /** - original file size in bytes (present when truncated=true) */
+  totalSize?:  number;
+  /**
+   * Pre-rendered HTML for markdown files — produced by the extension host's
+   * unified pipeline so the webview UI thread never has to parse markdown.
+   * When present, the webview uses dangerouslySetInnerHTML instead of ReactMarkdown.
+   */
+  html?: string;
 }
 
 export interface MsgFileError {
@@ -433,7 +451,7 @@ export type ZoomLevel = 'minimal' | 'overview' | 'reading' | 'detail';
 
 export function zoomToLevel(zoom: number): ZoomLevel {
   if (zoom < 0.3)  return 'minimal';
-  if (zoom < 0.6)  return 'overview';
-  if (zoom < 1.0)  return 'reading';
+  if (zoom < 0.8)  return 'overview';  // - raised from 0.6: hide content during typical nav zoom (0.6–0.8)
+  if (zoom < 1.5)  return 'reading';
   return 'detail';
 }
