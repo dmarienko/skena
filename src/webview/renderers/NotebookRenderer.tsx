@@ -13,11 +13,14 @@
  * (+ edge back to the notebook FileNode).
  */
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { ParsedNotebook, ParsedCell, CellOutput } from '../../extension/notebook-parser';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { CodeRenderer } from './CodeRenderer';
 import { useMarkdownConfig } from '../context/MarkdownConfigContext';
+
+// - module-level: callback of the pin button currently under the mouse (for Alt+P hotkey)
+let _hoveredPin: (() => void) | null = null;
 
 interface NotebookRendererProps {
   /** - JSON.stringify of ParsedNotebook */
@@ -29,6 +32,13 @@ interface NotebookRendererProps {
 
 export function NotebookRenderer({ parsedJson, zoom, sourceNodeId }: NotebookRendererProps): JSX.Element {
   const { notebookShowSource } = useMarkdownConfig();
+
+  // - Alt+P hotkey support: fire whichever pin button the mouse is currently over
+  useEffect(() => {
+    const handler = () => { _hoveredPin?.(); };
+    window.addEventListener('skena:altPin', handler);
+    return () => window.removeEventListener('skena:altPin', handler);
+  }, []);
 
   let notebook: ParsedNotebook;
   try {
@@ -98,6 +108,8 @@ function PinButton({ onClick, title = 'Pin output to canvas' }: { onClick: () =>
     <button
       className="skena-notebook__pin-btn"
       title={title}
+      onMouseEnter={() => { _hoveredPin = onClick; }}
+      onMouseLeave={() => { if (_hoveredPin === onClick) _hoveredPin = null; }}
       onClick={e => { e.stopPropagation(); onClick(); }}
     >
       📌

@@ -4,10 +4,10 @@
       "id": "node-1774966923614",
       "type": "text",
       "text": "# 2.3 Convergence Properties\r\n\r\naddition is random var: $Y = \\pm  1/\\sqrt{n}$\r\n\r\nit's expectation: $E[Y] = 1/2 \\frac{1}{\\sqrt{n}} - 1/2 \\frac{1}{\\sqrt{n}}$ = 0\r\n\r\nvariation: $Var(Y) = E[(Y - E[Y])^2] = E[Y^2]$ \r\n\r\n$E[Y^2] = 1/n$ as prob. that we see Y^2 is always 1\r\n\r\nNow for this \r\n$$\r\n\r\nW_n\\left(\\frac{i}{n}\\right) = W_n\\left(\\frac{i-1}{n}\\right) + \\frac{X_i}{\\sqrt{n}}, \\quad \\text{for all } i \\geq 1\r\n\\tag{sc01.f.1.1}\r\n\r\n$$\r\n\r\n",
-      "x": 1815,
+      "x": 1789,
       "y": 741,
-      "width": 470,
-      "height": 210,
+      "width": 517,
+      "height": 231,
       "nodeLabel": "N1"
     },
     {
@@ -55,7 +55,7 @@
       "type": "text",
       "text": "# 2.3 Convergence Properties\r\n\r\n**At time $t=1$:** The process $W_n(1)$ is the sum of $n$ independent random variables, each with:\r\n- Mean: 0\r\n- Variance: $1/n$\r\n\r\nTherefore:\r\n- $\\mathbb{E}[W_n(1)] = 0$\r\n- $\\text{Var}(W_n(1)) = n \\cdot \\frac{1}{n} = 1$\r\n\r\n**Central Limit Theorem Application:**\r\n\r\nAs $n \\to \\infty$, the distribution of $W_n(1)$ converges to $N(0,1)$ (standard normal).\r\n\r\n**More generally at time $t$:**\r\n\r\n$$\r\nW_n(t) = \\sqrt{t}\\left(\\frac{\\sum_{i=1}^{nt} X_i}{\\sqrt{nt}}\\right)\r\n\\tag{sc01.f.1.2}\r\n$$\r\n\r\nThe term in brackets converges to $N(0,1)$, so $W_n(t)$ converges in distribution to $N(0,t)$.",
       "x": 854,
-      "y": 657,
+      "y": 663,
       "width": 564,
       "height": 377,
       "nodeLabel": "N6"
@@ -134,10 +134,10 @@
       "id": "node-1774971824430-0",
       "type": "file",
       "file": "Options/SC01_Continuous_Processes_Brownian_Motion.md",
-      "x": -830,
-      "y": 555,
-      "width": 1313,
-      "height": 1542,
+      "x": -581,
+      "y": 847,
+      "width": 815,
+      "height": 958,
       "nodeLabel": "M2"
     },
     {
@@ -214,10 +214,10 @@
       "id": "node-1775038894890",
       "type": "file",
       "file": "./Options/.yoda_progress.md",
-      "x": 749,
-      "y": -48,
-      "width": 836,
-      "height": 462,
+      "x": 661,
+      "y": -96.5,
+      "width": 1012,
+      "height": 559,
       "nodeLabel": "M1"
     }
   ],
@@ -392,8 +392,8 @@
     }
   ],
   "viewport": {
-    "x": -625.5329060977317,
-    "y": -402.3543768535494,
-    "zoom": 0.93004657226913
+    "x": -994.7194102027104,
+    "y": -558.0674070331528,
+    "zoom": 0.5938023366108748
   }
 }

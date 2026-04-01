@@ -997,6 +997,41 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
         return;
       }
 
+      // - n / Shift+N: resize active node +10% / -10% proportionally, anchored at centre
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'n' || e.key === 'N')) {
+        const cur = nodesRef.current.find(nd => nd.selected && nd.type !== 'group');
+        if (!cur) return;
+        e.preventDefault();
+        // - n = grow, N (Shift+N) = shrink
+        const factor = e.key === 'n' ? 1.1 : 1 / 1.1;
+        const oldW   = Number(cur.style?.width  ?? cur.width  ?? 400);
+        const oldH   = Number(cur.style?.height ?? cur.height ?? 300);
+        const newW   = Math.round(oldW * factor);
+        const newH   = Math.round(oldH * factor);
+        // - shift position so the centre stays fixed: x -= Δw/2, y -= Δh/2
+        const newX   = cur.position.x - (newW - oldW) / 2;
+        const newY   = cur.position.y - (newH - oldH) / 2;
+        setNodes(nds => nds.map(nd =>
+          nd.id !== cur.id ? nd
+            : { ...nd, position: { x: newX, y: newY }, style: { ...nd.style, width: newW, height: newH }, width: newW, height: newH },
+        ));
+        canvasRef.current = {
+          ...canvasRef.current,
+          nodes: canvasRef.current.nodes.map(cn =>
+            cn.id !== cur.id ? cn : { ...cn, x: newX, y: newY, width: newW, height: newH },
+          ),
+        };
+        scheduleSave(canvasRef.current);
+        return;
+      }
+
+      // - Alt+P: trigger pin on the currently hovered notebook output (if any)
+      if (e.altKey && !e.ctrlKey && !e.metaKey && e.key === 'p') {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent('skena:altPin'));
+        return;
+      }
+
       const dir = keyToDir(e.key);
       if (!dir) return;
 
@@ -1027,7 +1062,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [setNodes, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo]); // - nodesRef carries live state
+  }, [setNodes, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave]); // - nodesRef carries live state
 
   // - handle skena:addNodeTrigger from VS Code ctrl+n command override
   // - compute viewport centre in flow coords, avoid overlaps, send addNodeRequest
