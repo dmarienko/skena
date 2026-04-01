@@ -106,21 +106,32 @@ function expandHome(p) {
   return p.startsWith("~/") ? path.join(os.homedir(), p.slice(2)) : p;
 }
 var vaultCache = /* @__PURE__ */ new Map();
+function stripComments(raw) {
+  return raw.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+}
+async function readSettingsFile(filePath) {
+  try {
+    const raw = await fs.readFile(filePath, "utf-8");
+    return JSON.parse(stripComments(raw));
+  } catch {
+    return null;
+  }
+}
 async function loadVaults(startDir) {
   let dir = path.resolve(startDir);
   for (let i = 0; i < 8; i++) {
     const settingsPath = path.join(dir, ".vscode", "settings.json");
-    try {
-      const raw = await fs.readFile(settingsPath, "utf-8");
-      const cached = vaultCache.get(settingsPath);
+    const base = await readSettingsFile(settingsPath);
+    if (base !== null) {
+      const cacheKey = settingsPath;
+      const cached = vaultCache.get(cacheKey);
       if (cached)
         return cached;
-      const stripped = raw.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
-      const settings = JSON.parse(stripped);
-      const vaults = settings["skena.vaults"] ?? [];
-      vaultCache.set(settingsPath, vaults);
+      const localPath = path.join(dir, ".vscode", "settings.local.json");
+      const local = await readSettingsFile(localPath);
+      const vaults = local?.["skena.vaults"] ?? base["skena.vaults"] ?? [];
+      vaultCache.set(cacheKey, vaults);
       return vaults;
-    } catch {
     }
     const parent = path.dirname(dir);
     if (parent === dir)

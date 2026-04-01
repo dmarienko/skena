@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <!-- outer frame — artboard / canvas -->
+  <rect x="1" y="1" width="14" height="14" rx="2"
+        fill="none" stroke="#556070" stroke-width="1.1"/>
+  <!-- edges between nodes -->
+  <line x1="5.8" y1="6.2" x2="9.8" y2="5.0" stroke="#556070" stroke-width="0.9" stroke-linecap="round"/>
+  <line x1="5.3" y1="7.5" x2="7.1" y2="10.0" stroke="#556070" stroke-width="0.9" stroke-linecap="round"/>
+  <line x1="10.7" y1="6.3" x2="9.0" y2="10.0" stroke="#556070" stroke-width="0.9" stroke-linecap="round"/>
+  <!-- nodes -->
+  <circle cx="5"  cy="6"  r="1.6" fill="#2B6FD4"/>
+  <circle cx="11" cy="5"  r="1.6" fill="#2B6FD4"/>
+  <circle cx="8"  cy="11" r="1.6" fill="#2B6FD4"/>
+</svg>

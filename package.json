@@ -28,6 +28,17 @@
   "activationEvents": [],
   "main": "./dist/extension.js",
   "contributes": {
+    "languages": [
+      {
+        "id": "jsoncanvas",
+        "aliases": ["Canvas", "JSON Canvas"],
+        "extensions": [".canvas"],
+        "icon": {
+          "light": "./icons/canvas-light.svg",
+          "dark":  "./icons/canvas-dark.svg"
+        }
+      }
+    ],
     "customEditors": [
       {
         "viewType": "skena.canvasEditor",

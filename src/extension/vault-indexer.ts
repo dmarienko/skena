@@ -18,6 +18,7 @@ import * as vscode from 'vscode';
 import matter from 'gray-matter';
 import Fuse, { IFuseOptions } from 'fuse.js';
 import { VaultConfig, VaultEntry } from '../shared/types';
+import { getVaultDirectories } from './settings';
 
 const FUSE_OPTIONS: IFuseOptions<VaultEntry> = {
   keys: [
@@ -51,9 +52,8 @@ export class VaultIndexer implements vscode.Disposable {
     this.indexing = true;
     try {
       const all: VaultEntry[] = [];
-      const config = vscode.workspace.getConfiguration('skena');
-      // - global fallback directories (default: ['.'] = full vault)
-      const globalDirs = config.get<string[]>('vaultDirectories') ?? ['.'];
+      // - global fallback directories (default: ['.'] = full vault), local overrides win
+      const globalDirs = await getVaultDirectories();
 
       for (const vault of vaults) {
         const root = this.expandPath(vault.path);

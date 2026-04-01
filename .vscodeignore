@@ -1,0 +1,15 @@
+# - source & tooling — not needed at runtime (dist/ has everything compiled)
+src/**
+test/**
+scripts/**
+.vscode/**
+.claude/**
+esbuild.config.mjs
+tsconfig.json
+.eslintrc*
+.gitignore
+*.map
+
+# - dev deps / metadata
+node_modules/**
+.git/**

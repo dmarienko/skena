@@ -13,6 +13,7 @@ import * as path   from 'path';
 import { SkenaEditorProvider } from './editor-provider';
 import { VaultIndexer } from './vault-indexer';
 import { FileWatcher } from './file-watcher';
+import { getVaults } from './settings';
 
 let indexer: VaultIndexer | undefined;
 let watcher: FileWatcher | undefined;
@@ -123,20 +124,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
   }
 
-  // - start watching vaults configured in settings
-  const config = vscode.workspace.getConfiguration('skena');
-  const vaults = config.get<Array<{ name: string; path: string }>>('vaults') ?? [];
+  // - start watching vaults (merged from settings.json + settings.local.json)
+  const vaults = await getVaults();
   watcher.startWatching(vaults);
   indexer.reindex(vaults);
 
-  // - re-index when settings change
+  // - re-index when settings change (either file)
+  const reindexFromSettings = async () => {
+    const updated = await getVaults();
+    watcher?.startWatching(updated);
+    indexer?.reindex(updated);
+  };
+
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration(e => {
       if (e.affectsConfiguration('skena.vaults') || e.affectsConfiguration('skena.vaultDirectories')) {
-        const updated = vscode.workspace.getConfiguration('skena');
-        const updatedVaults = updated.get<Array<{ name: string; path: string }>>('vaults') ?? [];
-        watcher?.startWatching(updatedVaults);
-        indexer?.reindex(updatedVaults);
+        reindexFromSettings();
       }
     })
   );

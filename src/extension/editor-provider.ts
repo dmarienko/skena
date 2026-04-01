@@ -18,6 +18,7 @@ import { VaultIndexer } from './vault-indexer';
 import { FileWatcher } from './file-watcher';
 import { parseNotebook } from './notebook-parser';
 import { renderMarkdownToHtml } from './markdown-html';
+import { getVaults } from './settings';
 import {
   CanvasData,
   CanvasNode,
@@ -63,8 +64,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     document: SkenaDocument,
     panel: vscode.WebviewPanel,
   ): Promise<void> {
-    const config = vscode.workspace.getConfiguration('skena');
-    const vaults = config.get<Array<{ name: string; path: string }>>('vaults') ?? [];
+    const vaults    = await getVaults();
     const canvasDir = path.dirname(document.uri.fsPath);
     const resolver = new FileResolver(vaults);
 

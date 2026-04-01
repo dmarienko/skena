@@ -46,26 +46,47 @@ interface VaultConfig { name: string; path: string; directories?: string[] }
 // - cache: workspace root → vault list (avoid re-reading settings for every call)
 const vaultCache = new Map<string, VaultConfig[]>();
 
+/** Strip JS-style comments so JSON.parse handles VS Code's relaxed JSON. */
+function stripComments(raw: string): string {
+  return raw.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+}
+
+/** Read a settings file and return its parsed content, or null on failure. */
+async function readSettingsFile(filePath: string): Promise<Record<string, unknown> | null> {
+  try {
+    const raw = await fs.readFile(filePath, 'utf-8');
+    return JSON.parse(stripComments(raw)) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Walk up from `startDir` looking for `.vscode/settings.json`.
- * Returns the `skena.vaults` array, or [] if not found.
- * Results are cached per resolved settings file path.
+ * If `.vscode/settings.local.json` exists alongside it, its `skena.vaults`
+ * value overrides the base file (local wins).
+ * Results are cached per resolved settings directory path.
  */
 async function loadVaults(startDir: string): Promise<VaultConfig[]> {
   let dir = path.resolve(startDir);
   for (let i = 0; i < 8; i++) {
     const settingsPath = path.join(dir, '.vscode', 'settings.json');
-    try {
-      const raw      = await fs.readFile(settingsPath, 'utf-8');
-      const cached   = vaultCache.get(settingsPath);
+    const base = await readSettingsFile(settingsPath);
+    if (base !== null) {
+      const cacheKey = settingsPath;
+      const cached   = vaultCache.get(cacheKey);
       if (cached) return cached;
-      // - strip JS-style comments before parsing (VS Code allows them)
-      const stripped = raw.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
-      const settings = JSON.parse(stripped) as Record<string, unknown>;
-      const vaults   = (settings['skena.vaults'] ?? []) as VaultConfig[];
-      vaultCache.set(settingsPath, vaults);
+
+      // - check for local override — skena.vaults in local file wins entirely
+      const localPath = path.join(dir, '.vscode', 'settings.local.json');
+      const local     = await readSettingsFile(localPath);
+      const vaults    = (
+        (local?.['skena.vaults'] ?? base['skena.vaults'] ?? [])
+      ) as VaultConfig[];
+
+      vaultCache.set(cacheKey, vaults);
       return vaults;
-    } catch { /* settings not here, try parent */ }
+    }
     const parent = path.dirname(dir);
     if (parent === dir) break;
     dir = parent;
