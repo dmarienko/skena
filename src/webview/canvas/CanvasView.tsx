@@ -45,6 +45,7 @@ import { ChatNodeComponent }  from './nodes/ChatNode';
 import { PortalNodeComponent } from './nodes/PortalNode';
 import { LabeledEdgeComponent } from './edges/LabeledEdge';
 import { HelperLines } from './HelperLines';
+import { CanvasSearch } from './CanvasSearch';
 
 const NODE_TYPES: NodeTypes = {
   file:   FileNodeComponent,
@@ -284,7 +285,8 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
   const [edges, setEdges, onEdgesChange] = useEdgesState(canvas.edges.map(toFlowEdge));
   const [showMinimap,  setShowMinimap]  = useState(false);
   const [helperLines,  setHelperLines]  = useState<HelperLinesState>({});
-  const [contextMenu, setContextMenu] = useState<{ screenX: number; screenY: number } | null>(null);
+  const [contextMenu,  setContextMenu]  = useState<{ screenX: number; screenY: number } | null>(null);
+  const [searchOpen,   setSearchOpen]   = useState(false);
   // - flow coords at right-click time; stored in a ref so add-handlers don't go stale
   const contextMenuFlowPos = useRef<{ flowX: number; flowY: number }>({ flowX: 0, flowY: 0 });
 
@@ -903,6 +905,13 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
     };
 
     const handler = (e: KeyboardEvent) => {
+      // - Ctrl+F: open canvas search bar (intercept before input / Monaco checks)
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === 'f') {
+        e.preventDefault();
+        setSearchOpen(true);
+        return;
+      }
+
       // - don't intercept while user is typing in Monaco, an input, or textarea
       const active = document.activeElement;
       if (
@@ -1077,7 +1086,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [setNodes, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave]); // - nodesRef carries live state
+  }, [setNodes, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen]); // - nodesRef carries live state
 
   // - handle skena:addNodeTrigger from VS Code ctrl+n command override
   // - compute viewport centre in flow coords, avoid overlaps, send addNodeRequest
@@ -1419,6 +1428,13 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
           />
         )}
       </ReactFlow>
+      {searchOpen && (
+        <CanvasSearch
+          nodes={canvasRef.current.nodes}
+          onFocus={focusNodeById}
+          onClose={() => setSearchOpen(false)}
+        />
+      )}
       {contextMenu && (
         <ContextMenu
           screenX={contextMenu.screenX}
