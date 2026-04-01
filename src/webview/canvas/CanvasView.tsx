@@ -281,13 +281,20 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
   // - (snapToGrid is removed from <ReactFlow> so both can coexist cleanly)
   const customOnNodesChange = useCallback((changes: NodeChange[]) => {
     const posChange = changes.find(
-      (c): c is NodePositionChange => c.type === 'position' && !!c.dragging && !!c.position
+      (c): c is NodePositionChange => c.type === 'position' && !!c.position
     );
 
     if (posChange?.position) {
       const { horizontal, vertical, snapX, snapY } = getHelperLines(posChange, nodesRef.current);
-      setHelperLines({ horizontal, vertical });
-      // - snap to alignment guide if within threshold, otherwise snap to grid
+      // - show guide lines only while actively dragging; clear them on drop
+      if (posChange.dragging) {
+        setHelperLines({ horizontal, vertical });
+      } else {
+        setHelperLines({});
+      }
+      // - snap to alignment guide if within threshold, otherwise snap to grid;
+      // - applies on every position change including the final dragging:false event
+      // - so React state never reverts to the raw mouse-up position
       posChange.position = {
         x: snapX !== undefined ? snapX : snapGrid(posChange.position.x),
         y: snapY !== undefined ? snapY : snapGrid(posChange.position.y),
@@ -398,29 +405,18 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
     const original = canvasRef.current.nodes.find(n => n.id === node.id);
     if (!original) return;
 
-    // - final snap: wider threshold (20px) so a near-miss still lands on the line
-    const { snapX, snapY } = getHelperLines(
-      { type: 'position', id: node.id, position: node.position, dragging: false },
-      nodesRef.current,
-      40,
-    );
-    const finalPosition = {
-      x: snapX !== undefined ? snapX : node.position.x,
-      y: snapY !== undefined ? snapY : node.position.y,
-    };
-    if (snapX !== undefined || snapY !== undefined) {
-      setNodes(nds => nds.map(n => n.id === node.id ? { ...n, position: finalPosition } : n));
-    }
-
+    // - node.position here is the last snapped position from the final drag frame;
+    // - no second snap needed — customOnNodesChange already handles alignment for
+    // - every position change including the dragging:false event React Flow fires next
     const updated: CanvasData = {
       ...canvasRef.current,
       nodes: canvasRef.current.nodes.map(n =>
-        n.id === node.id ? patchCanvasNode(n, { ...node, position: finalPosition }) : n
+        n.id === node.id ? patchCanvasNode(n, node) : n
       ),
     };
     canvasRef.current = updated;
     scheduleSave(updated);
-  }, [setNodes, scheduleSave]);
+  }, [scheduleSave]);
 
   const onNodeDragStart = useCallback(() => {
     pushHistory();
