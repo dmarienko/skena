@@ -905,8 +905,11 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
     };
 
     const handler = (e: KeyboardEvent) => {
-      // - Ctrl+F: open canvas search bar (intercept before input / Monaco checks)
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === 'f') {
+      // - Ctrl+F or /: open canvas search bar (intercept before input / Monaco checks)
+      if (
+        ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === 'f') ||
+        (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === '/')
+      ) {
         e.preventDefault();
         setSearchOpen(true);
         return;

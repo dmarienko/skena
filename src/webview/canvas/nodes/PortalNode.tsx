@@ -12,6 +12,12 @@ function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
 }
 
+// - strip path noise: remove leading ./ or ../ segments, then drop the .canvas extension
+function canvasBasename(p: string): string {
+  const name = p.replace(/^(\.\.?\/)+/, '').split('/').pop() ?? p;
+  return name.endsWith('.canvas') ? name.slice(0, -7) : name;
+}
+
 export function PortalNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as PortalNode & { accentColor?: string };
   const borderColor = node.accentColor ?? '#53dfdd';
@@ -51,7 +57,7 @@ export function PortalNodeComponent({ data, id, selected }: NodeProps): JSX.Elem
       <Handle type="source" position={Position.Left}   id="left"   />
 
       <span style={{ fontSize: 18, fontWeight: 600, opacity: 0.85, textAlign: 'center', wordBreak: 'break-word', lineHeight: 1.2 }}>
-        {node.label ?? node.canvas}
+        {node.label ?? canvasBasename(node.canvas)}
       </span>
       <span style={{ fontSize: 11, opacity: 0.4, textAlign: 'center' }}>canvas</span>
     </div>
