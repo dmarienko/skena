@@ -899,6 +899,13 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
       const dir = keyToDir(e.key);
       if (!dir) return;
 
+      // - modifier + direction = VS Code / OS shortcut (Alt+Left = navigate back,
+      // - Ctrl+Left = word jump, Meta+Left = line start, etc.).
+      // - e.key sees only 'h' / 'ArrowLeft', so the modifier is invisible to
+      // - keyToDir and navigation fires anyway — silently ignoring the modifier.
+      // - Bail out and let VS Code handle the combo.
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
+
       let current = nodesRef.current.find(n => n.selected && n.type !== 'group');
 
       // - no focused node: establish focus on the viewport-nearest node first;

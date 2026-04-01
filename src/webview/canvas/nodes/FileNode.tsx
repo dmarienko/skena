@@ -119,12 +119,13 @@ interface ZoomGateProps {
 function ZoomGate({ id, status, content, fileType, resourceUri, error, truncated, totalSize, file, html }: ZoomGateProps): JSX.Element {
   const zoom = useZoomLevel();
 
-  // - LOD: hide content at low zoom levels but keep the fiber tree mounted.
-  // - Returning null would UNMOUNT MarkdownRenderer's subtree, forcing a full
-  // - ReactMarkdown re-parse (200 KB → 10k+ fibers) every time the user zooms
-  // - back in. CSS display:none hides without unmounting — zoom-in just flips
-  // - a style property, no React work and no ReactMarkdown work at all.
-  const hidden = zoom === 'minimal' || zoom === 'overview';
+  // - LOD: hide content only at 'minimal' zoom (< 0.3) where nodes are pixel-sized.
+  // - 'overview' (0.3–0.8) now stays visible so .md file nodes behave like TextNodes.
+  // - The original 'overview' hide was a guard against ReactMarkdown re-parses on
+  // - zoom-in. Markdown files now use pre-rendered HTML (dangerouslySetInnerHTML) so
+  // - there is no expensive parse to protect. will-change:transform + content-visibility
+  // - handle GPU and layout costs; hiding at overview buys nothing.
+  const hidden = zoom === 'minimal';
 
   return (
     <ScrollableContent scrollKey={id} hidden={hidden} contentLoaded={status === 'loaded'}>

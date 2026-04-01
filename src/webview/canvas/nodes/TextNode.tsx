@@ -150,26 +150,51 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
     // - initialise vim mode; status bar shows current vim mode / pending commands
     const vimMode = initVimMode(editorInstance, vimStatusRef.current ?? undefined);
 
+    // ─── vim mode tracking via MutationObserver ──────────────────────────────
+    //
+    // Problem: editor.onKeyDown can fire AFTER monaco-vim has already processed
+    // the key and updated the status bar DOM. Reading the status bar text inside
+    // onKeyDown would then see the POST-key state, not the pre-key state.
+    //
+    // Fix: MutationObserver callbacks are microtasks — they run AFTER the current
+    // synchronous call stack. So inside onKeyDown (sync), `vimIsEditing` still
+    // reflects the mode BEFORE the current key, regardless of whether vim's handler
+    // ran before or after Monaco's onKeyDown listeners.
+    //
+    //   ESC pressed while in INSERT:
+    //     vim processes → status → "" → mutation QUEUED (microtask, not yet fired)
+    //     onKeyDown fires (sync) → vimIsEditing = true (old value) → don't commit ✓
+    //     microtask fires → vimIsEditing = false
+    //
+    //   ESC pressed while in NORMAL:
+    //     no status change → no mutation → onKeyDown fires → vimIsEditing = false → commit ✓
+    //
+    let vimIsEditing = false;
+
+    const statusObserver = new MutationObserver(() => {
+      const text = vimStatusRef.current?.textContent ?? '';
+      vimIsEditing = text.includes('INSERT') || text.includes('VISUAL') || text.includes('REPLACE');
+    });
+    if (vimStatusRef.current) {
+      statusObserver.observe(vimStatusRef.current, {
+        childList: true, subtree: true, characterData: true,
+      });
+    }
+
     // - Ctrl/Cmd+Enter → save and close from any mode
     editorInstance.addCommand(monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.Enter, () => {
       commitEdit(editorInstance.getValue());
     });
 
-    // - Double-Esc to exit:
-    //   editor.onKeyDown fires BEFORE vim processes the key, so the status bar
-    //   still shows the current mode at keydown time.
-    //   First Esc:  status = "-- INSERT --" → do nothing → vim transitions to NORMAL
-    //   Second Esc: status = ""             → normal mode → commit and close
+    // - ESC: exit editing only when vim is already in NORMAL mode.
+    // - vimIsEditing is safe to read here: MutationObserver (microtask) hasn't
+    // - fired yet for the current keydown, so it still holds the pre-key state.
     editorInstance.onKeyDown(e => {
-      if (e.browserEvent.key === 'Escape') {
-        const status = vimStatusRef.current?.textContent ?? '';
-        const inNormalMode = !status.includes('INSERT') &&
-                             !status.includes('VISUAL') &&
-                             !status.includes('REPLACE');
-        if (inNormalMode) {
-          commitEdit(editorInstance.getValue());
-        }
+      if (e.browserEvent.key !== 'Escape') return;
+      if (!vimIsEditing) {
+        commitEdit(editorInstance.getValue());
       }
+      // - if vimIsEditing: vim handles ESC → transitions to NORMAL → don't close
     });
 
     // ─── Ctrl+V fallback paste (fires only when vim doesn't intercept it) ──
@@ -194,8 +219,11 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
       }
     });
 
-    // - clean up vim mode when the Monaco editor is destroyed
-    editorInstance.onDidDispose(() => vimMode.dispose());
+    // - clean up vim mode and observer when the Monaco editor is destroyed
+    editorInstance.onDidDispose(() => {
+      vimMode.dispose();
+      statusObserver.disconnect();
+    });
   }, [commitEdit]);
 
   const enterEdit = useCallback(() => setEditing(true), []);

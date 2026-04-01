@@ -136,8 +136,8 @@
       "file": "Options/SC01_Continuous_Processes_Brownian_Motion.md",
       "x": -893,
       "y": 540,
-      "width": 1127,
-      "height": 436,
+      "width": 1313,
+      "height": 1542,
       "nodeLabel": "M2"
     },
     {
@@ -199,6 +199,26 @@
       "width": 750,
       "height": 240,
       "nodeLabel": "N22"
+    },
+    {
+      "id": "node-1775036253964",
+      "type": "file",
+      "file": "./Options/SC01_Blotter.ipynb",
+      "x": -893,
+      "y": 13,
+      "width": 1313,
+      "height": 384,
+      "nodeLabel": "J1"
+    },
+    {
+      "id": "node-1775036377009",
+      "type": "text",
+      "text": "# notes\r\n\r\n\r\ndsdsd\r\ndsdsd\r\n\r\n",
+      "x": 1757,
+      "y": 3131,
+      "width": 400,
+      "height": 300,
+      "nodeLabel": "N14"
     }
   ],
   "edges": [
@@ -353,11 +373,27 @@
       "toNode": "node-1774967992411",
       "toSide": "left",
       "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1775036253964",
+      "fromNode": "node-1774971824430-0",
+      "fromSide": "top",
+      "toNode": "node-1775036253964",
+      "toSide": "bottom",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1775036377009",
+      "fromNode": "f1a2b3c4d5e60004",
+      "fromSide": "right",
+      "toNode": "node-1775036377009",
+      "toSide": "left",
+      "toEnd": "arrow"
     }
   ],
   "viewport": {
-    "x": 375.8217034677682,
-    "y": 92.72713737050651,
-    "zoom": 0.22974681619175238
+    "x": -1402.5391717598875,
+    "y": -2798.9877478508897,
+    "zoom": 0.9701273233315726
   }
 }
