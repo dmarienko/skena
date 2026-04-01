@@ -21,9 +21,9 @@ export const DEFAULT_NODE_HEIGHT = 250;
  *   > MAX_FILE_FULL_BYTES    → first MAX_FILE_PREVIEW_BYTES sent; truncated=true in response
  * Notebooks use a separate lower limit (they are pre-parsed JSON, not raw source).
  */
-export const MAX_FILE_FULL_BYTES    = 2 * 1024 * 1024; // - 2 MB: render completely
-export const MAX_FILE_PREVIEW_BYTES =   200 * 1024;     // - 200 KB shown for oversized files
-export const MAX_NOTEBOOK_BYTES     =   500 * 1024;     // - 500 KB notebook source
+export const MAX_FILE_FULL_BYTES    =  2 * 1024 * 1024; // - 2 MB: render completely
+export const MAX_FILE_PREVIEW_BYTES =    200 * 1024;    // - 200 KB shown for oversized files
+export const MAX_NOTEBOOK_BYTES     = 10 * 1024 * 1024; // - 10 MB parsed notebook output
 
 /** @deprecated kept for any external callers; equals MAX_FILE_FULL_BYTES */
 export const MAX_FILE_SIZE_BYTES = MAX_FILE_FULL_BYTES;

@@ -256,7 +256,7 @@
   "scripts": {
     "dev": "node esbuild.config.mjs --watch",
     "build": "node esbuild.config.mjs",
-    "package": "vsce package --no-dependencies",
+    "package": "node esbuild.config.mjs && vsce package --no-dependencies",
     "lint": "eslint src --ext ts,tsx",
     "typecheck": "tsc --noEmit"
   },

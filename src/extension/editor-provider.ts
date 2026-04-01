@@ -289,13 +289,17 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         resourceUri = `data:${mime};base64,${bytes.toString('base64')}`;
         content = '';
       } else if (resolved.fileType === 'notebook') {
-        // - notebooks: hard limit (pre-parsed JSON can be large)
-        if (stat.size > MAX_NOTEBOOK_BYTES) {
+        // - parse first, then gate on the serialised output size (not raw file size).
+        // - raw notebooks embed base64 images that don't grow after parsing,
+        // - so checking raw size is overly conservative. 10 MB of parsed output
+        // - is a reasonable ceiling before the webview starts struggling.
+        const raw    = await fs.readFile(resolved.fsPath, 'utf-8');
+        const parsed = JSON.stringify(parseNotebook(raw));
+        if (parsed.length > MAX_NOTEBOOK_BYTES) {
           send({ type: 'fileError', requestId: msg.requestId, uri: msg.uri, error: 'TOO_LARGE' });
           return;
         }
-        const raw = await fs.readFile(resolved.fsPath, 'utf-8');
-        content = JSON.stringify(parseNotebook(raw));
+        content = parsed;
       } else if (stat.size <= MAX_FILE_FULL_BYTES) {
         // - file fits within the full-render limit — send as-is
         content = await fs.readFile(resolved.fsPath, 'utf-8');
@@ -520,8 +524,11 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       vaultName:   vaultOf(e.uri),
     }));
 
+    // - filenames that are never useful in the picker
+    const SKIP_FILENAMES = new Set(['__init__.py']);
+
     const wsItems: Item[] = wsUris
-      .filter(u => !vaultPaths.has(u.fsPath))
+      .filter(u => !vaultPaths.has(u.fsPath) && !SKIP_FILENAMES.has(path.basename(u.fsPath)))
       .map(u => ({
         label:       path.basename(u.fsPath),
         description: vscode.workspace.asRelativePath(u.fsPath),
