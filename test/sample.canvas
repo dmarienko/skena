@@ -273,6 +273,16 @@
       "width": 908,
       "height": 491,
       "nodeLabel": "M3"
+    },
+    {
+      "id": "node-1775065209583",
+      "type": "file",
+      "file": "vault://kb/Adaptive supertrend (FDI).md",
+      "x": 1875,
+      "y": -2493,
+      "width": 585,
+      "height": 439,
+      "nodeLabel": "M5"
     }
   ],
   "edges": [
@@ -447,11 +457,19 @@
       "toNode": "node-1775064928441",
       "toSide": "bottom",
       "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1775065209583",
+      "fromNode": "node-1775064928441",
+      "fromSide": "right",
+      "toNode": "node-1775065209583",
+      "toSide": "left",
+      "toEnd": "arrow"
     }
   ],
   "viewport": {
-    "x": -139.24904982850478,
-    "y": 2126.077937505485,
-    "zoom": 0.7824288962521827
+    "x": -1114.8140867230643,
+    "y": 2137.0964319140953,
+    "zoom": 0.7704980326934089
   }
 }
