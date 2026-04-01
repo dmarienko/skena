@@ -10,9 +10,15 @@
  *   |sourceX − targetX| / 2, which collapses to zero when nodes are vertically stacked,
  *   drawing a straight line through both bodies.  We detect this case and replace the
  *   path with a 6-waypoint route that clears the actual node boundaries.
+ *
+ * Label editing:
+ *   Double-click the edge path (or existing label) → enters inline edit mode.
+ *   CanvasView fires `skena:editEdgeLabel` with { id } to trigger this.
+ *   On commit (Enter / blur) the component fires `skena:edgeLabelSave` with { id, label }.
+ *   Escape cancels without saving.
  */
 
-import React from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { EdgeProps, BaseEdge, EdgeLabelRenderer, getSmoothStepPath, Position, useStore } from '@xyflow/react';
 
 // ─── backward-path builder ────────────────────────────────────────────────────
@@ -125,8 +131,38 @@ export function LabeledEdgeComponent({
   style, label, markerEnd, selected,
 }: EdgeProps): JSX.Element {
 
+  const [editing, setEditing] = useState(false);
+  const [draft,   setDraft]   = useState(String(label ?? ''));
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // - sync draft when label prop changes from outside (e.g. undo/redo)
+  useEffect(() => { if (!editing) setDraft(String(label ?? '')); }, [label, editing]);
+
+  // - CanvasView fires this when the user double-clicks the edge path
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { id: targetId } = (e as CustomEvent<{ id: string }>).detail;
+      if (targetId !== id) return;
+      setDraft(String(label ?? ''));
+      setEditing(true);
+    };
+    window.addEventListener('skena:editEdgeLabel', handler);
+    return () => window.removeEventListener('skena:editEdgeLabel', handler);
+  }, [id, label]);
+
+  // - focus input as soon as edit mode activates
+  useEffect(() => {
+    if (editing) requestAnimationFrame(() => inputRef.current?.focus());
+  }, [editing]);
+
+  const commit = useCallback((value: string) => {
+    setEditing(false);
+    window.dispatchEvent(new CustomEvent('skena:edgeLabelSave', { detail: { id, label: value.trim() } }));
+  }, [id]);
+
+  const cancel = useCallback(() => setEditing(false), []);
+
   // - look up actual node dimensions so routing clears the node bodies
-  // - (handle positions are at node centers; using them as the boundary underestimates by width/2)
   const sNode = useStore(s => s.nodes.find(n => n.id === source));
   const tNode = useStore(s => s.nodes.find(n => n.id === target));
 
@@ -147,8 +183,6 @@ export function LabeledEdgeComponent({
       : targetY + 75,
   );
 
-  // - "backward": the source handle points away from the target node.
-  // - getSmoothStepPath degenerates in this case (U-shape collapses to 0 width).
   const isBackward =
     (sourcePosition === Position.Bottom && targetY < sourceY) ||
     (sourcePosition === Position.Top    && targetY > sourceY) ||
@@ -176,30 +210,61 @@ export function LabeledEdgeComponent({
       }
     : style;
 
+  // - match label border to the edge stroke color so it reads as part of the connection
+  const edgeColor = (style?.stroke as string | undefined) ?? '#888888';
+
+  const labelStyle: React.CSSProperties = {
+    position:     'absolute',
+    transform:    `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
+    fontSize:     10,
+    padding:      '2px 7px',
+    borderRadius: 5,
+    background:   'var(--vscode-editor-background)',
+    border:       `1.5px solid ${edgeColor}`,
+    color:        'var(--vscode-foreground)',
+    pointerEvents: 'all',
+    whiteSpace:   'nowrap',
+  };
+
   return (
     <>
       <BaseEdge id={id} path={edgePath} style={activeStyle} markerEnd={markerEnd} />
-      {label && (
-        <EdgeLabelRenderer>
-          <div
-            style={{
-              position:  'absolute',
-              transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
-              fontSize:  10,
-              padding:   '2px 6px',
-              borderRadius: 4,
-              background: 'var(--vscode-editor-background)',
-              border:     '1px solid var(--vscode-editorWidget-border)',
-              color:      'var(--vscode-foreground)',
-              opacity:    0.85,
-              pointerEvents: 'none',
+      <EdgeLabelRenderer>
+        {editing ? (
+          <input
+            ref={inputRef}
+            className="nodrag nopan skena-edge-label-input"
+            style={{ ...labelStyle, minWidth: 80, outline: 'none' }}
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onBlur={() => commit(draft)}
+            onKeyDown={e => {
+              e.stopPropagation();
+              if (e.key === 'Enter') { e.preventDefault(); commit(draft); }
+              if (e.key === 'Escape') { e.preventDefault(); cancel(); }
             }}
+          />
+        ) : (
+          // - always render a hit-area div so double-click works even with no label
+          <div
             className="nodrag nopan"
+            style={{
+              ...labelStyle,
+              opacity:   label ? 1 : 0,
+              minWidth:  label ? undefined : 20,
+              minHeight: label ? undefined : 12,
+              cursor:    'text',
+            }}
+            onDoubleClick={e => {
+              e.stopPropagation();
+              setDraft(String(label ?? ''));
+              setEditing(true);
+            }}
           >
-            {String(label)}
+            {label ? String(label) : ''}
           </div>
-        </EdgeLabelRenderer>
-      )}
+        )}
+      </EdgeLabelRenderer>
     </>
   );
 }

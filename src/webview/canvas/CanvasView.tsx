@@ -93,6 +93,17 @@ function toFlowNode(cn: CanvasNode): Node {
 // - default edge color — visible on both dark and light VS Code themes
 const DEFAULT_EDGE_COLOR = '#888888';
 
+// - timestamp label for pin edges: yy-mm-dd hh:mm
+function nowLabel(): string {
+  const d   = new Date();
+  const yy  = String(d.getFullYear()).slice(2);
+  const mm  = String(d.getMonth() + 1).padStart(2, '0');
+  const dd  = String(d.getDate()).padStart(2, '0');
+  const hh  = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${yy}-${mm}-${dd} ${hh}:${min}`;
+}
+
 // - canvas edge → React Flow edge
 function toFlowEdge(ce: CanvasEdge): Edge {
   const stroke = resolveColor(ce.color) ?? DEFAULT_EDGE_COLOR;
@@ -537,6 +548,33 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
       vscodePostMessage({ type: 'openFile', uri: (node.data as { canvas?: string }).canvas ?? '' });
     }
   }, []);
+
+  const onEdgeDoubleClick = useCallback((_: React.MouseEvent, edge: Edge) => {
+    window.dispatchEvent(new CustomEvent('skena:editEdgeLabel', { detail: { id: edge.id } }));
+  }, []);
+
+  // ─── edge label save ─────────────────────────────────────────────────────────
+  // - fired by LabeledEdge when the user commits an inline label edit (Enter / blur)
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { id: edgeId, label } = (e as CustomEvent<{ id: string; label: string }>).detail;
+      pushHistory();
+      const updated: CanvasData = {
+        ...canvasRef.current,
+        edges: canvasRef.current.edges.map(ce =>
+          ce.id === edgeId ? { ...ce, label: label || undefined } : ce
+        ),
+      };
+      canvasRef.current = updated;
+      setEdges(eds => eds.map(fe =>
+        fe.id === edgeId ? { ...fe, label: label || undefined, data: { ...fe.data, label: label || undefined } } : fe
+      ));
+      scheduleSave(updated);
+    };
+    window.addEventListener('skena:edgeLabelSave', handler);
+    return () => window.removeEventListener('skena:edgeLabelSave', handler);
+  }, [setEdges, scheduleSave, pushHistory]);
 
   // ─── file drop from VS Code Explorer ────────────────────────────────────────
 
@@ -1184,6 +1222,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
         toNode:   id,
         toSide:   'left',
         toEnd:    'arrow',
+        label:    nowLabel(),
       });
     }
 
@@ -1286,6 +1325,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
         onNodesDelete={onNodesDelete}
         onEdgesDelete={onEdgesDelete}
         onNodeDoubleClick={onNodeDoubleClick}
+        onEdgeDoubleClick={onEdgeDoubleClick}
         connectionMode={ConnectionMode.Loose}
         connectionRadius={35}
         disableKeyboardA11y={true}
