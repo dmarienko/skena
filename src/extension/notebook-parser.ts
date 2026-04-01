@@ -17,12 +17,17 @@ export interface OutputText {
   text: string;
 }
 
+export interface OutputHtml {
+  mimeType: 'text/html';
+  html: string;
+}
+
 export interface OutputPlaceholder {
   mimeType: 'placeholder';
   label: string;
 }
 
-export type CellOutput = OutputImage | OutputText | OutputPlaceholder;
+export type CellOutput = OutputImage | OutputText | OutputHtml | OutputPlaceholder;
 
 export interface ParsedCell {
   type: CellType;
@@ -101,6 +106,12 @@ function parseOutputs(rawOutputs: RawOutput[]): CellOutput[] {
         mimeType: 'image/svg+xml',
         data: btoa(joinSource(data['image/svg+xml'])),
       });
+      continue;
+    }
+
+    // - text/html: pandas DataFrames, rich display objects, etc.
+    if (data['text/html']) {
+      outputs.push({ mimeType: 'text/html', html: joinSource(data['text/html']) });
       continue;
     }
 

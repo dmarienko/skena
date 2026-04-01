@@ -41,20 +41,22 @@ function vscodePostMessage(msg: unknown) {
 // ─── innermost: heavy content renderer (memoized by content identity) ─────────
 
 interface ContentProps {
-  fileType:    string;
-  content:     string;
-  resourceUri: string | undefined;
-  zoom:        string;
-  baseUri?:    string;
-  file:        string;
-  truncated?:  boolean;
-  totalSize?:  number;
+  fileType:     string;
+  content:      string;
+  resourceUri:  string | undefined;
+  zoom:         string;
+  baseUri?:     string;
+  file:         string;
+  truncated?:   boolean;
+  totalSize?:   number;
   /** - pre-rendered HTML from extension host; bypasses ReactMarkdown entirely */
-  html?:       string;
+  html?:        string;
+  /** - canvas node ID of the enclosing FileNode; forwarded to NotebookRenderer for pin-to-canvas */
+  sourceNodeId: string;
 }
 
 const MemoContent = memo(function FileNodeContent({
-  fileType, content, resourceUri, zoom, baseUri, file, truncated, totalSize, html,
+  fileType, content, resourceUri, zoom, baseUri, file, truncated, totalSize, html, sourceNodeId,
 }: ContentProps): JSX.Element {
   return (
     <>
@@ -63,7 +65,7 @@ const MemoContent = memo(function FileNodeContent({
         <div className="skena-markdown" dangerouslySetInnerHTML={{ __html: html }} />
       )}
       {fileType === 'markdown' && !html && <MarkdownRenderer content={content} baseUri={baseUri} />}
-      {fileType === 'notebook' && <NotebookRenderer parsedJson={content} zoom={zoom} />}
+      {fileType === 'notebook' && <NotebookRenderer parsedJson={content} zoom={zoom} sourceNodeId={sourceNodeId} />}
       {(fileType === 'python' || fileType === 'yaml') && (
         <CodeRenderer content={content} language={fileType === 'yaml' ? 'yaml' : 'python'} />
       )}
@@ -104,19 +106,20 @@ const MemoContent = memo(function FileNodeContent({
 // the full FileNodeInner tree (NodeHeader, handles, callbacks, etc.).
 
 interface ZoomGateProps {
-  id:         string;
-  status:     string;
-  content:    string;
-  fileType:   string;
-  resourceUri: string | undefined;
-  error:      string | undefined;
-  truncated?: boolean;
-  totalSize?: number;
-  file:       string;
-  html?:      string;
+  id:           string;
+  status:       string;
+  content:      string;
+  fileType:     string;
+  resourceUri:  string | undefined;
+  error:        string | undefined;
+  truncated?:   boolean;
+  totalSize?:   number;
+  file:         string;
+  html?:        string;
+  sourceNodeId: string;
 }
 
-function ZoomGate({ id, status, content, fileType, resourceUri, error, truncated, totalSize, file, html }: ZoomGateProps): JSX.Element {
+function ZoomGate({ id, status, content, fileType, resourceUri, error, truncated, totalSize, file, html, sourceNodeId }: ZoomGateProps): JSX.Element {
   const zoom = useZoomLevel();
 
   // - LOD: hide content only at 'minimal' zoom (< 0.3) where nodes are pixel-sized.
@@ -136,6 +139,7 @@ function ZoomGate({ id, status, content, fileType, resourceUri, error, truncated
           fileType={fileType} content={content} resourceUri={resourceUri}
           zoom={zoom} baseUri={file} file={file}
           truncated={truncated} totalSize={totalSize} html={html}
+          sourceNodeId={sourceNodeId}
         />
       )}
     </ScrollableContent>
@@ -193,6 +197,7 @@ function FileNodeInner({ data, id, selected }: NodeProps): JSX.Element {
         id={id} status={status} content={content} fileType={fileType}
         resourceUri={resourceUri} error={error}
         truncated={truncated} totalSize={totalSize} file={node.file} html={html}
+        sourceNodeId={id}
       />
     </div>
     </>

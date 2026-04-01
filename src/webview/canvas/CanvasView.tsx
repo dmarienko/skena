@@ -1144,6 +1144,109 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
     return () => window.removeEventListener('skena:addNodeResult', handler);
   }, [setNodes, setEdges, scheduleSave, focusNodeById, pushHistory]);
 
+  // ─── helper: place a new CellNode at viewport centre ─────────────────────────
+
+  const addCellNode = useCallback((
+    content: string,
+    format: 'html' | 'markdown' | 'image',
+    sourceNodeId?: string,
+  ) => {
+    pushHistory();
+    const W = 480, H = 320, GAP = 60;
+
+    // - if pinned from a notebook node, place to the right of it; else viewport centre
+    let x: number, y: number;
+    const src = sourceNodeId ? canvasRef.current.nodes.find(n => n.id === sourceNodeId) : undefined;
+    if (src) {
+      x = Math.round(src.x + src.width + GAP);
+      y = Math.round(src.y + (src.height - H) / 2);
+    } else {
+      const { x: vx, y: vy, zoom } = rfRef.current.getViewport();
+      const cx = (-vx + window.innerWidth  / 2) / zoom;
+      const cy = (-vy + window.innerHeight / 2) / zoom;
+      x = Math.round(cx - W / 2);
+      y = Math.round(cy - H / 2);
+    }
+
+    const id      = `cell-${Date.now()}`;
+    const newNode = assignLabel(
+      { id, type: 'cell', x, y, width: W, height: H, content, format } as CanvasNode,
+      canvasRef.current.nodes,
+    );
+
+    // - create connecting edge from the source notebook node if available
+    const newEdges: CanvasEdge[] = [];
+    if (src) {
+      newEdges.push({
+        id:       `edge-pin-${Date.now()}`,
+        fromNode: src.id,
+        fromSide: 'right',
+        toNode:   id,
+        toSide:   'left',
+        toEnd:    'arrow',
+      });
+    }
+
+    setNodes(nds => [...nds.map(n => ({ ...n, selected: false })), { ...toFlowNode(newNode), selected: true }]);
+    if (newEdges.length > 0) setEdges(eds => [...eds, ...newEdges.map(toFlowEdge)]);
+    canvasRef.current = {
+      ...canvasRef.current,
+      nodes: [...canvasRef.current.nodes, newNode],
+      edges: [...canvasRef.current.edges, ...newEdges],
+    };
+    scheduleSave(canvasRef.current);
+    requestAnimationFrame(() => focusNodeById(id));
+  }, [pushHistory, scheduleSave, focusNodeById, setEdges]);
+
+  // ─── pin notebook cell output → new CellNode ─────────────────────────────────
+  // - fired by NotebookRenderer's 📌 button
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { content, format, sourceNodeId } = (e as CustomEvent<{
+        content:      string;
+        format:       'html' | 'markdown' | 'image';
+        sourceNodeId: string;
+      }>).detail;
+      addCellNode(content, format, sourceNodeId);
+    };
+    window.addEventListener('skena:pinCellOutput', handler);
+    return () => window.removeEventListener('skena:pinCellOutput', handler);
+  }, [addCellNode]);
+
+  // ─── Ctrl+Shift+V — paste clipboard as CellNode ───────────────────────────────
+  // - requests the clipboard text from extension host; when it arrives, creates a
+  // - CellNode: HTML format if the text looks like HTML, markdown otherwise
+
+  useEffect(() => {
+    let pending = false;
+
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'V') {
+        e.preventDefault();
+        pending = true;
+        vscodePostMessage({ type: 'requestClipboardRead' });
+      }
+    };
+
+    const onClip = (e: Event) => {
+      if (!pending) return;
+      pending = false;
+      const text = (e as CustomEvent<string>).detail ?? '';
+      if (!text) return;
+      // - treat as HTML if it contains an opening tag, otherwise markdown
+      const format: 'html' | 'markdown' = /<[a-zA-Z]/.test(text) ? 'html' : 'markdown';
+      addCellNode(text, format);
+    };
+
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('skena:clipboardContent', onClip);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('skena:clipboardContent', onClip);
+    };
+  }, [addCellNode]);
+
   // - handle sub-canvas extraction result from host
   useEffect(() => {
     const handler = (e: Event) => {

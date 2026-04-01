@@ -49,9 +49,64 @@
 .skena-notebook__cell { border-radius: 3px; overflow: hidden; }
 .skena-notebook__code-prompt { display: flex; gap: 6px; align-items: flex-start; }
 .skena-notebook__execution-count { font-size: 9px; opacity: 0.4; white-space: nowrap; padding-top: 2px; min-width: 24px; }
-.skena-notebook__output { margin-top: 2px; padding: 4px; background: var(--vscode-textCodeBlock-background); border-radius: 3px; }
+.skena-notebook__output { position: relative; margin-top: 2px; padding: 4px; background: var(--vscode-textCodeBlock-background); border-radius: 3px; }
 .skena-notebook__text-output { font-size: 10px; font-family: var(--vscode-editor-font-family); margin: 0; white-space: pre-wrap; }
 .skena-notebook__placeholder { font-size: 10px; opacity: 0.4; font-style: italic; }
+
+/* ─── Outputs group (wraps all outputs of one cell) ────────────────────────── */
+/* - position:relative so the "Pin all" button can anchor to the group corner  */
+.skena-notebook__outputs-group { position: relative; }
+
+/* ─── Pin-to-canvas button ──────────────────────────────────────────────────── */
+.skena-notebook__pin-btn {
+  position: absolute; top: 4px; right: 4px;
+  padding: 2px 5px; font-size: 11px; line-height: 1;
+  background: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.08));
+  border: 1px solid var(--vscode-widget-border, rgba(255,255,255,0.15));
+  border-radius: 3px; cursor: pointer; color: inherit;
+  opacity: 0; transition: opacity 0.12s;
+  z-index: 2;
+}
+/* - per-output pin: reveal on output hover */
+.skena-notebook__output:hover .skena-notebook__pin-btn { opacity: 1; }
+/* - "Pin all" button: direct child of outputs-group, reveal on group hover */
+.skena-notebook__outputs-group > .skena-notebook__pin-btn { top: 6px; right: 6px; }
+.skena-notebook__outputs-group:hover > .skena-notebook__pin-btn { opacity: 1; }
+
+/* ─── HTML output (pandas DataFrames, rich display) ────────────────────────── */
+.skena-notebook__html-output { overflow-x: auto; font-size: 11px; }
+.skena-notebook__html-output table {
+  border-collapse: collapse;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--vscode-foreground);
+}
+.skena-notebook__html-output th,
+.skena-notebook__html-output td {
+  padding: 3px 8px;
+  border: 1px solid var(--vscode-editorWidget-border, rgba(255,255,255,0.12));
+  text-align: right;
+}
+.skena-notebook__html-output th { background: rgba(255,255,255,0.06); font-weight: 600; text-align: center; }
+.skena-notebook__html-output tr:hover td { background: var(--vscode-list-hoverBackground); }
+
+/* - same table styles apply when HTML content is in a standalone CellNode */
+.skena-node .skena-notebook__html-output table,
+.skena-node [dangerouslySetInnerHTML] table {
+  border-collapse: collapse; white-space: nowrap; font-size: 11px;
+}
+
+/* ─── Inline HTML in CellNode (format=html) ─────────────────────────────────── */
+.skena-cell-html { overflow-x: auto; font-size: 11px; color: var(--vscode-foreground); }
+.skena-cell-html table { border-collapse: collapse; white-space: nowrap; }
+.skena-cell-html th,
+.skena-cell-html td {
+  padding: 3px 8px;
+  border: 1px solid var(--vscode-editorWidget-border, rgba(255,255,255,0.12));
+  text-align: right;
+}
+.skena-cell-html th { background: rgba(255,255,255,0.06); font-weight: 600; text-align: center; }
+.skena-cell-html tr:hover td { background: var(--vscode-list-hoverBackground); }
 
 /* Generic states */
 .skena-loading { font-size: 11px; opacity: 0.4; padding: 8px; }
