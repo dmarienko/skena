@@ -70,6 +70,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
 
     // - flag to suppress file watcher events triggered by our own saves
     let isSelfSaving = false;
+    // - last JSON we wrote, so we can detect an external write (e.g. MCP) that
+    // - arrives while isSelfSaving is true and not suppress it incorrectly
+    let lastWrittenJson = '';
 
     panel.webview.options = {
       enableScripts: true,
@@ -116,7 +119,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           break;
         }
         case 'requestFile':  await this.handleRequestFile(msg, panel, document, resolver, canvasDir); break;
-        case 'saveCanvas':   await this.handleSaveCanvas(msg, document, v => { isSelfSaving = v; }); break;
+        case 'saveCanvas':   await this.handleSaveCanvas(msg, document, v => { isSelfSaving = v; }, s => { lastWrittenJson = s; }); break;
         case 'openFile':     await this.handleOpenFile(msg, resolver, canvasDir); break;
         case 'searchVault':  {
           const results = this.indexer.search(msg.query);
@@ -145,11 +148,21 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       }
     });
 
-    // - watch for external changes to the .canvas file itself (Obsidian, git pull)
-    // - isSelfSaving suppresses the reload cycle when WE wrote the file
+    // - watch for external changes to the .canvas file itself (Obsidian, git pull, MCP)
+    // - isSelfSaving suppresses the reload cycle when WE wrote the file.
+    // - But an external writer (e.g. MCP server) can write WHILE isSelfSaving is true,
+    // - so when that flag is set we compare disk content to lastWrittenJson: if it
+    // - differs, an external write slipped through and we must still reload the webview.
     const canvasWatcher = vscode.workspace.createFileSystemWatcher(document.uri.fsPath);
     canvasWatcher.onDidChange(async () => {
-      if (isSelfSaving) return;
+      if (isSelfSaving) {
+        // - check whether this is our own echo or an external write
+        try {
+          const raw = await fs.readFile(document.uri.fsPath, 'utf-8');
+          if (raw === lastWrittenJson) return; // - definitely our own echo, skip
+          // - content differs → external write (MCP etc.) arrived during our save window
+        } catch { return; }
+      }
       try {
         const canvas = await readCanvas(document.uri.fsPath);
         document.updateFromDisk(canvas);
@@ -344,9 +357,12 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     msg: MsgSaveCanvas,
     document: SkenaDocument,
     setSelfSaving: (v: boolean) => void,
+    setLastWrittenJson: (s: string) => void,
   ): Promise<void> {
     try {
       setSelfSaving(true);
+      const json = JSON.stringify(msg.canvas, null, 2);
+      setLastWrittenJson(json);
       await writeCanvas(document.uri.fsPath, msg.canvas);
       document.updateFromDisk(msg.canvas);
     } catch (e) {

@@ -167,7 +167,7 @@ function FileNodeInner({ data, id, selected }: NodeProps): JSX.Element {
 
   return (
     <>
-    <NodeLabelBadge label={node.nodeLabel} />
+    <NodeLabelBadge label={node.nodeLabel} createdBy={(node as any).createdBy} />
     <div
       className="skena-node skena-node--file"
       style={{ border: `1.5px solid ${borderColor}`, height: '100%', display: 'flex', flexDirection: 'column', borderRadius: 6, overflow: 'hidden' }}

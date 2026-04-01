@@ -13,7 +13,7 @@ export function ChatNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
 
   return (
     <>
-    <NodeLabelBadge label={node.nodeLabel} />
+    <NodeLabelBadge label={node.nodeLabel} createdBy={(node as any).createdBy} />
     <div className="skena-node" style={{ border: `1.5px solid ${borderColor}`, height: '100%', borderRadius: 6, overflow: 'hidden', background: 'var(--vscode-editorWidget-background)', display: 'flex', flexDirection: 'column' }}>
       <NodeResizer
         minWidth={160} minHeight={100}

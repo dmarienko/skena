@@ -8,6 +8,8 @@
  */
 
 import * as vscode from 'vscode';
+import * as fs     from 'fs/promises';
+import * as path   from 'path';
 import { SkenaEditorProvider } from './editor-provider';
 import { VaultIndexer } from './vault-indexer';
 import { FileWatcher } from './file-watcher';
@@ -15,7 +17,7 @@ import { FileWatcher } from './file-watcher';
 let indexer: VaultIndexer | undefined;
 let watcher: FileWatcher | undefined;
 
-export function activate(context: vscode.ExtensionContext): void {
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
   console.log('Skena: activating');
 
   // - shared indexer instance — all editor panels share one index
@@ -113,6 +115,14 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
+  // - deploy MCP server to each workspace folder
+  const folders = vscode.workspace.workspaceFolders ?? [];
+  for (const folder of folders) {
+    await deployMcpServer(context, folder.uri.fsPath).catch(e =>
+      console.error('Skena: MCP server deploy failed:', e)
+    );
+  }
+
   // - start watching vaults configured in settings
   const config = vscode.workspace.getConfiguration('skena');
   const vaults = config.get<Array<{ name: string; path: string }>>('skena.vaults') ?? [];
@@ -137,4 +147,24 @@ export function activate(context: vscode.ExtensionContext): void {
 export function deactivate(): void {
   watcher?.dispose();
   indexer?.dispose();
+}
+
+async function deployMcpServer(context: vscode.ExtensionContext, workspaceRoot: string): Promise<void> {
+  const vscodeDir = path.join(workspaceRoot, '.vscode');
+  const mcpJs     = path.join(vscodeDir, 'skena-mcp.js');
+  const mcpJson   = path.join(workspaceRoot, '.mcp.json');
+  const srcScript = context.asAbsolutePath('dist/mcp-server.js');
+
+  await fs.mkdir(vscodeDir, { recursive: true });
+  await fs.copyFile(srcScript, mcpJs);
+
+  // - write .mcp.json only if it doesn't already list skena
+  let existing: Record<string, unknown> = {};
+  try { existing = JSON.parse(await fs.readFile(mcpJson, 'utf-8')) as Record<string, unknown>; } catch { /* new file */ }
+  const servers = (existing.mcpServers ?? {}) as Record<string, unknown>;
+  if (!servers.skena) {
+    servers.skena        = { type: 'stdio', command: 'node', args: ['.vscode/skena-mcp.js'] };
+    existing.mcpServers  = servers;
+    await fs.writeFile(mcpJson, JSON.stringify(existing, null, 2) + '\n', 'utf-8');
+  }
 }

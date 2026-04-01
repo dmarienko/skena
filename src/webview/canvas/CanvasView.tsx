@@ -322,6 +322,16 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
   const canvasRef = useRef<CanvasData>({ ...canvas, nodes: initialNodes });
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // - cancel any in-flight debounced save when the component unmounts.
+  // - without this, a pending save queued BEFORE an external canvas change (e.g. MCP
+  // - writing a new node) fires AFTER the reload, posting the stale pre-change canvas
+  // - back to the extension and overwriting the external edit on disk.
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, []); // - cleanup only, runs on unmount
+
   // ─── undo / redo ──────────────────────────────────────────────────────────────
   const MAX_HISTORY = 50;
   type HistoryEntry = { nodes: CanvasNode[]; edges: CanvasEdge[] };
@@ -330,6 +340,9 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
 
   // - sync when canvas reloads from host; restore focus after fitView settles
   useEffect(() => {
+    // - cancel any in-flight save: the freshly-loaded canvas IS the truth on disk;
+    // - letting a stale timer fire would overwrite an MCP write with old state.
+    if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
     const labeled = ensureLabels(canvas.nodes);
     setNodes(labeled.map(toFlowNode));
     setEdges(canvas.edges.map(toFlowEdge));
@@ -356,13 +369,15 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canvas, canvasPath, setNodes, setEdges]);
 
-  // - debounced save
-  const scheduleSave = useCallback((updatedCanvas: CanvasData) => {
+  // - debounced save — reads canvasRef.current at fire time so it always sends
+  // - the latest state even if an external write (MCP) updated canvasRef between
+  // - the scheduleSave() call and the 500 ms timer expiry.
+  const scheduleSave = useCallback(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      vscodePostMessage({ type: 'saveCanvas', canvas: updatedCanvas });
+      vscodePostMessage({ type: 'saveCanvas', canvas: canvasRef.current });
     }, 500);
-  }, []);
+  }, []); // - canvasRef is a ref — stable, no closure dependency
 
   // - snapshot current state BEFORE a mutation so it can be undone
   const pushHistory = useCallback(() => {
@@ -378,7 +393,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
     canvasRef.current = { ...canvasRef.current, nodes: entry.nodes, edges: entry.edges };
     setNodes(entry.nodes.map(toFlowNode));
     setEdges(entry.edges.map(toFlowEdge));
-    scheduleSave(canvasRef.current);
+    scheduleSave();
   }, [setNodes, setEdges, scheduleSave]);
 
   const undo = useCallback(() => {
@@ -406,7 +421,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
   // - if labels were missing on load, persist them immediately
   useEffect(() => {
     if (initialNodes !== canvas.nodes) {
-      scheduleSave(canvasRef.current);
+      scheduleSave();
     }
   // - run once on mount only; scheduleSave is stable
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -426,7 +441,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
       ),
     };
     canvasRef.current = updated;
-    scheduleSave(updated);
+    scheduleSave();
   }, [scheduleSave]);
 
   const onNodeDragStart = useCallback(() => {
@@ -449,7 +464,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
       edges: [...canvasRef.current.edges, newEdge],
     };
     canvasRef.current = updated;
-    scheduleSave(updated);
+    scheduleSave();
   }, [setEdges, scheduleSave, pushHistory]);
 
   // - drop connection on node body (not on a specific handle) → connect to nearest side
@@ -489,7 +504,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
       edges: [...canvasRef.current.edges, newEdge],
     };
     canvasRef.current = updated;
-    scheduleSave(updated);
+    scheduleSave();
   }, [setEdges, scheduleSave, pushHistory]);
 
   const onNodesDelete = useCallback((deleted: Node[]) => {
@@ -500,7 +515,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
       edges: canvasRef.current.edges.filter(e => !deletedIds.has(e.fromNode) && !deletedIds.has(e.toNode)),
     };
     canvasRef.current = updated;
-    scheduleSave(updated);
+    scheduleSave();
 
     // - auto-focus nearest surviving node so spatial navigation resumes immediately
     const nonGroupDeleted = deleted.filter(n => n.type !== 'group');
@@ -538,7 +553,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
       edges: canvasRef.current.edges.filter(e => !deletedIds.has(e.id)),
     };
     canvasRef.current = updated;
-    scheduleSave(updated);
+    scheduleSave();
   }, [scheduleSave, pushHistory]);
 
   const onNodeDoubleClick = useCallback((_: React.MouseEvent, node: Node) => {
@@ -570,7 +585,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
       setEdges(eds => eds.map(fe =>
         fe.id === edgeId ? { ...fe, label: label || undefined, data: { ...fe.data, label: label || undefined } } : fe
       ));
-      scheduleSave(updated);
+      scheduleSave();
     };
     window.addEventListener('skena:edgeLabelSave', handler);
     return () => window.removeEventListener('skena:edgeLabelSave', handler);
@@ -627,7 +642,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
           nodes: [...canvasRef.current.nodes, cn],
         };
       });
-      scheduleSave(canvasRef.current);
+      scheduleSave();
     };
     window.addEventListener('skena:nodesFromDrop', handler);
     return () => window.removeEventListener('skena:nodesFromDrop', handler);
@@ -821,7 +836,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
       nodes: [...canvasRef.current.nodes, ...newNodes],
       edges: [...canvasRef.current.edges, ...newEdges],
     };
-    scheduleSave(canvasRef.current);
+    scheduleSave();
   }, [setNodes, setEdges, scheduleSave, pushHistory]);
 
   const handleMoveToSubCanvas = useCallback(() => {
@@ -1021,7 +1036,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
             cn.id !== cur.id ? cn : { ...cn, x: newX, y: newY, width: newW, height: newH },
           ),
         };
-        scheduleSave(canvasRef.current);
+        scheduleSave();
         return;
       }
 
@@ -1097,7 +1112,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
         nodes: canvasRef.current.nodes.map(n => n.id === id ? { ...n, x, y, width, height } : n),
       };
       canvasRef.current = updated;
-      scheduleSave(updated);
+      scheduleSave();
     };
     window.addEventListener('skena:nodeResize', handler);
     return () => window.removeEventListener('skena:nodeResize', handler);
@@ -1161,7 +1176,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
       setNodes(nds => nds.map(n =>
         n.id === id ? { ...n, data: { ...n.data, text } } : n
       ));
-      scheduleSave(updated);
+      scheduleSave();
     };
     window.addEventListener('skena:nodeTextEdit', handler);
     return () => window.removeEventListener('skena:nodeTextEdit', handler);
@@ -1197,7 +1212,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
         };
       }
 
-      scheduleSave(canvasRef.current);
+      scheduleSave();
 
       // - focus DOM + pan viewport to the new node
       focusNodeById(cn.id);
@@ -1268,7 +1283,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
       nodes: [...canvasRef.current.nodes, newNode],
       edges: [...canvasRef.current.edges, ...newEdges],
     };
-    scheduleSave(canvasRef.current);
+    scheduleSave();
     requestAnimationFrame(() => focusNodeById(id));
   }, [pushHistory, scheduleSave, focusNodeById, setEdges]);
 
@@ -1336,7 +1351,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
         nodes: [...canvasRef.current.nodes.filter(n => !removedIds.has(n.id)), portalNode],
         edges: canvasRef.current.edges.filter(e => !removedIds.has(e.fromNode) && !removedIds.has(e.toNode)),
       };
-      scheduleSave(canvasRef.current);
+      scheduleSave();
       focusNodeById(portalNode.id);
     };
     window.addEventListener('skena:subCanvasCreated', handler);
@@ -1372,7 +1387,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
         // - save viewport to canvas JSON whenever the user stops panning/zooming
         onMoveEnd={(_e, viewport) => {
           canvasRef.current = { ...canvasRef.current, viewport };
-          scheduleSave(canvasRef.current);
+          scheduleSave();
         }}
         minZoom={0.05}
         maxZoom={3}

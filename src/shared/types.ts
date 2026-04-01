@@ -31,6 +31,10 @@ export interface CanvasNodeBase {
    * Persisted in the .canvas file; ignored by Obsidian.
    */
   nodeLabel?: string;
+  /** - set to 'ai' when the node was created by an AI agent (MCP tool) */
+  createdBy?: 'ai';
+  /** - optional user/agent tags for search and organisation */
+  tags?: string[];
 }
 
 export interface FileNode extends CanvasNodeBase {

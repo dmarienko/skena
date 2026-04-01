@@ -20,7 +20,7 @@ export function PortalNodeComponent({ data, id, selected }: NodeProps): JSX.Elem
 
   return (
     <>
-    <NodeLabelBadge label={node.nodeLabel} />
+    <NodeLabelBadge label={node.nodeLabel} createdBy={(node as any).createdBy} />
     <div
       style={{
         border:         `2px solid ${borderColor}`,

@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "skena": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        ".vscode/skena-mcp.js"
+      ]
+    }
+  }
+}

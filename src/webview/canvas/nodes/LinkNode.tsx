@@ -34,7 +34,7 @@ export function LinkNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
 
   return (
     <>
-    <NodeLabelBadge label={node.nodeLabel} />
+    <NodeLabelBadge label={node.nodeLabel} createdBy={(node as any).createdBy} />
     <div
       className="skena-node" style={{ border: `1.5px solid ${borderColor}`, height: '100%', borderRadius: 6, overflow: 'hidden', background: 'var(--vscode-editorWidget-background)', padding: '8px 10px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 6 }}
       onClick={open}

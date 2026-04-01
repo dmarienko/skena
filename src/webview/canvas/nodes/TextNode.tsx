@@ -250,7 +250,7 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
 
   return (
     <>
-    <NodeLabelBadge label={node.nodeLabel} />
+    <NodeLabelBadge label={node.nodeLabel} createdBy={(node as any).createdBy} />
     <div
       ref={wrapperRef}
       className="skena-node"
