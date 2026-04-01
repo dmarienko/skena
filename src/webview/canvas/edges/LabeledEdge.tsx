@@ -224,6 +224,9 @@ export function LabeledEdgeComponent({
     color:        'var(--vscode-foreground)',
     pointerEvents: 'all',
     whiteSpace:   'nowrap',
+    // - elevateEdgesOnSelect raises the SVG edge above the EdgeLabelRenderer portal;
+    // - a positive zIndex keeps the label on top regardless of edge selection state
+    zIndex:       10,
   };
 
   return (

@@ -7,6 +7,9 @@
 .react-flow__controls-button:hover { background: var(--vscode-list-hoverBackground); }
 .react-flow__controls-button svg { fill: var(--vscode-foreground); }
 
+/* - edge label portal must sit above elevated SVG edge paths (elevateEdgesOnSelect) */
+.react-flow__edgelabel-renderer { z-index: 1000; }
+
 /* ─── Node base card style ────────────────────────────────────────────────── */
 /*
  * All nodes share this card appearance.

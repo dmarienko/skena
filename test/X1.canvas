@@ -1,0 +1,57 @@
+{
+  "nodes": [
+    {
+      "id": "node-1775048436531",
+      "type": "text",
+      "text": "# Idea 3\r\n\r\n- retest",
+      "x": 40,
+      "y": 40,
+      "width": 400,
+      "height": 300,
+      "nodeLabel": "N7"
+    },
+    {
+      "id": "node-1775048638012",
+      "type": "text",
+      "text": "# Experiment resukts",
+      "x": 489,
+      "y": 56,
+      "width": 400,
+      "height": 300,
+      "nodeLabel": "N10"
+    },
+    {
+      "id": "node-1775048641972",
+      "type": "text",
+      "text": "# Experiment 2",
+      "x": 489,
+      "y": 404,
+      "width": 400,
+      "height": 300,
+      "nodeLabel": "N11"
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-1775048638012",
+      "fromNode": "node-1775048436531",
+      "fromSide": "right",
+      "toNode": "node-1775048638012",
+      "toSide": "left",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1775048641972",
+      "fromNode": "node-1775048638012",
+      "fromSide": "bottom",
+      "toNode": "node-1775048641972",
+      "toSide": "top",
+      "toEnd": "arrow"
+    }
+  ],
+  "viewport": {
+    "x": 2.2968197879858394,
+    "y": 126.36042402826854,
+    "zoom": 0.6925795053003534
+  }
+}
