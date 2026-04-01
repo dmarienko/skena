@@ -125,7 +125,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // - start watching vaults configured in settings
   const config = vscode.workspace.getConfiguration('skena');
-  const vaults = config.get<Array<{ name: string; path: string }>>('skena.vaults') ?? [];
+  const vaults = config.get<Array<{ name: string; path: string }>>('vaults') ?? [];
   watcher.startWatching(vaults);
   indexer.reindex(vaults);
 
@@ -134,7 +134,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.workspace.onDidChangeConfiguration(e => {
       if (e.affectsConfiguration('skena.vaults') || e.affectsConfiguration('skena.vaultDirectories')) {
         const updated = vscode.workspace.getConfiguration('skena');
-        const updatedVaults = updated.get<Array<{ name: string; path: string }>>('skena.vaults') ?? [];
+        const updatedVaults = updated.get<Array<{ name: string; path: string }>>('vaults') ?? [];
         watcher?.startWatching(updatedVaults);
         indexer?.reindex(updatedVaults);
       }

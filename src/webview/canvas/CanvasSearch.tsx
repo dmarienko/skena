@@ -1,10 +1,15 @@
 /**
- * CanvasSearch — find-in-canvas overlay (Ctrl+F).
+ * CanvasSearch — find-in-canvas overlay (Ctrl+F / /).
  *
  * Floats at the top-centre of the canvas. Matches nodes by:
  *   • label      N4, J2, r1 … (case-insensitive, prefix OK)
  *   • text       any substring in node content / filename / URL / title
  *   • tags       partial match against tag list
+ *
+ * Vault filter syntax:
+ *   kb:          → show all nodes from vault "kb"
+ *   kb:momentum  → nodes from vault "kb" whose content matches "momentum"
+ *   momentum     → all nodes matching "momentum" (no vault filter)
  *
  * Keyboard shortcuts while the bar is open:
  *   Enter          → next result
@@ -17,13 +22,36 @@
  * the search bar itself has no knowledge of the React Flow instance.
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { CanvasNode } from '../../shared/types';
 
 interface Props {
-  nodes:     CanvasNode[];
-  onFocus:   (id: string) => void;
-  onClose:   () => void;
+  nodes:   CanvasNode[];
+  onFocus: (id: string) => void;
+  onClose: () => void;
+}
+
+// ─── vault parsing ────────────────────────────────────────────────────────────
+
+/** Split "vaultName:rest" from a raw query string. */
+function parseQuery(raw: string): { vault: string | null; text: string } {
+  const colon = raw.indexOf(':');
+  if (colon > 0) {
+    const prefix = raw.slice(0, colon).trim().toLowerCase();
+    const rest   = raw.slice(colon + 1); // - keep leading space intentional? trim later
+    // - only treat as vault filter if prefix has no spaces (i.e. looks like an identifier)
+    if (prefix && !/\s/.test(prefix)) {
+      return { vault: prefix, text: rest.trimStart() };
+    }
+  }
+  return { vault: null, text: raw };
+}
+
+/** Extract vault name from a node's file URI (vault://name/...). */
+function nodeVaultName(n: CanvasNode): string | null {
+  if (n.type !== 'file') return null;
+  const m = n.file.match(/^vault:\/\/([^/]+)\//);
+  return m ? m[1].toLowerCase() : null;
 }
 
 // ─── matching ─────────────────────────────────────────────────────────────────
@@ -41,10 +69,18 @@ function nodeContent(n: CanvasNode): string {
   }
 }
 
-function matches(n: CanvasNode, q: string): boolean {
-  const ql = q.toLowerCase();
+function matches(n: CanvasNode, vault: string | null, text: string): boolean {
+  // - vault filter: node must belong to the specified vault
+  if (vault !== null) {
+    if (nodeVaultName(n) !== vault) return false;
+    // - no text yet → show all nodes from this vault
+    if (!text) return true;
+  }
 
-  // - label: exact or prefix (N4, n4, "n" → all text nodes)
+  const ql = text.toLowerCase();
+  if (!ql) return false;
+
+  // - label: exact or prefix (N4, n4, "n" → all labelled nodes)
   const label = n.nodeLabel?.toLowerCase() ?? '';
   if (label === ql || label.startsWith(ql)) return true;
 
@@ -61,9 +97,22 @@ function matches(n: CanvasNode, q: string): boolean {
 // ─── component ────────────────────────────────────────────────────────────────
 
 export function CanvasSearch({ nodes, onFocus, onClose }: Props): JSX.Element {
-  const [query,   setQuery]   = useState('');
-  const [index,   setIndex]   = useState(0);
-  const inputRef              = useRef<HTMLInputElement>(null);
+  const [query, setQuery] = useState('');
+  const [index, setIndex] = useState(0);
+  const inputRef          = useRef<HTMLInputElement>(null);
+
+  // - collect vault names present in this canvas (for placeholder hint)
+  const vaultNames = useMemo<string[]>(() => {
+    const names = new Set<string>();
+    for (const n of nodes) {
+      const v = nodeVaultName(n);
+      if (v) names.add(v);
+    }
+    return [...names].sort();
+  }, [nodes]);
+
+  // - parse vault prefix + text from current query
+  const { vault: activeVault, text: textQuery } = parseQuery(query);
 
   // - auto-focus input on mount
   useEffect(() => {
@@ -72,8 +121,8 @@ export function CanvasSearch({ nodes, onFocus, onClose }: Props): JSX.Element {
   }, []);
 
   // - compute results whenever query or nodes change
-  const results: CanvasNode[] = query.trim()
-    ? nodes.filter(n => matches(n, query.trim()))
+  const results: CanvasNode[] = (activeVault !== null || textQuery.trim() !== '')
+    ? nodes.filter(n => matches(n, activeVault, textQuery.trim()))
     : [];
 
   const total   = results.length;
@@ -122,14 +171,19 @@ export function CanvasSearch({ nodes, onFocus, onClose }: Props): JSX.Element {
     if ((e.ctrlKey || e.metaKey) && e.key === 'f') { e.preventDefault(); goNext(); }
   }, [goPrev, goNext, onClose]);
 
-  // ─── label printed next to the counter ──────────────────────────────────────
-  const counterLabel = query.trim() === ''
+  // ─── placeholder ──────────────────────────────────────────────────────────
+  const placeholder = vaultNames.length > 0
+    ? `label, text or ${vaultNames[0]}:…`
+    : 'label or text…';
+
+  // ─── counter label ────────────────────────────────────────────────────────
+  const hasSearch   = activeVault !== null || textQuery.trim() !== '';
+  const noMatch     = hasSearch && total === 0;
+  const counterLabel = !hasSearch
     ? ''
     : total === 0
       ? 'no results'
       : `${current + 1} / ${total}`;
-
-  const noMatch = query.trim() !== '' && total === 0;
 
   return (
     <div
@@ -163,13 +217,35 @@ export function CanvasSearch({ nodes, onFocus, onClose }: Props): JSX.Element {
         <line x1="10" y1="10" x2="14" y2="14" />
       </svg>
 
+      {/* - active vault badge — shown when vault: prefix is parsed */}
+      {activeVault !== null && (
+        <span
+          title={`Filtering vault "${activeVault}". Delete to clear.`}
+          style={{
+            fontSize:     10,
+            fontFamily:   'var(--vscode-editor-font-family, monospace)',
+            fontWeight:   600,
+            padding:      '1px 5px',
+            borderRadius: 3,
+            background:   'var(--vscode-badge-background, #4d4d4d)',
+            color:        'var(--vscode-badge-foreground, #fff)',
+            whiteSpace:   'nowrap',
+            userSelect:   'none',
+            flexShrink:   0,
+            letterSpacing: '0.02em',
+          }}
+        >
+          {activeVault}
+        </span>
+      )}
+
       {/* - text input */}
       <input
         ref={inputRef}
         value={query}
         onChange={e => { setQuery(e.target.value); setIndex(0); }}
         onKeyDown={handleKey}
-        placeholder="label or text…"
+        placeholder={placeholder}
         spellCheck={false}
         style={{
           flex:        1,

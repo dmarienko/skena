@@ -64,7 +64,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     panel: vscode.WebviewPanel,
   ): Promise<void> {
     const config = vscode.workspace.getConfiguration('skena');
-    const vaults = config.get<Array<{ name: string; path: string }>>('skena.vaults') ?? [];
+    const vaults = config.get<Array<{ name: string; path: string }>>('vaults') ?? [];
     const canvasDir = path.dirname(document.uri.fsPath);
     const resolver = new FileResolver(vaults);
 
@@ -78,9 +78,15 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       enableScripts: true,
       localResourceRoots: [
         vscode.Uri.file(canvasDir),
-        ...vaults.map(v => vscode.Uri.file(
-          v.path.startsWith('~') ? path.join(process.env.HOME ?? '~', v.path.slice(1)) : v.path
-        )),
+        // - vault root + its parent: vault files often reference images via ../images/
+        // - or ../attachments/ (standard Obsidian layout where attachments live
+        // - in a sibling directory to the vault folder).
+        ...vaults.flatMap(v => {
+          const root = v.path.startsWith('~')
+            ? path.join(process.env.HOME ?? '~', v.path.slice(1))
+            : v.path;
+          return [vscode.Uri.file(root), vscode.Uri.file(path.dirname(root))];
+        }),
         vscode.Uri.joinPath(this.context.extensionUri, 'dist'),
       ],
     };
@@ -485,7 +491,14 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     // - build a set of vault fsPath for deduplication
     const vaultPaths = new Set(vaultEntries.map(e => e.fsPath).filter(Boolean));
 
-    type Item = vscode.QuickPickItem & { canvasUri: string };
+    // - vaultName added so onDidChangeValue can scope results by vault prefix
+    type Item = vscode.QuickPickItem & { canvasUri: string; vaultName?: string };
+
+    // - extract short vault name from vault:// URI (e.g. 'kb' from 'vault://kb/...')
+    const vaultOf = (uri: string): string | undefined => {
+      const m = uri.match(/^vault:\/\/([^/]+)\//);
+      return m ? m[1].toLowerCase() : undefined;
+    };
 
     // - special items: create an inline text node or a URL/link node
     const newTextItem: Item = {
@@ -504,6 +517,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       description: e.type ?? '',
       detail:      e.tags.length ? e.tags.join('  ·  ') : undefined,
       canvasUri:   e.uri,
+      vaultName:   vaultOf(e.uri),
     }));
 
     const wsItems: Item[] = wsUris
@@ -517,8 +531,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         })(),
       }));
 
-    const items: Item[] = [
-      // - create options at the top so they're always visible without scrolling
+    // - full (unfiltered) list used as default and to restore after vault scope exit
+    const allItems: Item[] = [
       { label: 'Create', kind: vscode.QuickPickItemKind.Separator, canvasUri: '' },
       newTextItem,
       newUrlItem,
@@ -532,10 +546,100 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       ] : []),
     ];
 
-    const picked = await vscode.window.showQuickPick(items, {
-      placeHolder:        'Add node — search vault / workspace, or create text note…',
-      matchOnDescription: true,
-      matchOnDetail:      true,
+    // - known vault names (to validate prefix before entering vault scope)
+    const knownVaults = new Set(vaultItems.map(i => i.vaultName).filter(Boolean) as string[]);
+
+    // - parse "vaultName:rest" prefix (same logic as CanvasSearch)
+    const parsePrefix = (raw: string): { vault: string | null; text: string } => {
+      const colonIdx = raw.indexOf(':');
+      if (colonIdx > 0) {
+        const vaultId = raw.slice(0, colonIdx).trim().toLowerCase();
+        const text    = raw.slice(colonIdx + 1).trimStart();
+        if (vaultId && !/\s/.test(vaultId) && knownVaults.has(vaultId)) {
+          return { vault: vaultId, text };
+        }
+      }
+      return { vault: null, text: raw };
+    };
+
+    // - build vault-scoped item list for a given vault id
+    const scopedItems = (vault: string): Item[] => [
+      { label: 'Create', kind: vscode.QuickPickItemKind.Separator, canvasUri: '' },
+      newTextItem,
+      newUrlItem,
+      { label: `Vault: ${vault}`, kind: vscode.QuickPickItemKind.Separator, canvasUri: '' },
+      ...vaultItems.filter(i => i.vaultName === vault),
+    ];
+
+    const defaultPlaceholder = knownVaults.size
+      ? `Add node — type ${[...knownVaults][0]}:query to scope by vault, or search all…`
+      : 'Add node — search vault / workspace, or create text note…';
+
+    // - run the picker via createQuickPick so we can intercept value changes
+    const picked = await new Promise<Item | undefined>(resolve => {
+      const qp = vscode.window.createQuickPick<Item>();
+      qp.placeholder        = defaultPlaceholder;
+      qp.matchOnDescription = true;
+      qp.matchOnDetail      = true;
+      qp.items              = allItems;
+
+      let activeVault: string | null = null; // - currently scoped vault (null = no scope)
+      let resolved    = false;
+
+      // - single resolve point — guards against onDidChangeSelection + onDidHide both firing
+      const done = (item: Item | undefined) => {
+        if (resolved) return;
+        resolved = true;
+        qp.dispose();
+        resolve(item);
+      };
+
+      const applyVaultScope = (vault: string, text: string) => {
+        activeVault = vault;
+        qp.title    = `Vault: ${vault}`;
+
+        const tl = text.toLowerCase();
+        const filtered: Item[] = vaultItems
+          .filter(i =>
+            i.vaultName === vault && (
+              !tl ||
+              i.label.toLowerCase().includes(tl) ||
+              (i.description ?? '').toLowerCase().includes(tl) ||
+              (i.detail     ?? '').toLowerCase().includes(tl)
+            )
+          )
+          .map(i => ({ ...i, alwaysShow: true as const }));
+
+        qp.items = [
+          { ...newTextItem, alwaysShow: true as const },
+          { ...newUrlItem,  alwaysShow: true as const },
+          { label: `Vault: ${vault}`, kind: vscode.QuickPickItemKind.Separator, canvasUri: '' },
+          ...filtered,
+        ];
+      };
+
+      qp.onDidChangeValue(raw => {
+        const { vault, text } = parsePrefix(raw);
+
+        if (vault !== null) {
+          applyVaultScope(vault, text);
+        } else if (activeVault !== null) {
+          // - vault prefix removed (user backspaced past ":") → exit scope
+          activeVault    = null;
+          qp.title       = '';
+          qp.placeholder = defaultPlaceholder;
+          qp.items       = allItems;
+        }
+        // - no vault prefix and no active scope: VS Code handles normal fuzzy matching
+      });
+
+      // - onDidChangeSelection fires on actual item pick (click or Enter on focused item);
+      // - this is more reliable than onDidAccept + activeItems[0] which can be empty when
+      // - alwaysShow bypasses VS Code's fuzzy scorer
+      qp.onDidChangeSelection(items => done(items[0] as Item | undefined));
+      qp.onDidHide(()               => done(undefined));
+
+      qp.show();
     });
 
     if (!picked || !picked.canvasUri) return; // - cancelled or separator clicked

@@ -102,6 +102,46 @@ function resolvePath(raw) {
   const expanded = raw.startsWith("~/") ? path.join(os.homedir(), raw.slice(2)) : raw;
   return path.resolve(expanded);
 }
+function expandHome(p) {
+  return p.startsWith("~/") ? path.join(os.homedir(), p.slice(2)) : p;
+}
+var vaultCache = /* @__PURE__ */ new Map();
+async function loadVaults(startDir) {
+  let dir = path.resolve(startDir);
+  for (let i = 0; i < 8; i++) {
+    const settingsPath = path.join(dir, ".vscode", "settings.json");
+    try {
+      const raw = await fs.readFile(settingsPath, "utf-8");
+      const cached = vaultCache.get(settingsPath);
+      if (cached)
+        return cached;
+      const stripped = raw.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+      const settings = JSON.parse(stripped);
+      const vaults = settings["skena.vaults"] ?? [];
+      vaultCache.set(settingsPath, vaults);
+      return vaults;
+    } catch {
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir)
+      break;
+    dir = parent;
+  }
+  return [];
+}
+async function resolveVaultUri(uri, canvasPath) {
+  if (!uri.startsWith("vault://"))
+    return null;
+  const rest = uri.slice(8);
+  const slash = rest.indexOf("/");
+  const name = slash === -1 ? rest : rest.slice(0, slash);
+  const rel = slash === -1 ? "" : rest.slice(slash + 1);
+  const vaults = await loadVaults(path.dirname(canvasPath));
+  const vault = vaults.find((v) => v.name === name);
+  if (!vault)
+    return null;
+  return path.join(expandHome(vault.path), rel);
+}
 async function readCanvas(fsPath) {
   const raw = await fs.readFile(fsPath, "utf-8");
   const parsed = JSON.parse(raw);
@@ -189,6 +229,56 @@ function defaultDims(type) {
   };
   return map[type] ?? { w: 400, h: 300 };
 }
+var BINARY_EXTS = /* @__PURE__ */ new Set([".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".pdf", ".zip", ".7z"]);
+var MAX_READ_BYTES = 64 * 1024;
+async function readFileNodeContent(uri, canvasPath) {
+  let fsPath;
+  if (uri.startsWith("vault://")) {
+    const resolved = await resolveVaultUri(uri, canvasPath);
+    if (!resolved) {
+      return `vault URI: ${uri}
+(vault not configured \u2014 add it to skena.vaults in .vscode/settings.json)`;
+    }
+    fsPath = resolved;
+  } else if (path.isAbsolute(uri)) {
+    fsPath = uri;
+  } else {
+    fsPath = path.resolve(path.dirname(canvasPath), uri);
+  }
+  const header = `File: ${fsPath}`;
+  const ext = path.extname(fsPath).toLowerCase();
+  if (BINARY_EXTS.has(ext)) {
+    return `${header}
+(binary file \u2014 content not shown)`;
+  }
+  try {
+    const stat2 = await fs.stat(fsPath);
+    if (stat2.size > MAX_READ_BYTES) {
+      const buf = Buffer.alloc(MAX_READ_BYTES);
+      const fd = await fs.open(fsPath, "r");
+      try {
+        const { bytesRead } = await fd.read(buf, 0, MAX_READ_BYTES, 0);
+        let text2 = buf.slice(0, bytesRead).toString("utf-8");
+        const lastNl = text2.lastIndexOf("\n");
+        if (lastNl > 0)
+          text2 = text2.slice(0, lastNl + 1);
+        return `${header}
+(truncated \u2014 showing first ${MAX_READ_BYTES / 1024} KB of ${Math.round(stat2.size / 1024)} KB)
+
+${text2}`;
+      } finally {
+        await fd.close();
+      }
+    }
+    const text = await fs.readFile(fsPath, "utf-8");
+    return `${header}
+
+${text}`;
+  } catch (e) {
+    return `${header}
+(error reading file: ${e})`;
+  }
+}
 async function canvasList(args) {
   const p = resolvePath(args.canvasPath);
   const d = await readCanvas(p);
@@ -244,7 +334,7 @@ async function canvasRead(args) {
       content = n.text;
       break;
     case "file":
-      content = `File: ${n.file}`;
+      content = await readFileNodeContent(n.file, p);
       break;
     case "link":
       content = `URL: ${n.url}`;
@@ -331,8 +421,12 @@ async function canvasFollow(args) {
     return `Node not found: ${args.ref}`;
   if (n.type === "file") {
     if (n.file.startsWith("vault://")) {
-      return `Vault URI: ${n.file}
-(Use skena vault configuration to resolve to filesystem path)`;
+      const resolved = await resolveVaultUri(n.file, p);
+      if (!resolved)
+        return `Vault URI: ${n.file}
+(vault not configured in .vscode/settings.json \u2014 add it to skena.vaults)`;
+      return `File path: ${resolved}
+Vault URI: ${n.file}`;
     }
     const abs = path.isAbsolute(n.file) ? n.file : path.resolve(path.dirname(p), n.file);
     return `File path: ${abs}`;

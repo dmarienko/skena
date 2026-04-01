@@ -127,6 +127,8 @@ export type FileType = 'markdown' | 'notebook' | 'python' | 'yaml' | 'image' | '
 export interface VaultConfig {
   name: string;
   path: string;
+  /** - subdirectories to scan; omit (or set ['.']) to scan the entire vault root recursively */
+  directories?: string[];
 }
 
 /**

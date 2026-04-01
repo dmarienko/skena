@@ -2,6 +2,13 @@
  * Vault indexer — scans vault directories for .md files, parses YAML frontmatter,
  * builds a fuse.js index for fuzzy search.
  *
+ * Scanning strategy:
+ *   • If a vault entry has a `directories` array, only those subdirs are scanned.
+ *   • If `directories` is omitted or `['.']`, the entire vault root is scanned
+ *     recursively (suitable for Obsidian vaults with arbitrary structure).
+ *   • The global `skena.vaultDirectories` setting is the fallback when a vault
+ *     has no per-vault `directories` list.
+ *
  * Shared by all editor panels (one indexer per extension instance).
  */
 
@@ -23,6 +30,15 @@ const FUSE_OPTIONS: IFuseOptions<VaultEntry> = {
   includeScore: true,
 };
 
+// - directories always excluded during recursive scan
+const EXCLUDED_DIRS = new Set([
+  '.obsidian', '.git', '.github', 'node_modules', '__pycache__',
+  'dist', 'build', '.venv', 'venv', '.DS_Store',
+]);
+
+// - cap to avoid freezing on enormous vaults
+const MAX_FILES = 10_000;
+
 export class VaultIndexer implements vscode.Disposable {
   private entries: VaultEntry[] = [];
   private fuse = new Fuse<VaultEntry>([], FUSE_OPTIONS);
@@ -35,16 +51,32 @@ export class VaultIndexer implements vscode.Disposable {
     this.indexing = true;
     try {
       const all: VaultEntry[] = [];
+      const config = vscode.workspace.getConfiguration('skena');
+      // - global fallback directories (default: ['.'] = full vault)
+      const globalDirs = config.get<string[]>('vaultDirectories') ?? ['.'];
+
       for (const vault of vaults) {
-        const expanded = this.expandPath(vault.path);
-        const config = vscode.workspace.getConfiguration('skena');
-        const dirs = config.get<string[]>('vaultDirectories') ?? ['alpha', 'knowledge', 'logs', 'inbox'];
-        for (const dir of dirs) {
-          const dirPath = path.join(expanded, dir);
-          const entries = await this.scanDir(vault.name, dirPath);
+        const root = this.expandPath(vault.path);
+        // - per-vault dirs → global dirs → full vault
+        const dirs = vault.directories?.length ? vault.directories : globalDirs;
+        const scanFull = dirs.length === 0 || (dirs.length === 1 && dirs[0] === '.');
+
+        if (scanFull) {
+          // - recursive full-vault scan
+          const entries = await this.scanRecursive(vault.name, root, root, all.length);
           all.push(...entries);
+        } else {
+          // - scan only listed subdirectories (non-recursive for explicit dirs)
+          for (const dir of dirs) {
+            const dirPath = path.join(root, dir);
+            const entries = await this.scanRecursive(vault.name, dirPath, root, all.length);
+            all.push(...entries);
+            if (all.length >= MAX_FILES) break;
+          }
         }
+        if (all.length >= MAX_FILES) break;
       }
+
       this.entries = all;
       this.fuse = new Fuse(all, FUSE_OPTIONS);
       console.log(`Skena: indexed ${all.length} vault entries`);
@@ -92,37 +124,58 @@ export class VaultIndexer implements vscode.Disposable {
 
   // ─── private ────────────────────────────────────────────────────────────────
 
-  private async scanDir(vaultName: string, dirPath: string): Promise<VaultEntry[]> {
-    let files: string[];
+  /**
+   * Recursively scan `dirPath` for .md files, building vault:// URIs relative
+   * to `vaultRoot`. Returns early once `alreadyFound` + results reach MAX_FILES.
+   */
+  private async scanRecursive(
+    vaultName: string,
+    dirPath:   string,
+    vaultRoot: string,
+    alreadyFound: number,
+  ): Promise<VaultEntry[]> {
+    let names: string[];
     try {
-      files = await fs.readdir(dirPath);
+      names = await fs.readdir(dirPath);
     } catch {
-      return [];  // - dir doesn't exist, skip silently
+      return []; // - dir doesn't exist or not readable, skip silently
     }
 
     const entries: VaultEntry[] = [];
-    for (const file of files) {
-      if (!file.endsWith('.md')) continue;
-      const fsPath = path.join(dirPath, file);
-      const entry = await this.parseEntry(vaultName, fsPath);
-      if (entry) entries.push(entry);
+
+    for (const name of names) {
+      if (alreadyFound + entries.length >= MAX_FILES) break;
+
+      // - skip hidden files/dirs and known system directories
+      if (name.startsWith('.') || EXCLUDED_DIRS.has(name)) continue;
+
+      const fsPath = path.join(dirPath, name);
+      let stat;
+      try { stat = await fs.stat(fsPath); } catch { continue; }
+
+      if (stat.isDirectory()) {
+        const sub = await this.scanRecursive(vaultName, fsPath, vaultRoot, alreadyFound + entries.length);
+        entries.push(...sub);
+      } else if (name.endsWith('.md')) {
+        const entry = await this.parseEntry(vaultName, fsPath, vaultRoot);
+        if (entry) entries.push(entry);
+      }
     }
+
     return entries;
   }
 
-  private async parseEntry(vaultName: string, fsPath: string): Promise<VaultEntry | null> {
+  private async parseEntry(
+    vaultName: string,
+    fsPath:    string,
+    vaultRoot: string,
+  ): Promise<VaultEntry | null> {
     try {
       const raw = await fs.readFile(fsPath, 'utf-8');
       const { data } = matter(raw);
 
-      // - compute vault-relative path for URI
-      const config = vscode.workspace.getConfiguration('skena');
-      const vaults = config.get<Array<{ name: string; path: string }>>('skena.vaults') ?? [];
-      const vaultConfig = vaults.find(v => v.name === vaultName);
-      const vaultRoot = vaultConfig ? this.expandPath(vaultConfig.path) : '';
-      const relPath = vaultRoot
-        ? fsPath.slice(vaultRoot.length).replace(/^\//, '')
-        : fsPath;
+      // - path relative to vault root, forward-slash separated
+      const relPath = path.relative(vaultRoot, fsPath).replace(/\\/g, '/');
 
       return {
         id:     String(data['id'] ?? path.basename(fsPath, '.md')),

@@ -132,15 +132,22 @@
         "skena.vaults": {
           "type": "array",
           "default": [],
-          "description": "Named vaults. URI format: vault://<name>/path/to/file.md",
+          "markdownDescription": "Named vaults for `vault://` URI resolution. Each vault maps a short name to a root directory on disk.\n\nExample (Obsidian vault):\n```json\n[\n  { \"name\": \"notes\", \"path\": \"~/docs/my-obsidian-vault\" }\n]\n```\nFiles are referenced as `vault://notes/folder/file.md` (path relative to vault root).",
           "items": {
             "type": "object",
             "properties": {
               "name": {
-                "type": "string"
+                "type": "string",
+                "description": "Short identifier used in vault:// URIs, e.g. 'notes'"
               },
               "path": {
-                "type": "string"
+                "type": "string",
+                "description": "Absolute or ~/... path to the vault root directory"
+              },
+              "directories": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Subdirectories to index for search. Omit (or set [\".\"] ) to index the entire vault recursively."
               }
             },
             "required": [
@@ -152,12 +159,9 @@
         "skena.vaultDirectories": {
           "type": "array",
           "default": [
-            "alpha",
-            "knowledge",
-            "logs",
-            "inbox"
+            "."
           ],
-          "description": "Directories to scan in each vault"
+          "description": "Global fallback: directories to scan in each vault when a vault entry has no per-vault 'directories' list. Use [\".\"] (the default) to scan the entire vault root recursively."
         },
         "skena.workspacePatterns": {
           "type": "array",

@@ -1,0 +1,13 @@
+{                                                                                                                                        
+    "skena.vaults": [                                                                                                                      
+      {                                                                                                                                    
+        "name": "kb",                                                                                                                   
+        "path": "~/projects/xfiles/Library/Quantitative Features Database"
+      },
+
+      {                                                                                                                                    
+        "name": "xl",                                                                                                                   
+        "path": "~/docs/knowledge-db"
+      }
+    ]
+  }
