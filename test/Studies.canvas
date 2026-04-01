@@ -63,7 +63,7 @@
     {
       "id": "node-1774967992411",
       "type": "text",
-      "text": "# 2.5 Remarkable Properties of Brownian Motion\r\n",
+      "text": "---\r\n# 2.5 Remarkable Properties of Brownian Motion\r\n---\r\n",
       "x": 866,
       "y": 2388,
       "width": 428,
@@ -134,8 +134,8 @@
       "id": "node-1774971824430-0",
       "type": "file",
       "file": "Options/SC01_Continuous_Processes_Brownian_Motion.md",
-      "x": -893,
-      "y": 540,
+      "x": -830,
+      "y": 555,
       "width": 1313,
       "height": 1542,
       "nodeLabel": "M2"
@@ -211,14 +211,24 @@
       "nodeLabel": "J1"
     },
     {
-      "id": "node-1775036377009",
+      "id": "node-1775038531263",
       "type": "text",
-      "text": "# notes\r\n\r\n\r\ndsdsd\r\ndsdsd\r\n\r\n",
-      "x": 1757,
-      "y": 3131,
+      "text": "\r\n$$\r\n\\lim_{\\Delta t \\to 0} \\frac{W_{t+\\Delta t} - W_t}{\\Delta t}\r\n$$\r\n",
+      "x": 2605,
+      "y": 1797,
       "width": 400,
       "height": 300,
       "nodeLabel": "N14"
+    },
+    {
+      "id": "node-1775038894890",
+      "type": "file",
+      "file": "./Options/.yoda_progress.md",
+      "x": 580,
+      "y": -139,
+      "width": 836,
+      "height": 462,
+      "nodeLabel": "M1"
     }
   ],
   "edges": [
@@ -383,17 +393,25 @@
       "toEnd": "arrow"
     },
     {
-      "id": "edge-1775036377009",
-      "fromNode": "f1a2b3c4d5e60004",
+      "id": "node-1774968982374-node-1775038531263-1775038608696",
+      "fromNode": "node-1774968982374",
       "fromSide": "right",
-      "toNode": "node-1775036377009",
+      "toNode": "node-1775038531263",
+      "toSide": "left",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1775038894891",
+      "fromNode": "node-1775036253964",
+      "fromSide": "right",
+      "toNode": "node-1775038894890",
       "toSide": "left",
       "toEnd": "arrow"
     }
   ],
   "viewport": {
-    "x": -1402.5391717598875,
-    "y": -2798.9877478508897,
-    "zoom": 0.9701273233315726
+    "x": -304.586089851402,
+    "y": -147.23660115864254,
+    "zoom": 0.40078204538562245
   }
 }

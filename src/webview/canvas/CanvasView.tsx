@@ -304,6 +304,12 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
   const canvasRef = useRef<CanvasData>({ ...canvas, nodes: initialNodes });
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ─── undo / redo ──────────────────────────────────────────────────────────────
+  const MAX_HISTORY = 50;
+  type HistoryEntry = { nodes: CanvasNode[]; edges: CanvasEdge[] };
+  const undoStackRef = useRef<HistoryEntry[]>([]);
+  const redoStackRef = useRef<HistoryEntry[]>([]);
+
   // - sync when canvas reloads from host; restore focus after fitView settles
   useEffect(() => {
     const labeled = ensureLabels(canvas.nodes);
@@ -339,6 +345,45 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
       vscodePostMessage({ type: 'saveCanvas', canvas: updatedCanvas });
     }, 500);
   }, []);
+
+  // - snapshot current state BEFORE a mutation so it can be undone
+  const pushHistory = useCallback(() => {
+    undoStackRef.current = [
+      ...undoStackRef.current.slice(-(MAX_HISTORY - 1)),
+      { nodes: [...canvasRef.current.nodes], edges: [...canvasRef.current.edges] },
+    ];
+    redoStackRef.current = []; // - new action clears redo
+  }, []); // - canvasRef is a ref, always current
+
+  // - restore nodes/edges from a history entry
+  const applyHistoryState = useCallback((entry: HistoryEntry) => {
+    canvasRef.current = { ...canvasRef.current, nodes: entry.nodes, edges: entry.edges };
+    setNodes(entry.nodes.map(toFlowNode));
+    setEdges(entry.edges.map(toFlowEdge));
+    scheduleSave(canvasRef.current);
+  }, [setNodes, setEdges, scheduleSave]);
+
+  const undo = useCallback(() => {
+    if (undoStackRef.current.length === 0) return;
+    const prev = undoStackRef.current[undoStackRef.current.length - 1];
+    redoStackRef.current = [
+      { nodes: [...canvasRef.current.nodes], edges: [...canvasRef.current.edges] },
+      ...redoStackRef.current.slice(0, MAX_HISTORY - 1),
+    ];
+    undoStackRef.current = undoStackRef.current.slice(0, -1);
+    applyHistoryState(prev);
+  }, [applyHistoryState]);
+
+  const redo = useCallback(() => {
+    if (redoStackRef.current.length === 0) return;
+    const next = redoStackRef.current[0];
+    undoStackRef.current = [
+      ...undoStackRef.current.slice(-(MAX_HISTORY - 1)),
+      { nodes: [...canvasRef.current.nodes], edges: [...canvasRef.current.edges] },
+    ];
+    redoStackRef.current = redoStackRef.current.slice(1);
+    applyHistoryState(next);
+  }, [applyHistoryState]);
 
   // - if labels were missing on load, persist them immediately
   useEffect(() => {
@@ -377,7 +422,12 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
     scheduleSave(updated);
   }, [setNodes, scheduleSave]);
 
+  const onNodeDragStart = useCallback(() => {
+    pushHistory();
+  }, [pushHistory]);
+
   const onConnect = useCallback((connection: Connection) => {
+    pushHistory();
     const newEdge: CanvasEdge = {
       id:       `${connection.source ?? ''}-${connection.target ?? ''}-${Date.now()}`,
       fromNode: connection.source!,
@@ -393,7 +443,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
     };
     canvasRef.current = updated;
     scheduleSave(updated);
-  }, [setEdges, scheduleSave]);
+  }, [setEdges, scheduleSave, pushHistory]);
 
   // - drop connection on node body (not on a specific handle) → connect to nearest side
   const onConnectEnd: OnConnectEnd = useCallback((event, connectionState) => {
@@ -425,6 +475,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
       toSide,
       toEnd:    'arrow',
     };
+    pushHistory();
     setEdges(eds => addEdge(toFlowEdge(newEdge), eds));
     const updated: CanvasData = {
       ...canvasRef.current,
@@ -432,9 +483,10 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
     };
     canvasRef.current = updated;
     scheduleSave(updated);
-  }, [setEdges, scheduleSave]);
+  }, [setEdges, scheduleSave, pushHistory]);
 
   const onNodesDelete = useCallback((deleted: Node[]) => {
+    pushHistory();
     const deletedIds = new Set(deleted.map(n => n.id));
     const updated: CanvasData = {
       nodes: canvasRef.current.nodes.filter(n => !deletedIds.has(n.id)),
@@ -469,9 +521,10 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
     }
   // - focusNodeById is a stable useCallback declared below; nodesRef always current
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scheduleSave]);
+  }, [scheduleSave, pushHistory]);
 
   const onEdgesDelete = useCallback((deleted: Edge[]) => {
+    pushHistory();
     const deletedIds = new Set(deleted.map(e => e.id));
     const updated: CanvasData = {
       ...canvasRef.current,
@@ -479,7 +532,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
     };
     canvasRef.current = updated;
     scheduleSave(updated);
-  }, [scheduleSave]);
+  }, [scheduleSave, pushHistory]);
 
   const onNodeDoubleClick = useCallback((_: React.MouseEvent, node: Node) => {
     // - open file in VS Code editor on Cmd+click is handled inside FileNode itself
@@ -532,6 +585,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
         const existing = [...canvasRef.current.nodes, ...labelled];
         labelled.push(assignLabel(cn, existing));
       });
+      pushHistory();
       labelled.forEach(cn => {
         setNodes(nds => [...nds, toFlowNode(cn)]);
         canvasRef.current = {
@@ -543,7 +597,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
     };
     window.addEventListener('skena:nodesFromDrop', handler);
     return () => window.removeEventListener('skena:nodesFromDrop', handler);
-  }, [setNodes, scheduleSave]);
+  }, [setNodes, scheduleSave, pushHistory]);
 
   // ─── keyboard navigation between nodes (hjkl / arrow keys) ──────────────────
 
@@ -703,6 +757,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
   }, []);
 
   const handlePaste = useCallback(() => {
+    pushHistory();
     if (!clipboard) return;
     const OFFSET = 40;
     const idMap = new Map<string, string>();
@@ -733,7 +788,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
       edges: [...canvasRef.current.edges, ...newEdges],
     };
     scheduleSave(canvasRef.current);
-  }, [setNodes, setEdges, scheduleSave]);
+  }, [setNodes, setEdges, scheduleSave, pushHistory]);
 
   const handleMoveToSubCanvas = useCallback(() => {
     const selectedNodes = nodesRef.current.filter(n => n.selected && n.type !== 'group');
@@ -896,6 +951,18 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
         return;
       }
 
+      // - u / r: undo / redo canvas structure (vim-style, no modifier)
+      if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'u') {
+        e.preventDefault();
+        undo();
+        return;
+      }
+      if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'r') {
+        e.preventDefault();
+        redo();
+        return;
+      }
+
       const dir = keyToDir(e.key);
       if (!dir) return;
 
@@ -926,7 +993,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [setNodes, focusNodeById, pickViewportNode, addTextNodeInDirection]); // - nodesRef carries live state
+  }, [setNodes, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo]); // - nodesRef carries live state
 
   // - handle skena:addNodeTrigger from VS Code ctrl+n command override
   // - compute viewport centre in flow coords, avoid overlaps, send addNodeRequest
@@ -947,6 +1014,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
   // - params include x/y because top-left resize moves the node origin as well as changing size
   useEffect(() => {
     const handler = (e: Event) => {
+      pushHistory();
       const { id, x, y, width, height } = (e as CustomEvent<{ id: string; x: number; y: number; width: number; height: number }>).detail;
       // - sync RF node state so in-memory dimensions match the resized size
       // - (RF's NodeResizer updates its own internal store, but we must also
@@ -964,7 +1032,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
     };
     window.addEventListener('skena:nodeResize', handler);
     return () => window.removeEventListener('skena:nodeResize', handler);
-  }, [setNodes, scheduleSave]);
+  }, [setNodes, scheduleSave, pushHistory]);
 
   // ─── custom wheel zoom (smaller step, cursor-centred) ────────────────────────
 
@@ -1010,6 +1078,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
   // - listen for text edits committed by TextNodeComponent's Monaco editor
   useEffect(() => {
     const handler = (e: Event) => {
+      pushHistory();
       const { id, text } = (e as CustomEvent<{ id: string; text: string }>).detail;
       const original = canvasRef.current.nodes.find(n => n.id === id);
       if (!original || original.type !== 'text') return;
@@ -1027,11 +1096,12 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
     };
     window.addEventListener('skena:nodeTextEdit', handler);
     return () => window.removeEventListener('skena:nodeTextEdit', handler);
-  }, [setNodes, scheduleSave]);
+  }, [setNodes, scheduleSave, pushHistory]);
 
   // - receive add-node result from QuickPick (Ctrl+N / Shift+hjkl)
   useEffect(() => {
     const handler = (e: Event) => {
+      pushHistory();
       const { node: rawNode, edge: ce, autoEdit } = (e as CustomEvent<MsgAddNodeResult>).detail;
 
       // - assign a reference label (N1, M3 …) if the node doesn't have one yet
@@ -1076,11 +1146,12 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
 
     window.addEventListener('skena:addNodeResult', handler);
     return () => window.removeEventListener('skena:addNodeResult', handler);
-  }, [setNodes, setEdges, scheduleSave, focusNodeById]);
+  }, [setNodes, setEdges, scheduleSave, focusNodeById, pushHistory]);
 
   // - handle sub-canvas extraction result from host
   useEffect(() => {
     const handler = (e: Event) => {
+      pushHistory();
       const { portalNode, movedNodeIds } = (e as CustomEvent<MsgSubCanvasCreated>).detail;
       const removedIds = new Set(movedNodeIds);
       setNodes(nds => [
@@ -1097,7 +1168,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
     };
     window.addEventListener('skena:subCanvasCreated', handler);
     return () => window.removeEventListener('skena:subCanvasCreated', handler);
-  }, [setNodes, setEdges, scheduleSave, focusNodeById]);
+  }, [setNodes, setEdges, scheduleSave, focusNodeById, pushHistory]);
 
   return (
     <ZoomLevelProvider>
@@ -1110,6 +1181,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
         onNodesChange={customOnNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeDragStop={onNodeDragStop}
+        onNodeDragStart={onNodeDragStart}
         onConnect={onConnect}
         onConnectEnd={onConnectEnd}
         onNodesDelete={onNodesDelete}
