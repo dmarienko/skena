@@ -1,7 +1,7 @@
 {
   "name": "skena",
   "displayName": "Skena",
-  "description": "Visual research canvas for VS Code — renders JSON Canvas files as interactive node graphs with rich content previews, connected to a markdown knowledge vault.",
+  "description": "Visual research canvas for VS Code \u2014 renders JSON Canvas files as interactive node graphs with rich content previews, connected to a markdown knowledge vault.",
   "version": "0.1.0",
   "publisher": "dmarienko",
   "license": "MIT",
@@ -31,11 +31,16 @@
     "languages": [
       {
         "id": "jsoncanvas",
-        "aliases": ["Canvas", "JSON Canvas"],
-        "extensions": [".canvas"],
+        "aliases": [
+          "Canvas",
+          "JSON Canvas"
+        ],
+        "extensions": [
+          ".canvas"
+        ],
         "icon": {
           "light": "./icons/canvas-light.svg",
-          "dark":  "./icons/canvas-dark.svg"
+          "dark": "./icons/canvas-dark.svg"
         }
       }
     ],
@@ -157,7 +162,9 @@
               },
               "directories": {
                 "type": "array",
-                "items": { "type": "string" },
+                "items": {
+                  "type": "string"
+                },
                 "description": "Subdirectories to index for search. Omit (or set [\".\"] ) to index the entire vault recursively."
               }
             },
@@ -165,14 +172,16 @@
               "name",
               "path"
             ]
-          }
+          },
+          "scope": "window"
         },
         "skena.vaultDirectories": {
           "type": "array",
           "default": [
             "."
           ],
-          "description": "Global fallback: directories to scan in each vault when a vault entry has no per-vault 'directories' list. Use [\".\"] (the default) to scan the entire vault root recursively."
+          "description": "Global fallback: directories to scan in each vault when a vault entry has no per-vault 'directories' list. Use [\".\"] (the default) to scan the entire vault root recursively.",
+          "scope": "window"
         },
         "skena.workspacePatterns": {
           "type": "array",
@@ -182,7 +191,8 @@
             "**/*.yaml",
             "**/*.md"
           ],
-          "description": "File patterns to index in workspace"
+          "description": "File patterns to index in workspace",
+          "scope": "window"
         },
         "skena.excludePatterns": {
           "type": "array",
@@ -192,12 +202,14 @@
             "**/__pycache__/**",
             "**/dist/**"
           ],
-          "description": "Patterns to exclude from indexing"
+          "description": "Patterns to exclude from indexing",
+          "scope": "window"
         },
         "skena.autoSaveDelay": {
           "type": "number",
           "default": 500,
-          "description": "Canvas auto-save debounce delay in ms"
+          "description": "Canvas auto-save debounce delay in ms",
+          "scope": "window"
         },
         "skena.notion": {
           "type": "object",
@@ -205,7 +217,8 @@
             "enabled": false,
             "mcpServerUrl": "http://localhost:3000"
           },
-          "description": "Notion MCP server integration for vault://notion/<page-id> URIs"
+          "description": "Notion MCP server integration for vault://notion/<page-id> URIs",
+          "scope": "window"
         },
         "skena.chat": {
           "type": "object",
@@ -213,14 +226,16 @@
             "backend": "claude",
             "model": "claude-opus-4-5"
           },
-          "description": "AI chat node backend. backend: claude | ollama | openai"
+          "description": "AI chat node backend. backend: claude | ollama | openai",
+          "scope": "window"
         },
         "skena.notebook": {
           "type": "object",
           "default": {
             "showSourceCells": false
           },
-          "description": "Notebook rendering options. showSourceCells: show code source alongside output (default false — outputs only)"
+          "description": "Notebook rendering options. showSourceCells: show code source alongside output (default false \u2014 outputs only)",
+          "scope": "window"
         },
         "skena.colors": {
           "type": "object",
@@ -232,7 +247,8 @@
             "5": "#53dfdd",
             "6": "#a882ff"
           },
-          "description": "Canvas color palette (matches Obsidian color codes 1-6)"
+          "description": "Canvas color palette (matches Obsidian color codes 1-6)",
+          "scope": "window"
         }
       }
     }

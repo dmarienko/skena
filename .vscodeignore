@@ -8,7 +8,9 @@ esbuild.config.mjs
 tsconfig.json
 .eslintrc*
 .gitignore
-*.map
+
+# - source maps — large, blocked by webview CSP anyway
+**/*.map
 
 # - dev deps / metadata
 node_modules/**

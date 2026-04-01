@@ -42,14 +42,20 @@ const MAX_FILES = 10_000;
 
 export class VaultIndexer implements vscode.Disposable {
   private entries: VaultEntry[] = [];
-  private fuse = new Fuse<VaultEntry>([], FUSE_OPTIONS);
+  private fuse    = new Fuse<VaultEntry>([], FUSE_OPTIONS);
   private indexing = false;
+  private readonly out: vscode.OutputChannel;
 
-  constructor(private readonly context: vscode.ExtensionContext) {}
+  constructor(private readonly context: vscode.ExtensionContext) {
+    this.out = vscode.window.createOutputChannel('Skena');
+  }
 
   async reindex(vaults: VaultConfig[]): Promise<void> {
     if (this.indexing) return;
     this.indexing = true;
+    this.out.appendLine(`[reindex] starting — ${vaults.length} vault(s) configured`);
+    vaults.forEach(v => this.out.appendLine(`  vault "${v.name}" → ${v.path}`));
+
     try {
       const all: VaultEntry[] = [];
       // - global fallback directories (default: ['.'] = full vault), local overrides win
@@ -61,12 +67,12 @@ export class VaultIndexer implements vscode.Disposable {
         const dirs = vault.directories?.length ? vault.directories : globalDirs;
         const scanFull = dirs.length === 0 || (dirs.length === 1 && dirs[0] === '.');
 
+        this.out.appendLine(`  scanning "${vault.name}" at ${root} (dirs=${JSON.stringify(dirs)})`);
+
         if (scanFull) {
-          // - recursive full-vault scan
           const entries = await this.scanRecursive(vault.name, root, root, all.length);
           all.push(...entries);
         } else {
-          // - scan only listed subdirectories (non-recursive for explicit dirs)
           for (const dir of dirs) {
             const dirPath = path.join(root, dir);
             const entries = await this.scanRecursive(vault.name, dirPath, root, all.length);
@@ -74,12 +80,15 @@ export class VaultIndexer implements vscode.Disposable {
             if (all.length >= MAX_FILES) break;
           }
         }
+        this.out.appendLine(`  "${vault.name}" — ${all.length} total entries so far`);
         if (all.length >= MAX_FILES) break;
       }
 
       this.entries = all;
       this.fuse = new Fuse(all, FUSE_OPTIONS);
-      console.log(`Skena: indexed ${all.length} vault entries`);
+      this.out.appendLine(`[reindex] done — ${all.length} entries indexed`);
+    } catch (e) {
+      this.out.appendLine(`[reindex] ERROR: ${e}`);
     } finally {
       this.indexing = false;
     }
@@ -119,7 +128,7 @@ export class VaultIndexer implements vscode.Disposable {
   }
 
   dispose(): void {
-    // - nothing to dispose currently; chokidar watcher is in FileWatcher
+    this.out.dispose();
   }
 
   // ─── private ────────────────────────────────────────────────────────────────

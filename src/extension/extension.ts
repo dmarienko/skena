@@ -126,6 +126,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // - start watching vaults (merged from settings.json + settings.local.json)
   const vaults = await getVaults();
+  console.log(`Skena: getVaults() returned ${vaults.length} vault(s):`, vaults.map(v => v.name));
   watcher.startWatching(vaults);
   indexer.reindex(vaults);
 

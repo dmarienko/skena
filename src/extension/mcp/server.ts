@@ -46,16 +46,20 @@ interface VaultConfig { name: string; path: string; directories?: string[] }
 // - cache: workspace root → vault list (avoid re-reading settings for every call)
 const vaultCache = new Map<string, VaultConfig[]>();
 
-/** Strip JS-style comments so JSON.parse handles VS Code's relaxed JSON. */
-function stripComments(raw: string): string {
-  return raw.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+/** Parse VS Code's relaxed JSON (comments + trailing commas allowed). */
+function parseRelaxedJson(raw: string): Record<string, unknown> {
+  const stripped = raw
+    .replace(/\/\/[^\n]*/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/,(\s*[}\]])/g, '$1');          // - trailing commas
+  return JSON.parse(stripped) as Record<string, unknown>;
 }
 
 /** Read a settings file and return its parsed content, or null on failure. */
 async function readSettingsFile(filePath: string): Promise<Record<string, unknown> | null> {
   try {
     const raw = await fs.readFile(filePath, 'utf-8');
-    return JSON.parse(stripComments(raw)) as Record<string, unknown>;
+    return parseRelaxedJson(raw);
   } catch {
     return null;
   }
