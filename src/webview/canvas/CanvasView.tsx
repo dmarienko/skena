@@ -1024,28 +1024,47 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
         return;
       }
 
-      // - n / Shift+N: resize active node +10% / -10% proportionally, anchored at centre
-      if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'n' || e.key === 'N')) {
+      // - w / Shift+W: widen / narrow the focused node by 10%, both edges move 5% (centre fixed)
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'w' || e.key === 'W')) {
         const cur = nodesRef.current.find(nd => nd.selected && nd.type !== 'group');
         if (!cur) return;
         e.preventDefault();
-        // - n = grow, N (Shift+N) = shrink
-        const factor = e.key === 'n' ? 1.1 : 1 / 1.1;
+        const factor = e.key === 'w' ? 1.1 : 1 / 1.1;
         const oldW   = Number(cur.style?.width  ?? cur.width  ?? 400);
-        const oldH   = Number(cur.style?.height ?? cur.height ?? 300);
         const newW   = Math.round(oldW * factor);
-        const newH   = Math.round(oldH * factor);
-        // - shift position so the centre stays fixed: x -= Δw/2, y -= Δh/2
+        // - both edges move equally: shift x left by half the delta so centre is fixed
         const newX   = cur.position.x - (newW - oldW) / 2;
-        const newY   = cur.position.y - (newH - oldH) / 2;
         setNodes(nds => nds.map(nd =>
           nd.id !== cur.id ? nd
-            : { ...nd, position: { x: newX, y: newY }, style: { ...nd.style, width: newW, height: newH }, width: newW, height: newH },
+            : { ...nd, position: { ...nd.position, x: newX }, style: { ...nd.style, width: newW }, width: newW },
         ));
         canvasRef.current = {
           ...canvasRef.current,
           nodes: canvasRef.current.nodes.map(cn =>
-            cn.id !== cur.id ? cn : { ...cn, x: newX, y: newY, width: newW, height: newH },
+            cn.id !== cur.id ? cn : { ...cn, x: newX, width: newW },
+          ),
+        };
+        scheduleSave();
+        return;
+      }
+
+      // - e / Shift+E: expand / shrink the focused node height by 10%, top edge stays fixed
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'e' || e.key === 'E')) {
+        const cur = nodesRef.current.find(nd => nd.selected && nd.type !== 'group');
+        if (!cur) return;
+        e.preventDefault();
+        const factor = e.key === 'e' ? 1.1 : 1 / 1.1;
+        const oldH   = Number(cur.style?.height ?? cur.height ?? 300);
+        const newH   = Math.round(oldH * factor);
+        // - top edge (y) stays fixed; only bottom edge moves
+        setNodes(nds => nds.map(nd =>
+          nd.id !== cur.id ? nd
+            : { ...nd, style: { ...nd.style, height: newH }, height: newH },
+        ));
+        canvasRef.current = {
+          ...canvasRef.current,
+          nodes: canvasRef.current.nodes.map(cn =>
+            cn.id !== cur.id ? cn : { ...cn, height: newH },
           ),
         };
         scheduleSave();

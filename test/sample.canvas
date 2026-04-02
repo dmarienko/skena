@@ -41,7 +41,7 @@
       "x": -919.5,
       "y": -1972,
       "width": 747,
-      "height": 905,
+      "height": 1206,
       "nodeLabel": "M1"
     },
     {
@@ -168,10 +168,10 @@
       "id": "node-1775048783906",
       "type": "text",
       "text": "# Main results\r\n\r\n 1. Test was failed for this set of parameters\r\n 2. ddd",
-      "x": 585,
-      "y": 320,
-      "width": 392,
-      "height": 141,
+      "x": 464,
+      "y": 333,
+      "width": 630,
+      "height": 228,
       "nodeLabel": "N7"
     },
     {
@@ -247,10 +247,10 @@
       "id": "node-1775062320900",
       "type": "file",
       "file": "vault://kb/ADX+BB B+AO+EMA Strategy.md",
-      "x": 738,
-      "y": -1871,
-      "width": 400,
-      "height": 301,
+      "x": 772,
+      "y": -1591,
+      "width": 484,
+      "height": 364,
       "nodeLabel": "M2"
     },
     {
@@ -271,7 +271,7 @@
       "x": 579,
       "y": -2472,
       "width": 908,
-      "height": 491,
+      "height": 653,
       "nodeLabel": "M3"
     },
     {
@@ -290,7 +290,7 @@
       "text": "- 123\r\n- 456\r\n\r\n\r\ndddd\r\n\r\ndddd\r\n\r\n",
       "x": 1127,
       "y": -709.5,
-      "width": 532,
+      "width": 440,
       "height": 399,
       "nodeLabel": "N6"
     },
@@ -298,8 +298,8 @@
       "id": "node-1775127049000",
       "type": "text",
       "text": "- 123\r\n- 456\r\n\r\n\r\ndddd\r\n\r\ndddd\r\n\r\ndata = read.read(\"BTCUSDT\", \"ohlc(1h)\", \"-10d\", \"now\").to_pd()\r\n",
-      "x": 1836,
-      "y": -705,
+      "x": 1826,
+      "y": -709.5,
       "width": 400,
       "height": 300,
       "nodeLabel": "N11"
@@ -504,8 +504,8 @@
     }
   ],
   "viewport": {
-    "x": -995.3523774584505,
-    "y": 747.5522610015262,
-    "zoom": 0.7128475705912278
+    "x": -280.69722925821134,
+    "y": 1221.528305277116,
+    "zoom": 0.5786033197078522
   }
 }
