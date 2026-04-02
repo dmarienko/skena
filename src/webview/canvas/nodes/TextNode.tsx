@@ -52,34 +52,123 @@ let clipboardCache: { text: string; linewise: boolean } = { text: '', linewise: 
  */
 let pendingPaste = false;
 
-// ─── vim clipboard wiring (run once at module load) ──────────────────────────
-// - VimMode.Vim is the underlying CodeMirror Vim singleton.
-// - We define vim's system-clipboard registers (+/*) to relay through extension host.
-// - clipboard=unnamedplus makes all unnamed y/p go through these registers,
-// - giving `yy` / `p` the same effect as `"+yy` / `"+p` in a full vim setup.
-(function setupVimClipboard() {
-  const Vim = (VimMode as unknown as Record<string, unknown>).Vim as
-    | { defineRegister: (n: string, r: unknown) => void; setOption: (k: string, v: string) => void }
-    | undefined;
-  if (!Vim?.defineRegister) return;
+// ─── vim clipboard wiring ────────────────────────────────────────────────────
+//
+// - monaco-vim 0.4.4 does NOT implement the `clipboard` option (unnamedplus),
+// - so setOption('clipboard','unnamedplus') silently does nothing.
+// - y/p always use the unnamed " register, never the + register.
+//
+// - Fix: replace the unnamed " register (and + / * aliases) in the
+// - RegisterController with a custom relay register that:
+// -   setText / pushText → writes to clipboardCache + sends writeClipboard to host
+// -   toString           → reads from clipboardCache (async-updated; covers cross-canvas)
+// -   linewise           → synced from clipboardCache on every clipboardContent event
+//
+// - The register must implement the full vim Register interface:
+// -   setText, pushText, clear, toString, pushInsertModeChanges, pushSearchQuery.
+//
+// - applyVimClipboard() MUST be called after every initVimMode() because
+// - initVimMode can call resetVimGlobalState which recreates RegisterController.
 
-  const sysReg = {
-    set(text: string, linewise: boolean) {
-      clipboardCache = { text, linewise };
-      vscodePostMessage({ type: 'writeClipboard', text });
-    },
-    get() {
-      return { text: clipboardCache.text, linewise: clipboardCache.linewise };
-    },
-  };
+type VimRegisterLike = {
+  setText:                (text: string, linewise: boolean, blockwise?: boolean) => void;
+  pushText:               (text: string, linewise: boolean) => void;
+  clear:                  () => void;
+  toString:               () => string;
+  linewise:               boolean;
+  blockwise:              boolean;
+  keyBuffer:              string[];
+  insertModeChanges:      unknown[];
+  searchQueries:          string[];
+  pushInsertModeChanges?: (changes: unknown) => void;
+  pushSearchQuery?:       (query: string) => void;
+};
 
-  // - + = system clipboard, * = X11 primary selection — both wired to host clipboard
-  Vim.defineRegister('+', sysReg);
-  Vim.defineRegister('*', sysReg);
+type VimSingleton = {
+  defineRegister:        (n: string, r: unknown) => void;
+  getRegisterController: () => { registers: Record<string, VimRegisterLike>; unnamedRegister: VimRegisterLike };
+};
 
-  // - make unnamed register (`y`/`p`) behave like `"+y`/`"+p`
-  try { Vim.setOption('clipboard', 'unnamedplus'); } catch { /* option may not exist */ }
-})();
+function getVimSingleton(): VimSingleton | undefined {
+  // - VimMode is the default export of keymap_vim (the CodeMirror object)
+  // - which has Vim = Vim() set on it at module load.
+  return (VimMode as unknown as Record<string, unknown>).Vim as VimSingleton | undefined;
+}
+
+/** - relay register: replaces " (unnamed), + and * to route all y/p through extension-host clipboard */
+const sysReg: VimRegisterLike = {
+  keyBuffer:         [''],
+  linewise:          false,
+  blockwise:         false,
+  insertModeChanges: [],
+  searchQueries:     [],
+
+  setText(text: string, linewise: boolean, blockwise?: boolean) {
+    this.keyBuffer = [text ?? ''];
+    this.linewise  = !!linewise;
+    this.blockwise = !!blockwise;
+    clipboardCache = { text: text ?? '', linewise: !!linewise };
+    vscodePostMessage({ type: 'writeClipboard', text: text ?? '' });
+  },
+  pushText(text: string, linewise: boolean) {
+    if (linewise) {
+      if (!this.linewise) this.keyBuffer.push('\n');
+      this.linewise = true;
+    }
+    this.keyBuffer.push(text);
+    const full = this.keyBuffer.join('');
+    clipboardCache = { text: full, linewise: this.linewise };
+    vscodePostMessage({ type: 'writeClipboard', text: full });
+  },
+  clear() {
+    this.keyBuffer         = [];
+    this.linewise          = false;
+    this.blockwise         = false;
+    this.insertModeChanges = [];
+    this.searchQueries     = [];
+  },
+  toString() {
+    // - prefer async-updated cache: covers cross-canvas paste where clipboardCache
+    // - was refreshed via requestClipboardRead ↔ clipboardContent round-trip.
+    return clipboardCache.text !== '' ? clipboardCache.text : this.keyBuffer.join('');
+  },
+  pushInsertModeChanges(changes: unknown) { this.insertModeChanges.push(changes); },
+  pushSearchQuery(query: string)          { this.searchQueries.push(query); },
+};
+
+/**
+ * Wire the clipboard relay register into the vim RegisterController.
+ * MUST be called after initVimMode() — the Vim singleton is not available until then.
+ * Safe to call on every editor mount (handles re-registration and re-replacement).
+ */
+function applyVimClipboard(): void {
+  const Vim = getVimSingleton();
+  if (!Vim) return;
+
+  // - define + and * registers (named system-clipboard aliases)
+  // - throws "Register already defined" on 2nd+ call — caught and ignored
+  try { Vim.defineRegister('+', sysReg); } catch { /* already defined */ }
+  try { Vim.defineRegister('*', sysReg); } catch { /* already defined */ }
+
+  // - replace the unnamed " register directly so plain yy / p go through sysReg.
+  // - clipboard=unnamedplus does NOT exist in monaco-vim 0.4.4 so we must do this
+  // - by directly overwriting the RegisterController's unnamed register reference.
+  const rc = Vim.getRegisterController();
+  if (rc) {
+    rc.registers['"'] = sysReg;
+    rc.unnamedRegister = sysReg;
+  }
+}
+
+// - module-level skena:clipboardContent listener — registered at bundle load,
+// - fires for both the proactive push on webviewReady AND every requestClipboardRead response.
+// - Updates clipboardCache AND syncs sysReg.linewise so vim paste reads the right flag.
+window.addEventListener('skena:clipboardContent', (e: Event) => {
+  const text = (e as CustomEvent<string>).detail ?? '';
+  clipboardCache    = { text, linewise: false };
+  sysReg.linewise   = false;   // - pasted text from host is always character-wise
+  sysReg.keyBuffer  = [text];  // - keep keyBuffer in sync as fallback
+});
 
 // ─── component ────────────────────────────────────────────────────────────────
 
@@ -149,6 +238,10 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
 
     // - initialise vim mode; status bar shows current vim mode / pending commands
     const vimMode = initVimMode(editorInstance, vimStatusRef.current ?? undefined);
+
+    // - wire clipboard relay into RegisterController; MUST be after initVimMode()
+    // - which initialises the Vim singleton and (re)creates the RegisterController.
+    applyVimClipboard();
 
     // ─── vim mode tracking via MutationObserver ──────────────────────────────
     //

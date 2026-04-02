@@ -102,9 +102,18 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         case 'webviewReady': {
           // - webview is mounted and listening — now safe to send canvas data
           try {
-            const canvas = await readCanvas(document.uri.fsPath);
+            // - read canvas and clipboard in parallel; clipboard pre-warm ensures
+            // - that vim's `p` works immediately on first open even in a fresh
+            // - cross-canvas webview where clipboardCache starts empty.
+            const [canvas, clipboardText] = await Promise.all([
+              readCanvas(document.uri.fsPath),
+              vscode.env.clipboard.readText(),
+            ]);
             document.updateFromDisk(canvas);
             send({ type: 'canvasLoaded', canvas, canvasPath: document.uri.fsPath });
+            // - push clipboard content unprompted; webview caches it in clipboardCache
+            // - so vim paste works before any requestClipboardRead round-trip completes
+            send({ type: 'clipboardContent', text: clipboardText });
             send({ type: 'vaultIndex', entries: this.indexer.all() });
             // - forward VS Code markdown preview settings so the webview matches the editor look
             const mdPreview = vscode.workspace.getConfiguration('markdown.preview');

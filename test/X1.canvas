@@ -3,7 +3,7 @@
     {
       "id": "node-1775048436531",
       "type": "text",
-      "text": "# Idea 3\r\n\r\n- retest",
+      "text": "# Idea 3\r\n\r\n- retest\r\n\r\n\r\n> Experiment 2\r\n\r\nLookingGlass(\r\n    [data, \r\n     pta.hma(data.close, 12),\r\n     pta.hma(data.close, 60)\r\n    ], backend=\"mpl\"\r\n).look().show()",
       "x": 40,
       "y": 40,
       "width": 400,
@@ -13,7 +13,7 @@
     {
       "id": "node-1775048638012",
       "type": "text",
-      "text": "# Experiment resukts",
+      "text": "# Experiment results\r\n\r\n\r\n# Idea 3\r\n\r\n- retest\r\n\r\n\r\n> Experiment 2\r\n\r\n",
       "x": 489,
       "y": 56,
       "width": 400,
@@ -23,7 +23,7 @@
     {
       "id": "node-1775048641972",
       "type": "text",
-      "text": "# Experiment 2",
+      "text": "# Experiment 2\r\n\r\n\r\n# Idea 3\r\n\r\n- retest\r\n\r\n\r\n> Experiment 2",
       "x": 489,
       "y": 404,
       "width": 400,

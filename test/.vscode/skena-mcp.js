@@ -106,13 +106,14 @@ function expandHome(p) {
   return p.startsWith("~/") ? path.join(os.homedir(), p.slice(2)) : p;
 }
 var vaultCache = /* @__PURE__ */ new Map();
-function stripComments(raw) {
-  return raw.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+function parseRelaxedJson(raw) {
+  const stripped = raw.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "").replace(/,(\s*[}\]])/g, "$1");
+  return JSON.parse(stripped);
 }
 async function readSettingsFile(filePath) {
   try {
     const raw = await fs.readFile(filePath, "utf-8");
-    return JSON.parse(stripComments(raw));
+    return parseRelaxedJson(raw);
   } catch {
     return null;
   }
@@ -152,6 +153,26 @@ async function resolveVaultUri(uri, canvasPath) {
   if (!vault)
     return null;
   return path.join(expandHome(vault.path), rel);
+}
+function normalizeFileUri(fileUri, canvasPath) {
+  if (!fileUri || fileUri.startsWith("vault://"))
+    return fileUri;
+  if (!path.isAbsolute(fileUri))
+    return fileUri;
+  const canvasDir = path.dirname(canvasPath);
+  const rel = path.relative(canvasDir, fileUri).replace(/\\/g, "/");
+  if (rel.startsWith(".."))
+    return fileUri;
+  return rel.startsWith("./") ? rel : `./${rel}`;
+}
+var _fileLocks = /* @__PURE__ */ new Map();
+function withFileLock(fsPath, fn) {
+  const prev = _fileLocks.get(fsPath) ?? Promise.resolve();
+  const next = prev.then(() => fn(), () => fn());
+  _fileLocks.set(fsPath, next.then(() => {
+  }, () => {
+  }));
+  return next;
 }
 async function readCanvas(fsPath) {
   const raw = await fs.readFile(fsPath, "utf-8");
@@ -453,175 +474,188 @@ Vault URI: ${n.file}`;
 }
 async function canvasAddNode(args) {
   const p = resolvePath(args.canvasPath);
-  const d = await readCanvas(p);
-  const type = args.type ?? "text";
-  const dims = defaultDims(type);
-  const w = args.width ?? dims.w;
-  const h = args.height ?? dims.h;
-  const pos = args.x !== void 0 && args.y !== void 0 ? { x: args.x, y: args.y } : autoPlace(d.nodes, w, h);
-  const base = {
-    id: uid(),
-    type,
-    x: pos.x,
-    y: pos.y,
-    width: w,
-    height: h,
-    createdBy: "ai",
-    ...args.color ? { color: args.color } : {},
-    ...args.tags ? { tags: args.tags } : {}
-  };
-  let newNode;
-  switch (type) {
-    case "text":
-      newNode = { ...base, type: "text", text: args.content ?? "" };
-      break;
-    case "cell":
-      newNode = { ...base, type: "cell", format: args.format ?? "markdown", content: args.content ?? "" };
-      break;
-    case "file":
-      newNode = { ...base, type: "file", file: args.file ?? "" };
-      break;
-    case "link":
-      newNode = { ...base, type: "link", url: args.url ?? "" };
-      break;
-    case "portal":
-      newNode = { ...base, type: "portal", canvas: args.canvas ?? "" };
-      break;
-    default:
-      newNode = { ...base, type: "text", text: args.content ?? "" };
-  }
-  const labeled = assignLabel(newNode, d.nodes);
-  d.nodes.push(labeled);
-  await writeCanvas(p, d);
-  return `Created node ${labeled.nodeLabel} (id: ${labeled.id})
+  return withFileLock(p, async () => {
+    const d = await readCanvas(p);
+    const type = args.type ?? "text";
+    const dims = defaultDims(type);
+    const w = args.width ?? dims.w;
+    const h = args.height ?? dims.h;
+    const pos = args.x !== void 0 && args.y !== void 0 ? { x: args.x, y: args.y } : autoPlace(d.nodes, w, h);
+    const base = {
+      id: uid(),
+      type,
+      x: pos.x,
+      y: pos.y,
+      width: w,
+      height: h,
+      createdBy: "ai",
+      ...args.color ? { color: args.color } : {},
+      ...args.tags ? { tags: args.tags } : {}
+    };
+    let newNode;
+    switch (type) {
+      case "text":
+        newNode = { ...base, type: "text", text: args.content ?? "" };
+        break;
+      case "cell":
+        newNode = { ...base, type: "cell", format: args.format ?? "markdown", content: args.content ?? "" };
+        break;
+      case "file": {
+        const rawFile = args.file ?? "";
+        const fileUri = normalizeFileUri(rawFile, p);
+        newNode = { ...base, type: "file", file: fileUri };
+        break;
+      }
+      case "link":
+        newNode = { ...base, type: "link", url: args.url ?? "" };
+        break;
+      case "portal":
+        newNode = { ...base, type: "portal", canvas: args.canvas ?? "" };
+        break;
+      default:
+        newNode = { ...base, type: "text", text: args.content ?? "" };
+    }
+    const labeled = assignLabel(newNode, d.nodes);
+    d.nodes.push(labeled);
+    await writeCanvas(p, d);
+    return `Created node ${labeled.nodeLabel} (id: ${labeled.id})
 Type: ${type}
 Position: (${labeled.x}, ${labeled.y})  Size: ${labeled.width}\xD7${labeled.height}
 Canvas: ${p}`;
+  });
 }
 async function canvasUpdateNode(args) {
   const p = resolvePath(args.canvasPath);
-  const d = await readCanvas(p);
-  const n = findNode(d, args.ref);
-  if (!n)
-    return `Node not found: ${args.ref}`;
-  const idx = d.nodes.indexOf(n);
-  const updated = { ...n };
-  if (args.content !== void 0) {
-    if (n.type === "text")
-      updated.text = args.content;
-    if (n.type === "cell")
-      updated.content = args.content;
-  }
-  if (args.tags !== void 0)
-    updated.tags = args.tags;
-  if (args.color !== void 0)
-    updated.color = args.color;
-  if (args.label !== void 0)
-    updated.nodeLabel = args.label;
-  d.nodes[idx] = updated;
-  await writeCanvas(p, d);
-  return `Updated node ${updated.nodeLabel ?? updated.id}`;
+  return withFileLock(p, async () => {
+    const d = await readCanvas(p);
+    const n = findNode(d, args.ref);
+    if (!n)
+      return `Node not found: ${args.ref}`;
+    const idx = d.nodes.indexOf(n);
+    const updated = { ...n };
+    if (args.content !== void 0) {
+      if (n.type === "text")
+        updated.text = args.content;
+      if (n.type === "cell")
+        updated.content = args.content;
+    }
+    if (args.tags !== void 0)
+      updated.tags = args.tags;
+    if (args.color !== void 0)
+      updated.color = args.color;
+    if (args.label !== void 0)
+      updated.nodeLabel = args.label;
+    d.nodes[idx] = updated;
+    await writeCanvas(p, d);
+    return `Updated node ${updated.nodeLabel ?? updated.id}`;
+  });
 }
 async function canvasRemoveNode(args) {
   const p = resolvePath(args.canvasPath);
-  const d = await readCanvas(p);
-  const refs = Array.isArray(args.ref) ? args.ref : [args.ref];
-  const toRemove = /* @__PURE__ */ new Set();
-  const labels = [];
-  for (const ref of refs) {
-    const n = findNode(d, ref);
-    if (n) {
-      toRemove.add(n.id);
-      labels.push(n.nodeLabel ?? n.id);
+  return withFileLock(p, async () => {
+    const d = await readCanvas(p);
+    const refs = Array.isArray(args.ref) ? args.ref : [args.ref];
+    const toRemove = /* @__PURE__ */ new Set();
+    const labels = [];
+    for (const ref of refs) {
+      const n = findNode(d, ref);
+      if (n) {
+        toRemove.add(n.id);
+        labels.push(n.nodeLabel ?? n.id);
+      }
     }
-  }
-  if (toRemove.size === 0)
-    return `No nodes found for: ${refs.join(", ")}`;
-  d.nodes = d.nodes.filter((n) => !toRemove.has(n.id));
-  d.edges = d.edges.filter((e) => !toRemove.has(e.fromNode) && !toRemove.has(e.toNode));
-  await writeCanvas(p, d);
-  return `Removed ${toRemove.size} node(s): ${labels.join(", ")}`;
+    if (toRemove.size === 0)
+      return `No nodes found for: ${refs.join(", ")}`;
+    d.nodes = d.nodes.filter((n) => !toRemove.has(n.id));
+    d.edges = d.edges.filter((e) => !toRemove.has(e.fromNode) && !toRemove.has(e.toNode));
+    await writeCanvas(p, d);
+    return `Removed ${toRemove.size} node(s): ${labels.join(", ")}`;
+  });
 }
 async function canvasAddEdge(args) {
   const p = resolvePath(args.canvasPath);
-  const d = await readCanvas(p);
-  const fn = findNode(d, args.from);
-  const tn = findNode(d, args.to);
-  if (!fn)
-    return `Source node not found: ${args.from}`;
-  if (!tn)
-    return `Target node not found: ${args.to}`;
-  const edge = {
-    id: `edge-${uid()}`,
-    fromNode: fn.id,
-    fromSide: args.fromSide ?? "right",
-    toNode: tn.id,
-    toSide: args.toSide ?? "left",
-    toEnd: "arrow",
-    ...args.label ? { label: args.label } : {},
-    ...args.color ? { color: args.color } : {}
-  };
-  d.edges.push(edge);
-  await writeCanvas(p, d);
-  return `Connected ${fn.nodeLabel ?? fn.id} \u2192 ${tn.nodeLabel ?? tn.id}  (edge id: ${edge.id})`;
+  return withFileLock(p, async () => {
+    const d = await readCanvas(p);
+    const fn = findNode(d, args.from);
+    const tn = findNode(d, args.to);
+    if (!fn)
+      return `Source node not found: ${args.from}`;
+    if (!tn)
+      return `Target node not found: ${args.to}`;
+    const edge = {
+      id: `edge-${uid()}`,
+      fromNode: fn.id,
+      fromSide: args.fromSide ?? "right",
+      toNode: tn.id,
+      toSide: args.toSide ?? "left",
+      toEnd: "arrow",
+      ...args.label ? { label: args.label } : {},
+      ...args.color ? { color: args.color } : {}
+    };
+    d.edges.push(edge);
+    await writeCanvas(p, d);
+    return `Connected ${fn.nodeLabel ?? fn.id} \u2192 ${tn.nodeLabel ?? tn.id}  (edge id: ${edge.id})`;
+  });
 }
 async function canvasPinOutput(args) {
   const p = resolvePath(args.canvasPath);
-  const d = await readCanvas(p);
-  const format = args.format ?? "html";
-  const content = args.content ?? "";
-  const W = 480, H = 320;
-  let x, y;
-  let sourceNode;
-  if (args.sourceRef) {
-    sourceNode = findNode(d, args.sourceRef);
-    if (sourceNode) {
-      x = Math.round(sourceNode.x + sourceNode.width + 60);
-      y = Math.round(sourceNode.y + (sourceNode.height - H) / 2);
+  return withFileLock(p, async () => {
+    const d = await readCanvas(p);
+    const format = args.format ?? "html";
+    const content = args.content ?? "";
+    const W = 480, H = 320;
+    let x, y;
+    let sourceNode;
+    if (args.sourceRef) {
+      sourceNode = findNode(d, args.sourceRef);
+      if (sourceNode) {
+        x = Math.round(sourceNode.x + sourceNode.width + 60);
+        y = Math.round(sourceNode.y + (sourceNode.height - H) / 2);
+      } else {
+        const pos = autoPlace(d.nodes, W, H);
+        x = pos.x;
+        y = pos.y;
+      }
     } else {
       const pos = autoPlace(d.nodes, W, H);
       x = pos.x;
       y = pos.y;
     }
-  } else {
-    const pos = autoPlace(d.nodes, W, H);
-    x = pos.x;
-    y = pos.y;
-  }
-  const cell = {
-    id: uid(),
-    type: "cell",
-    x,
-    y,
-    width: W,
-    height: H,
-    format,
-    content,
-    createdBy: "ai",
-    ...args.tags ? { tags: args.tags } : {}
-  };
-  const labeled = assignLabel(cell, d.nodes);
-  d.nodes.push(labeled);
-  let edgeId = "";
-  if (sourceNode) {
-    const edge = {
-      id: `edge-pin-${uid()}`,
-      fromNode: sourceNode.id,
-      fromSide: "right",
-      toNode: labeled.id,
-      toSide: "left",
-      toEnd: "arrow",
-      label: args.edgeLabel ?? nowLabel()
+    const cell = {
+      id: uid(),
+      type: "cell",
+      x,
+      y,
+      width: W,
+      height: H,
+      format,
+      content,
+      createdBy: "ai",
+      ...args.tags ? { tags: args.tags } : {}
     };
-    d.edges.push(edge);
-    edgeId = edge.id;
-  }
-  await writeCanvas(p, d);
-  const lines = [`Pinned output as cell node ${labeled.nodeLabel} (id: ${labeled.id})`];
-  if (sourceNode)
-    lines.push(`Connected from ${sourceNode.nodeLabel ?? sourceNode.id} with edge "${d.edges.find((e) => e.id === edgeId)?.label}"`);
-  lines.push(`Canvas: ${p}`);
-  return lines.join("\n");
+    const labeled = assignLabel(cell, d.nodes);
+    d.nodes.push(labeled);
+    let edgeId = "";
+    if (sourceNode) {
+      const edge = {
+        id: `edge-pin-${uid()}`,
+        fromNode: sourceNode.id,
+        fromSide: "right",
+        toNode: labeled.id,
+        toSide: "left",
+        toEnd: "arrow",
+        label: args.edgeLabel ?? nowLabel()
+      };
+      d.edges.push(edge);
+      edgeId = edge.id;
+    }
+    await writeCanvas(p, d);
+    const lines = [`Pinned output as cell node ${labeled.nodeLabel} (id: ${labeled.id})`];
+    if (sourceNode)
+      lines.push(`Connected from ${sourceNode.nodeLabel ?? sourceNode.id} with edge "${d.edges.find((e) => e.id === edgeId)?.label}"`);
+    lines.push(`Canvas: ${p}`);
+    return lines.join("\n");
+  });
 }
 var TOOLS = [
   {

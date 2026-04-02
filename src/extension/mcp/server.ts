@@ -114,6 +114,48 @@ async function resolveVaultUri(uri: string, canvasPath: string): Promise<string 
   return path.join(expandHome(vault.path), rel);
 }
 
+/**
+ * Normalize a file URI for storage in a canvas node.
+ *
+ * - vault:// URIs are kept verbatim.
+ * - Absolute paths that sit under the canvas directory are converted to
+ *   canvas-relative paths (e.g. `./research/foo.ipynb`).
+ * - Absolute paths outside the canvas directory are kept absolute.
+ * - Already-relative paths are kept as-is.
+ */
+function normalizeFileUri(fileUri: string, canvasPath: string): string {
+  if (!fileUri || fileUri.startsWith('vault://')) return fileUri;
+  if (!path.isAbsolute(fileUri)) return fileUri;
+
+  const canvasDir = path.dirname(canvasPath);
+  const rel       = path.relative(canvasDir, fileUri).replace(/\\/g, '/');
+
+  // - path.relative returns something starting with ".." when outside canvasDir
+  if (rel.startsWith('..')) return fileUri; // - keep absolute, it's outside the project
+  return rel.startsWith('./') ? rel : `./${rel}`;
+}
+
+// ─── per-file async lock ───────────────────────────────────────────────────────
+//
+// - All read-modify-write operations on the same canvas file must be serialized.
+// - Without this, two concurrent tool calls (e.g. canvas_add_node + canvas_add_edge)
+// - both readCanvas before either writes back → each overwrites the other's changes,
+// - causing label collisions and silently lost edges/nodes.
+//
+// - Usage: wrap the entire read → mutate → write sequence:
+//   return withFileLock(fsPath, async () => { ... });
+
+const _fileLocks = new Map<string, Promise<void>>();
+
+function withFileLock<T>(fsPath: string, fn: () => Promise<T>): Promise<T> {
+  // - chain onto the previous operation for this path (or a resolved promise)
+  const prev  = _fileLocks.get(fsPath) ?? Promise.resolve();
+  const next  = prev.then(() => fn(), () => fn()); // - run fn regardless of prev outcome
+  // - store a void chain so errors don't leak into future callers
+  _fileLocks.set(fsPath, next.then(() => {}, () => {}));
+  return next;
+}
+
 // ─── canvas I/O ───────────────────────────────────────────────────────────────
 
 async function readCanvas(fsPath: string): Promise<CanvasData> {
@@ -425,7 +467,8 @@ async function canvasFollow(args: Record<string, unknown>): Promise<string> {
 }
 
 async function canvasAddNode(args: Record<string, unknown>): Promise<string> {
-  const p    = resolvePath(args.canvasPath as string);
+  const p = resolvePath(args.canvasPath as string);
+  return withFileLock(p, async () => {
   const d    = await readCanvas(p);
   const type = (args.type as string | undefined) ?? 'text';
   const dims = defaultDims(type);
@@ -456,9 +499,13 @@ async function canvasAddNode(args: Record<string, unknown>): Promise<string> {
     case 'cell':
       newNode = { ...base, type: 'cell', format: (args.format as 'html' | 'markdown' | 'image' | undefined) ?? 'markdown', content: (args.content as string | undefined) ?? '' } as CanvasNode;
       break;
-    case 'file':
-      newNode = { ...base, type: 'file', file: (args.file as string | undefined) ?? '' } as CanvasNode;
+    case 'file': {
+      // - normalize absolute paths to canvas-relative (vault:// URIs are kept as-is)
+      const rawFile = (args.file as string | undefined) ?? '';
+      const fileUri = normalizeFileUri(rawFile, p);
+      newNode = { ...base, type: 'file', file: fileUri } as CanvasNode;
       break;
+    }
     case 'link':
       newNode = { ...base, type: 'link', url: (args.url as string | undefined) ?? '' } as CanvasNode;
       break;
@@ -474,10 +521,12 @@ async function canvasAddNode(args: Record<string, unknown>): Promise<string> {
   await writeCanvas(p, d);
 
   return `Created node ${labeled.nodeLabel} (id: ${labeled.id})\nType: ${type}\nPosition: (${labeled.x}, ${labeled.y})  Size: ${labeled.width}×${labeled.height}\nCanvas: ${p}`;
+  }); // - withFileLock
 }
 
 async function canvasUpdateNode(args: Record<string, unknown>): Promise<string> {
   const p = resolvePath(args.canvasPath as string);
+  return withFileLock(p, async () => {
   const d = await readCanvas(p);
   const n = findNode(d, args.ref as string);
   if (!n) return `Node not found: ${args.ref}`;
@@ -496,10 +545,12 @@ async function canvasUpdateNode(args: Record<string, unknown>): Promise<string> 
   d.nodes[idx] = updated;
   await writeCanvas(p, d);
   return `Updated node ${updated.nodeLabel ?? updated.id}`;
+  }); // - withFileLock
 }
 
 async function canvasRemoveNode(args: Record<string, unknown>): Promise<string> {
-  const p    = resolvePath(args.canvasPath as string);
+  const p = resolvePath(args.canvasPath as string);
+  return withFileLock(p, async () => {
   const d    = await readCanvas(p);
   const refs = Array.isArray(args.ref) ? args.ref as string[] : [args.ref as string];
 
@@ -515,10 +566,12 @@ async function canvasRemoveNode(args: Record<string, unknown>): Promise<string> 
   d.edges = d.edges.filter(e => !toRemove.has(e.fromNode) && !toRemove.has(e.toNode));
   await writeCanvas(p, d);
   return `Removed ${toRemove.size} node(s): ${labels.join(', ')}`;
+  }); // - withFileLock
 }
 
 async function canvasAddEdge(args: Record<string, unknown>): Promise<string> {
-  const p  = resolvePath(args.canvasPath as string);
+  const p = resolvePath(args.canvasPath as string);
+  return withFileLock(p, async () => {
   const d  = await readCanvas(p);
   const fn = findNode(d, args.from as string);
   const tn = findNode(d, args.to   as string);
@@ -538,10 +591,12 @@ async function canvasAddEdge(args: Record<string, unknown>): Promise<string> {
   d.edges.push(edge);
   await writeCanvas(p, d);
   return `Connected ${fn.nodeLabel ?? fn.id} → ${tn.nodeLabel ?? tn.id}  (edge id: ${edge.id})`;
+  }); // - withFileLock
 }
 
 async function canvasPinOutput(args: Record<string, unknown>): Promise<string> {
-  const p       = resolvePath(args.canvasPath as string);
+  const p = resolvePath(args.canvasPath as string);
+  return withFileLock(p, async () => {
   const d       = await readCanvas(p);
   const format  = (args.format as 'html' | 'markdown' | 'image' | undefined) ?? 'html';
   const content = (args.content as string | undefined) ?? '';
@@ -600,6 +655,7 @@ async function canvasPinOutput(args: Record<string, unknown>): Promise<string> {
   if (sourceNode) lines.push(`Connected from ${sourceNode.nodeLabel ?? sourceNode.id} with edge "${d.edges.find(e => e.id === edgeId)?.label}"`);
   lines.push(`Canvas: ${p}`);
   return lines.join('\n');
+  }); // - withFileLock
 }
 
 // ─── tool definitions ─────────────────────────────────────────────────────────
