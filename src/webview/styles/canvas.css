@@ -54,6 +54,15 @@
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55), 0 0 0 3px var(--vscode-focusBorder, #007acc);
 }
 
+/* - space-pinned selection: orange ring (distinct from the blue focus ring) */
+.react-flow__node.skena-pinned .skena-node {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55), 0 0 0 3px #e9973f;
+}
+/* - pinned + keyboard-focused simultaneously: both rings */
+.react-flow__node.selected.skena-pinned .skena-node {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55), 0 0 0 3px #e9973f, 0 0 0 6px var(--vscode-focusBorder, #007acc);
+}
+
 /* ─── Resize controls ─────────────────────────────────────────────────────── */
 .react-flow__resize-control.handle {
   width:  14px;

@@ -289,6 +289,9 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
   const [searchOpen,   setSearchOpen]   = useState(false);
   // - flow coords at right-click time; stored in a ref so add-handlers don't go stale
   const contextMenuFlowPos = useRef<{ flowX: number; flowY: number }>({ flowX: 0, flowY: 0 });
+  // - space-pinned node ids: Space toggles a node into/out of this set
+  // - pinned nodes show an orange ring and move with hjkl instead of navigating
+  const spaceSelectedRef = useRef<Set<string>>(new Set());
 
   // - intercept onNodesChange to compute alignment guides + manual grid snap
   // - (snapToGrid is removed from <ReactFlow> so both can coexist cleanly)
@@ -512,6 +515,8 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
   const onNodesDelete = useCallback((deleted: Node[]) => {
     pushHistory();
     const deletedIds = new Set(deleted.map(n => n.id));
+    // - purge deleted nodes from the space-pinned set
+    for (const id of deletedIds) spaceSelectedRef.current.delete(id);
     const updated: CanvasData = {
       nodes: canvasRef.current.nodes.filter(n => !deletedIds.has(n.id)),
       edges: canvasRef.current.edges.filter(e => !deletedIds.has(e.fromNode) && !deletedIds.has(e.toNode)),
@@ -958,8 +963,32 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
         return;
       }
 
-      // - Shift+{H,J,K,L}: add node beside the focused node and connect it
+      // - Shift+{H,J,K,L}: move pinned nodes if any are pinned, otherwise add a new node
       if (e.shiftKey && ['H', 'J', 'K', 'L'].includes(e.key)) {
+        // - if any nodes are space-pinned, shift+hjkl moves them by one grid step
+        if (spaceSelectedRef.current.size > 0) {
+          e.preventDefault();
+          const dirMap: Record<string, { x: number; y: number }> = {
+            H: { x: -GRID, y: 0 }, L: { x: GRID, y: 0 },
+            J: { x: 0, y: GRID },  K: { x: 0, y: -GRID },
+          };
+          const delta = dirMap[e.key];
+          setNodes(nds => nds.map(n => {
+            if (!spaceSelectedRef.current.has(n.id)) return n;
+            return { ...n, position: { x: n.position.x + delta.x, y: n.position.y + delta.y } };
+          }));
+          canvasRef.current = {
+            ...canvasRef.current,
+            nodes: canvasRef.current.nodes.map(cn =>
+              spaceSelectedRef.current.has(cn.id)
+                ? { ...cn, x: cn.x + delta.x, y: cn.y + delta.y }
+                : cn
+            ),
+          };
+          scheduleSave();
+          return;
+        }
+
         const current = nodesRef.current.find(n => n.selected && n.type !== 'group');
         if (!current) return;
         e.preventDefault();
@@ -1078,6 +1107,97 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
         return;
       }
 
+      // - Escape: clear space-pinned selection
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key === 'Escape') {
+        if (spaceSelectedRef.current.size > 0) {
+          e.preventDefault();
+          spaceSelectedRef.current = new Set();
+          setNodes(nds => nds.map(n =>
+            n.className === 'skena-pinned' ? { ...n, className: '' } : n
+          ));
+        }
+        return;
+      }
+
+      // - Space: toggle space-pinned selection on the keyboard-focused node
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key === ' ') {
+        const focused = nodesRef.current.find(n => n.selected && n.type !== 'group');
+        if (!focused) return;
+        e.preventDefault();
+        const next = new Set(spaceSelectedRef.current);
+        if (next.has(focused.id)) {
+          next.delete(focused.id);
+        } else {
+          next.add(focused.id);
+        }
+        spaceSelectedRef.current = next;
+        setNodes(nds => nds.map(n => ({
+          ...n,
+          className: next.has(n.id) ? 'skena-pinned' : (n.className === 'skena-pinned' ? '' : n.className),
+        })));
+        return;
+      }
+
+      // - c: add edge from the one space-pinned node to the keyboard-focused node
+      // - sides chosen by the direction vector between the two node centres
+      if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'c') {
+        const pinned = [...spaceSelectedRef.current];
+        if (pinned.length !== 1) return;
+        const pinnedNode = nodesRef.current.find(n => n.id === pinned[0]);
+        const targetNode = nodesRef.current.find(n => n.selected && n.type !== 'group' && !spaceSelectedRef.current.has(n.id));
+        if (!pinnedNode || !targetNode) return;
+        e.preventDefault();
+        // - compute direction vector between centres to pick nearest sides
+        const pw = Number(pinnedNode.style?.width  ?? 400), ph = Number(pinnedNode.style?.height ?? 300);
+        const tw = Number(targetNode.style?.width  ?? 400), th = Number(targetNode.style?.height ?? 300);
+        const dx = (targetNode.position.x + tw / 2) - (pinnedNode.position.x + pw / 2);
+        const dy = (targetNode.position.y + th / 2) - (pinnedNode.position.y + ph / 2);
+        const fromSide: CanvasEdge['fromSide'] = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'right' : 'left') : (dy >= 0 ? 'bottom' : 'top');
+        const toSide:   CanvasEdge['fromSide'] = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'left'  : 'right') : (dy >= 0 ? 'top'    : 'bottom');
+        const newEdge: CanvasEdge = {
+          id:       `${pinnedNode.id}-${targetNode.id}-${Date.now()}`,
+          fromNode: pinnedNode.id,
+          fromSide,
+          toNode:   targetNode.id,
+          toSide,
+          toEnd:    'arrow',
+        };
+        pushHistory();
+        setEdges(eds => addEdge(toFlowEdge(newEdge), eds));
+        canvasRef.current = { ...canvasRef.current, edges: [...canvasRef.current.edges, newEdge] };
+        scheduleSave();
+        return;
+      }
+
+      // - Shift+C: remove all edges between the pinned node and the focused node
+      if (!e.ctrlKey && !e.metaKey && e.shiftKey && !e.altKey && e.key === 'C') {
+        const pinned = [...spaceSelectedRef.current];
+        if (pinned.length !== 1) return;
+        const pinnedId = pinned[0];
+        const targetNode = nodesRef.current.find(n => n.selected && n.type !== 'group' && !spaceSelectedRef.current.has(n.id));
+        if (!targetNode) return;
+        const targetId = targetNode.id;
+        // - collect edge ids that connect the two nodes in either direction
+        const toRemove = new Set(
+          canvasRef.current.edges
+            .filter(ce =>
+              (ce.fromNode === pinnedId && ce.toNode === targetId) ||
+              (ce.fromNode === targetId && ce.toNode === pinnedId)
+            )
+            .map(ce => ce.id)
+        );
+        if (toRemove.size === 0) return;
+        e.preventDefault();
+        pushHistory();
+        setEdges(eds => eds.filter(fe => !toRemove.has(fe.id)));
+        canvasRef.current = {
+          ...canvasRef.current,
+          edges: canvasRef.current.edges.filter(ce => !toRemove.has(ce.id)),
+        };
+        scheduleSave();
+        return;
+      }
+
       const dir = keyToDir(e.key);
       if (!dir) return;
 
@@ -1108,7 +1228,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [setNodes, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen]); // - nodesRef carries live state
+  }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, pushHistory]); // - nodesRef + spaceSelectedRef carry live state
 
   // - handle skena:addNodeTrigger from VS Code ctrl+n command override
   // - compute viewport centre in flow coords, avoid overlaps, send addNodeRequest

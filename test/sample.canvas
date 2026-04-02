@@ -200,10 +200,10 @@
       "id": "node-1775051609270",
       "type": "portal",
       "canvas": "./Experiment1.canvas",
-      "x": 1826,
-      "y": -1416,
-      "width": 136,
-      "height": 136,
+      "x": 2047,
+      "y": -1328,
+      "width": 94,
+      "height": 85,
       "nodeLabel": "R3"
     },
     {
@@ -220,9 +220,9 @@
       "id": "node-1775051699385",
       "type": "text",
       "text": "## Results\r\n\r\n- not sufficient improvements\r\n",
-      "x": 1680,
-      "y": -1143,
-      "width": 431,
+      "x": 1994.5,
+      "y": -1111,
+      "width": 202,
       "height": 81,
       "nodeLabel": "N10"
     },
@@ -247,10 +247,10 @@
       "id": "node-1775062320900",
       "type": "file",
       "file": "vault://kb/ADX+BB B+AO+EMA Strategy.md",
-      "x": 772,
-      "y": -1591,
-      "width": 484,
-      "height": 364,
+      "x": 936.5,
+      "y": -1644,
+      "width": 708,
+      "height": 644,
       "nodeLabel": "M2"
     },
     {
@@ -268,10 +268,10 @@
       "id": "node-1775064928441",
       "type": "file",
       "file": "vault://xl/areas/ideas/Trend Following with ETFs.md",
-      "x": 579,
-      "y": -2472,
-      "width": 908,
-      "height": 653,
+      "x": 727,
+      "y": -2710,
+      "width": 999,
+      "height": 869,
       "nodeLabel": "M3"
     },
     {
@@ -299,10 +299,30 @@
       "type": "text",
       "text": "- 123\r\n- 456\r\n\r\n\r\ndddd\r\n\r\ndddd\r\n\r\ndata = read.read(\"BTCUSDT\", \"ohlc(1h)\", \"-10d\", \"now\").to_pd()\r\n",
       "x": 1826,
-      "y": -709.5,
+      "y": -397.5,
       "width": 400,
       "height": 300,
       "nodeLabel": "N11"
+    },
+    {
+      "id": "node-1775128887431",
+      "type": "text",
+      "text": "# TEst1",
+      "x": 1900,
+      "y": -932,
+      "width": 400,
+      "height": 300,
+      "nodeLabel": "N12"
+    },
+    {
+      "id": "node-1775129137831",
+      "type": "file",
+      "file": "vault://kb/Developing and Backtesting DEX-CEX Arbitrage Trading Strategies.md",
+      "x": 1238,
+      "y": 109,
+      "width": 400,
+      "height": 706,
+      "nodeLabel": "M6"
     }
   ],
   "edges": [
@@ -479,14 +499,6 @@
       "toEnd": "arrow"
     },
     {
-      "id": "edge-1775065209583",
-      "fromNode": "node-1775064928441",
-      "fromSide": "right",
-      "toNode": "node-1775065209583",
-      "toSide": "left",
-      "toEnd": "arrow"
-    },
-    {
       "id": "edge-1775120602797",
       "fromNode": "node4",
       "fromSide": "right",
@@ -501,11 +513,35 @@
       "toNode": "node-1775127049000",
       "toSide": "left",
       "toEnd": "arrow"
+    },
+    {
+      "id": "node-1775064928441-node-1775065209583-1775128564258",
+      "fromNode": "node-1775064928441",
+      "fromSide": "right",
+      "toNode": "node-1775065209583",
+      "toSide": "left",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "node-1775051699385-node-1775128887431-1775129027261",
+      "fromNode": "node-1775051699385",
+      "fromSide": "bottom",
+      "toNode": "node-1775128887431",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1775129137831",
+      "fromNode": "node-1775048783906",
+      "fromSide": "right",
+      "toNode": "node-1775129137831",
+      "toSide": "left",
+      "toEnd": "arrow"
     }
   ],
   "viewport": {
-    "x": -280.69722925821134,
-    "y": 1221.528305277116,
-    "zoom": 0.5786033197078522
+    "x": -1911.5075450220984,
+    "y": 2878.3639352785003,
+    "zoom": 1.0720714930138115
   }
 }
