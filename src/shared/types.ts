@@ -340,6 +340,12 @@ export interface MsgWriteClipboard {
   text: string;
 }
 
+/** - webview → host: resolve a canvas-relative / vault:// URI and copy absolute fsPath to clipboard */
+export interface MsgCopyAbsolutePath {
+  type: 'copyAbsolutePath';
+  uri: string;
+}
+
 export type WebviewToHost =
   | MsgRequestFile
   | MsgSaveCanvas
@@ -352,7 +358,8 @@ export type WebviewToHost =
   | MsgAddNodeRequest
   | MsgMoveToSubCanvas
   | MsgRequestClipboardRead
-  | MsgWriteClipboard;
+  | MsgWriteClipboard
+  | MsgCopyAbsolutePath;
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────
 

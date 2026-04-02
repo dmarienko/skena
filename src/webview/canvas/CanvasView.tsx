@@ -292,6 +292,8 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
   // - space-pinned node ids: Space toggles a node into/out of this set
   // - pinned nodes show an orange ring and move with hjkl instead of navigating
   const spaceSelectedRef = useRef<Set<string>>(new Set());
+  // - timestamp of last bare `c` keypress; used to detect c,c double-tap for copy-path
+  const lastCPressRef = useRef<number>(0);
 
   // - intercept onNodesChange to compute alignment guides + manual grid snap
   // - (snapToGrid is removed from <ReactFlow> so both can coexist cleanly)
@@ -1136,6 +1138,24 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
           className: next.has(n.id) ? 'skena-pinned' : (n.className === 'skena-pinned' ? '' : n.className),
         })));
         return;
+      }
+
+      // - c,c (double-tap within 400 ms): copy the absolute file path of the focused node
+      // - works for file nodes and any node that references a file via a `file` field
+      if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'c') {
+        const now = Date.now();
+        if (now - lastCPressRef.current < 400) {
+          // - double-c detected: copy absolute path of focused file node
+          lastCPressRef.current = 0; // - reset so a third c doesn't re-trigger
+          const focused = nodesRef.current.find(n => n.selected && n.type !== 'group');
+          const fileUri = focused ? (focused.data as Record<string, unknown>).file as string | undefined : undefined;
+          if (focused && fileUri) {
+            e.preventDefault();
+            vscodePostMessage({ type: 'copyAbsolutePath', uri: fileUri });
+          }
+          return;
+        }
+        lastCPressRef.current = now;
       }
 
       // - c: add edge from the one space-pinned node to the keyboard-focused node

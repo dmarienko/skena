@@ -160,6 +160,14 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           await vscode.env.clipboard.writeText(msg.text);
           break;
         }
+        case 'copyAbsolutePath': {
+          const resolved = resolver.resolve(msg.uri, canvasDir);
+          if (resolved?.fsPath) {
+            await vscode.env.clipboard.writeText(resolved.fsPath);
+            vscode.window.setStatusBarMessage(`Copied: ${resolved.fsPath}`, 3000);
+          }
+          break;
+        }
       }
     });
 

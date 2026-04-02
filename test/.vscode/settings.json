@@ -6,6 +6,15 @@
       },
 
       {                                                                                                                                    
+          "name": "xi",                                                                                                                   
+          "path": "~/projects/xincubator/research/"
+      },
+      {                                                                                                                                    
+          "name": "xis",                                                                                                                   
+          "path": "~/projects/xincubator/src/"
+      },
+
+      {                                                                                                                                    
         "name": "xl",                                                                                                                   
         "path": "~/docs/knowledge-db"
       }
