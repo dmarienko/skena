@@ -6,7 +6,7 @@
       "x": 132,
       "y": -1257,
       "width": 411,
-      "height": 534,
+      "height": 587,
       "color": "4",
       "text": "# Backtest trend following model\r\n\r\n- 1. tests image\r\n---\r\n\r\n- 2. tests image 2\r\n---\r\n\r\n- 3. tests sentence 3\r\n---\r\n\r\n- 4. Test anything\r\n---\r\n\r\n\r\n$$\\zeta(x) = \\frac{1}{a} \\sum^{N}_{k=0}{x^k}$$\r\n\r\n\r\n![Image](image.svg)\r\n\r\n\r\nCool here we can write different content !\r\n\r\n# I've another great idea to share !\r\n\r\n  - Meta strategy — HeritageReverseStrategy 15min, CUSUM 0.05 targets\r\n  - Two alpha nodes (Long + Short), equal weights 1.0\r\n  - RandomForest 500 estimators, ECDF transform, weekly walk-forward retrain\r\n  - Entry threshold 0.8, cancel 0.5, leverage-based sizing\r\n  - Backtest period matches model evaluation window (2025-01-01 to 2025-06-01)\r\n  - Universe — BTCUSDT + ETHUSDT (Binance UM)\r\n  - nemesis",
       "nodeLabel": "N1",
@@ -148,8 +148,8 @@
       "id": "node-1775047926214",
       "type": "portal",
       "canvas": "./Studies.canvas",
-      "x": 46,
-      "y": -2349,
+      "x": -419,
+      "y": -2479,
       "width": 200,
       "height": 200,
       "nodeLabel": "R4"
@@ -323,6 +323,16 @@
       "width": 400,
       "height": 706,
       "nodeLabel": "M6"
+    },
+    {
+      "id": "node-1775136103090-0",
+      "type": "file",
+      "file": "M15-price-features.u10.yaml",
+      "x": -167,
+      "y": -2400,
+      "width": 467,
+      "height": 369,
+      "nodeLabel": "Y2"
     }
   ],
   "edges": [
@@ -540,8 +550,8 @@
     }
   ],
   "viewport": {
-    "x": -218.30962295826953,
-    "y": 616.5893895387658,
-    "zoom": 0.45605762654659954
+    "x": 336.98338910298554,
+    "y": 2317.5078681644886,
+    "zoom": 0.9200986299438829
   }
 }

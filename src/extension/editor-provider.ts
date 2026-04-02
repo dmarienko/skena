@@ -196,14 +196,17 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       } catch { /* ignore parse errors during in-progress external edits */ }
     });
 
-    // - helper: convert an absolute fsPath to the URI the canvas node uses
+    // - helper: convert an absolute fsPath to the URI the canvas node uses.
+    // - MUST return the same form the node's `file` field was stored with:
+    // -   vault files  → vault:// URI
+    // -   everything else → path.relative() from canvasDir, possibly starting with ../
+    // - Never fall back to absolute path — nodes outside the canvas dir are stored
+    // - as ../../... relative paths, and fileChanged must match that key exactly.
     const toCanvasUri = (fsPath: string): string => {
-      // - vault file → vault:// URI
       const vaultUri = resolver.resolveFromFsPath(fsPath);
       if (vaultUri) return vaultUri;
-      // - project file → relative path from canvas dir (same format as drop creates)
       const rel = path.relative(canvasDir, fsPath).replace(/\\/g, '/');
-      return rel.startsWith('..') ? fsPath : (rel.startsWith('./') ? rel : `./${rel}`);
+      return rel.startsWith('.') ? rel : `./${rel}`;
     };
 
     // - watch vault file changes (chokidar, already running)

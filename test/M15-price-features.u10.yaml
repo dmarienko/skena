@@ -1,0 +1,39 @@
+name: 15min-price-features-u10
+description: |
+  Price/structure features for Heritage 15min metalabeling pipeline.
+tags:
+  - metals
+  - 15min
+  - features
+  - price
+  - nemesis
+
+start: "2023-01-01"
+end: "now"
+
+s3_account: r2
+output_path: s3://metals/features
+
+n_jobs: -1
+
+datasource:
+  exchange: BINANCE.UM
+  market: SWAP
+  storage:
+    ql: qdb::quantlab
+
+features:
+  symbols_path: s3://metals/universe/u10.yaml
+  timeframe: 15min
+  warmup_period: 30d
+  chunk_frequency: YS
+
+  setup:
+    # =============================================================================
+    # RAREV - Risk Adjusted Reversal
+    # (close - ema(close, N)) / rolling_std(diff(close), vol_period, vol_timeframe)
+    # =============================================================================
+    - ql::ohlc(15min)::close >> qk.RiskAdjustedReversal(16, 32, "1h")
+    - ql::ohlc(15min)::close >> qk.RiskAdjustedReversal(32, 32, "1h")
+    - ql::ohlc(15min)::close >> qk.RiskAdjustedReversal(64, 32, "1h")
+    - ql::ohlc(15min)::close >> qk.RiskAdjustedReversal(128, 32, "1h")
