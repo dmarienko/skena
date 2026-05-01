@@ -3,9 +3,9 @@
     {
       "id": "node-1775048436531",
       "type": "text",
-      "text": "# Idea 3\r\n\r\n- retest\r\n\r\n\r\n> Experiment 2\r\n\r\nLookingGlass(\r\n    [data, \r\n     pta.hma(data.close, 12),\r\n     pta.hma(data.close, 60)\r\n    ], backend=\"mpl\"\r\n).look().show()",
-      "x": 40,
-      "y": 40,
+      "text": "# Idea 3\r\n\r\n- retest\r\n\r\n\r\n> Experiment 2\r\n\r\n```python\r\nLookingGlass(\r\n    [data, \r\n     pta.hma(data.close, 12),\r\n     pta.hma(data.close, 60)\r\n    ], backend=\"mpl\"\r\n).look().show()\r\n```",
+      "x": -40,
+      "y": 56,
       "width": 400,
       "height": 300,
       "nodeLabel": "N7"
@@ -24,8 +24,8 @@
       "id": "node-1775048641972",
       "type": "text",
       "text": "# Experiment 2\r\n\r\n\r\n# Idea 3\r\n\r\n- retest\r\n\r\n\r\n> Experiment 2",
-      "x": 489,
-      "y": 404,
+      "x": 486,
+      "y": 421,
       "width": 400,
       "height": 300,
       "nodeLabel": "N11"
@@ -50,8 +50,8 @@
     }
   ],
   "viewport": {
-    "x": 2.2968197879858394,
-    "y": 126.36042402826854,
+    "x": 66.29681978798584,
+    "y": 205.36042402826854,
     "zoom": 0.6925795053003534
   }
 }

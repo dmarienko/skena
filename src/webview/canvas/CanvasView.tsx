@@ -292,8 +292,10 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
   // - space-pinned node ids: Space toggles a node into/out of this set
   // - pinned nodes show an orange ring and move with hjkl instead of navigating
   const spaceSelectedRef = useRef<Set<string>>(new Set());
-  // - timestamp of last bare `c` keypress; used to detect c,c double-tap for copy-path
+  // - timestamp of last bare `c` / `y` / `d` keypress; used to detect double-tap sequences
   const lastCPressRef = useRef<number>(0);
+  const lastYPressRef = useRef<number>(0);
+  const lastDPressRef = useRef<number>(0);
 
   // - intercept onNodesChange to compute alignment guides + manual grid snap
   // - (snapToGrid is removed from <ReactFlow> so both can coexist cleanly)
@@ -862,6 +864,40 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
     });
   }, []);
 
+  // - delete all currently selected (non-group) nodes and their connected edges.
+  // - mirrors onNodesDelete logic but triggered imperatively (e.g. dd shortcut).
+  const deleteSelectedNodes = useCallback(() => {
+    const toDelete = nodesRef.current.filter(n => n.selected && n.type !== 'group');
+    if (toDelete.length === 0) return;
+
+    pushHistory();
+    const deletedIds = new Set(toDelete.map(n => n.id));
+    for (const id of deletedIds) spaceSelectedRef.current.delete(id);
+
+    const updated: CanvasData = {
+      nodes: canvasRef.current.nodes.filter(n => !deletedIds.has(n.id)),
+      edges: canvasRef.current.edges.filter(e => !deletedIds.has(e.fromNode) && !deletedIds.has(e.toNode)),
+    };
+    canvasRef.current = updated;
+    setNodes(nds => nds.filter(n => !deletedIds.has(n.id)));
+    setEdges(eds => eds.filter(e => !deletedIds.has(e.source) && !deletedIds.has(e.target)));
+    scheduleSave();
+
+    // - focus nearest surviving node (same logic as onNodesDelete)
+    const cx = toDelete.reduce((s, n) => s + n.position.x + Number(n.style?.width  ?? 200) / 2, 0) / toDelete.length;
+    const cy = toDelete.reduce((s, n) => s + n.position.y + Number(n.style?.height ?? 150) / 2, 0) / toDelete.length;
+    let bestId: string | null = null;
+    let bestDist = Infinity;
+    for (const n of nodesRef.current) {
+      if (deletedIds.has(n.id) || n.type === 'group') continue;
+      const nx = n.position.x + Number(n.style?.width  ?? 200) / 2;
+      const ny = n.position.y + Number(n.style?.height ?? 150) / 2;
+      const d  = Math.hypot(nx - cx, ny - cy);
+      if (d < bestDist) { bestDist = d; bestId = n.id; }
+    }
+    if (bestId) { const id = bestId; requestAnimationFrame(() => focusNodeById(id)); }
+  }, [setNodes, setEdges, pushHistory, scheduleSave, focusNodeById]);
+
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1109,6 +1145,39 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
         return;
       }
 
+      // - yy (double-tap y within 400 ms): copy selected nodes to canvas clipboard
+      if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'y') {
+        const now = Date.now();
+        if (now - lastYPressRef.current < 400) {
+          lastYPressRef.current = 0;
+          e.preventDefault();
+          handleCopy();
+        } else {
+          lastYPressRef.current = now;
+        }
+        return;
+      }
+
+      // - dd (double-tap d within 400 ms): delete selected nodes
+      if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'd') {
+        const now = Date.now();
+        if (now - lastDPressRef.current < 400) {
+          lastDPressRef.current = 0;
+          e.preventDefault();
+          deleteSelectedNodes();
+        } else {
+          lastDPressRef.current = now;
+        }
+        return;
+      }
+
+      // - p: paste canvas clipboard (nodes copied with yy)
+      if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'p') {
+        e.preventDefault();
+        handlePaste();
+        return;
+      }
+
       // - Escape: clear space-pinned selection
       if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key === 'Escape') {
         if (spaceSelectedRef.current.size > 0) {
@@ -1248,7 +1317,7 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, pushHistory]); // - nodesRef + spaceSelectedRef carry live state
+  }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, pushHistory, handleCopy, handlePaste, deleteSelectedNodes]); // - nodesRef + spaceSelectedRef carry live state
 
   // - handle skena:addNodeTrigger from VS Code ctrl+n command override
   // - compute viewport centre in flow coords, avoid overlaps, send addNodeRequest

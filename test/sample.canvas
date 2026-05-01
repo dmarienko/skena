@@ -3,21 +3,21 @@
     {
       "id": "node1",
       "type": "text",
-      "x": 132,
-      "y": -1257,
+      "x": 136,
+      "y": -1278,
       "width": 411,
       "height": 587,
       "color": "4",
-      "text": "# Backtest trend following model\r\n\r\n- 1. tests image\r\n---\r\n\r\n- 2. tests image 2\r\n---\r\n\r\n- 3. tests sentence 3\r\n---\r\n\r\n- 4. Test anything\r\n---\r\n\r\n\r\n$$\\zeta(x) = \\frac{1}{a} \\sum^{N}_{k=0}{x^k}$$\r\n\r\n\r\n![Image](image.svg)\r\n\r\n\r\nCool here we can write different content !\r\n\r\n# I've another great idea to share !\r\n\r\n  - Meta strategy — HeritageReverseStrategy 15min, CUSUM 0.05 targets\r\n  - Two alpha nodes (Long + Short), equal weights 1.0\r\n  - RandomForest 500 estimators, ECDF transform, weekly walk-forward retrain\r\n  - Entry threshold 0.8, cancel 0.5, leverage-based sizing\r\n  - Backtest period matches model evaluation window (2025-01-01 to 2025-06-01)\r\n  - Universe — BTCUSDT + ETHUSDT (Binance UM)\r\n  - nemesis",
+      "text": "# Backtest trend following model\r\n\r\n- 1. tests image\r\n---\r\n\r\n- 2. tests image 2\r\n---\r\n\r\n- 3. tests sentence 3\r\n---\r\n\r\n- 4. Test anything\r\n---\r\n\r\n\r\n$$\\zeta(x) = \\frac{1}{a} \\sum^{N}_{k=0}{x^k}$$\r\n\r\n\r\n![Image](image.svg)\r\n\r\n\r\n# I've another great idea to share !\r\n\r\n  - Meta strategy — HeritageReverseStrategy 15min, CUSUM 0.05 targets\r\n  - Two alpha nodes (Long + Short), equal weights 1.0\r\n  - RandomForest 500 estimators, ECDF transform, weekly walk-forward retrain\r\n  - Entry threshold 0.8, cancel 0.5, leverage-based sizing\r\n  - Backtest period matches model evaluation window (2025-01-01 to 2025-06-01)\r\n  - Universe — BTCUSDT + ETHUSDT (Binance UM)\r\n  - nemesis",
       "nodeLabel": "N1",
       "createdBy": "ai"
     },
     {
       "id": "node3",
       "type": "link",
-      "x": -1747,
-      "y": -1786.5,
-      "width": 256,
+      "x": -1764,
+      "y": -1840,
+      "width": 335,
       "height": 73,
       "url": "https://github.com/dmarienko/",
       "nodeLabel": "L1"
@@ -25,8 +25,8 @@
     {
       "id": "node4",
       "type": "cell",
-      "x": 669,
-      "y": -638,
+      "x": 665,
+      "y": -645,
       "width": 352,
       "height": 176,
       "color": "2",
@@ -38,8 +38,8 @@
       "id": "node-1774042036432-0",
       "type": "file",
       "file": "test1.md",
-      "x": -919.5,
-      "y": -1972,
+      "x": -919,
+      "y": -2292,
       "width": 747,
       "height": 1206,
       "nodeLabel": "M1"
@@ -58,10 +58,10 @@
       "id": "node-1774627877759",
       "type": "link",
       "url": "https://github.com/neurotrader888/market-structure/blob/main/hierarchical_extremes.py",
-      "x": -1812.5,
-      "y": -1674.5,
-      "width": 279,
-      "height": 89,
+      "x": -1769,
+      "y": -1680,
+      "width": 339,
+      "height": 72,
       "nodeLabel": "L2"
     },
     {
@@ -78,8 +78,8 @@
       "id": "node-1774629108544",
       "type": "file",
       "file": "./meta-simulation.yaml",
-      "x": 51,
-      "y": -1913,
+      "x": 121,
+      "y": -1926,
       "width": 539,
       "height": 422,
       "nodeLabel": "Y1"
@@ -98,8 +98,8 @@
       "id": "node-1774630443412",
       "type": "portal",
       "canvas": "./h1-experiments.canvas",
-      "x": -367,
-      "y": -85,
+      "x": -415,
+      "y": -129,
       "width": 200,
       "height": 200,
       "nodeLabel": "R2"
@@ -108,8 +108,8 @@
       "id": "node-1774630604173",
       "type": "text",
       "text": "# Results\r\n\r\n  alpha[0] long:  MAE=0.000078  max_diff=0.007  n_bars=863  ✅ \r\n  alpha[1] short: MAE=0.000071  max_diff=0.010  n_bars=863  ✅\r\n  \r\n  No fold-boundary spikes on either model. The earlier nan result was because the previous combo.dropna() was too aggressive — the fix adds:                             \r\n  - n_emitted / n_static counts so you can see if the simulation emitted predictions at all                                                                              \r\n  - is_empty guard with a clear warning message when no bars match (e.g. no primary signals in the window)                                                               \r\n  - Descriptive __repr__ that differentiates between \"empty — try different date range\" vs normal results with MAE/max_diff/n_bars          ",
-      "x": -607,
-      "y": 234,
+      "x": -646,
+      "y": 240,
       "width": 684,
       "height": 249,
       "nodeLabel": "N3"
@@ -127,9 +127,9 @@
     {
       "id": "node-1774880170104",
       "type": "text",
-      "text": "# How cusum is applied\r\n\r\nPipeline order (from source): \r\nsignals → BasicProcessor → trades → minimal_return filter → CUSUM filter → weights → label\r\n\r\n## CUSUM mechanics:                                                                                                         \r\nthreshold(t) = vol(t) × cusum_threshold × close(t)    [in price/dollar units]\r\naccumulate D[close] until sum > threshold → fire event, reset \r\n→ trade only survives if its entry_time hits a CUSUM event \r\n\r\nFor cusum_threshold=0.05, volatility_timeframe=4h:\r\n- vol ≈ 1% of price → threshold ≈ 1% × 0.05 × price = 0.05% of price \r\n- At BTC = $64k → threshold ≈ $31\r\n\r\nThe real finding — CUSUM is nearly inactive at 15min\r\n  CUSUM fires every 1-2 bars at 15min — the threshold ($31) is smaller than a single typical bar move ($81), so it resets\r\n\r\n  and re-fires constantly. It's barely filtering anything (80% of bars are \"events\")                                                                                                                          \r\nNeither timeframe is doing meaningful CUSUM filtering (73–80% pass rates), but 15min is worse. For CUSUM to be a useful   \r\n\r\nfilter you'd want ~20–30% pass rate — which would require raising cusum_threshold to roughly 0.3–0.5 at 15min.\r\n",
-      "x": 17,
-      "y": -3170,
+      "text": "# How CUSUM is applied\r\n\r\nPipeline order (from source): \r\nsignals → BasicProcessor → trades → minimal_return filter → CUSUM filter → weights → label\r\n\r\n## CUSUM mechanics:                                                                                                         \r\nthreshold(t) = vol(t) × cusum_threshold × close(t)    [in price/dollar units]\r\naccumulate D[close] until sum > threshold → fire event, reset \r\n→ trade only survives if its entry_time hits a CUSUM event \r\n\r\nFor cusum_threshold=0.05, volatility_timeframe=4h:\r\n- vol ≈ 1% of price → threshold ≈ 1% × 0.05 × price = 0.05% of price\r\n- At BTC = $64k → threshold ≈ $31\r\n\r\nThe real finding — CUSUM is nearly inactive at 15min\r\n  CUSUM fires every 1-2 bars at 15min — the threshold ($31) is smaller than a single typical bar move ($81), so it resets\r\n\r\n  and re-fires constantly. It's barely filtering anything (80% of bars are \"events\")                                                                                                                          \r\nNeither timeframe is doing meaningful CUSUM filtering (73–80% pass rates), but 15min is worse. For CUSUM to be a useful   \r\n\r\nfilter you'd want ~20–30% pass rate — which would require raising cusum_threshold to roughly 0.3–0.5 at 15min.\r\n",
+      "x": -477,
+      "y": -3617,
       "width": 1103,
       "height": 358,
       "nodeLabel": "N4"
@@ -137,9 +137,9 @@
     {
       "id": "node-1774880609230",
       "type": "text",
-      "text": "# Targets generation for 15 min \r\n\r\n- validation of targets \r\n",
-      "x": -1065,
-      "y": -2986,
+      "text": "# Targets generation for 15 min\r\n\r\n- validation of targets\r\n",
+      "x": -1409,
+      "y": -3486,
       "width": 444,
       "height": 96,
       "nodeLabel": "N5"
@@ -148,8 +148,8 @@
       "id": "node-1775047926214",
       "type": "portal",
       "canvas": "./Studies.canvas",
-      "x": -419,
-      "y": -2479,
+      "x": -1287,
+      "y": -2373,
       "width": 200,
       "height": 200,
       "nodeLabel": "R4"
@@ -158,8 +158,8 @@
       "id": "node-1775048714075",
       "type": "portal",
       "canvas": "./X1.canvas",
-      "x": 677,
-      "y": 22,
+      "x": 704,
+      "y": -96,
       "width": 200,
       "height": 200,
       "nodeLabel": "R1"
@@ -168,8 +168,8 @@
       "id": "node-1775048783906",
       "type": "text",
       "text": "# Main results\r\n\r\n 1. Test was failed for this set of parameters\r\n 2. ddd",
-      "x": 464,
-      "y": 333,
+      "x": 475,
+      "y": 324,
       "width": 630,
       "height": 228,
       "nodeLabel": "N7"
@@ -188,8 +188,8 @@
     {
       "id": "cell-1775050828746",
       "type": "cell",
-      "x": 292,
-      "y": 1400,
+      "x": 425,
+      "y": 1382,
       "width": 519,
       "height": 404,
       "content": "RSI indicator's values:\n\n\n\t46.74\n\t48.23\n\t51.41\n\t53.82\n\t67.85\n\t68.73\n\t77.02\n\t78.76\n\t64.69\n\t64.78\n\t69.01\n\t66.99\n\t61.89\n\t72.59\n\t69.87\n\t68.66\n\t70.29\n\t66.91\n\t53.90\n\t46.63\n\t37.37\n\t36.08\n\t52.61\n\t49.36\n\t53.75\n\t48.23\n\t60.79\n\t56.46\n\t55.31\n\t53.01\n",
@@ -209,8 +209,8 @@
     {
       "id": "node-1775051641745",
       "type": "text",
-      "text": "# All experiments related to parameters sensitivity\r\n\r\nBecause week dependency on parameter1",
-      "x": 1942,
+      "text": "# All experiments related to parameters sensitivity\r\n\r\nBecause week dependency on parameter1\r\n\r\n",
+      "x": 1802,
       "y": -1578,
       "width": 584,
       "height": 80,
@@ -220,17 +220,17 @@
       "id": "node-1775051699385",
       "type": "text",
       "text": "## Results\r\n\r\n- not sufficient improvements\r\n",
-      "x": 1994.5,
+      "x": 1946.5,
       "y": -1111,
-      "width": 202,
+      "width": 295,
       "height": 81,
       "nodeLabel": "N10"
     },
     {
       "id": "ai-1775056080671-780de0",
       "type": "text",
-      "x": -1082.5,
-      "y": -2702,
+      "x": -1428,
+      "y": -3037,
       "width": 473,
       "height": 436,
       "createdBy": "ai",
@@ -247,8 +247,8 @@
       "id": "node-1775062320900",
       "type": "file",
       "file": "vault://kb/ADX+BB B+AO+EMA Strategy.md",
-      "x": 936.5,
-      "y": -1644,
+      "x": 886,
+      "y": -1715,
       "width": 708,
       "height": 644,
       "nodeLabel": "M2"
@@ -268,8 +268,8 @@
       "id": "node-1775064928441",
       "type": "file",
       "file": "vault://xl/areas/ideas/Trend Following with ETFs.md",
-      "x": 727,
-      "y": -2710,
+      "x": 751,
+      "y": -2725,
       "width": 999,
       "height": 869,
       "nodeLabel": "M3"
@@ -287,29 +287,19 @@
     {
       "id": "node-1775120602797",
       "type": "text",
-      "text": "- 123\r\n- 456\r\n\r\n\r\ndddd\r\n\r\ndddd\r\n\r\n/home/quant0/devs/skena/test/test1.md",
-      "x": 1127,
-      "y": -709.5,
-      "width": 440,
-      "height": 399,
+      "text": "- 123\r\n- 456\r\n\r\nABC\r\nDEF\r\n\r\n.../test/test1.md",
+      "x": 1192,
+      "y": -617,
+      "width": 457,
+      "height": 141,
       "nodeLabel": "N6"
-    },
-    {
-      "id": "node-1775127049000",
-      "type": "text",
-      "text": "- 123\r\n- 456\r\n\r\n\r\ndddd\r\n\r\ndddd\r\n\r\ndata = read.read(\"BTCUSDT\", \"ohlc(1h)\", \"-10d\", \"now\").to_pd()\r\n",
-      "x": 1826,
-      "y": -397.5,
-      "width": 400,
-      "height": 300,
-      "nodeLabel": "N11"
     },
     {
       "id": "node-1775128887431",
       "type": "text",
-      "text": "# TEst1",
-      "x": 1900,
-      "y": -932,
+      "text": "# Test topic **ABC**\r\n\r\n1. Some idea",
+      "x": 1894,
+      "y": -944,
       "width": 400,
       "height": 300,
       "nodeLabel": "N12"
@@ -318,8 +308,8 @@
       "id": "node-1775129137831",
       "type": "file",
       "file": "vault://kb/Developing and Backtesting DEX-CEX Arbitrage Trading Strategies.md",
-      "x": 1238,
-      "y": 109,
+      "x": 1252,
+      "y": 94,
       "width": 400,
       "height": 706,
       "nodeLabel": "M6"
@@ -328,11 +318,21 @@
       "id": "node-1775136103090-0",
       "type": "file",
       "file": "M15-price-features.u10.yaml",
-      "x": -167,
-      "y": -2400,
-      "width": 467,
-      "height": 369,
+      "x": -453,
+      "y": -2929,
+      "width": 593,
+      "height": 444,
       "nodeLabel": "Y2"
+    },
+    {
+      "id": "node-1777645358649",
+      "type": "link",
+      "url": "https://github.com/dmarienko/skena",
+      "x": -1747,
+      "y": -1999,
+      "width": 320,
+      "height": 80,
+      "nodeLabel": "L3"
     }
   ],
   "edges": [
@@ -517,14 +517,6 @@
       "toEnd": "arrow"
     },
     {
-      "id": "edge-1775127049001",
-      "fromNode": "node-1775120602797",
-      "fromSide": "right",
-      "toNode": "node-1775127049000",
-      "toSide": "left",
-      "toEnd": "arrow"
-    },
-    {
       "id": "node-1775064928441-node-1775065209583-1775128564258",
       "fromNode": "node-1775064928441",
       "fromSide": "right",
@@ -547,11 +539,27 @@
       "toNode": "node-1775129137831",
       "toSide": "left",
       "toEnd": "arrow"
+    },
+    {
+      "id": "ai-1775056080671-780de0-node-1775047926214-1777644675892",
+      "fromNode": "ai-1775056080671-780de0",
+      "fromSide": "bottom",
+      "toNode": "node-1775047926214",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "node-1777645358649-node-1774042036432-0-1777645394000",
+      "fromNode": "node-1777645358649",
+      "fromSide": "right",
+      "toNode": "node-1774042036432-0",
+      "toSide": "left",
+      "toEnd": "arrow"
     }
   ],
   "viewport": {
-    "x": 336.98338910298554,
-    "y": 2317.5078681644886,
-    "zoom": 0.9200986299438829
+    "x": 121.65461047498843,
+    "y": 810.3266525885351,
+    "zoom": 0.8955186103843523
   }
 }

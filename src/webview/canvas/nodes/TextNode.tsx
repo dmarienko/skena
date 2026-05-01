@@ -28,7 +28,7 @@
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
-import Editor, { OnMount } from '@monaco-editor/react';
+import Editor, { OnMount, BeforeMount } from '@monaco-editor/react';
 import type { editor as MonacoEditor } from 'monaco-editor';
 import { initVimMode, VimMode } from 'monaco-vim';
 import { TextNode } from '../../../shared/types';
@@ -137,6 +137,44 @@ const sysReg: VimRegisterLike = {
 };
 
 /**
+ * Patch monaco-vim's broken newlineAndIndent command.
+ *
+ * Root cause: CMAdapter.commands.newlineAndIndent calls
+ *   editor.trigger("vim", "editor.action.insertLineAfter")
+ * which is queued/deferred by Monaco and doesn't fire reliably when invoked
+ * from inside a vim key-handler callback (the action runs after insertMode is
+ * already set, producing no visible effect — just 'A' without the newline).
+ *
+ * Fix: replace with a synchronous executeEdits('\n') at the current cursor.
+ * The cursor is already at EOL when newlineAndIndent is called (set by
+ * newLineAndEnterInsertMode before it invokes this function), so inserting
+ * '\n' there is exactly right for both 'o' (after: true) and 'O' (after: false).
+ *
+ * VimMode IS the CMAdapter class (default export from cm/keymap_vim which
+ * re-exports cm_adapter), so VimMode.commands is the static commands table.
+ * Patching it once here is global and persists across editor mounts.
+ */
+function patchVimNewlineAndIndent(): void {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const CM = VimMode as any;
+  if (!CM?.commands) return;
+
+  CM.commands.newlineAndIndent = function(cm: any) {
+    const editor = cm.editor as MonacoEditor.IStandaloneCodeEditor;
+    const pos = editor.getPosition();
+    if (!pos) return;
+    // - insert a literal newline at the current (EOL) cursor position
+    editor.executeEdits('vim-o', [{
+      range: {
+        startLineNumber: pos.lineNumber, startColumn: pos.column,
+        endLineNumber:   pos.lineNumber, endColumn:   pos.column,
+      },
+      text: '\n',
+    }]);
+  };
+}
+
+/**
  * Wire the clipboard relay register into the vim RegisterController.
  * MUST be called after initVimMode() — the Vim singleton is not available until then.
  * Safe to call on every editor mount (handles re-registration and re-replacement).
@@ -227,6 +265,37 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
 
   // ─── Monaco setup ─────────────────────────────────────────────────────────
 
+  // - define a VS Code-synced theme before the editor is created.
+  // - Reads --vscode-editor-background so the Monaco panel matches the webview
+  // - background exactly, and adds explicit markdown token colours (Monaco's
+  // - built-in vs-dark/vs have no dedicated markdown rules).
+  const beforeMount = useCallback<BeforeMount>((monacoInstance) => {
+    const style = getComputedStyle(document.body);
+    const bg    = style.getPropertyValue('--vscode-editor-background').trim();
+    const dark  = isDark;
+
+    monacoInstance.editor.defineTheme('skena-editor', {
+      base:    dark ? 'vs-dark' : 'vs',
+      inherit: true,
+      rules: [
+        // - token names come from Monaco's built-in Monarch markdown tokenizer
+        { token: 'keyword',         foreground: dark ? '569cd6' : '0070c1',                     },  // headings + list markers
+        { token: 'strong',          foreground: dark ? 'dcdcaa' : '795e26', fontStyle: 'bold'   },  // **bold**
+        { token: 'emphasis',        foreground: dark ? 'ce9178' : 'a31515', fontStyle: 'italic' },  // *italic*
+        { token: 'string.link',     foreground: dark ? '4ec9b0' : '267f99'                      },  // [links](url)
+        { token: 'comment',         foreground: dark ? '6a9955' : '008000', fontStyle: 'italic' },  // > blockquotes
+        { token: 'string',          foreground: dark ? 'ce9178' : 'a31515'                      },  // ``` fences
+        { token: 'variable.source', foreground: dark ? 'd7ba7d' : '795e26'                      },  // code block content
+      ],
+      colors: {
+        'editor.background': bg || (dark ? '#1e1e1e' : '#ffffff'),
+        // - kill the line-highlight rectangle visible on single-line edits
+        'editor.lineHighlightBackground':  '#00000000',
+        'editor.lineHighlightBorderColor': '#00000000',
+      },
+    });
+  }, [isDark]);
+
   const onEditorMount: OnMount = useCallback((editorInstance, monacoInstance) => {
     editorRef.current = editorInstance;
     editorInstance.focus();
@@ -242,6 +311,7 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
     // - wire clipboard relay into RegisterController; MUST be after initVimMode()
     // - which initialises the Vim singleton and (re)creates the RegisterController.
     applyVimClipboard();
+    patchVimNewlineAndIndent();
 
     // ─── vim mode tracking via MutationObserver ──────────────────────────────
     //
@@ -393,7 +463,8 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
               height="100%"
               defaultLanguage="markdown"
               value={draft}
-              theme={isDark ? 'vs-dark' : 'vs'}
+              theme="skena-editor"
+              beforeMount={beforeMount}
               onMount={onEditorMount}
               onChange={value => setDraft(value ?? '')}
               options={{

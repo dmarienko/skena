@@ -5,7 +5,7 @@
       "type": "text",
       "text": "# 2.3 Convergence Properties\r\n\r\naddition is random var: $Y = \\pm  1/\\sqrt{n}$\r\n\r\nit's expectation: $E[Y] = 1/2 \\frac{1}{\\sqrt{n}} - 1/2 \\frac{1}{\\sqrt{n}}$ = 0\r\n\r\nvariation: $Var(Y) = E[(Y - E[Y])^2] = E[Y^2]$ \r\n\r\n$E[Y^2] = 1/n$ as prob. that we see Y^2 is always 1\r\n\r\nNow for this \r\n$$\r\n\r\nW_n\\left(\\frac{i}{n}\\right) = W_n\\left(\\frac{i-1}{n}\\right) + \\frac{X_i}{\\sqrt{n}}, \\quad \\text{for all } i \\geq 1\r\n\\tag{sc01.f.1.1}\r\n\r\n$$\r\n\r\n",
       "x": 1789,
-      "y": 741,
+      "y": 737,
       "width": 517,
       "height": 231,
       "nodeLabel": "N1"
@@ -14,8 +14,8 @@
       "id": "node-1774967027103",
       "type": "text",
       "text": "# What's $E[W_n(1)]$  (here 1 means i=n) ?\r\n\r\n$$\r\nE[W_n(1)] = E[W_n((n-1)/n)] + 0 = E[W_n((n-2)/n) + 0] + 0 = ... = E[W_n(1/n)] = E[X_1/\\sqrt{n}] = E[Y] = 0\r\n$$ \r\n",
-      "x": 2428,
-      "y": 681,
+      "x": 2441,
+      "y": 631,
       "width": 660,
       "height": 93,
       "nodeLabel": "N2"
@@ -24,8 +24,8 @@
       "id": "node-1774967125889",
       "type": "text",
       "text": "# 2. What's $Var[W_n(1)]$ ?\r\n\r\n$$\r\nVar[W_n(1)] = Var(W_n(\\frac{n-1}{n}) + Y) = Var(W_n(\\frac{n-1}{n})) + 2 Cov(W_n(\\frac{n-1}{n}), Y) + Var(Y) = Var(W_n(\\frac{n-1}{n})) + 1/n = ... = 1/n + 1/n + ... = n \\cdot 1/n = 1 \r\n\r\n$$",
-      "x": 2428,
-      "y": 810,
+      "x": 2436,
+      "y": 801,
       "width": 948,
       "height": 98,
       "nodeLabel": "N3"
@@ -34,8 +34,8 @@
       "id": "node-1774967393753",
       "type": "text",
       "text": "# Let's prove (sc01.f.1.2)\r\n\r\n$$ \r\nW_n(i/n) = W_n(\\frac{i-1}{n}) + \\frac{X_i}{\\sqrt{n}} = \\frac{1}{\\sqrt{n}}\\sum_{k=1}^{i}X_k\r\n$$\r\n\r\nWhen we introduce some t not equal to 1: $t = i/n$ -> $i = nt$\r\n\r\nSo $$\r\nW_n(t) = \\frac{1}{\\sqrt{n}}\\sum_{k=1}^{nt}X_k = \\frac{\\sqrt{t}}{\\sqrt{nt}}\\sum_{k=1}^{nt}X_k = \\sqrt{t}(\\sum_{k=1}^{nt}\\frac{X_k}{\\sqrt{nt}})$$ \r\n\r\nand\r\n\r\n$$W_n(t) \\stackrel{d}{=} \\sqrt{t}\\cdot W_n(1)$$\r\n\r\nAs we know when $n \\rightarrow \\infty$ $W(1) \\sim N(0,1)$ \r\n\r\nso $$W_n(t)$$ is normally distributed for $X \\cdot \\sqrt{t}$ and it's variation is $t$ so $W_n(t) \\sim N(0, t)$\r\n",
-      "x": 2428,
-      "y": 932,
+      "x": 2433,
+      "y": 956,
       "width": 753,
       "height": 240,
       "nodeLabel": "N4"
@@ -64,8 +64,8 @@
       "id": "node-1774967992411",
       "type": "text",
       "text": "---\r\n# 2.5 Remarkable Properties of Brownian Motion\r\n---\r\n",
-      "x": 841,
-      "y": 2388,
+      "x": 846,
+      "y": 2393,
       "width": 468,
       "height": 80,
       "nodeLabel": "N7"
@@ -124,7 +124,7 @@
       "id": "node-1774969209790",
       "type": "text",
       "text": "# Property 2.4: Self-Similarity (looks the same at all scales)\r\n\r\nBrownian motion looks statistically identical at all scales. Zooming in on any section reveals the same \"jaggedness\" - it never smooths out.\r\n\r\n\r\n \r\n",
-      "x": 1535,
+      "x": 1526,
       "y": 2834,
       "width": 833,
       "height": 112,
@@ -134,10 +134,10 @@
       "id": "node-1774971824430-0",
       "type": "file",
       "file": "Options/SC01_Continuous_Processes_Brownian_Motion.md",
-      "x": -581,
-      "y": 847,
-      "width": 815,
-      "height": 958,
+      "x": -639,
+      "y": 893,
+      "width": 932,
+      "height": 1382,
       "nodeLabel": "M2"
     },
     {
@@ -145,7 +145,7 @@
       "type": "text",
       "text": "# 3. Brownian Motion as a Stock Price Model\n\n### 3.1 Pure BM is Inadequate\n1. Mean zero: $\\mathbb{E}[W_t]=0$, but stocks grow over time\n2. Can go negative: $\\mathbb{P}(W_t < 0) > 0$ for all $t > 0$\n3. Constant absolute volatility ≠ real stocks\n\n### 3.2 BM with Drift\n\n$$ S_t = \\sigma W_t + \\mu t  $$\n\n$\\mathbb{E}[S_t] = \\mu t$, $\\text{Var}(S_t) = \\sigma^2 t$ — but still can go negative!\n\n### 3.3 Geometric (Exponential) Brownian Motion\n$$X_t = \\exp(\\sigma W_t + \\mu t) $$\n- **Always positive** ($\\exp > 0$)\n- Multiplicative log-normal returns\n- Proportional volatility: $dX_t/X_t$ has constant $\\sigma$\n- $\\sigma$ = log-volatility, $\\mu$ = log-drift",
       "x": 854,
-      "y": 3101,
+      "y": 3100,
       "width": 734,
       "height": 359,
       "nodeLabel": "N17"
@@ -154,8 +154,8 @@
       "id": "f1a2b3c4d5e60005",
       "type": "text",
       "text": "# 4. Introduction to Stochastic Calculus\n\n### 4.1 Why a New Calculus?\nBM is nowhere differentiable — zooming in reveals the same jaggedness (self-similar). We need calculus built from infinitesimal **Brownian increments** $dW_t$, not just $dt$.\n\n### 4.2 Stochastic Differentials\n$$dX_t = \\sigma_t \\, dW_t + \\mu_t \\, dt $$\nBoth $\\sigma_t$, $\\mu_t$ must be **adapted** to $\\mathcal{F}_t$ (no future information).\n\n### 4.3 Uniqueness\nSame $\\sigma_t$, $\\mu_t$, $X_0$ → identical processes. Coefficients are unique by **Doob-Meyer decomposition**.\n\n### 4.4 Stochastic Differential Equations\n$$dX_t = \\sigma(X_t, t) \\, dW_t + \\mu(X_t, t) \\, dt $$\nMay have no solution, multiple, or unique — harder than ODEs.",
-      "x": 854,
-      "y": 3637,
+      "x": 858,
+      "y": 3633,
       "width": 742,
       "height": 280,
       "nodeLabel": "N18"
@@ -164,7 +164,7 @@
       "id": "f1a2b3c4d5e60006",
       "type": "text",
       "text": "# 5. Itô's Formula: The Fundamental Theorem\n\n### 5.1–5.3 Why Chain Rule Fails\nIf chain rule worked: $W_t^2 = 2\\int_0^t W_s \\, dW_s$ → $\\mathbb{E}[W_t^2]=0$. But $\\mathbb{E}[W_t^2]=t \\neq 0$. ✗\n\n**Key result:** $(dW_t)^2 = dt$ (NOT zero!)\n$$\\int_0^t (dW_s)^2 = t \\quad \\text{(by WLLN)} $$\n\n### 5.4 Itô's Formula\nFor $dX_t = \\sigma_t dW_t + \\mu_t dt$ and $f \\in \\mathcal{C}^2$:\n$$dY_t = f'(X_t)\\sigma_t \\, dW_t + \\left[\\mu_t f'(X_t) + \\frac{1}{2}\\sigma_t^2 f''(X_t)\\right]dt$$\n**Multiplication rules:** $(dW_t)^2=dt$, $(dW_t)(dt)=0$, $(dt)^2=0$\n\n### 5.5 Examples\n- $d(W_t^2) = 2W_t \\, dW_t + dt$ → $W_t^2 = 2\\int_0^t W_s \\, dW_s + t$ ✓\n- $d(e^{W_t}) = e^{W_t}(dW_t + \\frac{1}{2}dt)$\n- GBM: drift is $\\mu + \\frac{1}{2}\\sigma^2$, NOT $\\mu$!",
-      "x": 866,
+      "x": 844,
       "y": 4096,
       "width": 808,
       "height": 311,
@@ -184,8 +184,8 @@
       "id": "f1a2b3c4d5e60008",
       "type": "text",
       "text": "# 7. Summary and Key Takeaways\n\n| Concept | Formula |\n|---|---|\n| Random walk | $W_n(i/n) = W_n((i-1)/n) + X_i/\\sqrt{n}$ |\n| BM at time $t$ | $W_n(t) \\to N(0,t)$ |\n| BM with drift | $S_t = \\sigma W_t + \\mu t$ |\n| Geometric BM | $X_t = \\exp(\\sigma W_t + \\mu t)$ |\n| Stochastic diff | $dX_t = \\sigma_t dW_t + \\mu_t dt$ |\n| **Key rule** | $(dW_t)^2 = dt$ |\n| **Itô's formula** | $df = f'dX_t + \\frac{1}{2}\\sigma_t^2 f'' dt$ |\n| Doléans exp | $\\exp(\\sigma W_t - \\frac{1}{2}\\sigma^2 t)$ |\n| GBM solution | $x_0\\exp(\\sigma W_t + (\\mu - \\frac{1}{2}\\sigma^2)t)$ |\n\n**Next:** SC-02 Change of Measure (CMG) → Martingale Representation → Black-Scholes",
-      "x": 858,
-      "y": 4953,
+      "x": 842,
+      "y": 4956,
       "width": 742,
       "height": 355,
       "nodeLabel": "N21"
@@ -392,8 +392,8 @@
     }
   ],
   "viewport": {
-    "x": -743.1816745190029,
-    "y": 217.5936191628299,
-    "zoom": 0.909324485449017
+    "x": -60.81278384033294,
+    "y": -188.88246253776322,
+    "zoom": 0.6381610430311303
   }
 }

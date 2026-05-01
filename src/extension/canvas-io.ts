@@ -15,8 +15,13 @@ function expandHome(p: string): string {
 
 /** - read and parse a .canvas file */
 export async function readCanvas(fsPath: string): Promise<CanvasData> {
-  const raw = await fs.readFile(expandHome(fsPath), 'utf-8');
-  const parsed = JSON.parse(raw) as Partial<CanvasData>;
+  const raw     = await fs.readFile(expandHome(fsPath), 'utf-8');
+  const trimmed = raw.trim();
+  // - empty file (e.g. newly created by VS Code "New File") → treat as blank canvas
+  if (!trimmed) {
+    return { nodes: [], edges: [] };
+  }
+  const parsed = JSON.parse(trimmed) as Partial<CanvasData>;
   return {
     nodes:    parsed.nodes    ?? [],
     edges:    parsed.edges    ?? [],
