@@ -167,11 +167,11 @@
     {
       "id": "node-1775048783906",
       "type": "text",
-      "text": "# Main results\r\n\r\n 1. Test was failed for this set of parameters\r\n 2. ddd",
-      "x": 475,
-      "y": 324,
-      "width": 630,
-      "height": 228,
+      "text": "# Main results\r\n\r\n 1. Test was failed for this set of parameters\r\n 2. developer's test 2",
+      "x": 517.5,
+      "y": 388,
+      "width": 573,
+      "height": 128,
       "nodeLabel": "N7"
     },
     {
@@ -558,8 +558,8 @@
     }
   ],
   "viewport": {
-    "x": 121.65461047498843,
-    "y": 810.3266525885351,
+    "x": -28.288126521912204,
+    "y": -226.8768684493557,
     "zoom": 0.8955186103843523
   }
 }

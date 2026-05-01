@@ -3,7 +3,7 @@
   "displayName": "Skena",
   "description": "Visual research canvas for VS Code \u2014 renders JSON Canvas files as interactive node graphs with rich content previews, connected to a markdown knowledge vault.",
   "version": "0.1.0",
-  "publisher": "dmarienko",
+  "publisher": "DmitryMarienko",
   "license": "MIT",
   "repository": {
     "type": "git",
