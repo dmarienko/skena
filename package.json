@@ -12,7 +12,14 @@
   "engines": {
     "vscode": "^1.85.0"
   },
+  "icon": "icons/icon.png",
+  "galleryBanner": {
+    "color": "#0D1117",
+    "theme": "dark"
+  },
   "categories": [
+    "Visualization",
+    "Notebooks",
     "Other"
   ],
   "keywords": [
@@ -20,7 +27,12 @@
     "knowledge",
     "obsidian",
     "research",
-    "markdown"
+    "markdown",
+    "graph",
+    "notes",
+    "vim",
+    "notebook",
+    "json canvas"
   ],
   "extensionKind": [
     "workspace"
