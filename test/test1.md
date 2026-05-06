@@ -11,7 +11,7 @@ $\frac{1}{\alpha}$
 
 $\frac{1}{\alpha}$
 
-[some-external-link](http://xlydian.com)
+[some-external-link](http://xyz.com)
 
 
 ```python
