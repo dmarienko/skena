@@ -35,6 +35,7 @@ import { ContextMenu } from './ContextMenu';
 import { CANVAS_COLORS } from '../../shared/constants';
 import { ensureLabels, assignLabel } from './nodeLabels';
 import { ZoomLevelProvider } from '../context/ZoomLevelContext';
+import { HeatmapProvider } from '../context/HeatmapContext';
 
 import { FileNodeComponent }  from './nodes/FileNode';
 import { TextNodeComponent }  from './nodes/TextNode';
@@ -298,6 +299,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const lastCPressRef = useRef<number>(0);
   const lastYPressRef = useRef<number>(0);
   const lastDPressRef = useRef<number>(0);
+  const [heatmapVisible, setHeatmapVisible] = useState(true);
+  const lastGPressRef = useRef<number>(0);
+  const toggleHeatmap = useCallback(() => setHeatmapVisible(v => !v), []);
 
   // - intercept onNodesChange to compute alignment guides + manual grid snap
   // - (snapToGrid is removed from <ReactFlow> so both can coexist cleanly)
@@ -661,8 +665,11 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       // - and with existing canvas nodes (same logic as addNodeResult path)
       const labelled: CanvasNode[] = [];
       incoming.forEach(cn => {
-        const existing = [...canvasRef.current.nodes, ...labelled];
-        labelled.push(assignLabel(cn, existing));
+        const existing  = [...canvasRef.current.nodes, ...labelled];
+        const labeled   = assignLabel(cn, existing);
+        const nextIdx   = (canvasRef.current.creationCounter ?? 0) + 1;
+        canvasRef.current = { ...canvasRef.current, creationCounter: nextIdx };
+        labelled.push({ ...labeled, creationIndex: nextIdx });
       });
       pushHistory();
       labelled.forEach(cn => {
@@ -1164,6 +1171,23 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         return;
       }
 
+      // - g key: start a two-key sequence (used for gh = toggle heatmap)
+      if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'g') {
+        lastGPressRef.current = Date.now();
+        return;
+      }
+
+      // - gh (g then h within 400 ms): toggle activity heatmap
+      if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'h') {
+        if (Date.now() - lastGPressRef.current < 400) {
+          lastGPressRef.current = 0;
+          e.preventDefault();
+          toggleHeatmap();
+          return;
+        }
+        // - fall through to normal h (navigate left)
+      }
+
       // - yy (double-tap y within 400 ms): copy selected nodes to canvas clipboard
       if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'y') {
         const now = Date.now();
@@ -1450,16 +1474,21 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       // - assign a reference label (N1, M3 …) if the node doesn't have one yet
       const cn = assignLabel(rawNode, canvasRef.current.nodes);
 
+      // - stamp creation index and increment canvas-level counter
+      const nextIdx = (canvasRef.current.creationCounter ?? 0) + 1;
+      canvasRef.current = { ...canvasRef.current, creationCounter: nextIdx };
+      const cnWithIdx: CanvasNode = { ...cn, creationIndex: nextIdx };
+
       // - deselect everything, then add the new node as selected
       setNodes(nds => [
         ...nds.map(n => ({ ...n, selected: false })),
-        { ...toFlowNode(cn), selected: true },
+        { ...toFlowNode(cnWithIdx), selected: true },
       ]);
 
       // - persist node to canvas JSON
       canvasRef.current = {
         ...canvasRef.current,
-        nodes: [...canvasRef.current.nodes, cn],
+        nodes: [...canvasRef.current.nodes, cnWithIdx],
       };
 
       // - add connecting edge if present (Shift+hjkl case)
@@ -1474,15 +1503,15 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       scheduleSave();
 
       // - focus DOM + pan viewport to the new node
-      focusNodeById(cn.id);
+      focusNodeById(cnWithIdx.id);
       const { zoom } = rfRef.current.getViewport();
-      rfRef.current.setCenter(cn.x + cn.width / 2, cn.y + cn.height / 2, { duration: 250, zoom });
+      rfRef.current.setCenter(cnWithIdx.x + cnWithIdx.width / 2, cnWithIdx.y + cnWithIdx.height / 2, { duration: 250, zoom });
 
       // - for new text notes: open Monaco immediately so the user can start typing
       if (autoEdit) {
         // - short delay to let the TextNodeComponent mount and attach its listener
         setTimeout(() => {
-          window.dispatchEvent(new CustomEvent('skena:enterEdit', { detail: { id: cn.id } }));
+          window.dispatchEvent(new CustomEvent('skena:enterEdit', { detail: { id: cnWithIdx.id } }));
         }, 80);
       }
     };
@@ -1515,11 +1544,14 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       y = Math.round(cy - H / 2);
     }
 
-    const id      = `cell-${Date.now()}`;
-    const newNode = assignLabel(
+    const id        = `cell-${Date.now()}`;
+    const labeled   = assignLabel(
       { id, type: 'cell', x, y, width: W, height: H, content, format } as CanvasNode,
       canvasRef.current.nodes,
     );
+    const nextIdx   = (canvasRef.current.creationCounter ?? 0) + 1;
+    canvasRef.current = { ...canvasRef.current, creationCounter: nextIdx };
+    const newNode: CanvasNode = { ...labeled, creationIndex: nextIdx };
 
     // - create connecting edge from the source notebook node if available
     const newEdges: CanvasEdge[] = [];
@@ -1633,6 +1665,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   }, [canvasPath, focusNodeById, pickViewportNode]);
 
   return (
+    <HeatmapProvider nodes={nodes} edges={edges} visible={heatmapVisible} toggle={toggleHeatmap}>
     <ZoomLevelProvider>
     <div ref={wrapperRef} style={{ width: '100%', height: '100%' }} onContextMenu={handleContextMenu}>
       <ReactFlow
@@ -1717,6 +1750,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       )}
     </div>
     </ZoomLevelProvider>
+    </HeatmapProvider>
   );
 }
 
