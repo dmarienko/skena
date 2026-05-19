@@ -53,7 +53,10 @@ interface HeatmapProviderProps {
 
 /** - must be rendered inside CanvasViewInner where nodes/edges state is available */
 export function HeatmapProvider({ nodes, edges, visible, toggle, children }: HeatmapProviderProps): JSX.Element {
-  const { nodeGlow, edgeGlow } = useActivityHeatmap(nodes, edges);
+  const { nodeGlow, edgeGlow } = useActivityHeatmap(
+    visible ? nodes : [],
+    visible ? edges : [],
+  );
 
   return (
     <HeatmapContext.Provider value={{ visible, toggle, nodeGlow, edgeGlow }}>
