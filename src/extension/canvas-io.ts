@@ -23,9 +23,10 @@ export async function readCanvas(fsPath: string): Promise<CanvasData> {
   }
   const parsed = JSON.parse(trimmed) as Partial<CanvasData>;
   return {
-    nodes:    parsed.nodes    ?? [],
-    edges:    parsed.edges    ?? [],
-    viewport: parsed.viewport,
+    nodes:           parsed.nodes           ?? [],
+    edges:           parsed.edges           ?? [],
+    viewport:        parsed.viewport,
+    creationCounter: parsed.creationCounter,
   };
 }
 
