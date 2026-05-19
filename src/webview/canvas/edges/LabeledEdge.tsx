@@ -20,6 +20,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { EdgeProps, BaseEdge, EdgeLabelRenderer, getSmoothStepPath, Position, useStore } from '@xyflow/react';
+import { useHeatmap } from '../../context/HeatmapContext';
 
 // ─── backward-path builder ────────────────────────────────────────────────────
 
@@ -210,6 +211,19 @@ export function LabeledEdgeComponent({
       }
     : style;
 
+  const { visible: hmVisible, edgeGlow } = useHeatmap();
+  const hmEdge = hmVisible ? edgeGlow.get(id) : undefined;
+
+  // - when heatmap active, override stroke color and add glow filter
+  const finalStyle: React.CSSProperties = hmEdge
+    ? {
+        ...activeStyle,
+        stroke:      hmEdge.stroke,
+        filter:      hmEdge.glowFilter,
+        strokeWidth: Number(activeStyle?.strokeWidth ?? 1.5),
+      }
+    : (activeStyle ?? {});
+
   // - match label border to the edge stroke color so it reads as part of the connection
   const edgeColor = (style?.stroke as string | undefined) ?? '#888888';
 
@@ -231,7 +245,7 @@ export function LabeledEdgeComponent({
 
   return (
     <>
-      <BaseEdge id={id} path={edgePath} style={activeStyle} markerEnd={markerEnd} />
+      <BaseEdge id={id} path={edgePath} style={finalStyle} markerEnd={markerEnd} />
       <EdgeLabelRenderer>
         {editing ? (
           <input
