@@ -224,8 +224,11 @@ export function LabeledEdgeComponent({
       }
     : (activeStyle ?? {});
 
+  // - note: when heatmap is active, its glow filter replaces the selection drop-shadow
+
   // - match label border to the edge stroke color so it reads as part of the connection
-  const edgeColor = (style?.stroke as string | undefined) ?? '#888888';
+  // - use finalStyle.stroke to track heatmap color changes when active
+  const edgeColor = (finalStyle?.stroke ?? style?.stroke ?? '#888888') as string;
 
   const labelStyle: React.CSSProperties = {
     position:     'absolute',
