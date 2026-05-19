@@ -33,6 +33,7 @@ import { MarkdownRenderer } from '../../renderers/MarkdownRenderer';
 import { NotebookRenderer } from '../../renderers/NotebookRenderer';
 import { CodeRenderer } from '../../renderers/CodeRenderer';
 import { ImageRenderer } from '../../renderers/ImageRenderer';
+import { useHeatmap } from '../../context/HeatmapContext';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -150,6 +151,8 @@ function ZoomGate({ id, status, content, fileType, resourceUri, error, truncated
 
 function FileNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as FileNode & { accentColor?: string };
+  const { visible: hmVisible, nodeGlow } = useHeatmap();
+  const hmNode = hmVisible ? nodeGlow.get(data.id as string) : undefined;
   const { status, content, fileType, resourceUri, error, truncated, totalSize, html } = useFileContent(node.file);
 
   const openInEditor = useCallback(() => {
@@ -170,7 +173,20 @@ function FileNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     <NodeLabelBadge label={node.nodeLabel} createdBy={(node as any).createdBy} />
     <div
       className="skena-node skena-node--file"
-      style={{ border: `1.5px solid ${borderColor}`, height: '100%', display: 'flex', flexDirection: 'column', borderRadius: 6, overflow: 'hidden' }}
+      style={{
+        border:        `1.5px solid ${borderColor}`,
+        height:        '100%',
+        display:       'flex',
+        flexDirection: 'column',
+        borderRadius:  6,
+        overflow:      'hidden',
+        // - heatmap glow overrides: filter (drop-shadow), borderColor, opacity
+        ...(hmNode ? {
+          filter:      hmNode.glowFilter,
+          borderColor: hmNode.borderColor,
+          opacity:     hmNode.opacity,
+        } : {}),
+      }}
       onClick={onCmdClick}
     >
       <NodeResizer

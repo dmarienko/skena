@@ -10,15 +10,35 @@ import { CellNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { MarkdownRenderer } from '../../renderers/MarkdownRenderer';
 import { ScrollableContent } from '../../components/ScrollableContent';
+import { useHeatmap } from '../../context/HeatmapContext';
 
 export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as CellNode & { accentColor?: string };
+  const { visible: hmVisible, nodeGlow } = useHeatmap();
+  const hmNode = hmVisible ? nodeGlow.get(data.id as string) : undefined;
   const borderColor = node.accentColor ?? '#454545';
 
   return (
     <>
     <NodeLabelBadge label={node.nodeLabel} createdBy={(node as any).createdBy} />
-    <div className="skena-node" style={{ border: `1.5px solid ${borderColor}`, height: '100%', borderRadius: 6, overflow: 'hidden', background: 'var(--vscode-editorWidget-background)', display: 'flex', flexDirection: 'column' }}>
+    <div
+      className="skena-node"
+      style={{
+        border:        `1.5px solid ${borderColor}`,
+        height:        '100%',
+        borderRadius:  6,
+        overflow:      'hidden',
+        background:    'var(--vscode-editorWidget-background)',
+        display:       'flex',
+        flexDirection: 'column',
+        // - heatmap glow overrides: filter (drop-shadow), borderColor, opacity
+        ...(hmNode ? {
+          filter:      hmNode.glowFilter,
+          borderColor: hmNode.borderColor,
+          opacity:     hmNode.opacity,
+        } : {}),
+      }}
+    >
       <NodeResizer
         minWidth={100} minHeight={60}
         isVisible={selected}

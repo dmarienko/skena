@@ -7,6 +7,7 @@ import React from 'react';
 import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import { PortalNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
+import { useHeatmap } from '../../context/HeatmapContext';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -20,6 +21,8 @@ function canvasBasename(p: string): string {
 
 export function PortalNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as PortalNode & { accentColor?: string };
+  const { visible: hmVisible, nodeGlow } = useHeatmap();
+  const hmNode = hmVisible ? nodeGlow.get(data.id as string) : undefined;
   const borderColor = node.accentColor ?? '#53dfdd';
 
   const open = () => vscodePostMessage({ type: 'openFile', uri: node.canvas });
@@ -40,6 +43,12 @@ export function PortalNodeComponent({ data, id, selected }: NodeProps): JSX.Elem
         cursor:         'pointer',
         gap:            4,
         padding:        '12%',             // - keep text clear of the curved edges
+        // - heatmap glow overrides: filter (drop-shadow), borderColor, opacity
+        ...(hmNode ? {
+          filter:      hmNode.glowFilter,
+          borderColor: hmNode.borderColor,
+          opacity:     hmNode.opacity,
+        } : {}),
       }}
       onClick={open}
     >

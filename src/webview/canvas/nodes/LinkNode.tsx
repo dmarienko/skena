@@ -7,6 +7,7 @@ import React from 'react';
 import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import { LinkNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
+import { useHeatmap } from '../../context/HeatmapContext';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -27,6 +28,8 @@ function getHostname(url: string): string {
 
 export function LinkNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as LinkNode & { accentColor?: string };
+  const { visible: hmVisible, nodeGlow } = useHeatmap();
+  const hmNode = hmVisible ? nodeGlow.get(data.id as string) : undefined;
   const borderColor = node.accentColor ?? '#454545';
   const favicon = getFaviconUrl(node.url);
 
@@ -36,7 +39,25 @@ export function LinkNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
     <>
     <NodeLabelBadge label={node.nodeLabel} createdBy={(node as any).createdBy} />
     <div
-      className="skena-node" style={{ border: `1.5px solid ${borderColor}`, height: '100%', borderRadius: 6, overflow: 'hidden', background: 'var(--vscode-editorWidget-background)', padding: '8px 10px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 6 }}
+      className="skena-node"
+      style={{
+        border:        `1.5px solid ${borderColor}`,
+        height:        '100%',
+        borderRadius:  6,
+        overflow:      'hidden',
+        background:    'var(--vscode-editorWidget-background)',
+        padding:       '8px 10px',
+        cursor:        'pointer',
+        display:       'flex',
+        flexDirection: 'column',
+        gap:           6,
+        // - heatmap glow overrides: filter (drop-shadow), borderColor, opacity
+        ...(hmNode ? {
+          filter:      hmNode.glowFilter,
+          borderColor: hmNode.borderColor,
+          opacity:     hmNode.opacity,
+        } : {}),
+      }}
       onClick={open}
     >
       <NodeResizer

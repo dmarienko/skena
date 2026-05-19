@@ -6,15 +6,35 @@ import React from 'react';
 import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import { ChatNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
+import { useHeatmap } from '../../context/HeatmapContext';
 
 export function ChatNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as ChatNode & { accentColor?: string };
+  const { visible: hmVisible, nodeGlow } = useHeatmap();
+  const hmNode = hmVisible ? nodeGlow.get(data.id as string) : undefined;
   const borderColor = node.accentColor ?? '#a882ff';
 
   return (
     <>
     <NodeLabelBadge label={node.nodeLabel} createdBy={(node as any).createdBy} />
-    <div className="skena-node" style={{ border: `1.5px solid ${borderColor}`, height: '100%', borderRadius: 6, overflow: 'hidden', background: 'var(--vscode-editorWidget-background)', display: 'flex', flexDirection: 'column' }}>
+    <div
+      className="skena-node"
+      style={{
+        border:        `1.5px solid ${borderColor}`,
+        height:        '100%',
+        borderRadius:  6,
+        overflow:      'hidden',
+        background:    'var(--vscode-editorWidget-background)',
+        display:       'flex',
+        flexDirection: 'column',
+        // - heatmap glow overrides: filter (drop-shadow), borderColor, opacity
+        ...(hmNode ? {
+          filter:      hmNode.glowFilter,
+          borderColor: hmNode.borderColor,
+          opacity:     hmNode.opacity,
+        } : {}),
+      }}
+    >
       <NodeResizer
         minWidth={160} minHeight={100}
         isVisible={selected}
