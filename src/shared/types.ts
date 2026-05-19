@@ -41,6 +41,12 @@ export interface CanvasNodeBase {
    * Ignored by Obsidian.
    */
   lastTouched?: number;
+  /**
+   * Monotonically increasing integer assigned once at node creation.
+   * Higher = created later. Used by the activity heatmap for recency ranking.
+   * Ignored by Obsidian.
+   */
+  creationIndex?: number;
 }
 
 export interface FileNode extends CanvasNodeBase {
@@ -124,7 +130,37 @@ export interface CanvasData {
   edges:     CanvasEdge[];
   /** - last known viewport; persisted so the canvas reopens at the same position */
   viewport?: CanvasViewport;
+  /**
+   * Monotonically increasing counter; incremented every time a node is created.
+   * Persisted so the sequence survives canvas reopen.
+   */
+  creationCounter?: number;
 }
+
+// ─── Activity heatmap types ────────────────────────────────────────────────────
+
+/**
+ * Per-node glow data computed by useActivityHeatmap.
+ * color is an RGB triplet string e.g. "56,189,248" — use as rgba(${color},${alpha}).
+ */
+export type HeatmapNode = {
+  color:       string;
+  intensity:   number;
+  clusterId:   number | null;
+  glowFilter:  string;   // - CSS filter string, ready to apply
+  borderColor: string;   // - CSS rgba() border color
+  opacity:     number;   // - 1.0 normally, 0.45 for isolated nodes
+};
+
+/**
+ * Per-edge glow data computed by useActivityHeatmap.
+ */
+export type EdgeGlow = {
+  color:      string;
+  intensity:  number;
+  stroke:     string;    // - rgba() stroke color
+  glowFilter: string;    // - CSS filter string, ready to apply
+};
 
 // ─── Vault / file resolution ──────────────────────────────────────────────────
 
