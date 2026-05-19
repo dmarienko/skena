@@ -1,6 +1,10 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 
+// - local copy of computeHeatmapData: importing the TS source directly from .mjs
+// - requires a build step (tsx/ts-node). This copy validates the algorithm logic;
+// - if a test runner is added later, replace with a direct import.
+
 const PALETTE = [
   '56,189,248',
   '251,146,60',
@@ -129,7 +133,7 @@ test('single cluster of 2 nodes — newer node gets higher intensity', () => {
   assert.equal(gb.intensity, INTENSITY_MAX);
 });
 
-test('single-node cluster gets max intensity', () => {
+test('2-node cluster: oldest gets INTENSITY_MIN, newest gets INTENSITY_MAX', () => {
   const result = computeHeatmapData(
     [
       { id: 'x', data: { creationIndex: 3 } },
