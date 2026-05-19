@@ -23,7 +23,6 @@ export function PortalNodeComponent({ data, id, selected }: NodeProps): JSX.Elem
   const borderColor = node.accentColor ?? '#53dfdd';
 
   const open = () => vscodePostMessage({ type: 'openFile', uri: node.canvas });
-
   return (
     <>
     <NodeLabelBadge label={node.nodeLabel} createdBy={(node as any).createdBy} />

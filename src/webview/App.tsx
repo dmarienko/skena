@@ -1,24 +1,30 @@
 /**
  * App root — subscribes to host messages, bootstraps canvas state,
- * renders CanvasView once canvas data is loaded.
+ * renders CanvasView once canvas data is loaded, and mounts the
+ * floating AI companion overlay.
  *
  * Handshake flow:
  *   1. React mounts, registers message listener
  *   2. Sends { type: 'webviewReady' } to host
  *   3. Host receives ready, sends { type: 'canvasLoaded', ... }
- *   4. App switches from loading screen to CanvasView
+ *   4. App switches from loading screen to CanvasView + FloatingChat
  */
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { CanvasView } from './canvas/CanvasView';
+import { FloatingChat } from './canvas/FloatingChat';
 import { useCanvasData } from './hooks/useCanvasData';
-import { HostToWebview, MarkdownConfig } from '../shared/types';
+import { HostToWebview, MarkdownConfig, ChatMessage } from '../shared/types';
 import { MarkdownConfigContext, DEFAULT_MARKDOWN_CONFIG } from './context/MarkdownConfigContext';
 
 type VsCodeApi = { postMessage: (msg: unknown) => void };
 
 function getVsCodeApi(): VsCodeApi {
   return (window as unknown as Record<string, VsCodeApi>)['vscodeApi'];
+}
+
+function postMessage(msg: unknown) {
+  getVsCodeApi().postMessage(msg);
 }
 
 /** - inject / update <link> tags for user-configured markdown.styles CSS URLs */
@@ -45,12 +51,49 @@ function syncMarkdownStyleLinks(urls: string[]): void {
   }
 }
 
+// ─── simple event bus helpers for FloatingChat callbacks ─────────────────────
+
+type Unsubscribe = () => void;
+type Handler<T> = (arg: T) => void;
+
+function makeEventTarget<T>(): {
+  emit: (v: T) => void;
+  subscribe: (h: Handler<T>) => Unsubscribe;
+} {
+  let handler: Handler<T> | null = null;
+  return {
+    emit: (v: T) => handler?.(v),
+    subscribe: (h: Handler<T>) => {
+      handler = h;
+      return () => { if (handler === h) handler = null; };
+    },
+  };
+}
+
+// ─── App ─────────────────────────────────────────────────────────────────────
+
 export function App(): JSX.Element {
   const { canvas, canvasPath, dispatch } = useCanvasData();
-  const [ready, setReady] = useState(false);
+  const [ready,    setReady]    = useState(false);
   const [mdConfig, setMdConfig] = useState<MarkdownConfig>(DEFAULT_MARKDOWN_CONFIG);
-  // - track injected style URLs so we can clean up on config change
   const styleUrlsRef = useRef<string[]>([]);
+
+  // - active node id exposed to FloatingChat (updated by CanvasView via callback)
+  const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
+
+  // - event buses for FloatingChat incoming messages
+  const deltaEvt     = useRef(makeEventTarget<string>());
+  const doneEvt      = useRef(makeEventTarget<void>());
+  const errorEvt     = useRef(makeEventTarget<string>());
+  const nodeAddedEvt = useRef(makeEventTarget<string>());
+  const restoreEvt   = useRef(makeEventTarget<{
+    position?:  { x: number; y: number };
+    size?:      { w: number; h: number };
+    collapsed?: boolean;
+    history:    ChatMessage[];
+  }>());
+
+  // ─── host message handler ─────────────────────────────────────────────
 
   useEffect(() => {
     const handler = (event: MessageEvent<HostToWebview>) => {
@@ -61,7 +104,6 @@ export function App(): JSX.Element {
           setReady(true);
           break;
         case 'canvasChanged':
-          // - host will follow up with canvasLoaded after reload
           setReady(false);
           break;
         case 'vaultIndex':
@@ -69,7 +111,6 @@ export function App(): JSX.Element {
           break;
         case 'markdownConfig': {
           setMdConfig(msg.config);
-          // - inject / remove <link> tags for external CSS URLs
           const urls = msg.config.styles.filter(s => s.startsWith('http'));
           syncMarkdownStyleLinks(urls);
           styleUrlsRef.current = urls;
@@ -77,11 +118,9 @@ export function App(): JSX.Element {
         }
         case 'fileContent':
         case 'fileError':
-          // - forwarded to useFileContent hooks via a custom event
           window.dispatchEvent(new CustomEvent('skena:fileResponse', { detail: msg }));
           break;
         case 'fileChanged':
-          console.log('[Skena webview] fileChanged received, uri:', msg.uri);
           dispatch({ type: 'FILE_CHANGED', uri: msg.uri });
           window.dispatchEvent(new CustomEvent('skena:fileInvalidated', { detail: msg.uri }));
           break;
@@ -95,35 +134,66 @@ export function App(): JSX.Element {
           window.dispatchEvent(new CustomEvent('skena:addNodeResult', { detail: msg }));
           break;
         case 'addNodeTrigger':
-          // - VS Code command skena.addNode fired (ctrl+n override);
-          // - tell CanvasView to compute viewport centre and send addNodeRequest
           window.dispatchEvent(new CustomEvent('skena:addNodeTrigger'));
           break;
         case 'addTextNodeTrigger':
-          // - VS Code commands skena.addTextNodeDown/Up fired (ctrl+shift+j/k overrides)
           window.dispatchEvent(new CustomEvent('skena:addTextNodeTrigger', { detail: { direction: msg.direction } }));
           break;
         case 'subCanvasCreated':
           window.dispatchEvent(new CustomEvent('skena:subCanvasCreated', { detail: msg }));
           break;
         case 'clipboardContent':
-          // - response to requestClipboardRead: deliver to whichever editor is waiting
           window.dispatchEvent(new CustomEvent('skena:clipboardContent', { detail: msg.text }));
           break;
         case 'chatChunk':
         case 'agentNodeCreated':
           window.dispatchEvent(new CustomEvent('skena:chat', { detail: msg }));
           break;
+
+        // ── Floating chat events ──
+        case 'floatingChatDelta':
+          deltaEvt.current.emit(msg.delta);
+          break;
+        case 'floatingChatDone':
+          doneEvt.current.emit();
+          break;
+        case 'floatingChatError':
+          errorEvt.current.emit(msg.message);
+          break;
+        case 'floatingChatNodeAdded': {
+          // - add node to canvas state so it appears immediately
+          dispatch({ type: 'ADD_NODE', node: msg.node });
+          if (msg.edge) dispatch({ type: 'ADD_EDGE', edge: msg.edge });
+          // - notify FloatingChat so it can display a bubble
+          const noteContent = msg.node.type === 'text'
+            ? (msg.node as { text?: string }).text ?? ''
+            : `[${msg.node.type} node added]`;
+          nodeAddedEvt.current.emit(noteContent);
+          break;
+        }
+        case 'sidecarLoaded':
+          restoreEvt.current.emit({
+            position:  msg.position,
+            size:      msg.size,
+            collapsed: msg.collapsed,
+            history:   msg.history,
+          });
+          break;
       }
     };
 
     window.addEventListener('message', handler);
-
-    // - signal host that we are mounted and ready to receive canvas data
     getVsCodeApi().postMessage({ type: 'webviewReady' });
-
     return () => window.removeEventListener('message', handler);
   }, [dispatch]);
+
+  // ─── active node callback from CanvasView ──────────────────────────────
+
+  const handleActiveNodeChange = useCallback((nodeId: string | null, _label: string | null) => {
+    setActiveNodeId(nodeId);
+  }, []);
+
+  // ─── render ───────────────────────────────────────────────────────────
 
   if (!ready) {
     return (
@@ -135,7 +205,20 @@ export function App(): JSX.Element {
 
   return (
     <MarkdownConfigContext.Provider value={mdConfig}>
-      <CanvasView canvas={canvas} canvasPath={canvasPath} />
+      <CanvasView
+        canvas={canvas}
+        canvasPath={canvasPath}
+        onActiveNodeChange={handleActiveNodeChange}
+      />
+      <FloatingChat
+        activeNodeId={activeNodeId}
+        postMessage={postMessage}
+        onDelta={deltaEvt.current.subscribe}
+        onDone={doneEvt.current.subscribe}
+        onError={errorEvt.current.subscribe}
+        onNodeAdded={nodeAddedEvt.current.subscribe}
+        onRestore={restoreEvt.current.subscribe}
+      />
     </MarkdownConfigContext.Provider>
   );
 }

@@ -35,6 +35,12 @@ export interface CanvasNodeBase {
   createdBy?: 'ai';
   /** - optional user/agent tags for search and organisation */
   tags?: string[];
+  /**
+   * Unix timestamp (ms) of the last time the user focused or the AI touched this node.
+   * Used by the activity heatmap to render recency glow.
+   * Ignored by Obsidian.
+   */
+  lastTouched?: number;
 }
 
 export interface FileNode extends CanvasNodeBase {
@@ -238,6 +244,41 @@ export interface MsgAgentNodeCreated {
   newEdge: CanvasEdge;
 }
 
+// ─── Floating AI companion messages ──────────────────────────────────────────
+
+/** Host → Webview: streamed text chunk from the floating chat */
+export interface MsgFloatingChatDelta {
+  type: 'floatingChatDelta';
+  delta: string;
+}
+
+/** Host → Webview: floating chat stream complete */
+export interface MsgFloatingChatDone {
+  type: 'floatingChatDone';
+}
+
+/** Host → Webview: API error during floating chat */
+export interface MsgFloatingChatError {
+  type: 'floatingChatError';
+  message: string;
+}
+
+/** Host → Webview: AI added a node to the canvas during tool use */
+export interface MsgFloatingChatNodeAdded {
+  type: 'floatingChatNodeAdded';
+  node: CanvasNode;
+  edge?: CanvasEdge;
+}
+
+/** Host → Webview: restore floating chat state on canvas open */
+export interface MsgSidecarLoaded {
+  type: 'sidecarLoaded';
+  position?: { x: number; y: number };
+  size?: { w: number; h: number };
+  collapsed?: boolean;
+  history: ChatMessage[];
+}
+
 export interface MsgSearchResults {
   type: 'searchResults';
   requestId: RequestId;
@@ -272,7 +313,12 @@ export type HostToWebview =
   | MsgAddNodeTrigger
   | MsgAddTextNodeTrigger
   | MsgSubCanvasCreated
-  | MsgClipboardContent;
+  | MsgClipboardContent
+  | MsgFloatingChatDelta
+  | MsgFloatingChatDone
+  | MsgFloatingChatError
+  | MsgFloatingChatNodeAdded
+  | MsgSidecarLoaded;
 
 // - Webview → Host messages
 
@@ -346,6 +392,28 @@ export interface MsgCopyAbsolutePath {
   uri: string;
 }
 
+/** - Webview → Host: user sends a message in the floating chat overlay */
+export interface MsgFloatingChatSend {
+  type: 'floatingChatSend';
+  message: string;
+  /** - id of the currently keyboard-focused canvas node (for context building) */
+  activeNodeId: string | null;
+}
+
+/** - Webview → Host: persist floating chat panel state to the sidecar file */
+export interface MsgFloatingChatSaveState {
+  type: 'floatingChatSaveState';
+  position: { x: number; y: number };
+  size: { w: number; h: number };
+  collapsed: boolean;
+  history: ChatMessage[];
+}
+
+/** - Webview → Host: abort the current streaming request */
+export interface MsgFloatingChatAbort {
+  type: 'floatingChatAbort';
+}
+
 export type WebviewToHost =
   | MsgRequestFile
   | MsgSaveCanvas
@@ -359,7 +427,10 @@ export type WebviewToHost =
   | MsgMoveToSubCanvas
   | MsgRequestClipboardRead
   | MsgWriteClipboard
-  | MsgCopyAbsolutePath;
+  | MsgCopyAbsolutePath
+  | MsgFloatingChatSend
+  | MsgFloatingChatSaveState
+  | MsgFloatingChatAbort;
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────
 

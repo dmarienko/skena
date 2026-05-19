@@ -1,0 +1,25 @@
+{
+  "chat": {
+    "position": {
+      "x": 314,
+      "y": 946
+    },
+    "size": {
+      "w": 520,
+      "h": 367
+    },
+    "collapsed": false,
+    "history": [
+      {
+        "role": "user",
+        "content": "Hello!",
+        "timestamp": "2026-05-19T14:10:42.958Z"
+      },
+      {
+        "role": "user",
+        "content": "Hello !\r\n1.Another",
+        "timestamp": "2026-05-19T14:12:27.110Z"
+      }
+    ]
+  }
+}

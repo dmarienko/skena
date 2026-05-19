@@ -1,7 +1,7 @@
 {
   "name": "skena",
   "displayName": "Skena",
-  "description": "Visual research canvas for VS Code \u2014 renders JSON Canvas files as interactive node graphs with rich content previews, connected to a markdown knowledge vault.",
+  "description": "Visual research canvas for VS Code — renders JSON Canvas files as interactive node graphs with rich content previews, connected to a markdown knowledge vault.",
   "version": "0.2.0",
   "publisher": "DmitryMarienko",
   "license": "MIT",
@@ -232,6 +232,18 @@
           "description": "Notion MCP server integration for vault://notion/<page-id> URIs",
           "scope": "window"
         },
+        "skena.ai.apiKey": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Anthropic API key for the floating AI companion. Falls back to the `ANTHROPIC_API_KEY` environment variable if left empty.",
+          "scope": "window"
+        },
+        "skena.ai.model": {
+          "type": "string",
+          "default": "claude-sonnet-4-5",
+          "description": "Claude model used by the floating AI companion (e.g. claude-opus-4-5, claude-sonnet-4-5).",
+          "scope": "window"
+        },
         "skena.chat": {
           "type": "object",
           "default": {
@@ -246,7 +258,7 @@
           "default": {
             "showSourceCells": false
           },
-          "description": "Notebook rendering options. showSourceCells: show code source alongside output (default false \u2014 outputs only)",
+          "description": "Notebook rendering options. showSourceCells: show code source alongside output (default false — outputs only)",
           "scope": "window"
         },
         "skena.colors": {
@@ -285,6 +297,7 @@
     "typescript": "^5.3.0"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.97.0",
     "@monaco-editor/react": "^4.7.0",
     "@vscode/codicons": "^0.0.45",
     "@xyflow/react": "^12.0.0",
@@ -296,12 +309,12 @@
     "react-dom": "^18.2.0",
     "react-markdown": "^9.0.0",
     "rehype-katex": "^7.0.1",
+    "rehype-stringify": "^10.0.0",
     "remark-gfm": "^4.0.0",
     "remark-math": "^6.0.0",
     "remark-parse": "^11.0.0",
     "remark-rehype": "^11.0.0",
-    "rehype-stringify": "^10.0.0",
-    "unified": "^11.0.0",
-    "shiki": "^1.0.0"
+    "shiki": "^1.0.0",
+    "unified": "^11.0.0"
   }
 }

@@ -19,6 +19,9 @@ import { FileWatcher } from './file-watcher';
 import { parseNotebook } from './notebook-parser';
 import { renderMarkdownToHtml } from './markdown-html';
 import { getVaults } from './settings';
+import { ClaudeClient } from './claude-client';
+import { buildSystemPrompt, nodeTitle, nodeContent } from './context-builder';
+import { assignLabel } from '../shared/nodeLabels';
 import {
   CanvasData,
   CanvasNode,
@@ -36,6 +39,9 @@ import {
   MsgChatMessage,
   MsgAddNodeRequest,
   MsgMoveToSubCanvas,
+  MsgFloatingChatSend,
+  MsgFloatingChatSaveState,
+  ChatMessage,
 } from '../shared/types';
 import { MAX_FILE_FULL_BYTES, MAX_FILE_PREVIEW_BYTES, MAX_NOTEBOOK_BYTES } from '../shared/constants';
 
@@ -47,6 +53,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
    * skena.addNode VS Code command can post a trigger to the focused canvas.
    */
   static activePanel: vscode.WebviewPanel | null = null;
+
+  /** - one shared Claude client per editor provider instance */
+  private readonly claudeClient = new ClaudeClient();
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -115,6 +124,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             // - so vim paste works before any requestClipboardRead round-trip completes
             send({ type: 'clipboardContent', text: clipboardText });
             send({ type: 'vaultIndex', entries: this.indexer.all() });
+            // - load sidecar chat state and send to webview
+            await this.sendSidecar(document, send);
             // - forward VS Code markdown preview settings so the webview matches the editor look
             const mdPreview = vscode.workspace.getConfiguration('markdown.preview');
             const md        = vscode.workspace.getConfiguration('markdown');
@@ -146,8 +157,11 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           send({ type: 'vaultIndex', entries: this.indexer.all() });
           break;
         }
-        case 'chatMessage':  await this.handleChatMessage(msg, panel); break;
-        case 'dropFiles':    this.handleDropFiles(msg.uris, msg.position, canvasDir, resolver, send); break;
+        case 'chatMessage':          await this.handleChatMessage(msg, panel); break;
+        case 'floatingChatSend':     await this.handleFloatingChatSend(msg, panel, document, canvasDir); break;
+        case 'floatingChatSaveState': await this.handleFloatingChatSaveState(msg, document); break;
+        case 'floatingChatAbort':    this.claudeClient.abort(); break;
+        case 'dropFiles':            this.handleDropFiles(msg.uris, msg.position, canvasDir, resolver, send); break;
         case 'addNodeRequest': await this.handleAddNodeRequest(msg, canvasDir, resolver, send); break;
         case 'moveToSubCanvas': await this.handleMoveToSubCanvas(msg, canvasDir, send); break;
         // - clipboard relay: webview sandbox blocks navigator.clipboard; route through host
@@ -756,6 +770,204 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       portalNode,
       movedNodeIds: msg.nodes.map(n => n.id),
     });
+  }
+
+  // ─── Floating chat handlers ──────────────────────────────────────────────────
+
+  /** Read the .skena.json sidecar alongside the canvas and forward to the webview. */
+  private async sendSidecar(
+    document: SkenaDocument,
+    send: (msg: HostToWebview) => void,
+  ): Promise<void> {
+    const sidecarPath = document.uri.fsPath.replace(/\.canvas$/, '.skena.json');
+    try {
+      const raw  = await fs.readFile(sidecarPath, 'utf-8');
+      const data = JSON.parse(raw) as {
+        chat?: {
+          position?: { x: number; y: number };
+          size?:     { w: number; h: number };
+          collapsed?: boolean;
+          history?:  ChatMessage[];
+        };
+      };
+      const chat = data.chat ?? {};
+      send({
+        type:      'sidecarLoaded',
+        position:  chat.position,
+        size:      chat.size,
+        collapsed: chat.collapsed,
+        history:   chat.history ?? [],
+      });
+    } catch {
+      // - no sidecar yet → send empty history; panel initialises with defaults
+      send({ type: 'sidecarLoaded', history: [] });
+    }
+  }
+
+  /** Persist floating chat panel state to the .skena.json sidecar. */
+  private async handleFloatingChatSaveState(
+    msg:      MsgFloatingChatSaveState,
+    document: SkenaDocument,
+  ): Promise<void> {
+    const sidecarPath = document.uri.fsPath.replace(/\.canvas$/, '.skena.json');
+    const data = {
+      chat: {
+        position:  msg.position,
+        size:      msg.size,
+        collapsed: msg.collapsed,
+        history:   msg.history,
+      },
+    };
+    try {
+      await fs.writeFile(sidecarPath, JSON.stringify(data, null, 2), 'utf-8');
+    } catch (e) {
+      console.error('[Skena] Failed to write sidecar:', e);
+    }
+  }
+
+  /** Handle a floating chat message: build context, call Claude, stream back. */
+  private async handleFloatingChatSend(
+    msg:       MsgFloatingChatSend,
+    panel:     vscode.WebviewPanel,
+    document:  SkenaDocument,
+    canvasDir: string,
+  ): Promise<void> {
+    const send = (m: HostToWebview) => panel.webview.postMessage(m);
+
+    // - read conversation history from the sidecar to reconstruct context
+    const sidecarPath = document.uri.fsPath.replace(/\.canvas$/, '.skena.json');
+    let history: ChatMessage[] = [];
+    try {
+      const raw  = await fs.readFile(sidecarPath, 'utf-8');
+      const data = JSON.parse(raw) as { chat?: { history?: ChatMessage[] } };
+      history = data.chat?.history ?? [];
+    } catch { /* no sidecar — start fresh */ }
+
+    // - drop the newest user message from history (webview already appended it locally;
+    // - we reconstruct the full history for the API call excluding the very last entry
+    // - which IS msg.message — passed separately)
+    const priorHistory = history
+      .slice(0, -1)  // - remove the last user message (we got it in msg.message)
+      .map(m => ({ role: m.role, content: m.content }));
+
+    // - build system prompt with canvas context
+    let systemPrompt: string;
+    try {
+      systemPrompt = await buildSystemPrompt(
+        document.uri.fsPath,
+        document.canvas,
+        msg.activeNodeId,
+      );
+    } catch (e) {
+      send({ type: 'floatingChatError', message: `Context error: ${(e as Error).message}` });
+      return;
+    }
+
+    // - map prior history + current message → API format
+    const apiHistory = [
+      ...priorHistory,
+      { role: 'user' as const, content: msg.message },
+    ];
+
+    await this.claudeClient.chat(systemPrompt, apiHistory, {
+      onText: (delta) => {
+        send({ type: 'floatingChatDelta', delta });
+      },
+
+      onToolUse: async (tool) => {
+        if (tool.name === 'add_note') {
+          const content = (tool.input['content'] as string) ?? '';
+          const addResult = this.addNoteToCanvas(document, msg.activeNodeId, content);
+          if (addResult) {
+            send({ type: 'floatingChatNodeAdded', node: addResult.node, edge: addResult.edge });
+          }
+          // - save canvas to disk
+          try {
+            await writeCanvas(document.uri.fsPath, document.canvas);
+          } catch { /* non-fatal */ }
+          return content ? 'Note added to canvas.' : 'No content provided.';
+        }
+
+        if (tool.name === 'read_node') {
+          const label = (tool.input['label'] as string) ?? '';
+          const node  = document.canvas.nodes.find(n => n.nodeLabel === label);
+          if (!node) return `No node with label ${label} found.`;
+          const content = await nodeContent(node, canvasDir, 3000);
+          return content || '(empty)';
+        }
+
+        if (tool.name === 'list_nodes') {
+          const lines = document.canvas.nodes
+            .filter(n => n.type !== 'group')
+            .map(n => `[${n.nodeLabel ?? n.id.slice(0, 6)}] (${n.type}) ${nodeTitle(n)}`);
+          return lines.join('\n') || '(no nodes)';
+        }
+
+        return 'Unknown tool.';
+      },
+
+      onDone:  () => send({ type: 'floatingChatDone' }),
+      onError: (message) => send({ type: 'floatingChatError', message }),
+    });
+  }
+
+  /**
+   * Create a TextNode and edge connecting it to the active node.
+   * Mutates `document.canvas` in place (same pattern as MCP tools do).
+   */
+  private addNoteToCanvas(
+    document:     SkenaDocument,
+    activeNodeId: string | null,
+    content:      string,
+  ): { node: CanvasNode; edge?: CanvasEdge } | null {
+    if (!content.trim()) return null;
+
+    const canvas = document.canvas;
+
+    // - compute position: right of active node (or canvas centre)
+    let x = 200, y = 200;
+    const activeNode = activeNodeId ? canvas.nodes.find(n => n.id === activeNodeId) : null;
+    if (activeNode) {
+      x = activeNode.x + activeNode.width + 60;
+      y = activeNode.y;
+    } else if (canvas.nodes.length > 0) {
+      const last = canvas.nodes[canvas.nodes.length - 1];
+      x = last.x + last.width + 60;
+      y = last.y;
+    }
+
+    // - generate id and label
+    const id = `ai-${Date.now().toString(36)}`;
+
+    const nodeBase: CanvasNode = {
+      id,
+      type:        'text',
+      x,
+      y,
+      width:       340,
+      height:      160,
+      text:        content,
+      createdBy:   'ai',
+      lastTouched: Date.now(),
+    } as TextNode;
+
+    const node = assignLabel(nodeBase, canvas.nodes) as CanvasNode;
+
+    canvas.nodes.push(node);
+
+    // - connect to active node if one exists
+    let edge: CanvasEdge | undefined;
+    if (activeNodeId) {
+      edge = {
+        id:       `e-${id}`,
+        fromNode: activeNodeId,
+        toNode:   id,
+        toEnd:    'arrow',
+      };
+      canvas.edges.push(edge);
+    }
+
+    return { node, edge };
   }
 
   private async handleChatMessage(

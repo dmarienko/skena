@@ -274,11 +274,13 @@ let clipboard: { nodes: CanvasNode[]; edges: CanvasEdge[] } | null = null;
 interface CanvasViewProps {
   canvas:     CanvasData;
   canvasPath: string;
+  /** - called when the keyboard-focused node changes; used by FloatingChat for context */
+  onActiveNodeChange?: (nodeId: string | null, label: string | null) => void;
 }
 
 // ─── inner component (needs ReactFlowProvider context) ────────────────────────
 
-function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
+function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewProps): JSX.Element {
   // - ensure every node has a reference label (N1, M3, J2 …); save if any were missing
   const initialNodes = ensureLabels(canvas.nodes);
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes.map(toFlowNode));
@@ -325,6 +327,23 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
 
     onNodesChange(changes);
   }, [onNodesChange]); // - nodesRef always current via its own useEffect
+
+  // ─── active node tracking (for FloatingChat context) ─────────────────────────
+  const activeNodeIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const selected = nodes.find(n => n.selected && n.type !== 'group');
+    const newId    = selected?.id ?? null;
+    if (newId !== activeNodeIdRef.current) {
+      activeNodeIdRef.current = newId;
+      const label = newId
+        ? (selected?.data as Record<string, unknown>)?.nodeLabel as string | null ?? null
+        : null;
+      onActiveNodeChange?.(newId, label);
+    }
+  // - intentionally depend on the selection pattern rather than the full nodes array
+  // - to avoid firing on every drag position change
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodes.map(n => n.selected ? n.id : '').join(','), onActiveNodeChange]);
 
   // - track current canvas data for save (avoid stale closures)
   // - initialNodes already has labels assigned; if any were missing, they need a save
@@ -1597,6 +1616,21 @@ function CanvasViewInner({ canvas, canvasPath }: CanvasViewProps): JSX.Element {
     window.addEventListener('skena:subCanvasCreated', handler);
     return () => window.removeEventListener('skena:subCanvasCreated', handler);
   }, [setNodes, setEdges, scheduleSave, focusNodeById, pushHistory]);
+
+  // ─── Alt+I from FloatingChat: restore canvas keyboard focus ───────────────
+  //
+  // When the user presses Alt+I while the chat input is active, FloatingChat
+  // dispatches skena:restoreCanvasFocus.  We focus the last keyboard-focused
+  // node, or the node nearest the viewport centre if no history exists.
+
+  useEffect(() => {
+    const handler = () => {
+      const id = lastFocusedNodeId.get(canvasPath) ?? pickViewportNode();
+      if (id) focusNodeById(id);
+    };
+    window.addEventListener('skena:restoreCanvasFocus', handler);
+    return () => window.removeEventListener('skena:restoreCanvasFocus', handler);
+  }, [canvasPath, focusNodeById, pickViewportNode]);
 
   return (
     <ZoomLevelProvider>
