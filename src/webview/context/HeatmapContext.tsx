@@ -17,8 +17,9 @@
  *   const { visible, nodeGlow } = useHeatmap();
  */
 
-import React, { createContext, useContext } from 'react';
-import type { Node, Edge } from '@xyflow/react';
+import React, { createContext, useContext, useState, useCallback } from 'react';
+import type { Node, Edge, Viewport } from '@xyflow/react';
+import { useOnViewportChange } from '@xyflow/react';
 import type { HeatmapNode, EdgeGlow } from '../../shared/types';
 import { useActivityHeatmap } from '../hooks/useActivityHeatmap';
 
@@ -51,11 +52,18 @@ interface HeatmapProviderProps {
   children: React.ReactNode;
 }
 
-/** - must be rendered inside CanvasViewInner where nodes/edges state is available */
+/** - must be rendered inside CanvasViewInner (inside ReactFlowProvider) where nodes/edges/viewport are available */
 export function HeatmapProvider({ nodes, edges, visible, toggle, children }: HeatmapProviderProps): JSX.Element {
+  // - track raw zoom so glow radii scale with viewport (pave effect at low zoom)
+  const [zoom, setZoom] = useState(1);
+  useOnViewportChange({
+    onChange: useCallback((vp: Viewport) => setZoom(vp.zoom), []),
+  });
+
   const { nodeGlow, edgeGlow } = useActivityHeatmap(
     visible ? nodes : [],
     visible ? edges : [],
+    zoom,
   );
 
   return (

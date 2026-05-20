@@ -6,7 +6,7 @@
  *   1. BFS on undirected edge graph → connected components (clusters).
  *   2. Nodes with no edges are isolated (clusterId = null, shown gray).
  *   3. Within each cluster, rank nodes by creationIndex ascending.
- *   4. Map rank to intensity in [0.18, 0.95].
+ *   4. Map rank to intensity in [0.40, 0.95].
  *   5. Pre-compute CSS filter strings for quick application in node components.
  */
 
@@ -26,7 +26,7 @@ const PALETTE = [
 ] as const;
 
 const GRAY          = '140,140,140';
-const INTENSITY_MIN = 0.18;
+const INTENSITY_MIN = 0.40;   // - raised from 0.18 — ensures old nodes stay visible
 const INTENSITY_MAX = 0.95;
 
 // ─── pure computation ─────────────────────────────────────────────────────────
@@ -34,11 +34,21 @@ const INTENSITY_MAX = 0.95;
 /**
  * Pure function — no React dependencies. Exported for testing.
  * Accepts ReactFlow Node/Edge shapes but only uses id, data, source, target.
+ *
+ * @param zoom - ReactFlow viewport zoom (default 1.0). Used to scale glow radius so
+ *               the visual halo grows as you zoom out ("pave" effect): at zoom 0.5 the
+ *               glow is ~1.4× larger on screen than at zoom 1.0, at zoom 0.3 ~1.8×.
  */
 export function computeHeatmapData(
   nodes: Array<{ id: string; data: Record<string, unknown> }>,
   edges: Array<{ id: string; source: string; target: string }>,
+  zoom = 1,
 ): { nodeGlow: Map<string, HeatmapNode>; edgeGlow: Map<string, EdgeGlow> } {
+  // - "pave" scaling: grow glow proportionally as zoom decreases.
+  // - glowScale = 1/zoom^1.5, capped at 8 to prevent extreme values at very low zoom.
+  // - Visual glow size ≈ base × (glowScale × zoom) = base / zoom^0.5, so halos grow
+  //   at low zoom even though CSS pixels are scaled down by the canvas transform.
+  const glowScale = Math.min(8, Math.pow(1 / Math.max(0.1, zoom), 1.5));
 
   // - build undirected adjacency list
   const adj = new Map<string, string[]>();
@@ -99,17 +109,25 @@ export function computeHeatmapData(
         ? INTENSITY_MAX
         : INTENSITY_MIN + (rank / maxRank) * (INTENSITY_MAX - INTENSITY_MIN);
 
+      // - glow radii scale with glowScale (pave effect at low zoom)
+      // - minimum radii ensure even the oldest node has a visible halo
+      const r1 = Math.max(3, intensity * 9  * glowScale).toFixed(1);
+      const r2 = Math.max(6, intensity * 18 * glowScale).toFixed(1);
+
       const glowFilter = isIso
-        ? `drop-shadow(0 0 2px rgba(${color},0.25))`
-        : `drop-shadow(0 0 ${(intensity * 9).toFixed(1)}px rgba(${color},${intensity.toFixed(2)})) ` +
-          `drop-shadow(0 0 ${(intensity * 18).toFixed(1)}px rgba(${color},${(intensity * 0.45).toFixed(2)}))`;
+        ? `drop-shadow(0 0 ${(2 * glowScale).toFixed(1)}px rgba(${color},0.25))`
+        : `drop-shadow(0 0 ${r1}px rgba(${color},${intensity.toFixed(2)})) ` +
+          `drop-shadow(0 0 ${r2}px rgba(${color},${(intensity * 0.45).toFixed(2)}))`;
+
+      // - border alpha: minimum 0.30 so even old nodes have a clearly coloured border
+      const borderAlpha = isIso ? 0.18 : Math.max(0.30, intensity * 0.65);
 
       nodeGlow.set(m.id, {
         color,
         intensity,
         clusterId:   cid,
         glowFilter,
-        borderColor: `rgba(${color},${isIso ? 0.18 : (intensity * 0.65).toFixed(2)})`,
+        borderColor: `rgba(${color},${borderAlpha.toFixed(2)})`,
         opacity:     isIso ? 0.45 : 1.0,
       });
     });
@@ -127,7 +145,7 @@ export function computeHeatmapData(
       color,
       intensity,
       stroke:     `rgba(${color},${intensity.toFixed(2)})`,
-      glowFilter: `drop-shadow(0 0 ${(intensity * 6).toFixed(1)}px rgba(${color},${(intensity * 0.6).toFixed(2)}))`,
+      glowFilter: `drop-shadow(0 0 ${Math.max(2, intensity * 6 * glowScale).toFixed(1)}px rgba(${color},${(intensity * 0.6).toFixed(2)}))`,
     });
   }
 
@@ -137,15 +155,16 @@ export function computeHeatmapData(
 // ─── React hook ───────────────────────────────────────────────────────────────
 
 /**
- * Memoized hook — re-runs BFS only when the nodes or edges arrays change identity.
+ * Memoized hook — re-runs BFS when nodes/edges change identity or zoom changes.
  * Call inside CanvasViewInner (or HeatmapProvider) where nodes/edges are available.
  */
 export function useActivityHeatmap(
   nodes: Node[],
   edges: Edge[],
+  zoom = 1,
 ): { nodeGlow: Map<string, HeatmapNode>; edgeGlow: Map<string, EdgeGlow> } {
   return useMemo(
-    () => computeHeatmapData(nodes, edges),
-    [nodes, edges],
+    () => computeHeatmapData(nodes, edges, zoom),
+    [nodes, edges, zoom],
   );
 }

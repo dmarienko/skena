@@ -4,6 +4,7 @@ import { test } from 'node:test';
 // - local copy of computeHeatmapData: importing the TS source directly from .mjs
 // - requires a build step (tsx/ts-node). This copy validates the algorithm logic;
 // - if a test runner is added later, replace with a direct import.
+// - IMPORTANT: keep this copy in sync with src/webview/hooks/useActivityHeatmap.ts
 
 const PALETTE = [
   '56,189,248',
@@ -14,10 +15,13 @@ const PALETTE = [
   '250,204,21',
 ];
 const GRAY = '140,140,140';
-const INTENSITY_MIN = 0.18;
+const INTENSITY_MIN = 0.40;   // - raised from 0.18 — ensures old nodes stay visible
 const INTENSITY_MAX = 0.95;
 
-function computeHeatmapData(nodes, edges) {
+function computeHeatmapData(nodes, edges, zoom = 1) {
+  // - "pave" scaling: grow glow proportionally as zoom decreases
+  const glowScale = Math.min(8, Math.pow(1 / Math.max(0.1, zoom), 1.5));
+
   // - build adjacency list (undirected)
   const adj = new Map();
   for (const n of nodes) adj.set(n.id, []);
@@ -61,7 +65,7 @@ function computeHeatmapData(nodes, edges) {
     clusterNodes.get(cid).push({ id: n.id, idx: n.data?.creationIndex ?? 0 });
   }
 
-  // - compute intensity per node
+  // - compute intensity + glow CSS per node
   const nodeGlow = new Map();
   for (const [cid, members] of clusterNodes) {
     const sorted = [...members].sort((a, b) => a.idx - b.idx);
@@ -72,15 +76,18 @@ function computeHeatmapData(nodes, edges) {
       const intensity = maxRank === 0
         ? INTENSITY_MAX
         : INTENSITY_MIN + (rank / maxRank) * (INTENSITY_MAX - INTENSITY_MIN);
+      const r1 = Math.max(3, intensity * 9  * glowScale).toFixed(1);
+      const r2 = Math.max(6, intensity * 18 * glowScale).toFixed(1);
       const glowFilter = isIso
-        ? `drop-shadow(0 0 2px rgba(${color},0.25))`
-        : `drop-shadow(0 0 ${(intensity * 9).toFixed(1)}px rgba(${color},${intensity.toFixed(2)})) drop-shadow(0 0 ${(intensity * 18).toFixed(1)}px rgba(${color},${(intensity * 0.45).toFixed(2)}))`;
+        ? `drop-shadow(0 0 ${(2 * glowScale).toFixed(1)}px rgba(${color},0.25))`
+        : `drop-shadow(0 0 ${r1}px rgba(${color},${intensity.toFixed(2)})) drop-shadow(0 0 ${r2}px rgba(${color},${(intensity * 0.45).toFixed(2)}))`;
+      const borderAlpha = isIso ? 0.18 : Math.max(0.30, intensity * 0.65);
       nodeGlow.set(m.id, {
         color,
         intensity,
         clusterId: cid,
         glowFilter,
-        borderColor: `rgba(${color},${isIso ? 0.18 : (intensity * 0.65).toFixed(2)})`,
+        borderColor: `rgba(${color},${borderAlpha.toFixed(2)})`,
         opacity: isIso ? 0.45 : 1.0,
       });
     });
@@ -98,7 +105,7 @@ function computeHeatmapData(nodes, edges) {
       color,
       intensity,
       stroke: `rgba(${color},${intensity.toFixed(2)})`,
-      glowFilter: `drop-shadow(0 0 ${(intensity * 6).toFixed(1)}px rgba(${color},${(intensity * 0.6).toFixed(2)}))`,
+      glowFilter: `drop-shadow(0 0 ${Math.max(2, intensity * 6 * glowScale).toFixed(1)}px rgba(${color},${(intensity * 0.6).toFixed(2)}))`,
     });
   }
 

@@ -545,6 +545,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     // - purge deleted nodes from the space-pinned set
     for (const id of deletedIds) spaceSelectedRef.current.delete(id);
     const updated: CanvasData = {
+      ...canvasRef.current,                                                                       // - preserve creationCounter, viewport, etc.
       nodes: canvasRef.current.nodes.filter(n => !deletedIds.has(n.id)),
       edges: canvasRef.current.edges.filter(e => !deletedIds.has(e.fromNode) && !deletedIds.has(e.toNode)),
     };
@@ -901,6 +902,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     for (const id of deletedIds) spaceSelectedRef.current.delete(id);
 
     const updated: CanvasData = {
+      ...canvasRef.current,                                                                       // - preserve creationCounter, viewport, etc.
       nodes: canvasRef.current.nodes.filter(n => !deletedIds.has(n.id)),
       edges: canvasRef.current.edges.filter(e => !deletedIds.has(e.fromNode) && !deletedIds.has(e.toNode)),
     };
