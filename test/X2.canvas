@@ -1,0 +1,292 @@
+{
+  "nodes": [
+    {
+      "id": "node-1779277468507",
+      "type": "text",
+      "text": "# dsdasd",
+      "x": -843,
+      "y": -66,
+      "width": 400,
+      "height": 300,
+      "nodeLabel": "N1",
+      "creationIndex": 1
+    },
+    {
+      "id": "node-1779277483999",
+      "type": "text",
+      "text": "# Test 2",
+      "x": -831,
+      "y": 618,
+      "width": 400,
+      "height": 300,
+      "nodeLabel": "N2",
+      "creationIndex": 2
+    },
+    {
+      "id": "node-1779277504029",
+      "type": "text",
+      "text": "",
+      "x": -827,
+      "y": 1290,
+      "width": 400,
+      "height": 300,
+      "nodeLabel": "N3",
+      "creationIndex": 3
+    },
+    {
+      "id": "node-1779277611629",
+      "type": "text",
+      "text": "",
+      "x": 1403,
+      "y": -510,
+      "width": 400,
+      "height": 300,
+      "nodeLabel": "N4",
+      "creationIndex": 9
+    },
+    {
+      "id": "node-1779277631259",
+      "type": "text",
+      "text": "",
+      "x": -93,
+      "y": 621,
+      "width": 400,
+      "height": 300,
+      "nodeLabel": "N6",
+      "creationIndex": 11
+    },
+    {
+      "id": "node-1779277640536",
+      "type": "text",
+      "text": "",
+      "x": 2356,
+      "y": -523,
+      "width": 400,
+      "height": 300,
+      "nodeLabel": "N7",
+      "creationIndex": 12
+    },
+    {
+      "id": "node-1779277656814",
+      "type": "text",
+      "text": "",
+      "x": 3482,
+      "y": 1187,
+      "width": 400,
+      "height": 300,
+      "nodeLabel": "N5",
+      "creationIndex": 13
+    },
+    {
+      "id": "node-1779277665075",
+      "type": "text",
+      "text": "",
+      "x": 3493,
+      "y": 2344,
+      "width": 400,
+      "height": 300,
+      "nodeLabel": "N8",
+      "creationIndex": 14
+    },
+    {
+      "id": "node-1779277698661",
+      "type": "file",
+      "file": "vault://xi/portfolio/funding/results/10_Strategy2_v1_WORLD_RECORD_Analysis.md",
+      "x": -96,
+      "y": 1208,
+      "width": 756,
+      "height": 1310,
+      "nodeLabel": "M1",
+      "creationIndex": 15
+    },
+    {
+      "id": "node-1779277722904",
+      "type": "text",
+      "text": "# Analysis of Execution summary",
+      "x": 2579,
+      "y": 2344,
+      "width": 400,
+      "height": 300,
+      "nodeLabel": "N9",
+      "creationIndex": 16
+    },
+    {
+      "id": "node-1779277728473",
+      "type": "text",
+      "text": "# Strategy 2 performance",
+      "x": 1263,
+      "y": 2080,
+      "width": 400,
+      "height": 300,
+      "nodeLabel": "N10",
+      "creationIndex": 17
+    },
+    {
+      "id": "node-1779277843651",
+      "type": "text",
+      "text": "",
+      "x": 4272,
+      "y": 2344,
+      "width": 400,
+      "height": 300,
+      "nodeLabel": "N11",
+      "creationIndex": 18
+    },
+    {
+      "id": "node-1779277852680",
+      "type": "text",
+      "text": "",
+      "x": 4720,
+      "y": 2344,
+      "width": 400,
+      "height": 300,
+      "nodeLabel": "N12",
+      "creationIndex": 19
+    },
+    {
+      "id": "node-1779277857484",
+      "type": "text",
+      "text": "",
+      "x": 5168,
+      "y": 2344,
+      "width": 400,
+      "height": 300,
+      "nodeLabel": "N13",
+      "creationIndex": 20
+    },
+    {
+      "id": "node-1779277859429",
+      "type": "text",
+      "text": "",
+      "x": 5616,
+      "y": 2344,
+      "width": 400,
+      "height": 300,
+      "nodeLabel": "N14",
+      "creationIndex": 21
+    },
+    {
+      "id": "node-1779277889870",
+      "type": "text",
+      "text": "",
+      "x": 3520,
+      "y": -512,
+      "width": 400,
+      "height": 300,
+      "nodeLabel": "N15",
+      "creationIndex": 22
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-1779277483999",
+      "fromNode": "node-1779277468507",
+      "fromSide": "bottom",
+      "toNode": "node-1779277483999",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1779277504029",
+      "fromNode": "node-1779277483999",
+      "fromSide": "bottom",
+      "toNode": "node-1779277504029",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1779277631259",
+      "fromNode": "node-1779277483999",
+      "fromSide": "right",
+      "toNode": "node-1779277631259",
+      "toSide": "left",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1779277665075",
+      "fromNode": "node-1779277656814",
+      "fromSide": "bottom",
+      "toNode": "node-1779277665075",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1779277698661",
+      "fromNode": "node-1779277631259",
+      "fromSide": "bottom",
+      "toNode": "node-1779277698661",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1779277728473",
+      "fromNode": "node-1779277698661",
+      "fromSide": "right",
+      "toNode": "node-1779277728473",
+      "toSide": "left",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1779277843651",
+      "fromNode": "node-1779277665075",
+      "fromSide": "right",
+      "toNode": "node-1779277843651",
+      "toSide": "left",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1779277852680",
+      "fromNode": "node-1779277843651",
+      "fromSide": "right",
+      "toNode": "node-1779277852680",
+      "toSide": "left",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1779277857484",
+      "fromNode": "node-1779277852680",
+      "fromSide": "right",
+      "toNode": "node-1779277857484",
+      "toSide": "left",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1779277859429",
+      "fromNode": "node-1779277857484",
+      "fromSide": "right",
+      "toNode": "node-1779277859429",
+      "toSide": "left",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "node-1779277640536-node-1779277611629-1779277878078",
+      "fromNode": "node-1779277640536",
+      "fromSide": "left",
+      "toNode": "node-1779277611629",
+      "toSide": "right",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "edge-1779277889870",
+      "fromNode": "node-1779277640536",
+      "fromSide": "right",
+      "toNode": "node-1779277889870",
+      "toSide": "left",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "node-1779277722904-node-1779277665075-1779277908607",
+      "fromNode": "node-1779277722904",
+      "fromSide": "right",
+      "toNode": "node-1779277665075",
+      "toSide": "left",
+      "toEnd": "arrow"
+    }
+  ],
+  "viewport": {
+    "x": -387.73937639460064,
+    "y": -517.976758802785,
+    "zoom": 0.41711290074893537
+  },
+  "creationCounter": 22
+}

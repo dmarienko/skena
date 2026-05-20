@@ -197,12 +197,21 @@ export function FloatingChat({
   onNodeAdded,
   onRestore,
 }: Props): JSX.Element {
-  const chat            = useFloatingChat(postMessage);
-  const outputEl        = useRef<HTMLDivElement>(null);
-  const editorRef       = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
-  const vimRef          = useRef<{ dispose: () => void } | null>(null);
-  const pendingPasteRef = useRef(false);
+  const chat             = useFloatingChat(postMessage);
+  const outputEl         = useRef<HTMLDivElement>(null);
+  const editorRef        = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
+  const vimRef           = useRef<{ dispose: () => void } | null>(null);
+  const pendingPasteRef  = useRef(false);
   const [isChatFocused, setIsChatFocused] = useState(false);
+
+  // - stable ref so the window capture handler always calls the latest sendMessage
+  // - without needing it in the dependency array
+  const sendMessageRef        = useRef(chat.sendMessage);
+  useEffect(() => { sendMessageRef.current = chat.sendMessage; }, [chat.sendMessage]);
+
+  // - true when the current expand was triggered by Alt+I from collapsed state;
+  // - a second Alt+I while focused should fold back rather than restore canvas
+  const altIExpandedRef = useRef(false);
 
   // - keep a ref so the send command always reads the current activeNodeId
   const activeNodeIdRef = useRef<string | null>(activeNodeId);
@@ -247,6 +256,31 @@ export function FloatingChat({
     return () => window.removeEventListener('skena:clipboardContent', handler);
   }, []);
 
+  // ─── Ctrl+Enter: send message (capture phase, bypasses vim + addCommand) ──
+  //
+  // Monaco's addCommand keybinding resolution becomes unreliable when Ctrl+V
+  // and Ctrl+C are also registered (they conflict with Monaco's built-in
+  // clipboard actions and can silently drop other addCommand bindings).
+  // Using a window capture-phase listener is simpler and always wins.
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key !== 'Enter') return;
+      // - only fire when the chat Monaco editor actually has focus
+      if (!editorRef.current?.hasTextFocus()) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const editor = editorRef.current;
+      const text   = editor.getValue().trim();
+      if (!text) return;
+      sendMessageRef.current(text, activeNodeIdRef.current);
+      editor.setValue('');
+      editor.focus();
+    };
+    window.addEventListener('keydown', handler, { capture: true });
+    return () => window.removeEventListener('keydown', handler, { capture: true });
+  }, []); // - all mutable values accessed via refs — no deps needed
+
   // ─── Alt+I: toggle focus between chat input and canvas ────────────────
   //
   // Uses capture phase so we intercept the key before Monaco or CanvasView
@@ -263,17 +297,26 @@ export function FloatingChat({
       e.stopPropagation();
 
       if (chat.collapsed) {
-        // - expand; handleEditorMount's setTimeout will auto-focus Monaco
+        // - expand; remember this was a collapsed→open via Alt+I
+        altIExpandedRef.current = true;
         chat.toggleCollapsed();
         return;
       }
 
       const editor = editorRef.current;
       if (editor?.hasTextFocus()) {
-        // - hand focus back to canvas
-        (document.activeElement as HTMLElement)?.blur();
-        window.dispatchEvent(new CustomEvent('skena:restoreCanvasFocus'));
+        if (altIExpandedRef.current) {
+          // - was collapsed before this Alt+I session → fold back
+          altIExpandedRef.current = false;
+          chat.toggleCollapsed();
+        } else {
+          // - was already expanded → hand focus back to canvas
+          (document.activeElement as HTMLElement)?.blur();
+          window.dispatchEvent(new CustomEvent('skena:restoreCanvasFocus'));
+        }
       } else {
+        // - bring focus into chat (user arrived from canvas manually)
+        altIExpandedRef.current = false;
         editor?.focus();
       }
     };
@@ -337,17 +380,8 @@ export function FloatingChat({
     });
     editor.onDidBlurEditorText(() => setIsChatFocused(false));
 
-    // - Ctrl+Enter / Cmd+Enter → send
-    editor.addCommand(
-      monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
-      () => {
-        const text = editor.getValue().trim();
-        if (!text) return;
-        chat.sendMessage(text, activeNodeIdRef.current);
-        editor.setValue('');
-        editor.focus();
-      },
-    );
+    // - Ctrl+Enter is handled by a window capture-phase listener (see useEffect above)
+    // - to avoid Monaco addCommand priority conflicts with Ctrl+V / Ctrl+C.
 
     // - Ctrl+V fallback paste (fires only when vim doesn't intercept — i.e. insert mode)
     // - in vim normal mode Ctrl+V = visual block (vim wins)
@@ -377,7 +411,7 @@ export function FloatingChat({
     );
 
     setTimeout(() => editor.focus(), 100);
-  }, [chat.sendMessage]);
+  }, []); // - no chat.sendMessage dep: Ctrl+Enter now uses sendMessageRef via capture listener
 
   // - cleanup vim on unmount
   useEffect(() => {
@@ -477,11 +511,59 @@ export function FloatingChat({
         </button>
       </div>
 
-      {/* ── Body: vertical split — output | input ── */}
+      {/* ── Body: vertical split — input | output ── */}
       {!collapsed && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'row', minHeight: 0 }}>
 
-          {/* ── Left: message output ── */}
+          {/* ── Left: input column ── */}
+          <div style={{
+            width:         INPUT_COL_W,
+            flexShrink:    0,
+            display:       'flex',
+            flexDirection: 'column',
+            userSelect:    'text',
+          }}>
+            {/* - Monaco editor — padding keeps text away from panel border and splitter */}
+            <div style={{ flex: 1, minHeight: 0, height: inputEditorH, paddingLeft: 6, paddingRight: 6 }}>
+              <Editor
+                height={inputEditorH}
+                defaultLanguage="markdown"
+                theme="skena-editor"
+                beforeMount={handleBeforeMount}
+                onMount={handleEditorMount}
+                options={{
+                  fontSize:            13,
+                  lineHeight:          20,
+                  suggest:             { showWords: false },
+                  quickSuggestions:    false,
+                  parameterHints:      { enabled: false },
+                  renderLineHighlight: 'none',
+                  automaticLayout:     true,
+                }}
+              />
+            </div>
+
+            {/* - send hint */}
+            <div style={{
+              height:         HINT_BAR_H,
+              flexShrink:     0,
+              display:        'flex',
+              alignItems:     'center',
+              justifyContent: 'flex-end',
+              padding:        '0 8px',
+              borderTop:      '1px solid var(--vscode-panel-border, #333)',
+              background:     'var(--vscode-sideBar-background, #1e1e2e)',
+            }}>
+              <span style={{ fontSize: 10, color: 'var(--vscode-foreground)', opacity: 0.3 }}>
+                Ctrl+Enter
+              </span>
+            </div>
+          </div>
+
+          {/* ── Vertical divider ── */}
+          <div style={{ width: 1, flexShrink: 0, background: 'var(--vscode-panel-border, #333)' }} />
+
+          {/* ── Right: message output ── */}
           <div
             ref={outputEl}
             style={{
@@ -531,54 +613,6 @@ export function FloatingChat({
               </div>
             )}
           </div>
-
-          {/* ── Vertical divider ── */}
-          <div style={{ width: 1, flexShrink: 0, background: 'var(--vscode-panel-border, #333)' }} />
-
-          {/* ── Right: input column ── */}
-          <div style={{
-            width:         INPUT_COL_W,
-            flexShrink:    0,
-            display:       'flex',
-            flexDirection: 'column',
-            userSelect:    'text',
-          }}>
-            {/* - Monaco editor — padding keeps text away from splitter and right border */}
-            <div style={{ flex: 1, minHeight: 0, height: inputEditorH, paddingLeft: 6, paddingRight: 6 }}>
-              <Editor
-                height={inputEditorH}
-                defaultLanguage="markdown"
-                theme="skena-editor"
-                beforeMount={handleBeforeMount}
-                onMount={handleEditorMount}
-                options={{
-                  fontSize:            13,
-                  lineHeight:          20,
-                  suggest:             { showWords: false },
-                  quickSuggestions:    false,
-                  parameterHints:      { enabled: false },
-                  renderLineHighlight: 'none',
-                  automaticLayout:     true,
-                }}
-              />
-            </div>
-
-            {/* - send hint */}
-            <div style={{
-              height:         HINT_BAR_H,
-              flexShrink:     0,
-              display:        'flex',
-              alignItems:     'center',
-              justifyContent: 'flex-end',
-              padding:        '0 8px',
-              borderTop:      '1px solid var(--vscode-panel-border, #333)',
-              background:     'var(--vscode-sideBar-background, #1e1e2e)',
-            }}>
-              <span style={{ fontSize: 10, color: 'var(--vscode-foreground)', opacity: 0.3 }}>
-                Ctrl+Enter
-              </span>
-            </div>
-          </div>
         </div>
       )}
 
@@ -616,25 +650,26 @@ function ChatBubble({
   return (
     <div style={{
       display:       'flex',
-      flexDirection: isUser ? 'row-reverse' : 'row',
+      flexDirection: 'row',
       gap:           6,
       alignItems:    'flex-start',
     }}>
+      {/* - role dot: cyan = user, purple = assistant */}
       <div style={{
-        width:        6,
-        height:       6,
+        width:        5,
+        height:       5,
         borderRadius: '50%',
-        marginTop:    6,
+        marginTop:    7,
         flexShrink:   0,
         background:   isUser ? '#38BDF8' : '#A78BFA',
       }} />
 
       <div style={{
         maxWidth:     '95%',
-        padding:      '5px 9px',
-        borderRadius: isUser ? '8px 2px 8px 8px' : '2px 8px 8px 8px',
-        background:   isUser ? 'rgba(56,189,248,0.12)' : 'rgba(167,139,250,0.08)',
-        border:       `1px solid ${isUser ? 'rgba(56,189,248,0.2)' : 'rgba(167,139,250,0.15)'}`,
+        padding:      '4px 8px',
+        borderRadius: '2px 8px 8px 8px',
+        background:   isUser ? 'rgba(56,189,248,0.10)' : 'rgba(167,139,250,0.07)',
+        border:       `1px solid ${isUser ? 'rgba(56,189,248,0.18)' : 'rgba(167,139,250,0.13)'}`,
         color:        'var(--vscode-foreground)',
         fontSize:     12,
         lineHeight:   1.55,

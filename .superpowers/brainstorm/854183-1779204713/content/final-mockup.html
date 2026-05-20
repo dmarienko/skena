@@ -1,0 +1,201 @@
+<h2>Activity Heatmap — full canvas preview</h2>
+<p class="subtitle">Mixed palette · drop-shadow bloom · edge glow · intensity = creation recency · isolated = gray</p>
+
+<style>
+  .canvas-wrap {
+    background: #0d1117;
+    border-radius: 12px;
+    padding: 36px 28px;
+    position: relative;
+    min-height: 380px;
+    overflow: hidden;
+  }
+
+  /* ── palette ── */
+  :root {
+    --c1: 56,189,248;    /* cyan   */
+    --c2: 251,146,60;   /* orange */
+    --c3: 167,139,250;  /* purple */
+    --c4: 52,211,153;   /* green  */
+    --c5: 244,114,182;  /* pink   */
+    --c6: 250,204,21;   /* yellow */
+    --cg: 140,140,140;  /* gray — isolated */
+  }
+
+  .node {
+    position: absolute;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 8px 13px;
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    color: #e6edf3;
+    white-space: nowrap;
+    transition: filter 0.2s ease, border-color 0.2s ease;
+  }
+  .node .type { font-size: 9px; color: #8b949e; margin-bottom: 2px; }
+
+  /* cluster 1 — cyan */
+  .n-c1-1 { filter: drop-shadow(0 0 9px rgba(var(--c1),0.95)) drop-shadow(0 0 18px rgba(var(--c1),0.45)); border-color: rgba(var(--c1),0.65); }
+  .n-c1-2 { filter: drop-shadow(0 0 6px rgba(var(--c1),0.65)) drop-shadow(0 0 12px rgba(var(--c1),0.25)); border-color: rgba(var(--c1),0.38); }
+  .n-c1-3 { filter: drop-shadow(0 0 3px rgba(var(--c1),0.30)); border-color: rgba(var(--c1),0.18); }
+
+  /* cluster 2 — orange */
+  .n-c2-1 { filter: drop-shadow(0 0 9px rgba(var(--c2),0.95)) drop-shadow(0 0 18px rgba(var(--c2),0.45)); border-color: rgba(var(--c2),0.65); }
+  .n-c2-2 { filter: drop-shadow(0 0 5px rgba(var(--c2),0.55)) drop-shadow(0 0 10px rgba(var(--c2),0.22)); border-color: rgba(var(--c2),0.35); }
+
+  /* cluster 3 — purple */
+  .n-c3-1 { filter: drop-shadow(0 0 8px rgba(var(--c3),0.90)) drop-shadow(0 0 16px rgba(var(--c3),0.40)); border-color: rgba(var(--c3),0.60); }
+  .n-c3-2 { filter: drop-shadow(0 0 4px rgba(var(--c3),0.40)); border-color: rgba(var(--c3),0.22); }
+
+  /* isolated — gray */
+  .n-iso   { filter: drop-shadow(0 0 2px rgba(var(--cg),0.25)); border-color: rgba(var(--cg),0.18); opacity: 0.45; }
+
+  /* ── edges (SVG) ── */
+  svg.edges {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    overflow: visible;
+  }
+
+  /* legend */
+  .legend {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: rgba(255,255,255,0.03);
+    border-radius: 8px;
+    border: 1px solid #21262d;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: #8b949e;
+  }
+  .legend-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .intensity-scale {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: #8b949e;
+    margin-top: 10px;
+  }
+  .intensity-block {
+    width: 28px; height: 10px;
+    border-radius: 2px;
+  }
+</style>
+
+<div class="mockup">
+  <div class="mockup-header">Canvas — 3 clusters + 1 isolated node · toggle: <kbd>gh</kbd></div>
+  <div class="mockup-body" style="padding:0">
+    <div class="canvas-wrap" id="canvas">
+
+      <!-- SVG edges drawn first (below nodes) -->
+      <svg class="edges" viewBox="0 0 700 360" preserveAspectRatio="none">
+        <defs>
+          <filter id="e-glow-c1" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="2.5" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <filter id="e-glow-c2" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="2.5" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <filter id="e-glow-c3" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="2" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+
+        <!-- cluster 1 edges (cyan) — brightest = newest pair -->
+        <path d="M 168 75 Q 230 75 230 75" stroke="rgba(56,189,248,0.85)" stroke-width="2" fill="none" filter="url(#e-glow-c1)"/>
+        <path d="M 330 75 Q 390 100 390 130" stroke="rgba(56,189,248,0.55)" stroke-width="1.5" fill="none" filter="url(#e-glow-c1)"/>
+        <path d="M 470 150 Q 510 185 510 210" stroke="rgba(56,189,248,0.28)" stroke-width="1" fill="none"/>
+
+        <!-- cluster 2 edges (orange) -->
+        <path d="M 168 210 Q 220 210 220 210" stroke="rgba(251,146,60,0.85)" stroke-width="2" fill="none" filter="url(#e-glow-c2)"/>
+        <path d="M 320 210 Q 360 240 360 265" stroke="rgba(251,146,60,0.45)" stroke-width="1.5" fill="none" filter="url(#e-glow-c2)"/>
+
+        <!-- cluster 3 edges (purple) -->
+        <path d="M 95 295 Q 140 295 140 295" stroke="rgba(167,139,250,0.80)" stroke-width="1.8" fill="none" filter="url(#e-glow-c3)"/>
+      </svg>
+
+      <!-- ── Cluster 1: cyan ── -->
+      <!-- newest -->
+      <div class="node n-c1-1" style="left:28px;top:55px">
+        <div class="type">md</div>breakthrough.md
+      </div>
+      <!-- mid -->
+      <div class="node n-c1-2" style="left:230px;top:55px">
+        <div class="type">md</div>draft.md
+      </div>
+      <!-- older -->
+      <div class="node n-c1-3" style="left:390px;top:110px">
+        <div class="type">md</div>outline.md
+      </div>
+      <!-- oldest in cluster -->
+      <div class="node n-c1-3" style="left:510px;top:190px;filter:drop-shadow(0 0 2px rgba(56,189,248,0.20));border-color:rgba(56,189,248,0.12)">
+        <div class="type">md</div>old-notes.md
+      </div>
+
+      <!-- ── Cluster 2: orange ── -->
+      <!-- newest -->
+      <div class="node n-c2-1" style="left:28px;top:190px">
+        <div class="type">py</div>model.py
+      </div>
+      <!-- mid -->
+      <div class="node n-c2-2" style="left:220px;top:190px">
+        <div class="type">py</div>utils.py
+      </div>
+      <!-- older -->
+      <div class="node n-c2-2" style="left:360px;top:248px;filter:drop-shadow(0 0 3px rgba(251,146,60,0.28));border-color:rgba(251,146,60,0.18)">
+        <div class="type">md</div>spec.md
+      </div>
+
+      <!-- ── Cluster 3: purple ── -->
+      <!-- newest -->
+      <div class="node n-c3-1" style="left:28px;top:278px">
+        <div class="type">url</div>paper.arxiv
+      </div>
+      <!-- older -->
+      <div class="node n-c3-2" style="left:140px;top:278px">
+        <div class="type">url</div>blog.post
+      </div>
+
+      <!-- ── Isolated: gray ── -->
+      <div class="node n-iso" style="left:530px;top:285px">
+        <div class="type">txt</div>scratch.txt
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:rgb(56,189,248);box-shadow:0 0 4px rgba(56,189,248,0.8)"></div>Cluster 1 — cyan</div>
+  <div class="legend-item"><div class="legend-dot" style="background:rgb(251,146,60);box-shadow:0 0 4px rgba(251,146,60,0.8)"></div>Cluster 2 — orange</div>
+  <div class="legend-item"><div class="legend-dot" style="background:rgb(167,139,250);box-shadow:0 0 4px rgba(167,139,250,0.8)"></div>Cluster 3 — purple</div>
+  <div class="legend-item"><div class="legend-dot" style="background:rgb(140,140,140)"></div>Isolated — gray (cold)</div>
+</div>
+
+<div class="intensity-scale">
+  <span>Oldest →</span>
+  <div class="intensity-block" style="background:rgba(56,189,248,0.15)"></div>
+  <div class="intensity-block" style="background:rgba(56,189,248,0.35)"></div>
+  <div class="intensity-block" style="background:rgba(56,189,248,0.60)"></div>
+  <div class="intensity-block" style="background:rgba(56,189,248,0.85)"></div>
+  <span>→ Newest (highest creationOrder)</span>
+</div>
