@@ -250,13 +250,13 @@ export function LabeledEdgeComponent({
     <>
       {hmEdge && (
         <defs>
-          {/* - gradient from transparent at old-end to opaque at new-end */}
+          {/* - gradient from transparent at old-end to the arrival node's intensity at new-end */}
           <linearGradient id={gradId} gradientUnits="userSpaceOnUse"
             x1={oldX} y1={oldY} x2={newX} y2={newY}>
-            <stop offset="0%"   stopColor={`rgb(${hmEdge.color})`} stopOpacity="0"    />
-            <stop offset="35%"  stopColor={`rgb(${hmEdge.color})`} stopOpacity="0.18" />
-            <stop offset="70%"  stopColor={`rgb(${hmEdge.color})`} stopOpacity="0.60" />
-            <stop offset="100%" stopColor={`rgb(${hmEdge.color})`} stopOpacity="1.0"  />
+            <stop offset="0%"   stopColor={`rgb(${hmEdge.color})`} stopOpacity="0"                                        />
+            <stop offset="35%"  stopColor={`rgb(${hmEdge.color})`} stopOpacity={(hmEdge.intensity * 0.18).toFixed(2)}     />
+            <stop offset="70%"  stopColor={`rgb(${hmEdge.color})`} stopOpacity={(hmEdge.intensity * 0.60).toFixed(2)}     />
+            <stop offset="100%" stopColor={`rgb(${hmEdge.color})`} stopOpacity={hmEdge.intensity.toFixed(2)}              />
           </linearGradient>
           {/* - blur for the outer bloom layer */}
           <filter id={blurId} x="-100%" y="-100%" width="300%" height="300%">
@@ -271,12 +271,13 @@ export function LabeledEdgeComponent({
           <path d={edgePath} stroke={`url(#${gradId})`}
             strokeWidth={hmEdge.glowWidth} fill="none"
             filter={`url(#${blurId})`} />
-          {/* - medium sharp glow — gives the line a coloured halo that grows toward new end */}
+          {/* - medium sharp glow — halo that grows toward new end; opacity cap = arrival intensity */}
           <path d={edgePath} stroke={`url(#${gradId})`}
-            strokeWidth={(hmEdge.glowWidth * 0.35).toFixed(1)} fill="none" opacity="0.85" />
+            strokeWidth={(hmEdge.glowWidth * 0.35).toFixed(1)} fill="none"
+            opacity={(hmEdge.intensity * 0.85).toFixed(2)} />
           {/* - thin core line — always visible, carries the arrowhead */}
           <path d={edgePath} className="react-flow__edge-path"
-            stroke={`rgba(${hmEdge.color},0.75)`} strokeWidth="1.5"
+            stroke={`rgba(${hmEdge.color},${(hmEdge.intensity * 0.8).toFixed(2)})`} strokeWidth="1.5"
             fill="none" markerEnd={markerEnd} />
         </>
       ) : (

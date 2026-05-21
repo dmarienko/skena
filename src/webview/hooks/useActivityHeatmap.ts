@@ -141,8 +141,9 @@ export function computeHeatmapData(
     if (!sg || !tg) continue;
     const intensity = Math.max(sg.intensity, tg.intensity);
     const color     = sg.color;
-    const glowBlur  = Math.max(2, intensity * 5  * glowScale);
-    const glowWidth = Math.max(8, intensity * 12 * glowScale);
+    // - glowWidth diameter = node outer-bloom diameter so the arrival end merges seamlessly
+    const glowBlur  = Math.max(2, intensity * 6  * glowScale);
+    const glowWidth = Math.max(8, intensity * 18 * glowScale);
 
     edgeGlow.set(e.id, {
       color,
