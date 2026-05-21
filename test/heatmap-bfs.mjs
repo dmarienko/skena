@@ -15,8 +15,9 @@ const PALETTE = [
   '250,204,21',
 ];
 const GRAY = '140,140,140';
-const INTENSITY_MIN = 0.40;   // - raised from 0.18 — ensures old nodes stay visible
-const INTENSITY_MAX = 0.95;
+const INTENSITY_MIN   = 0.40;
+const INTENSITY_MAX   = 0.95;
+const INTENSITY_CURVE = 2.5;  // - power curve: compresses old, spreads recent
 
 function computeHeatmapData(nodes, edges, zoom = 1) {
   // - "pave" scaling: grow glow proportionally as zoom decreases
@@ -73,9 +74,8 @@ function computeHeatmapData(nodes, edges, zoom = 1) {
     const isIso = cid === null;
     const color = isIso ? GRAY : PALETTE[cid % PALETTE.length];
     sorted.forEach((m, rank) => {
-      const intensity = maxRank === 0
-        ? INTENSITY_MAX
-        : INTENSITY_MIN + (rank / maxRank) * (INTENSITY_MAX - INTENSITY_MIN);
+      const t = maxRank === 0 ? 1 : Math.pow(rank / maxRank, INTENSITY_CURVE);
+      const intensity = INTENSITY_MIN + t * (INTENSITY_MAX - INTENSITY_MIN);
       const r1 = Math.max(3, intensity * 9  * glowScale).toFixed(1);
       const r2 = Math.max(6, intensity * 18 * glowScale).toFixed(1);
       const glowFilter = isIso
@@ -190,6 +190,29 @@ test('edge glow uses source cluster color and max intensity of endpoints', () =>
   const ng = result.nodeGlow.get('a');
   assert.equal(eg.color, ng.color);
   assert.equal(eg.intensity, INTENSITY_MAX);
+});
+
+test('power curve: recent nodes have larger intensity gaps than old nodes (15-node chain)', () => {
+  // - build a 15-node chain connected oldest→newest
+  const nodes = Array.from({ length: 15 }, (_, i) => ({
+    id: `n${i}`, data: { creationIndex: i + 1 },
+  }));
+  const edges = Array.from({ length: 14 }, (_, i) => ({
+    id: `e${i}`, source: `n${i}`, target: `n${i + 1}`,
+  }));
+  const result = computeHeatmapData(nodes, edges);
+
+  const intensities = nodes.map(n => result.nodeGlow.get(n.id).intensity);
+  // - step between the two most recent nodes
+  const stepTop  = intensities[14] - intensities[13];
+  // - step between the two oldest nodes
+  const stepBot  = intensities[1]  - intensities[0];
+
+  assert(stepTop > stepBot * 2,
+    `recent step ${stepTop.toFixed(3)} should be >2× the old step ${stepBot.toFixed(3)}`);
+  // - boundary values still intact
+  assert.equal(intensities[0],  INTENSITY_MIN);
+  assert.equal(intensities[14], INTENSITY_MAX);
 });
 
 test('edge gradient direction: sourceIntensity < targetIntensity when source is older', () => {

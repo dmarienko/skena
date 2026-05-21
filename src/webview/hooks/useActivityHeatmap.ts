@@ -25,9 +25,13 @@ const PALETTE = [
   '250,204,21',    // - yellow
 ] as const;
 
-const GRAY          = '140,140,140';
-const INTENSITY_MIN = 0.40;   // - raised from 0.18 — ensures old nodes stay visible
-const INTENSITY_MAX = 0.95;
+const GRAY            = '140,140,140';
+const INTENSITY_MIN   = 0.40;   // - raised from 0.18 — ensures old nodes stay visible
+const INTENSITY_MAX   = 0.95;
+// - power curve applied to normalized rank before mapping to intensity.
+// - value > 1 compresses old nodes into the dim end and spreads recent nodes apart.
+// - with CURVE = 2.5 and 15 nodes, each step in the top-5 is ~0.08 (vs 0.04 linear).
+const INTENSITY_CURVE = 2.5;
 
 // ─── pure computation ─────────────────────────────────────────────────────────
 
@@ -105,9 +109,9 @@ export function computeHeatmapData(
     const color   = isIso ? GRAY : PALETTE[(cid as number) % PALETTE.length];
 
     sorted.forEach((m, rank) => {
-      const intensity = maxRank === 0
-        ? INTENSITY_MAX
-        : INTENSITY_MIN + (rank / maxRank) * (INTENSITY_MAX - INTENSITY_MIN);
+      // - apply power curve: t^INTENSITY_CURVE concentrates range on recent nodes
+      const t         = maxRank === 0 ? 1 : Math.pow(rank / maxRank, INTENSITY_CURVE);
+      const intensity = INTENSITY_MIN + t * (INTENSITY_MAX - INTENSITY_MIN);
 
       // - glow radii scale with glowScale (pave effect at low zoom)
       // - minimum radii ensure even the oldest node has a visible halo
