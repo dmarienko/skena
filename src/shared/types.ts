@@ -154,12 +154,18 @@ export type HeatmapNode = {
 
 /**
  * Per-edge glow data computed by useActivityHeatmap.
+ * sourceIntensity / targetIntensity drive the gradient direction:
+ * the low-intensity end is transparent, the high-intensity end is bright + wide.
  */
 export type EdgeGlow = {
-  color:      string;
-  intensity:  number;
-  stroke:     string;    // - rgba() stroke color
-  glowFilter: string;    // - CSS filter string, ready to apply
+  color:           string;
+  intensity:       number;   // - max(sourceIntensity, targetIntensity)
+  sourceIntensity: number;   // - intensity at the edge's source handle
+  targetIntensity: number;   // - intensity at the edge's target handle
+  stroke:          string;   // - rgba() for the core line
+  glowFilter:      string;   // - CSS drop-shadow (fallback / node-component use)
+  glowBlur:        number;   // - SVG feGaussianBlur stdDeviation (px, zoom-scaled)
+  glowWidth:       number;   // - wide bloom stroke-width (px, zoom-scaled)
 };
 
 // ─── Vault / file resolution ──────────────────────────────────────────────────

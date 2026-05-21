@@ -101,11 +101,17 @@ function computeHeatmapData(nodes, edges, zoom = 1) {
     if (!sg || !tg) continue;
     const intensity = Math.max(sg.intensity, tg.intensity);
     const color = sg.color;
+    const glowBlur  = Math.max(2, intensity * 5  * glowScale);
+    const glowWidth = Math.max(8, intensity * 12 * glowScale);
     edgeGlow.set(e.id, {
       color,
       intensity,
-      stroke: `rgba(${color},${intensity.toFixed(2)})`,
-      glowFilter: `drop-shadow(0 0 ${Math.max(2, intensity * 6 * glowScale).toFixed(1)}px rgba(${color},${(intensity * 0.6).toFixed(2)}))`,
+      sourceIntensity: sg.intensity,
+      targetIntensity: tg.intensity,
+      stroke:          `rgba(${color},${intensity.toFixed(2)})`,
+      glowFilter:      `drop-shadow(0 0 ${Math.max(2, intensity * 6 * glowScale).toFixed(1)}px rgba(${color},${(intensity * 0.6).toFixed(2)}))`,
+      glowBlur,
+      glowWidth,
     });
   }
 
@@ -184,6 +190,20 @@ test('edge glow uses source cluster color and max intensity of endpoints', () =>
   const ng = result.nodeGlow.get('a');
   assert.equal(eg.color, ng.color);
   assert.equal(eg.intensity, INTENSITY_MAX);
+});
+
+test('edge gradient direction: sourceIntensity < targetIntensity when source is older', () => {
+  // - source created first (lower index = older) → source end should be dimmer (old-end of gradient)
+  const result = computeHeatmapData(
+    [
+      { id: 'old', data: { creationIndex: 1 } },
+      { id: 'new', data: { creationIndex: 9 } },
+    ],
+    [{ id: 'e1', source: 'old', target: 'new' }]
+  );
+  const eg = result.edgeGlow.get('e1');
+  assert(eg.sourceIntensity < eg.targetIntensity,
+    'source (older node) must have lower intensity than target (newer node)');
 });
 
 test('nodes without creationIndex get rank 0 (treated as oldest)', () => {

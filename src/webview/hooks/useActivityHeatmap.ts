@@ -141,11 +141,18 @@ export function computeHeatmapData(
     if (!sg || !tg) continue;
     const intensity = Math.max(sg.intensity, tg.intensity);
     const color     = sg.color;
+    const glowBlur  = Math.max(2, intensity * 5  * glowScale);
+    const glowWidth = Math.max(8, intensity * 12 * glowScale);
+
     edgeGlow.set(e.id, {
       color,
       intensity,
-      stroke:     `rgba(${color},${intensity.toFixed(2)})`,
-      glowFilter: `drop-shadow(0 0 ${Math.max(2, intensity * 6 * glowScale).toFixed(1)}px rgba(${color},${(intensity * 0.6).toFixed(2)}))`,
+      sourceIntensity: sg.intensity,
+      targetIntensity: tg.intensity,
+      stroke:          `rgba(${color},${intensity.toFixed(2)})`,
+      glowFilter:      `drop-shadow(0 0 ${Math.max(2, intensity * 6 * glowScale).toFixed(1)}px rgba(${color},${(intensity * 0.6).toFixed(2)}))`,
+      glowBlur,
+      glowWidth,
     });
   }
 
