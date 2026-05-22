@@ -8,7 +8,7 @@
 
 ## Goal
 
-Deepen agent immersion in the canvas: the agent sees the graph context intelligently, loads domain-specific behaviour via plugins, and can interact with typed widget nodes that form composable data pipelines.
+Deepen agent immersion in the canvas: the agent sees the graph context intelligently, loads domain-specific behaviour via plugins, can interact with typed widget nodes that form composable data pipelines, and works with any OpenAI-compatible or Anthropic LLM provider.
 
 ---
 
@@ -18,6 +18,9 @@ Deepen agent immersion in the canvas: the agent sees the graph context intellige
 
 | File | Purpose |
 |------|---------|
+| `src/extension/llm-client.ts` | `ILLMClient` interface + shared types (`LLMMessage`, `LLMTool`, `LLMToolCall`, `LLMDelta`) |
+| `src/extension/llm-adapters/anthropic.ts` | Anthropic adapter — wraps existing claude-client logic, native streaming + tool use |
+| `src/extension/llm-adapters/openai-compat.ts` | OpenAI-compatible adapter — works with OpenAI, Groq, Ollama, Mistral, Together, etc. |
 | `src/extension/plugin-loader.ts` | Discover + parse `*.skena-plugin.md` files; build `PluginDefinition[]` |
 | `src/extension/widget-registry.ts` | Static map of widget type → `WidgetDefinition` + action handlers |
 | `src/webview/canvas/nodes/WidgetNode.tsx` | React component — renders inputs, named I/O handles, action buttons, output area |
@@ -35,12 +38,133 @@ Deepen agent immersion in the canvas: the agent sees the graph context intellige
 | `src/shared/types.ts` | Add `WidgetNodeData`, `AgentConfigNodeData`, `WidgetDefinition`, `WidgetInput`, `WidgetOutput`, `WidgetAction`, `PluginDefinition`; new message types `widgetAction`, `widgetActionResult` |
 | `src/extension/claude-client.ts` | Register `invoke_widget_action` + `find_nodes` tools |
 | `src/extension/context-builder.ts` | Inject active plugins, widget manifest, canvas persona into system prompt |
-| `src/extension/editor-provider.ts` | Load plugins on canvas open; handle `widgetAction` messages; propagate pipe edges after action |
+| `src/extension/claude-client.ts` | **Renamed** to `llm-adapters/anthropic.ts`; existing logic moved |
+| `src/extension/editor-provider.ts` | Load plugins on canvas open; instantiate correct LLM adapter from settings; handle `widgetAction` messages; propagate pipe edges after action |
 | `src/webview/canvas/CanvasView.tsx` | Register `WidgetNode` and `AgentConfigNode` node types |
 
 ---
 
-## 1. Plugin System
+## 1. LLM Provider Abstraction
+
+### `ILLMClient` interface (`src/extension/llm-client.ts`)
+
+```typescript
+export interface LLMMessage {
+  role:    'user' | 'assistant' | 'tool';
+  content: string | LLMToolResult[];
+}
+
+export interface LLMTool {
+  name:        string;
+  description: string;
+  parameters:  Record<string, unknown>;  // - JSON Schema object
+}
+
+export interface LLMToolCall {
+  id:     string;
+  name:   string;
+  input:  Record<string, unknown>;
+}
+
+export interface LLMDelta {
+  text?:     string;       // - streaming text chunk
+  toolCall?: LLMToolCall;  // - completed tool call
+  done?:     true;
+}
+
+export interface ILLMClient {
+  /**
+   * Stream a response. Calls onDelta for each chunk.
+   * Resolves with all tool calls made during the turn (may be empty).
+   */
+  stream(
+    systemPrompt: string,
+    messages:     LLMMessage[],
+    tools:        LLMTool[],
+    onDelta:      (delta: LLMDelta) => void,
+  ): Promise<LLMToolCall[]>;
+
+  /** Submit tool results and continue streaming. */
+  submitToolResults(
+    toolResults: LLMToolResult[],
+    onDelta:     (delta: LLMDelta) => void,
+  ): Promise<LLMToolCall[]>;
+}
+```
+
+### Adapters
+
+#### `src/extension/llm-adapters/anthropic.ts`
+
+- Wraps `@anthropic-ai/sdk` — preserves native streaming, extended tool use depth, and prompt caching headers
+- Reads `apiKey` from VS Code secret storage (`skena.ai.anthropic.apiKey`)
+- Translates `ILLMClient` calls → Anthropic SDK `messages.stream()`
+- Maps Anthropic tool_use blocks → `LLMToolCall[]`
+
+#### `src/extension/llm-adapters/openai-compat.ts`
+
+- Uses `openai` npm package with configurable `baseURL`
+- Covers: OpenAI, Groq, Together, Mistral, Ollama (local), LM Studio, any OpenAI-format provider
+- Reads `baseURL` + `apiKey` from settings
+- Translates `ILLMClient` calls → OpenAI `chat.completions.create({ stream: true })`
+- Maps OpenAI `tool_calls` chunks → `LLMToolCall[]`
+
+### VS Code settings (`package.json` contributes)
+
+```jsonc
+"skena.ai.provider": {
+  "type": "string",
+  "enum": ["anthropic", "openai-compat"],
+  "default": "anthropic",
+  "description": "LLM provider to use for the AI companion"
+},
+"skena.ai.model": {
+  "type": "string",
+  "default": "claude-opus-4-5",
+  "description": "Model name (must match the selected provider)"
+},
+"skena.ai.baseURL": {
+  "type": "string",
+  "default": "https://api.openai.com/v1",
+  "description": "Base URL for openai-compat provider (e.g. http://localhost:11434/v1 for Ollama)"
+}
+```
+
+API keys are stored in VS Code secret storage (not settings) via `context.secrets`:
+- `skena.ai.anthropic.apiKey` — set via command `Skena: Set Anthropic API Key`
+- `skena.ai.openai.apiKey` — set via command `Skena: Set OpenAI API Key`
+
+### Adapter instantiation (`editor-provider.ts`)
+
+```typescript
+function createLLMClient(context: vscode.ExtensionContext): ILLMClient {
+  const provider = vscode.workspace.getConfiguration('skena.ai').get<string>('provider', 'anthropic');
+  if (provider === 'anthropic') {
+    const apiKey = await context.secrets.get('skena.ai.anthropic.apiKey') ?? '';
+    return new AnthropicAdapter({ apiKey });
+  }
+  const apiKey  = await context.secrets.get('skena.ai.openai.apiKey') ?? '';
+  const baseURL = vscode.workspace.getConfiguration('skena.ai').get<string>('baseURL', 'https://api.openai.com/v1');
+  const model   = vscode.workspace.getConfiguration('skena.ai').get<string>('model', 'gpt-4o');
+  return new OpenAICompatAdapter({ apiKey, baseURL, model });
+}
+```
+
+The returned `ILLMClient` is passed into the existing streaming + tool use pipeline in `editor-provider.ts`. All higher-level code (context building, tool dispatch, widget action invocation) is provider-agnostic.
+
+### Example provider configs
+
+| Provider | `provider` | `baseURL` | `model` |
+|---|---|---|---|
+| Anthropic (default) | `anthropic` | — | `claude-opus-4-5` |
+| OpenAI | `openai-compat` | `https://api.openai.com/v1` | `gpt-4o` |
+| Groq | `openai-compat` | `https://api.groq.com/openai/v1` | `llama-3.3-70b-versatile` |
+| Ollama (local) | `openai-compat` | `http://localhost:11434/v1` | `qwen2.5:32b` |
+| LM Studio | `openai-compat` | `http://localhost:1234/v1` | *(model loaded in LM Studio)* |
+
+---
+
+## 2. Plugin System
 
 ### Plugin file format
 
@@ -91,7 +215,7 @@ Later entries with the same `name` override earlier ones.
 
 ---
 
-## 2. Agent Config Node
+## 3. Agent Config Node
 
 ### Node type: `agent-config`
 
@@ -124,7 +248,7 @@ Be concise. Use markdown tables for metrics.
 
 ---
 
-## 3. Widget Node System
+## 4. Widget Node System
 
 ### `WidgetDefinition` type
 
@@ -224,7 +348,7 @@ Action handler: reads backtest result from `path` (S3 or local), formats as mark
 
 ---
 
-## 4. Agent Integration
+## 5. Agent Integration
 
 ### System prompt assembly (`context-builder.ts`)
 
@@ -324,7 +448,7 @@ Tool result: `Array<{ id, label, type, excerpt }>`
 
 ---
 
-## 5. Data Flow Summary
+## 6. Data Flow Summary
 
 ```
 canvas open
@@ -346,7 +470,7 @@ agent or user triggers widget action
 
 ---
 
-## 6. Out of Scope (Phase 2)
+## 7. Out of Scope (Phase 2)
 
 - Chart widget (future)
 - Code runner widget (future)
