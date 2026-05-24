@@ -10,7 +10,7 @@
  *   Resize  — bottom-right corner handle
  *
  * Collapsed: bar snaps to bottom edge of viewport.
- * Toggle: Ctrl+` (handled in useFloatingChat hook).
+ * Toggle: Alt+` (handled in useFloatingChat hook).
  *
  * Clipboard (vim mode):
  *   VS Code webview sandbox blocks navigator.clipboard — same relay as TextNode.
@@ -492,7 +492,7 @@ export function FloatingChat({
 
         <button
           onClick={chat.toggleCollapsed}
-          title={collapsed ? 'Expand (Ctrl+`)' : 'Collapse (Ctrl+`)'}
+          title={collapsed ? 'Expand (Alt+`)' : 'Collapse (Alt+`)'}
           style={{
             background: 'none',
             border:     'none',

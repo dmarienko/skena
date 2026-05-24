@@ -106,7 +106,7 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === '`') {
+      if (e.altKey && e.key === '`') {
         e.preventDefault();
         toggleCollapsed();
       }
