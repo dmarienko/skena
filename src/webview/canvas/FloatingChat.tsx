@@ -281,8 +281,9 @@ export function FloatingChat({
 
   // ─── Alt+I: toggle focus between chat input and canvas ────────────────
   //
-  // Uses capture phase so we intercept the key before Monaco or CanvasView
-  // ever see it, regardless of which element currently holds focus.
+  // Bubble phase is sufficient — Monaco does not bind Alt+I, so our handler
+  // always sees the event. Capture phase was causing VS Code to suppress other
+  // Alt combos (Alt+H, Alt+J, …) for the whole webview.
   //
   //   Alt+I (collapsed)          → expand panel (Monaco auto-focuses on mount)
   //   Alt+I (expanded, unfocused)→ focus Monaco input
@@ -318,8 +319,8 @@ export function FloatingChat({
         editor?.focus();
       }
     };
-    window.addEventListener('keydown', handler, { capture: true });
-    return () => window.removeEventListener('keydown', handler, { capture: true });
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
   }, [chat.collapsed, chat.toggleCollapsed]);
 
   // ─── auto-scroll output ────────────────────────────────────────────────
