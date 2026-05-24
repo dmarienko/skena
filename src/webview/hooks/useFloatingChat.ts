@@ -2,11 +2,10 @@
  * useFloatingChat — state, drag, resize, history and message dispatch
  * for the floating AI companion overlay.
  *
- * Persists panel position, size, collapsed state, and conversation history
- * to a sidecar file via the extension host.
+ * History is session-only (no persistence). Canvas nodes are the memory.
  */
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { ChatMessage } from '../../shared/types';
 
 // ─── types ────────────────────────────────────────────────────────────────────
@@ -34,35 +33,6 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
   const [thinking,  setThinking]  = useState(false);   // - waiting for first token
   const [error,     setError]     = useState<string | null>(null);
 
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // ─── sidecar persistence ──────────────────────────────────────────────────
-
-  const saveState = useCallback((
-    p: FloatingChatPos,
-    s: FloatingChatSize,
-    c: boolean,
-    h: ChatMessage[],
-  ) => {
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      postMessage({ type: 'floatingChatSaveState', position: p, size: s, collapsed: c, history: h });
-    }, 800);
-  }, [postMessage]);
-
-  /** Restore state from sidecar (called by App on sidecarLoaded message). */
-  const restoreState = useCallback((
-    p?: FloatingChatPos,
-    s?: FloatingChatSize,
-    c?: boolean,
-    h?: ChatMessage[],
-  ) => {
-    if (p) setPos(p);
-    if (s) setSize(s);
-    if (c !== undefined) setCollapsed(c);
-    if (h) setHistory(h);
-  }, []);
-
   // ─── drag ─────────────────────────────────────────────────────────────────
 
   const onHeaderMouseDown = useCallback((e: React.MouseEvent) => {
@@ -81,11 +51,10 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
     const onUp = () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup',   onUp);
-      setPos(p => { saveState(p, size, collapsed, history); return p; });
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup',   onUp);
-  }, [pos.x, pos.y, size, collapsed, history, saveState]);
+  }, [pos.x, pos.y, size]);
 
   // ─── resize ───────────────────────────────────────────────────────────────
 
@@ -105,21 +74,16 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
     const onUp = () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup',   onUp);
-      setSize(s => { saveState(pos, s, collapsed, history); return s; });
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup',   onUp);
-  }, [size, pos, collapsed, history, saveState]);
+  }, [size]);
 
   // ─── collapse toggle ──────────────────────────────────────────────────────
 
   const toggleCollapsed = useCallback(() => {
-    setCollapsed(c => {
-      const next = !c;
-      saveState(pos, size, next, history);
-      return next;
-    });
-  }, [pos, size, history, saveState]);
+    setCollapsed(c => !c);
+  }, []);
 
   // ─── Ctrl+` global hotkey ─────────────────────────────────────────────────
 
@@ -144,19 +108,15 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
   const completeDelta = useCallback(() => {
     setStreaming(partial => {
       if (partial) {
-        setHistory(h => {
-          const next: ChatMessage[] = [
-            ...h,
-            { role: 'assistant', content: partial, timestamp: new Date().toISOString() },
-          ];
-          saveState(pos, size, collapsed, next);
-          return next;
-        });
+        setHistory(h => [
+          ...h,
+          { role: 'assistant', content: partial, timestamp: new Date().toISOString() },
+        ]);
       }
       return '';
     });
     setThinking(false);
-  }, [pos, size, collapsed, saveState]);
+  }, []);
 
   const handleError = useCallback((msg: string) => {
     setError(msg);
@@ -177,15 +137,15 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
     };
     setHistory(h => {
       const next = [...h, userMsg];
-      saveState(pos, size, collapsed, next);
+      // - send full history with the message so the host can reconstruct context
+      // - without reading any sidecar; history is session-only
+      postMessage({ type: 'floatingChatSend', message: trimmed, activeNodeId, history: next });
       return next;
     });
     setError(null);
     setStreaming('');
     setThinking(true);
-
-    postMessage({ type: 'floatingChatSend', message: trimmed, activeNodeId });
-  }, [pos, size, collapsed, saveState, postMessage]);
+  }, [postMessage]);
 
   // ─── node added by AI ────────────────────────────────────────────────────
 
@@ -203,7 +163,6 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
     history, streaming, thinking, error,
     onHeaderMouseDown, onResizeMouseDown,
     toggleCollapsed,
-    restoreState,
     sendMessage,
     appendDelta, completeDelta, handleError, addNodeAdded,
   };

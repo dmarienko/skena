@@ -312,14 +312,6 @@ export interface MsgFloatingChatNodeAdded {
   edge?: CanvasEdge;
 }
 
-/** Host → Webview: restore floating chat state on canvas open */
-export interface MsgSidecarLoaded {
-  type: 'sidecarLoaded';
-  position?: { x: number; y: number };
-  size?: { w: number; h: number };
-  collapsed?: boolean;
-  history: ChatMessage[];
-}
 
 export interface MsgSearchResults {
   type: 'searchResults';
@@ -359,8 +351,7 @@ export type HostToWebview =
   | MsgFloatingChatDelta
   | MsgFloatingChatDone
   | MsgFloatingChatError
-  | MsgFloatingChatNodeAdded
-  | MsgSidecarLoaded;
+  | MsgFloatingChatNodeAdded;
 
 // - Webview → Host messages
 
@@ -440,14 +431,7 @@ export interface MsgFloatingChatSend {
   message: string;
   /** - id of the currently keyboard-focused canvas node (for context building) */
   activeNodeId: string | null;
-}
-
-/** - Webview → Host: persist floating chat panel state to the sidecar file */
-export interface MsgFloatingChatSaveState {
-  type: 'floatingChatSaveState';
-  position: { x: number; y: number };
-  size: { w: number; h: number };
-  collapsed: boolean;
+  /** - full conversation history (session-only; no sidecar persistence) */
   history: ChatMessage[];
 }
 
@@ -471,7 +455,6 @@ export type WebviewToHost =
   | MsgWriteClipboard
   | MsgCopyAbsolutePath
   | MsgFloatingChatSend
-  | MsgFloatingChatSaveState
   | MsgFloatingChatAbort;
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────

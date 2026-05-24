@@ -177,12 +177,6 @@ interface Props {
   onDone:      (handler: ()              => void)    => () => void;
   onError:     (handler: (msg: string)   => void)    => () => void;
   onNodeAdded: (handler: (note: string)  => void)    => () => void;
-  onRestore:   (handler: (data: {
-    position?:  { x: number; y: number };
-    size?:      { w: number; h: number };
-    collapsed?: boolean;
-    history:    ChatMessage[];
-  }) => void) => () => void;
 }
 
 // ─── component ────────────────────────────────────────────────────────────────
@@ -195,7 +189,6 @@ export function FloatingChat({
   onDone,
   onError,
   onNodeAdded,
-  onRestore,
 }: Props): JSX.Element {
   const chat             = useFloatingChat(postMessage);
   const outputEl         = useRef<HTMLDivElement>(null);
@@ -223,9 +216,6 @@ export function FloatingChat({
   useEffect(() => onDone(chat.completeDelta),     [onDone, chat.completeDelta]);
   useEffect(() => onError(chat.handleError),      [onError, chat.handleError]);
   useEffect(() => onNodeAdded(chat.addNodeAdded), [onNodeAdded, chat.addNodeAdded]);
-  useEffect(() => onRestore(({ position, size, collapsed, history }) => {
-    chat.restoreState(position, size, collapsed, history);
-  }), [onRestore, chat.restoreState]);
 
   // ─── clipboard content response handler ────────────────────────────────
   //

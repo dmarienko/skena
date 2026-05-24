@@ -40,7 +40,6 @@ import {
   MsgAddNodeRequest,
   MsgMoveToSubCanvas,
   MsgFloatingChatSend,
-  MsgFloatingChatSaveState,
   ChatMessage,
 } from '../shared/types';
 import { MAX_FILE_FULL_BYTES, MAX_FILE_PREVIEW_BYTES, MAX_NOTEBOOK_BYTES } from '../shared/constants';
@@ -124,8 +123,6 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             // - so vim paste works before any requestClipboardRead round-trip completes
             send({ type: 'clipboardContent', text: clipboardText });
             send({ type: 'vaultIndex', entries: this.indexer.all() });
-            // - load sidecar chat state and send to webview
-            await this.sendSidecar(document, send);
             // - forward VS Code markdown preview settings so the webview matches the editor look
             const mdPreview = vscode.workspace.getConfiguration('markdown.preview');
             const md        = vscode.workspace.getConfiguration('markdown');
@@ -158,9 +155,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           break;
         }
         case 'chatMessage':          await this.handleChatMessage(msg, panel); break;
-        case 'floatingChatSend':     await this.handleFloatingChatSend(msg, panel, document, canvasDir); break;
-        case 'floatingChatSaveState': await this.handleFloatingChatSaveState(msg, document); break;
-        case 'floatingChatAbort':    this.claudeClient.abort(); break;
+        case 'floatingChatSend':  await this.handleFloatingChatSend(msg, panel, document, canvasDir); break;
+        case 'floatingChatAbort': this.claudeClient.abort(); break;
         case 'dropFiles':            this.handleDropFiles(msg.uris, msg.position, canvasDir, resolver, send); break;
         case 'addNodeRequest': await this.handleAddNodeRequest(msg, canvasDir, resolver, send); break;
         case 'moveToSubCanvas': await this.handleMoveToSubCanvas(msg, canvasDir, send); break;
@@ -774,57 +770,6 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
 
   // ─── Floating chat handlers ──────────────────────────────────────────────────
 
-  /** Read the .skena.json sidecar alongside the canvas and forward to the webview. */
-  private async sendSidecar(
-    document: SkenaDocument,
-    send: (msg: HostToWebview) => void,
-  ): Promise<void> {
-    const sidecarPath = document.uri.fsPath.replace(/\.canvas$/, '.skena.json');
-    try {
-      const raw  = await fs.readFile(sidecarPath, 'utf-8');
-      const data = JSON.parse(raw) as {
-        chat?: {
-          position?: { x: number; y: number };
-          size?:     { w: number; h: number };
-          collapsed?: boolean;
-          history?:  ChatMessage[];
-        };
-      };
-      const chat = data.chat ?? {};
-      send({
-        type:      'sidecarLoaded',
-        position:  chat.position,
-        size:      chat.size,
-        collapsed: chat.collapsed,
-        history:   chat.history ?? [],
-      });
-    } catch {
-      // - no sidecar yet → send empty history; panel initialises with defaults
-      send({ type: 'sidecarLoaded', history: [] });
-    }
-  }
-
-  /** Persist floating chat panel state to the .skena.json sidecar. */
-  private async handleFloatingChatSaveState(
-    msg:      MsgFloatingChatSaveState,
-    document: SkenaDocument,
-  ): Promise<void> {
-    const sidecarPath = document.uri.fsPath.replace(/\.canvas$/, '.skena.json');
-    const data = {
-      chat: {
-        position:  msg.position,
-        size:      msg.size,
-        collapsed: msg.collapsed,
-        history:   msg.history,
-      },
-    };
-    try {
-      await fs.writeFile(sidecarPath, JSON.stringify(data, null, 2), 'utf-8');
-    } catch (e) {
-      console.error('[Skena] Failed to write sidecar:', e);
-    }
-  }
-
   /** Handle a floating chat message: build context, call Claude, stream back. */
   private async handleFloatingChatSend(
     msg:       MsgFloatingChatSend,
@@ -834,20 +779,11 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
   ): Promise<void> {
     const send = (m: HostToWebview) => panel.webview.postMessage(m);
 
-    // - read conversation history from the sidecar to reconstruct context
-    const sidecarPath = document.uri.fsPath.replace(/\.canvas$/, '.skena.json');
-    let history: ChatMessage[] = [];
-    try {
-      const raw  = await fs.readFile(sidecarPath, 'utf-8');
-      const data = JSON.parse(raw) as { chat?: { history?: ChatMessage[] } };
-      history = data.chat?.history ?? [];
-    } catch { /* no sidecar — start fresh */ }
-
-    // - drop the newest user message from history (webview already appended it locally;
-    // - we reconstruct the full history for the API call excluding the very last entry
-    // - which IS msg.message — passed separately)
-    const priorHistory = history
-      .slice(0, -1)  // - remove the last user message (we got it in msg.message)
+    // - history arrives from the webview (session-only; no sidecar reads)
+    // - drop the last entry — that's the user message we're handling right now,
+    // - already captured separately as msg.message
+    const priorHistory = (msg.history ?? [])
+      .slice(0, -1)
       .map(m => ({ role: m.role, content: m.content }));
 
     // - build system prompt with canvas context

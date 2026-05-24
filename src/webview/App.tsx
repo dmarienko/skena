@@ -14,7 +14,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { CanvasView } from './canvas/CanvasView';
 import { FloatingChat } from './canvas/FloatingChat';
 import { useCanvasData } from './hooks/useCanvasData';
-import { HostToWebview, MarkdownConfig, ChatMessage } from '../shared/types';
+import { HostToWebview, MarkdownConfig } from '../shared/types';
 import { MarkdownConfigContext, DEFAULT_MARKDOWN_CONFIG } from './context/MarkdownConfigContext';
 
 type VsCodeApi = { postMessage: (msg: unknown) => void };
@@ -86,12 +86,6 @@ export function App(): JSX.Element {
   const doneEvt      = useRef(makeEventTarget<void>());
   const errorEvt     = useRef(makeEventTarget<string>());
   const nodeAddedEvt = useRef(makeEventTarget<string>());
-  const restoreEvt   = useRef(makeEventTarget<{
-    position?:  { x: number; y: number };
-    size?:      { w: number; h: number };
-    collapsed?: boolean;
-    history:    ChatMessage[];
-  }>());
 
   // ─── host message handler ─────────────────────────────────────────────
 
@@ -171,14 +165,7 @@ export function App(): JSX.Element {
           nodeAddedEvt.current.emit(noteContent);
           break;
         }
-        case 'sidecarLoaded':
-          restoreEvt.current.emit({
-            position:  msg.position,
-            size:      msg.size,
-            collapsed: msg.collapsed,
-            history:   msg.history,
-          });
-          break;
+
       }
     };
 
@@ -217,7 +204,6 @@ export function App(): JSX.Element {
         onDone={doneEvt.current.subscribe}
         onError={errorEvt.current.subscribe}
         onNodeAdded={nodeAddedEvt.current.subscribe}
-        onRestore={restoreEvt.current.subscribe}
       />
     </MarkdownConfigContext.Provider>
   );
