@@ -147,6 +147,12 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
     setThinking(true);
   }, [postMessage]);
 
+  // ─── restore history from workspaceState on canvas open ──────────────────
+
+  const restoreHistory = useCallback((h: ChatMessage[]) => {
+    setHistory(h);
+  }, []);
+
   // ─── node added by AI ────────────────────────────────────────────────────
 
   const addNodeAdded = useCallback((note: string) => {
@@ -165,5 +171,6 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
     toggleCollapsed,
     sendMessage,
     appendDelta, completeDelta, handleError, addNodeAdded,
+    restoreHistory,
   };
 }

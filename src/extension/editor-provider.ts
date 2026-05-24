@@ -41,6 +41,7 @@ import {
   MsgMoveToSubCanvas,
   MsgFloatingChatSend,
   ChatMessage,
+  MsgFloatingChatHistoryRestored,
 } from '../shared/types';
 import { MAX_FILE_FULL_BYTES, MAX_FILE_PREVIEW_BYTES, MAX_NOTEBOOK_BYTES } from '../shared/constants';
 
@@ -123,6 +124,10 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             // - so vim paste works before any requestClipboardRead round-trip completes
             send({ type: 'clipboardContent', text: clipboardText });
             send({ type: 'vaultIndex', entries: this.indexer.all() });
+            // - restore chat history from workspaceState (survives panel close + rename)
+            const historyKey = `skena.chatHistory.${document.uri.toString()}`;
+            const savedHistory = this.context.workspaceState.get<ChatMessage[]>(historyKey) ?? [];
+            send({ type: 'floatingChatHistoryRestored', history: savedHistory } satisfies MsgFloatingChatHistoryRestored);
             // - forward VS Code markdown preview settings so the webview matches the editor look
             const mdPreview = vscode.workspace.getConfiguration('markdown.preview');
             const md        = vscode.workspace.getConfiguration('markdown');
@@ -779,7 +784,11 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
   ): Promise<void> {
     const send = (m: HostToWebview) => panel.webview.postMessage(m);
 
-    // - history arrives from the webview (session-only; no sidecar reads)
+    // - history arrives from the webview; persist to workspaceState so it
+    // - survives panel close and canvas rename (keyed by URI, not filename)
+    const historyKey = `skena.chatHistory.${document.uri.toString()}`;
+    await this.context.workspaceState.update(historyKey, msg.history ?? []);
+
     // - drop the last entry — that's the user message we're handling right now,
     // - already captured separately as msg.message
     const priorHistory = (msg.history ?? [])

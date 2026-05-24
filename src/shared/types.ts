@@ -305,6 +305,12 @@ export interface MsgFloatingChatError {
   message: string;
 }
 
+/** Host → Webview: restore chat history from workspaceState on canvas open */
+export interface MsgFloatingChatHistoryRestored {
+  type: 'floatingChatHistoryRestored';
+  history: ChatMessage[];
+}
+
 /** Host → Webview: AI added a node to the canvas during tool use */
 export interface MsgFloatingChatNodeAdded {
   type: 'floatingChatNodeAdded';
@@ -351,7 +357,8 @@ export type HostToWebview =
   | MsgFloatingChatDelta
   | MsgFloatingChatDone
   | MsgFloatingChatError
-  | MsgFloatingChatNodeAdded;
+  | MsgFloatingChatNodeAdded
+  | MsgFloatingChatHistoryRestored;
 
 // - Webview → Host messages
 

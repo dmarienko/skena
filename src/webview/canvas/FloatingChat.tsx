@@ -173,10 +173,11 @@ interface Props {
   agentName?:   string;
   postMessage:  (msg: unknown) => void;
 
-  onDelta:     (handler: (delta: string) => void)    => () => void;
-  onDone:      (handler: ()              => void)    => () => void;
-  onError:     (handler: (msg: string)   => void)    => () => void;
-  onNodeAdded: (handler: (note: string)  => void)    => () => void;
+  onDelta:           (handler: (delta: string)       => void) => () => void;
+  onDone:            (handler: ()                    => void) => () => void;
+  onError:           (handler: (msg: string)         => void) => () => void;
+  onNodeAdded:       (handler: (note: string)        => void) => () => void;
+  onHistoryRestored: (handler: (h: ChatMessage[])    => void) => () => void;
 }
 
 // ─── component ────────────────────────────────────────────────────────────────
@@ -189,6 +190,7 @@ export function FloatingChat({
   onDone,
   onError,
   onNodeAdded,
+  onHistoryRestored,
 }: Props): JSX.Element {
   const chat             = useFloatingChat(postMessage);
   const outputEl         = useRef<HTMLDivElement>(null);
@@ -212,10 +214,11 @@ export function FloatingChat({
 
   // ─── wire incoming host events ─────────────────────────────────────────
 
-  useEffect(() => onDelta(chat.appendDelta),      [onDelta, chat.appendDelta]);
-  useEffect(() => onDone(chat.completeDelta),     [onDone, chat.completeDelta]);
-  useEffect(() => onError(chat.handleError),      [onError, chat.handleError]);
-  useEffect(() => onNodeAdded(chat.addNodeAdded), [onNodeAdded, chat.addNodeAdded]);
+  useEffect(() => onDelta(chat.appendDelta),               [onDelta, chat.appendDelta]);
+  useEffect(() => onDone(chat.completeDelta),              [onDone, chat.completeDelta]);
+  useEffect(() => onError(chat.handleError),               [onError, chat.handleError]);
+  useEffect(() => onNodeAdded(chat.addNodeAdded),          [onNodeAdded, chat.addNodeAdded]);
+  useEffect(() => onHistoryRestored(chat.restoreHistory),  [onHistoryRestored, chat.restoreHistory]);
 
   // ─── clipboard content response handler ────────────────────────────────
   //
