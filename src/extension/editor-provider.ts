@@ -42,6 +42,7 @@ import {
   MsgFloatingChatSend,
   ChatMessage,
   MsgFloatingChatHistoryRestored,
+  MsgFloatingChatSaveUIState,
 } from '../shared/types';
 import { MAX_FILE_FULL_BYTES, MAX_FILE_PREVIEW_BYTES, MAX_NOTEBOOK_BYTES } from '../shared/constants';
 
@@ -124,10 +125,18 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             // - so vim paste works before any requestClipboardRead round-trip completes
             send({ type: 'clipboardContent', text: clipboardText });
             send({ type: 'vaultIndex', entries: this.indexer.all() });
-            // - restore chat history from workspaceState (survives panel close + rename)
+            // - restore chat state from workspaceState (survives panel close + rename)
             const historyKey = `skena.chatHistory.${document.uri.toString()}`;
+            const uiKey      = `skena.chatUI.${document.uri.toString()}`;
             const savedHistory = this.context.workspaceState.get<ChatMessage[]>(historyKey) ?? [];
-            send({ type: 'floatingChatHistoryRestored', history: savedHistory } satisfies MsgFloatingChatHistoryRestored);
+            const savedUI      = this.context.workspaceState.get<{ collapsed?: boolean; pos?: { x: number; y: number }; size?: { w: number; h: number } }>(uiKey);
+            send({
+              type:      'floatingChatHistoryRestored',
+              history:   savedHistory,
+              collapsed: savedUI?.collapsed,
+              pos:       savedUI?.pos,
+              size:      savedUI?.size,
+            } satisfies MsgFloatingChatHistoryRestored);
             // - forward VS Code markdown preview settings so the webview matches the editor look
             const mdPreview = vscode.workspace.getConfiguration('markdown.preview');
             const md        = vscode.workspace.getConfiguration('markdown');
@@ -162,6 +171,15 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         case 'chatMessage':          await this.handleChatMessage(msg, panel); break;
         case 'floatingChatSend':  await this.handleFloatingChatSend(msg, panel, document, canvasDir); break;
         case 'floatingChatAbort': this.claudeClient.abort(); break;
+        case 'floatingChatSaveUIState': {
+          const uiKey = `skena.chatUI.${document.uri.toString()}`;
+          void this.context.workspaceState.update(uiKey, {
+            collapsed: (msg as MsgFloatingChatSaveUIState).collapsed,
+            pos:       (msg as MsgFloatingChatSaveUIState).pos,
+            size:      (msg as MsgFloatingChatSaveUIState).size,
+          });
+          break;
+        }
         case 'dropFiles':            this.handleDropFiles(msg.uris, msg.position, canvasDir, resolver, send); break;
         case 'addNodeRequest': await this.handleAddNodeRequest(msg, canvasDir, resolver, send); break;
         case 'moveToSubCanvas': await this.handleMoveToSubCanvas(msg, canvasDir, send); break;

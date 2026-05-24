@@ -2,7 +2,8 @@
  * useFloatingChat — state, drag, resize, history and message dispatch
  * for the floating AI companion overlay.
  *
- * History is session-only (no persistence). Canvas nodes are the memory.
+ * History and UI state (pos/size/collapsed) persist via workspaceState
+ * through the extension host. Canvas nodes are the semantic memory.
  */
 
 import { useState, useCallback, useEffect } from 'react';
@@ -33,6 +34,16 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
   const [thinking,  setThinking]  = useState(false);   // - waiting for first token
   const [error,     setError]     = useState<string | null>(null);
 
+  // ─── UI state persistence ─────────────────────────────────────────────────
+
+  const saveUIState = useCallback((
+    p: FloatingChatPos,
+    s: FloatingChatSize,
+    c: boolean,
+  ) => {
+    postMessage({ type: 'floatingChatSaveUIState', collapsed: c, pos: p, size: s });
+  }, [postMessage]);
+
   // ─── drag ─────────────────────────────────────────────────────────────────
 
   const onHeaderMouseDown = useCallback((e: React.MouseEvent) => {
@@ -51,10 +62,11 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
     const onUp = () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup',   onUp);
+      setPos(p => { saveUIState(p, size, collapsed); return p; });
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup',   onUp);
-  }, [pos.x, pos.y, size]);
+  }, [pos.x, pos.y, size, collapsed, saveUIState]);
 
   // ─── resize ───────────────────────────────────────────────────────────────
 
@@ -74,16 +86,21 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
     const onUp = () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup',   onUp);
+      setSize(s => { saveUIState(pos, s, collapsed); return s; });
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup',   onUp);
-  }, [size]);
+  }, [size, pos, collapsed, saveUIState]);
 
   // ─── collapse toggle ──────────────────────────────────────────────────────
 
   const toggleCollapsed = useCallback(() => {
-    setCollapsed(c => !c);
-  }, []);
+    setCollapsed(c => {
+      const next = !c;
+      saveUIState(pos, size, next);
+      return next;
+    });
+  }, [pos, size, saveUIState]);
 
   // ─── Ctrl+` global hotkey ─────────────────────────────────────────────────
 
@@ -147,10 +164,18 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
     setThinking(true);
   }, [postMessage]);
 
-  // ─── restore history from workspaceState on canvas open ──────────────────
+  // ─── restore full state from workspaceState on canvas open ──────────────
 
-  const restoreHistory = useCallback((h: ChatMessage[]) => {
-    setHistory(h);
+  const restoreHistory = useCallback((payload: {
+    history:   ChatMessage[];
+    collapsed?: boolean;
+    pos?:       FloatingChatPos;
+    size?:      FloatingChatSize;
+  }) => {
+    setHistory(payload.history);
+    if (payload.collapsed !== undefined) setCollapsed(payload.collapsed);
+    if (payload.pos)  setPos(payload.pos);
+    if (payload.size) setSize(payload.size);
   }, []);
 
   // ─── node added by AI ────────────────────────────────────────────────────

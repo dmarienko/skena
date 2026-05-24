@@ -305,10 +305,21 @@ export interface MsgFloatingChatError {
   message: string;
 }
 
-/** Host → Webview: restore chat history from workspaceState on canvas open */
+/** Host → Webview: restore chat state from workspaceState on canvas open */
 export interface MsgFloatingChatHistoryRestored {
   type: 'floatingChatHistoryRestored';
-  history: ChatMessage[];
+  history:   ChatMessage[];
+  collapsed?: boolean;
+  pos?:       { x: number; y: number };
+  size?:      { w: number; h: number };
+}
+
+/** Webview → Host: persist floating chat panel UI state (pos/size/collapsed) */
+export interface MsgFloatingChatSaveUIState {
+  type:      'floatingChatSaveUIState';
+  collapsed: boolean;
+  pos:       { x: number; y: number };
+  size:      { w: number; h: number };
 }
 
 /** Host → Webview: AI added a node to the canvas during tool use */
@@ -462,6 +473,7 @@ export type WebviewToHost =
   | MsgWriteClipboard
   | MsgCopyAbsolutePath
   | MsgFloatingChatSend
+  | MsgFloatingChatSaveUIState
   | MsgFloatingChatAbort;
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────

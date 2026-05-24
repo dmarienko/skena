@@ -177,7 +177,12 @@ interface Props {
   onDone:            (handler: ()                    => void) => () => void;
   onError:           (handler: (msg: string)         => void) => () => void;
   onNodeAdded:       (handler: (note: string)        => void) => () => void;
-  onHistoryRestored: (handler: (h: ChatMessage[])    => void) => () => void;
+  onHistoryRestored: (handler: (payload: {
+    history:    ChatMessage[];
+    collapsed?: boolean;
+    pos?:       { x: number; y: number };
+    size?:      { w: number; h: number };
+  }) => void) => () => void;
 }
 
 // ─── component ────────────────────────────────────────────────────────────────

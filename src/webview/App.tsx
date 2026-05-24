@@ -86,7 +86,12 @@ export function App(): JSX.Element {
   const doneEvt      = useRef(makeEventTarget<void>());
   const errorEvt     = useRef(makeEventTarget<string>());
   const nodeAddedEvt    = useRef(makeEventTarget<string>());
-  const historyRestoredEvt = useRef(makeEventTarget<ChatMessage[]>());
+  const historyRestoredEvt = useRef(makeEventTarget<{
+    history:    ChatMessage[];
+    collapsed?: boolean;
+    pos?:       { x: number; y: number };
+    size?:      { w: number; h: number };
+  }>());
 
   // ─── host message handler ─────────────────────────────────────────────
 
@@ -167,7 +172,12 @@ export function App(): JSX.Element {
           break;
         }
         case 'floatingChatHistoryRestored':
-          historyRestoredEvt.current.emit(msg.history);
+          historyRestoredEvt.current.emit({
+            history:   msg.history,
+            collapsed: msg.collapsed,
+            pos:       msg.pos,
+            size:      msg.size,
+          });
           break;
       }
     };
