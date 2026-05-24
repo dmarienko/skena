@@ -1671,6 +1671,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     <ZoomLevelProvider>
     <div ref={wrapperRef} style={{ width: '100%', height: '100%' }} onContextMenu={handleContextMenu}>
       <ReactFlow
+        proOptions={{ hideAttribution: true }}
         nodes={nodes}
         edges={edges}
         nodeTypes={NODE_TYPES}
