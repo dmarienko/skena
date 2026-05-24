@@ -1339,11 +1339,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       // - Ctrl+Left = word jump, Meta+Left = line start, etc.).
       // - e.key sees only 'h' / 'ArrowLeft', so the modifier is invisible to
       // - keyToDir and navigation fires anyway — silently ignoring the modifier.
-      // - Exception: Alt+{h,j,k,l} are allowed through for canvas navigation —
-      // - when the webview has focus these combos are swallowed by the iframe
-      // - and never reach VS Code, so we claim them for canvas nav.
-      if (e.ctrlKey || e.metaKey) return;
-      if (e.altKey && !['h', 'j', 'k', 'l'].includes(e.key)) return;
+      // - Bail out and let VS Code handle the combo.
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
 
       let current = nodesRef.current.find(n => n.selected && n.type !== 'group');
 
