@@ -152,6 +152,26 @@
         "key": "ctrl+shift+right",
         "mac": "cmd+shift+right",
         "when": "activeCustomEditorId == skena.canvasEditor"
+      },
+      {
+        "command": "workbench.action.focusLeftGroup",
+        "key": "alt+h",
+        "when": "activeCustomEditorId == skena.canvasEditor"
+      },
+      {
+        "command": "workbench.action.focusBelowGroup",
+        "key": "alt+j",
+        "when": "activeCustomEditorId == skena.canvasEditor"
+      },
+      {
+        "command": "workbench.action.focusAboveGroup",
+        "key": "alt+k",
+        "when": "activeCustomEditorId == skena.canvasEditor"
+      },
+      {
+        "command": "workbench.action.focusRightGroup",
+        "key": "alt+l",
+        "when": "activeCustomEditorId == skena.canvasEditor"
       }
     ],
     "configuration": {
