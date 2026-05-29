@@ -49,6 +49,39 @@ import {
 } from '../shared/types';
 import { MAX_FILE_FULL_BYTES, MAX_FILE_PREVIEW_BYTES, MAX_NOTEBOOK_BYTES } from '../shared/constants';
 
+// ─── bookmarks file helpers ──────────────────────────────────────────────────
+
+interface BookmarksFile {
+  version: 1;
+  /** - key: path relative to workspace root (or full URI string if outside workspace) */
+  canvases: Record<string, Record<string, CanvasMark>>;
+}
+
+function bookmarksFilePath(wsRoot: vscode.Uri): vscode.Uri {
+  return vscode.Uri.joinPath(wsRoot, '.vscode', 'skena-bookmarks.json');
+}
+
+function canvasBookmarkKey(canvasUri: vscode.Uri, wsRoot: vscode.Uri): string {
+  const ws  = wsRoot.fsPath.replace(/\\/g, '/').replace(/\/?$/, '/');
+  const cvs = canvasUri.fsPath.replace(/\\/g, '/');
+  return cvs.startsWith(ws) ? cvs.slice(ws.length) : canvasUri.toString();
+}
+
+async function readBookmarksFile(wsRoot: vscode.Uri): Promise<BookmarksFile> {
+  try {
+    const raw  = await vscode.workspace.fs.readFile(bookmarksFilePath(wsRoot));
+    const data = JSON.parse(Buffer.from(raw).toString('utf8')) as BookmarksFile;
+    return data.version === 1 ? data : { version: 1, canvases: {} };
+  } catch {
+    return { version: 1, canvases: {} };
+  }
+}
+
+async function writeBookmarksFile(wsRoot: vscode.Uri, data: BookmarksFile): Promise<void> {
+  const content = Buffer.from(JSON.stringify(data, null, 2) + '\n', 'utf8');
+  await vscode.workspace.fs.writeFile(bookmarksFilePath(wsRoot), content);
+}
+
 export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDocument> {
   static readonly viewType = 'skena.canvasEditor';
 
@@ -140,10 +173,21 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
               pos:       savedUI?.pos,
               size:      savedUI?.size,
             } satisfies MsgFloatingChatHistoryRestored);
-            // - restore canvas marks (vim-style bookmarks) from workspaceState
-            const marksKey   = `skena.marks.${document.uri.toString()}`;
-            const savedMarks = this.context.workspaceState.get<Record<string, CanvasMark>>(marksKey) ?? {};
-            send({ type: 'marksRestored', marks: savedMarks } satisfies MsgMarksRestored);
+            // - restore canvas marks (vim-style bookmarks) from .vscode/skena-bookmarks.json
+            {
+              const wsFolder  = vscode.workspace.getWorkspaceFolder(document.uri);
+              let savedMarks: Record<string, CanvasMark> = {};
+              if (wsFolder) {
+                const bf  = await readBookmarksFile(wsFolder.uri);
+                const key = canvasBookmarkKey(document.uri, wsFolder.uri);
+                savedMarks = bf.canvases[key] ?? {};
+              } else {
+                // - fallback: workspaceState for untitled / out-of-workspace canvases
+                const marksKey = `skena.marks.${document.uri.toString()}`;
+                savedMarks = this.context.workspaceState.get<Record<string, CanvasMark>>(marksKey) ?? {};
+              }
+              send({ type: 'marksRestored', marks: savedMarks } satisfies MsgMarksRestored);
+            }
             // - forward VS Code markdown preview settings so the webview matches the editor look
             const mdPreview = vscode.workspace.getConfiguration('markdown.preview');
             const md        = vscode.workspace.getConfiguration('markdown');
@@ -188,8 +232,19 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           break;
         }
         case 'saveMarks': {
-          const marksKey = `skena.marks.${document.uri.toString()}`;
-          void this.context.workspaceState.update(marksKey, (msg as MsgSaveMarks).marks);
+          const marks     = (msg as MsgSaveMarks).marks;
+          const wsFolder  = vscode.workspace.getWorkspaceFolder(document.uri);
+          if (wsFolder) {
+            // - atomic read-modify-write into .vscode/skena-bookmarks.json
+            const bf  = await readBookmarksFile(wsFolder.uri);
+            const key = canvasBookmarkKey(document.uri, wsFolder.uri);
+            bf.canvases[key] = marks;
+            await writeBookmarksFile(wsFolder.uri, bf);
+          } else {
+            // - fallback for out-of-workspace canvases
+            const marksKey = `skena.marks.${document.uri.toString()}`;
+            void this.context.workspaceState.update(marksKey, marks);
+          }
           break;
         }
         case 'dropFiles':            this.handleDropFiles(msg.uris, msg.position, canvasDir, resolver, send); break;
