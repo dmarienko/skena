@@ -29,6 +29,8 @@ import type { editor as MonacoEditor } from 'monaco-editor';
 import { initVimMode, VimMode } from 'monaco-vim';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 
 import { ChatMessage } from '../../shared/types';
 import { useFloatingChat } from '../hooks/useFloatingChat';
@@ -676,7 +678,8 @@ function ChatBubble({
         wordBreak:    'break-word',
       }}>
         <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
+          remarkPlugins={[remarkGfm, remarkMath]}
+          rehypePlugins={[[rehypeKatex, { output: 'mathml', throwOnError: false }]]}
           components={{
             p: ({ children }) => <p style={{ margin: '0 0 4px 0' }}>{children}</p>,
             code: ({ children, className }) => {
