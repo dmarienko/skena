@@ -1122,6 +1122,23 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         return;
       }
 
+      // - Shift+C: pan viewport to centre on the focused node (zoom unchanged)
+      if (!e.ctrlKey && !e.metaKey && e.shiftKey && !e.altKey && e.key === 'C') {
+        const focused = nodesRef.current.find(n => n.selected && n.type !== 'group');
+        if (focused) {
+          e.preventDefault();
+          const nw  = Number(focused.style?.width  ?? 200);
+          const nh  = Number(focused.style?.height ?? 150);
+          const { zoom } = rfRef.current.getViewport();
+          rfRef.current.setCenter(
+            focused.position.x + nw / 2,
+            focused.position.y + nh / 2,
+            { duration: 250, zoom },
+          );
+        }
+        return;
+      }
+
       // - Ctrl+Shift+{H,L}: add empty text node left/right via keydown.
       // - J and K are NOT handled here — VS Code fires the command (skena.addTextNodeDown/Up)
       // - AND delivers the keydown to the webview, which would cause double node creation.
