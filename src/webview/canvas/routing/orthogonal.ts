@@ -125,8 +125,16 @@ export function routeOrthogonal(
   const mx = (ep[0] + np[0]) / 2;
   const my = (ep[1] + np[1]) / 2;
 
-  // ── 1. Z at midpoint (always first: gives shared branch col for fan-outs) ──
-  let mid: Pt[] | null = tryZV(ep, np, mx, rects) ?? tryZH(ep, np, my, rects);
+  // - for horizontal exits (Right/Left) the first Z segment continues in the
+  // - exit direction → prefer ZV (horizontal-first).
+  // - For vertical exits (Bottom/Top) continue in the exit direction → prefer ZH.
+  // - This ensures fan-out edges always branch at a shared column/row at mid-distance.
+  const srcH = sPos === Position.Right || sPos === Position.Left;
+
+  // ── 1. Z at midpoint ─────────────────────────────────────────────────────────
+  let mid: Pt[] | null = srcH
+    ? (tryZV(ep, np, mx, rects) ?? tryZH(ep, np, my, rects))
+    : (tryZH(ep, np, my, rects) ?? tryZV(ep, np, mx, rects));
   if (mid) return [[sx, sy], ...mid, [tx, ty]];
 
   // ── 2. L-shapes (fallback when midpoint channel is blocked) ─────────────────
