@@ -34,7 +34,7 @@ import { NotebookRenderer } from '../../renderers/NotebookRenderer';
 import { CodeRenderer } from '../../renderers/CodeRenderer';
 import { ImageRenderer } from '../../renderers/ImageRenderer';
 import { useHeatmap } from '../../context/HeatmapContext';
-import { HANDLE_STYLE, selectedOverlayStyle } from './nodeShared';
+import { HANDLE_STYLE, useSelectedStyle } from './nodeShared';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -154,6 +154,7 @@ function FileNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as FileNode & { accentColor?: string };
   const { visible: hmVisible, nodeGlow } = useHeatmap();
   const hmNode = hmVisible ? nodeGlow.get(data.id as string) : undefined;
+  const selectedStyle = useSelectedStyle(selected);
   const { status, content, fileType, resourceUri, error, truncated, totalSize, html } = useFileContent(node.file);
 
   const openInEditor = useCallback(() => {
@@ -188,7 +189,7 @@ function FileNodeInner({ data, id, selected }: NodeProps): JSX.Element {
           opacity:     hmNode.opacity,
         } : {}),
         // - sci-fi focus ring
-        ...selectedOverlayStyle(selected),
+        ...selectedStyle,
       }}
       onClick={onCmdClick}
     >

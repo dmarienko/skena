@@ -11,12 +11,13 @@ import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { MarkdownRenderer } from '../../renderers/MarkdownRenderer';
 import { ScrollableContent } from '../../components/ScrollableContent';
 import { useHeatmap } from '../../context/HeatmapContext';
-import { HANDLE_STYLE, selectedOverlayStyle } from './nodeShared';
+import { HANDLE_STYLE, useSelectedStyle } from './nodeShared';
 
 export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as CellNode & { accentColor?: string };
   const { visible: hmVisible, nodeGlow } = useHeatmap();
   const hmNode = hmVisible ? nodeGlow.get(data.id as string) : undefined;
+  const selectedStyle = useSelectedStyle(selected);
   const borderColor = node.accentColor ?? '#454545';
 
   return (
@@ -39,7 +40,7 @@ export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
           opacity:     hmNode.opacity,
         } : {}),
         // - sci-fi focus ring
-        ...selectedOverlayStyle(selected),
+        ...selectedStyle,
       }}
     >
       <NodeResizer

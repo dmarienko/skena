@@ -8,7 +8,7 @@ import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import { PortalNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { useHeatmap } from '../../context/HeatmapContext';
-import { HANDLE_STYLE, selectedOverlayStyle } from './nodeShared';
+import { HANDLE_STYLE, useSelectedStyle } from './nodeShared';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -24,6 +24,7 @@ export function PortalNodeComponent({ data, id, selected }: NodeProps): JSX.Elem
   const node = data as unknown as PortalNode & { accentColor?: string };
   const { visible: hmVisible, nodeGlow } = useHeatmap();
   const hmNode = hmVisible ? nodeGlow.get(data.id as string) : undefined;
+  const selectedStyle = useSelectedStyle(selected);
   const borderColor = node.accentColor ?? '#53dfdd';
 
   const open = () => vscodePostMessage({ type: 'openFile', uri: node.canvas });
@@ -51,7 +52,7 @@ export function PortalNodeComponent({ data, id, selected }: NodeProps): JSX.Elem
           opacity:     hmNode.opacity,
         } : {}),
         // - sci-fi focus ring (circular because borderRadius:'50%' is preserved)
-        ...selectedOverlayStyle(selected),
+        ...selectedStyle,
       }}
       onClick={open}
     >

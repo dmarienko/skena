@@ -36,7 +36,7 @@ import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { MarkdownRenderer } from '../../renderers/MarkdownRenderer';
 import { ScrollableContent } from '../../components/ScrollableContent';
 import { useHeatmap } from '../../context/HeatmapContext';
-import { HANDLE_STYLE, selectedOverlayStyle } from './nodeShared';
+import { HANDLE_STYLE, useSelectedStyle } from './nodeShared';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -216,6 +216,7 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
   const node = data as unknown as TextNode & { accentColor?: string };
   const { visible: hmVisible, nodeGlow } = useHeatmap();
   const hmNode = hmVisible ? nodeGlow.get(data.id as string) : undefined;
+  const selectedStyle = useSelectedStyle(selected);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(node.text);
   const vimStatusRef = useRef<HTMLDivElement | null>(null);
@@ -436,7 +437,7 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
           opacity:     hmNode.opacity,
         } : {}),
         // - sci-fi focus ring — box-shadow coexists with heatmap filter
-        ...selectedOverlayStyle(selected),
+        ...selectedStyle,
       }}
       tabIndex={0}
       onDoubleClick={enterEdit}
