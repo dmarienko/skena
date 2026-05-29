@@ -989,25 +989,53 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       y: n.position.y + Number(n.style?.height ?? 150) / 2,
     });
 
-    // - find closest node in direction using weighted distance:
-    // - primary-axis dist + 2.5× perpendicular dist so off-axis nodes are deprioritised
+    // - Spatial navigation: find the best node in the given direction.
+    // - Strategy: 45° cone filter first (primary axis must dominate so a node
+    // - that is barely left but mostly below cannot beat a clearly-left node).
+    // - If nothing qualifies in the cone, fall back to full half-space with a
+    // - stronger perpendicular penalty (original behaviour, last-resort only).
     const findNearest = (from: Node, dir: 'left' | 'right' | 'up' | 'down'): string | null => {
-      const fc = centerOf(from);
+      const fc    = centerOf(from);
+      const horiz = dir === 'left' || dir === 'right';
+
+      const inDir = (dx: number, dy: number): boolean =>
+        dir === 'left'  ? dx < 0 :
+        dir === 'right' ? dx > 0 :
+        dir === 'up'    ? dy < 0 : dy > 0;
+
+      // - within 45°: primary axis displacement must be ≥ perpendicular
+      const inCone = (dx: number, dy: number): boolean => horiz
+        ? Math.abs(dx) >= Math.abs(dy)
+        : Math.abs(dy) >= Math.abs(dx);
+
+      const score = (dx: number, dy: number): number => horiz
+        ? Math.abs(dx) + Math.abs(dy) * 2.5
+        : Math.abs(dy) + Math.abs(dx) * 2.5;
+
       let bestId: string | null = null;
       let bestScore = Infinity;
+
+      // - pass 1: strict 45° cone
       for (const node of nodesRef.current) {
         if (node.id === from.id || node.type === 'group') continue;
         const nc = centerOf(node);
         const dx = nc.x - fc.x;
         const dy = nc.y - fc.y;
-        const inDir = dir === 'left'  ? dx < 0 :
-                      dir === 'right' ? dx > 0 :
-                      dir === 'up'    ? dy < 0 : dy > 0;
-        if (!inDir) continue;
-        const score = (dir === 'left' || dir === 'right')
-          ? Math.abs(dx) + Math.abs(dy) * 2.5
-          : Math.abs(dy) + Math.abs(dx) * 2.5;
-        if (score < bestScore) { bestScore = score; bestId = node.id; }
+        if (!inDir(dx, dy) || !inCone(dx, dy)) continue;
+        const s = score(dx, dy);
+        if (s < bestScore) { bestScore = s; bestId = node.id; }
+      }
+      if (bestId) return bestId;
+
+      // - pass 2: fallback — full half-space, stronger perpendicular penalty
+      for (const node of nodesRef.current) {
+        if (node.id === from.id || node.type === 'group') continue;
+        const nc = centerOf(node);
+        const dx = nc.x - fc.x;
+        const dy = nc.y - fc.y;
+        if (!inDir(dx, dy)) continue;
+        const s = score(dx, dy);
+        if (s < bestScore) { bestScore = s; bestId = node.id; }
       }
       return bestId;
     };
