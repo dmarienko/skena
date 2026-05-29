@@ -1045,6 +1045,20 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         return;
       }
 
+      // - Ctrl+U / Ctrl+D: scroll focused node content up / down (vim half-page)
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'u' || e.key === 'd')) {
+        const focused = nodesRef.current.find(n => n.selected && n.type !== 'group');
+        if (focused) {
+          const nodeEl  = document.querySelector(`.react-flow__node[data-id="${focused.id}"]`);
+          const scrollEl = nodeEl?.querySelector('.skena-scrollable') as HTMLElement | null;
+          if (scrollEl && scrollEl.scrollHeight > scrollEl.clientHeight + 1) {
+            e.preventDefault();
+            scrollEl.scrollBy({ top: scrollEl.clientHeight / 2 * (e.key === 'u' ? -1 : 1), behavior: 'smooth' });
+            return;
+          }
+        }
+      }
+
       // - z / Z: zoom in / out centred on viewport centre
       if (!e.ctrlKey && !e.metaKey && !e.shiftKey && e.key === 'z') {
         e.preventDefault();
