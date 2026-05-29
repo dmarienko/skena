@@ -198,21 +198,22 @@ export function App(): JSX.Element {
 
   // ─── render ───────────────────────────────────────────────────────────
 
-  if (!ready) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--vscode-foreground)', opacity: 0.5 }}>
-        Loading canvas...
-      </div>
-    );
-  }
-
+  // - FloatingChat is always mounted (outside the ready guard) so its state
+  // - survives canvas reloads (canvasChanged → canvasLoaded) without resetting.
+  // - Unmounting it would reset useFloatingChat to collapsed:false every reload.
   return (
     <MarkdownConfigContext.Provider value={mdConfig}>
-      <CanvasView
-        canvas={canvas}
-        canvasPath={canvasPath}
-        onActiveNodeChange={handleActiveNodeChange}
-      />
+      {ready ? (
+        <CanvasView
+          canvas={canvas}
+          canvasPath={canvasPath}
+          onActiveNodeChange={handleActiveNodeChange}
+        />
+      ) : (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--vscode-foreground)', opacity: 0.5 }}>
+          Loading canvas...
+        </div>
+      )}
       <FloatingChat
         activeNodeId={activeNodeId}
         postMessage={postMessage}

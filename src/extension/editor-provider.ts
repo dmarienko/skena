@@ -136,7 +136,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             send({
               type:      'floatingChatHistoryRestored',
               history:   savedHistory,
-              collapsed: savedUI?.collapsed,
+              collapsed: true,              // - always start collapsed; user opens explicitly
               pos:       savedUI?.pos,
               size:      savedUI?.size,
             } satisfies MsgFloatingChatHistoryRestored);
