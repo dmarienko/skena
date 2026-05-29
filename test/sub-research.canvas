@@ -1,21 +1,11 @@
 {
   "nodes": [
     {
-      "id": "node-1774618743797-0",
-      "type": "file",
-      "file": "my-notebook.ipynb",
-      "x": 242,
-      "y": 607,
-      "width": 402,
-      "height": 395,
-      "nodeLabel": "J1"
-    },
-    {
       "id": "node-1774624125112",
       "type": "text",
       "text": "# Next steps\r\n- Wake up",
-      "x": 242,
-      "y": 1050,
+      "x": 842,
+      "y": 1082,
       "width": 400,
       "height": 104,
       "nodeLabel": "N1"
@@ -24,28 +14,18 @@
       "id": "text-mn935ze1-vxk6",
       "type": "text",
       "text": "# Hello",
-      "x": 242,
-      "y": 1202,
+      "x": 240,
+      "y": 1198,
       "width": 400,
       "height": 300,
       "nodeLabel": "N2"
     },
     {
-      "id": "node-1774627147825",
-      "type": "file",
-      "file": "./test1.md",
-      "x": 742,
-      "y": 1593,
-      "width": 400,
-      "height": 300,
-      "nodeLabel": "M1"
-    },
-    {
       "id": "node-1774631740880",
       "type": "text",
       "text": "#feature\r\n\r\n- retest this notebook",
-      "x": 742,
-      "y": 765,
+      "x": 923,
+      "y": 1500,
       "width": 370,
       "height": 125,
       "nodeLabel": "N3"
@@ -54,21 +34,11 @@
       "id": "node-1774631777691",
       "type": "text",
       "text": "- test another approach",
-      "x": 742,
-      "y": 952,
-      "width": 397,
-      "height": 108,
+      "x": 792,
+      "y": 1296,
+      "width": 702,
+      "height": 105,
       "nodeLabel": "N4"
-    },
-    {
-      "id": "node-1774964584826-0",
-      "type": "file",
-      "file": "meta-simulation.yaml",
-      "x": 242,
-      "y": 1593,
-      "width": 400,
-      "height": 300,
-      "nodeLabel": "Y2"
     },
     {
       "id": "node-1774964928341",
@@ -83,65 +53,34 @@
   ],
   "edges": [
     {
-      "id": "edge-1774624125112",
-      "fromNode": "node-1774618743797-0",
-      "fromSide": "bottom",
-      "toNode": "node-1774624125112",
-      "toSide": "top",
-      "toEnd": "arrow"
-    },
-    {
-      "id": "node-1774624125112-text-mn935ze1-vxk6-1774627117417",
-      "fromNode": "node-1774624125112",
-      "fromSide": "bottom",
-      "toNode": "text-mn935ze1-vxk6",
-      "toSide": "top",
-      "toEnd": "arrow"
-    },
-    {
-      "id": "edge-1774631740880",
-      "fromNode": "node-1774618743797-0",
+      "id": "text-mn935ze1-vxk6-node-1774624125112-1780058678229",
+      "fromNode": "text-mn935ze1-vxk6",
       "fromSide": "right",
-      "toNode": "node-1774631740880",
+      "toNode": "node-1774624125112",
       "toSide": "left",
       "toEnd": "arrow"
     },
     {
-      "id": "edge-1774631777691",
-      "fromNode": "node-1774618743797-0",
+      "id": "text-mn935ze1-vxk6-node-1774631777691-1780058680298",
+      "fromNode": "text-mn935ze1-vxk6",
       "fromSide": "right",
       "toNode": "node-1774631777691",
       "toSide": "left",
       "toEnd": "arrow"
     },
     {
-      "id": "text-mn935ze1-vxk6-node-1774964584826-0-1774964588922",
+      "id": "text-mn935ze1-vxk6-node-1774631740880-1780058682199",
       "fromNode": "text-mn935ze1-vxk6",
-      "fromSide": "bottom",
-      "toNode": "node-1774964584826-0",
-      "toSide": "top",
-      "toEnd": "arrow"
-    },
-    {
-      "id": "node-1774964584826-0-node-1774627147825-1774964594357",
-      "fromNode": "node-1774964584826-0",
       "fromSide": "right",
-      "toNode": "node-1774627147825",
+      "toNode": "node-1774631740880",
       "toSide": "left",
-      "toEnd": "arrow"
-    },
-    {
-      "id": "edge-1774964928341",
-      "fromNode": "node-1774618743797-0",
-      "fromSide": "top",
-      "toNode": "node-1774964928341",
-      "toSide": "bottom",
       "toEnd": "arrow"
     }
   ],
   "viewport": {
-    "x": -630.7231784950576,
-    "y": -1217.6502124383073,
-    "zoom": 0.8744407415021843
-  }
+    "x": -187.74395792389214,
+    "y": -1172.4637784032104,
+    "zoom": 0.9456896475714636
+  },
+  "creationCounter": 1
 }
