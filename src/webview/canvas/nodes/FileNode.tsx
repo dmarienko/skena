@@ -34,6 +34,7 @@ import { NotebookRenderer } from '../../renderers/NotebookRenderer';
 import { CodeRenderer } from '../../renderers/CodeRenderer';
 import { ImageRenderer } from '../../renderers/ImageRenderer';
 import { useHeatmap } from '../../context/HeatmapContext';
+import { HANDLE_STYLE, selectedOverlayStyle } from './nodeShared';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -186,6 +187,8 @@ function FileNodeInner({ data, id, selected }: NodeProps): JSX.Element {
           borderColor: hmNode.borderColor,
           opacity:     hmNode.opacity,
         } : {}),
+        // - sci-fi focus ring
+        ...selectedOverlayStyle(selected),
       }}
       onClick={onCmdClick}
     >
@@ -196,10 +199,6 @@ function FileNodeInner({ data, id, selected }: NodeProps): JSX.Element {
           detail: { id, x: Math.round(p.x), y: Math.round(p.y), width: Math.round(p.width), height: Math.round(p.height) },
         }))}
       />
-      <Handle type="source" position={Position.Top}    id="top"    />
-      <Handle type="source" position={Position.Right}  id="right"  />
-      <Handle type="source" position={Position.Bottom} id="bottom" />
-      <Handle type="source" position={Position.Left}   id="left"   />
 
       <NodeHeader
         fileType={fileType}
@@ -216,6 +215,10 @@ function FileNodeInner({ data, id, selected }: NodeProps): JSX.Element {
         sourceNodeId={id}
       />
     </div>
+    <Handle type="source" position={Position.Top}    id="top"    style={HANDLE_STYLE} />
+    <Handle type="source" position={Position.Right}  id="right"  style={HANDLE_STYLE} />
+    <Handle type="source" position={Position.Bottom} id="bottom" style={HANDLE_STYLE} />
+    <Handle type="source" position={Position.Left}   id="left"   style={HANDLE_STYLE} />
     </>
   );
 }

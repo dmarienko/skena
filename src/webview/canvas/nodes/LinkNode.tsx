@@ -8,6 +8,7 @@ import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import { LinkNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { useHeatmap } from '../../context/HeatmapContext';
+import { HANDLE_STYLE, selectedOverlayStyle } from './nodeShared';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -57,6 +58,8 @@ export function LinkNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
           borderColor: hmNode.borderColor,
           opacity:     hmNode.opacity,
         } : {}),
+        // - sci-fi focus ring
+        ...selectedOverlayStyle(selected),
       }}
       onClick={open}
     >
@@ -67,10 +70,6 @@ export function LinkNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
           detail: { id, x: Math.round(p.x), y: Math.round(p.y), width: Math.round(p.width), height: Math.round(p.height) },
         }))}
       />
-      <Handle type="source" position={Position.Top}    id="top"    />
-      <Handle type="source" position={Position.Right}  id="right"  />
-      <Handle type="source" position={Position.Bottom} id="bottom" />
-      <Handle type="source" position={Position.Left}   id="left"   />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         {favicon && <img src={favicon} alt="" width={16} height={16} style={{ flexShrink: 0 }} />}
@@ -80,6 +79,10 @@ export function LinkNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
       </div>
       <div style={{ fontSize: 12, wordBreak: 'break-all', opacity: 0.85 }}>{node.url}</div>
     </div>
+    <Handle type="source" position={Position.Top}    id="top"    style={HANDLE_STYLE} />
+    <Handle type="source" position={Position.Right}  id="right"  style={HANDLE_STYLE} />
+    <Handle type="source" position={Position.Bottom} id="bottom" style={HANDLE_STYLE} />
+    <Handle type="source" position={Position.Left}   id="left"   style={HANDLE_STYLE} />
     </>
   );
 }

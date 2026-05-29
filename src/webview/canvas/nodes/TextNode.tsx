@@ -36,6 +36,7 @@ import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { MarkdownRenderer } from '../../renderers/MarkdownRenderer';
 import { ScrollableContent } from '../../components/ScrollableContent';
 import { useHeatmap } from '../../context/HeatmapContext';
+import { HANDLE_STYLE, selectedOverlayStyle } from './nodeShared';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -427,13 +428,15 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
         overflow:      'hidden',
         display:       'flex',
         flexDirection: 'column',
-        outline:       'none',   // - suppress focus ring (handled by .selected class)
+        outline:       'none',
         // - heatmap glow overrides: filter (drop-shadow), borderColor, opacity
         ...(hmNode ? {
           filter:      hmNode.glowFilter,
           borderColor: hmNode.borderColor,
           opacity:     hmNode.opacity,
         } : {}),
+        // - sci-fi focus ring — box-shadow coexists with heatmap filter
+        ...selectedOverlayStyle(selected),
       }}
       tabIndex={0}
       onDoubleClick={enterEdit}
@@ -453,11 +456,6 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
           detail: { id, x: Math.round(p.x), y: Math.round(p.y), width: Math.round(p.width), height: Math.round(p.height) },
         }))}
       />
-      <Handle type="source" position={Position.Top}    id="top"    />
-      <Handle type="source" position={Position.Right}  id="right"  />
-      <Handle type="source" position={Position.Bottom} id="bottom" />
-      <Handle type="source" position={Position.Left}   id="left"   />
-
       {editing ? (
         // - block React Flow from stealing pointer AND keyboard events while Monaco is active
         // - (space = pan, arrow keys = nudge, delete = delete node, etc.)
@@ -512,6 +510,11 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
         </ScrollableContent>
       )}
     </div>
+    {/* - handles outside overflow:hidden wrapper → not clipped, render above scrollable content */}
+    <Handle type="source" position={Position.Top}    id="top"    style={HANDLE_STYLE} />
+    <Handle type="source" position={Position.Right}  id="right"  style={HANDLE_STYLE} />
+    <Handle type="source" position={Position.Bottom} id="bottom" style={HANDLE_STYLE} />
+    <Handle type="source" position={Position.Left}   id="left"   style={HANDLE_STYLE} />
     </>
   );
 }

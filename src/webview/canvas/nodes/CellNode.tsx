@@ -11,6 +11,7 @@ import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { MarkdownRenderer } from '../../renderers/MarkdownRenderer';
 import { ScrollableContent } from '../../components/ScrollableContent';
 import { useHeatmap } from '../../context/HeatmapContext';
+import { HANDLE_STYLE, selectedOverlayStyle } from './nodeShared';
 
 export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as CellNode & { accentColor?: string };
@@ -37,6 +38,8 @@ export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
           borderColor: hmNode.borderColor,
           opacity:     hmNode.opacity,
         } : {}),
+        // - sci-fi focus ring
+        ...selectedOverlayStyle(selected),
       }}
     >
       <NodeResizer
@@ -46,10 +49,6 @@ export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
           detail: { id, x: Math.round(p.x), y: Math.round(p.y), width: Math.round(p.width), height: Math.round(p.height) },
         }))}
       />
-      <Handle type="source" position={Position.Top}    id="top"    />
-      <Handle type="source" position={Position.Right}  id="right"  />
-      <Handle type="source" position={Position.Bottom} id="bottom" />
-      <Handle type="source" position={Position.Left}   id="left"   />
 
       <ScrollableContent scrollKey={id}>
         {node.format === 'markdown' && <MarkdownRenderer content={node.content} />}
@@ -57,6 +56,10 @@ export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
         {node.format === 'html'     && <div className="skena-cell-html" dangerouslySetInnerHTML={{ __html: node.content }} />}
       </ScrollableContent>
     </div>
+    <Handle type="source" position={Position.Top}    id="top"    style={HANDLE_STYLE} />
+    <Handle type="source" position={Position.Right}  id="right"  style={HANDLE_STYLE} />
+    <Handle type="source" position={Position.Bottom} id="bottom" style={HANDLE_STYLE} />
+    <Handle type="source" position={Position.Left}   id="left"   style={HANDLE_STYLE} />
     </>
   );
 }
