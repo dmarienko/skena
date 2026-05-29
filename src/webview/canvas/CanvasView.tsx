@@ -1150,6 +1150,28 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         return;
       }
 
+      // - Alt+Shift+C: center and zoom to focused node at a readable scale.
+      // - Target zoom = fit node into 85% of the viewport, clamped 0.8–1.5 so
+      // - text stays legible without losing too much spatial context.
+      if (!e.ctrlKey && !e.metaKey && e.shiftKey && e.altKey && e.key === 'C') {
+        const focused = nodesRef.current.find(n => n.selected && n.type !== 'group');
+        if (focused) {
+          e.preventDefault();
+          const nw   = focused.measured?.width  ?? Number(focused.style?.width  ?? 200);
+          const nh   = focused.measured?.height ?? Number(focused.style?.height ?? 150);
+          const zoom = Math.max(0.8, Math.min(1.5, Math.min(
+            window.innerWidth  * 0.85 / nw,
+            window.innerHeight * 0.85 / nh,
+          )));
+          rfRef.current.setCenter(
+            focused.position.x + nw / 2,
+            focused.position.y + nh / 2,
+            { duration: 350, zoom },
+          );
+        }
+        return;
+      }
+
       // - Shift+C: pan viewport to centre on the focused node (zoom unchanged)
       if (!e.ctrlKey && !e.metaKey && e.shiftKey && !e.altKey && e.key === 'C') {
         const focused = nodesRef.current.find(n => n.selected && n.type !== 'group');
