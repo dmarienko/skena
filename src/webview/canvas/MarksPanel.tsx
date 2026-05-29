@@ -61,26 +61,26 @@ export function MarksPanel({ marks, nodes, onJump, onClose }: Props): JSX.Elemen
   for (const [register, mark] of sorted) {
     const node     = mark.nodeId ? nodes.find(n => n.id === mark.nodeId) : undefined;
     const jumpable = mark.nodeId === null || node != null;
-    const title    = node
+    // - hide marks whose target node was deleted
+    if (!jumpable) continue;
+    const title = node
       ? nodeTitle(node.data as Record<string, unknown>, node.type ?? '')
-      : mark.nodeId ? '(node removed)' : '(position only)';
-    entries.push({ register, mark, title, jumpable });
+      : '(position only)';
+    entries.push({ register, mark, title, jumpable: true });
   }
 
-  // - `` ` `` previous-position register at the bottom
+  // - `` ` `` previous-position register at the bottom (viewport is always valid)
   if (marks['`']) {
-    const mark     = marks['`'];
-    const node     = mark.nodeId ? nodes.find(n => n.id === mark.nodeId) : undefined;
-    const jumpable = mark.nodeId === null || node != null;
-    const title    = node
+    const mark = marks['`'];
+    const node = mark.nodeId ? nodes.find(n => n.id === mark.nodeId) : undefined;
+    const title = node
       ? `← ${nodeTitle(node.data as Record<string, unknown>, node.type ?? '')}`
-      : '(previous position)';
-    entries.push({ register: '`', mark, title, jumpable });
+      : '← (previous position)';
+    entries.push({ register: '`', mark, title, jumpable: true });
   }
 
-  // - start selection on first jumpable entry
-  const firstJumpable = entries.findIndex(e => e.jumpable);
-  const [sel, setSel] = useState(firstJumpable >= 0 ? firstJumpable : 0);
+  // - all displayed entries are jumpable; start on first
+  const [sel, setSel] = useState(entries.length > 0 ? 0 : 0);
 
   const rowRefs = useRef<(HTMLDivElement | null)[]>([]);
 
@@ -99,25 +99,17 @@ export function MarksPanel({ marks, nodes, onJump, onClose }: Props): JSX.Elemen
       }
       if (e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'j')) {
         e.preventDefault(); e.stopPropagation();
-        setSel(s => {
-          let next = s;
-          do { next = (next + 1) % entries.length; } while (!entries[next]?.jumpable && next !== s);
-          return next;
-        });
+        setSel(s => (s + 1) % entries.length);
         return;
       }
       if (e.key === 'ArrowUp' || (e.ctrlKey && e.key === 'k')) {
         e.preventDefault(); e.stopPropagation();
-        setSel(s => {
-          let next = s;
-          do { next = (next - 1 + entries.length) % entries.length; } while (!entries[next]?.jumpable && next !== s);
-          return next;
-        });
+        setSel(s => (s - 1 + entries.length) % entries.length);
         return;
       }
       if (e.key === 'Enter') {
         e.preventDefault(); e.stopPropagation();
-        if (entries[sel]?.jumpable) onJump(entries[sel].register);
+        if (entries[sel]) onJump(entries[sel].register);
         return;
       }
     };
@@ -184,14 +176,13 @@ export function MarksPanel({ marks, nodes, onJump, onClose }: Props): JSX.Elemen
                 <div
                   key={entry.register}
                   ref={el => { rowRefs.current[i] = el; }}
-                  onClick={() => entry.jumpable && onJump(entry.register)}
+                  onClick={() => onJump(entry.register)}
                   style={{
                     display:    'flex',
                     alignItems: 'center',
                     gap:        10,
                     padding:    '5px 12px',
-                    cursor:     entry.jumpable ? 'pointer' : 'default',
-                    opacity:    entry.jumpable ? 1 : 0.35,
+                    cursor:     'pointer',
                     background: isSelected
                       ? 'var(--vscode-list-activeSelectionBackground, #094771)'
                       : 'transparent',
@@ -199,7 +190,7 @@ export function MarksPanel({ marks, nodes, onJump, onClose }: Props): JSX.Elemen
                       ? 'var(--vscode-list-activeSelectionForeground, #fff)'
                       : 'var(--vscode-foreground, #ccc)',
                   }}
-                  onMouseEnter={() => entry.jumpable && setSel(i)}
+                  onMouseEnter={() => setSel(i)}
                 >
                   {/* register key badge */}
                   <span style={{

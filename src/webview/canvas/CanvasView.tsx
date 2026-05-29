@@ -759,8 +759,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const jumpToMark = useCallback((register: string) => {
     const target = marksRef.current[register];
     if (!target) return;
-    // - skip if the mark pointed to a node that no longer exists
-    if (target.nodeId !== null && !nodesRef.current.some(n => n.id === target.nodeId)) return;
+    // - for named marks: abort if the target node was deleted
+    // - for `` ` `` (previous-position): a stale nodeId is not a blocker; still jump to viewport
+    if (register !== '`' && target.nodeId !== null && !nodesRef.current.some(n => n.id === target.nodeId)) return;
     const currentFocused = nodesRef.current.find(n => n.selected && n.type !== 'group');
     marksRef.current = {
       ...marksRef.current,
@@ -1086,7 +1087,27 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         const scale   = newZoom / zoom;
         const cx = window.innerWidth  / 2;
         const cy = window.innerHeight / 2;
-        rfRef.current.setViewport({ x: cx - (cx - tx) * scale, y: cy - (cy - ty) * scale, zoom: newZoom });
+        let newTx = cx - (cx - tx) * scale;
+        let newTy = cy - (cy - ty) * scale;
+
+        // - if a node is focused, ensure its centre stays within the viewport after zoom-in
+        const focused = nodesRef.current.find(n => n.selected && n.type !== 'group');
+        if (focused) {
+          const nw  = Number(focused.style?.width  ?? 200);
+          const nh  = Number(focused.style?.height ?? 150);
+          const ncx = focused.position.x + nw / 2;
+          const ncy = focused.position.y + nh / 2;
+          // - node centre in screen coords under the proposed new viewport
+          const sx  = ncx * newZoom + newTx;
+          const sy  = ncy * newZoom + newTy;
+          const PAD = 60; // px margin from viewport edge
+          if (sx < PAD)                           newTx += PAD - sx;
+          else if (sx > window.innerWidth  - PAD) newTx -= sx - (window.innerWidth  - PAD);
+          if (sy < PAD)                           newTy += PAD - sy;
+          else if (sy > window.innerHeight - PAD) newTy -= sy - (window.innerHeight - PAD);
+        }
+
+        rfRef.current.setViewport({ x: newTx, y: newTy, zoom: newZoom });
         return;
       }
       if (!e.ctrlKey && !e.metaKey && e.shiftKey && e.key === 'Z') {
