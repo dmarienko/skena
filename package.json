@@ -235,7 +235,7 @@
         "skena.ai.apiKey": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Anthropic API key for the floating AI companion. Falls back to the `ANTHROPIC_API_KEY` environment variable if left empty.",
+          "markdownDescription": "API key for the AI companion.\n- **anthropic** provider: Anthropic API key (falls back to `ANTHROPIC_API_KEY` env var)\n- **openai-compat** provider: OpenAI / Groq / etc. key. For **Ollama** set this to any non-empty string (e.g. `\"ollama\"`).",
           "scope": "window"
         },
         "skena.ai.model": {
