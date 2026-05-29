@@ -30,7 +30,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
-import { CanvasData, CanvasNode, CanvasEdge, MsgAddNodeResult, MsgSubCanvasCreated, NodeSide } from '../../shared/types';
+import { CanvasData, CanvasNode, CanvasEdge, MsgAddNodeResult, MsgSubCanvasCreated, NodeSide, CanvasMark } from '../../shared/types';
 import { ContextMenu } from './ContextMenu';
 import { CANVAS_COLORS } from '../../shared/constants';
 import { ensureLabels, assignLabel } from './nodeLabels';
@@ -302,6 +302,20 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const [heatmapVisible, setHeatmapVisible] = useState(true);
   const lastGPressRef = useRef<number>(0);
   const toggleHeatmap = useCallback(() => setHeatmapVisible(v => !v), []);
+
+  // ─── vim marks (m{x} to set, `{x} to jump, `` for previous position) ────────
+  const marksRef       = useRef<Record<string, CanvasMark>>({});
+  const pendingMarkRef = useRef<'set' | 'jump' | null>(null);
+  const markTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // - restore marks from workspaceState (sent by host on canvas open)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      marksRef.current = (e as CustomEvent<Record<string, CanvasMark>>).detail ?? {};
+    };
+    window.addEventListener('skena:marksRestored', handler);
+    return () => window.removeEventListener('skena:marksRestored', handler);
+  }, []);
 
   // - intercept onNodesChange to compute alignment guides + manual grid snap
   // - (snapToGrid is removed from <ReactFlow> so both can coexist cleanly)
@@ -994,6 +1008,43 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         active?.closest('.monaco-editor')
       ) return;
 
+      // ── vim marks: consume second key of m{x} / `{x} sequence ──────────────
+      if (pendingMarkRef.current !== null) {
+        // - only printable single-char keys act as registers; Escape cancels
+        if (e.key.length === 1 || e.key === 'Escape') {
+          e.preventDefault();
+          if (markTimerRef.current) { clearTimeout(markTimerRef.current); markTimerRef.current = null; }
+
+          if (e.key !== 'Escape') {
+            const reg = e.key;
+            if (pendingMarkRef.current === 'set') {
+              // - m{x}: store current node + viewport under register x
+              const focused = nodesRef.current.find(n => n.selected && n.type !== 'group');
+              if (focused) {
+                marksRef.current = { ...marksRef.current, [reg]: { nodeId: focused.id, viewport: rfRef.current.getViewport() } };
+                vscodePostMessage({ type: 'saveMarks', marks: marksRef.current });
+              }
+            } else {
+              // - `{x}: jump to register x; save current position in `` ` `` first
+              const target = marksRef.current[reg];
+              if (target && target.nodeId && nodesRef.current.some(n => n.id === target.nodeId)) {
+                const currentFocused = nodesRef.current.find(n => n.selected && n.type !== 'group');
+                marksRef.current = {
+                  ...marksRef.current,
+                  '`': { nodeId: currentFocused?.id ?? null, viewport: rfRef.current.getViewport() },
+                };
+                rfRef.current.setViewport(target.viewport, { duration: 300 });
+                setTimeout(() => focusNodeById(target.nodeId!), 320);
+                vscodePostMessage({ type: 'saveMarks', marks: marksRef.current });
+              }
+              // - if node is gone or mark doesn't exist: do nothing (spec)
+            }
+          }
+          pendingMarkRef.current = null;
+        }
+        return;
+      }
+
       // - z / Z: zoom in / out centred on viewport centre
       if (!e.ctrlKey && !e.metaKey && !e.shiftKey && e.key === 'z') {
         e.preventDefault();
@@ -1170,6 +1221,26 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       if (e.altKey && !e.ctrlKey && !e.metaKey && e.key === 'p') {
         e.preventDefault();
         window.dispatchEvent(new CustomEvent('skena:altPin'));
+        return;
+      }
+
+      // - m: start set-mark sequence (requires a focused node)
+      if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'm') {
+        if (nodesRef.current.some(n => n.selected && n.type !== 'group')) {
+          e.preventDefault();
+          pendingMarkRef.current = 'set';
+          if (markTimerRef.current) clearTimeout(markTimerRef.current);
+          markTimerRef.current = setTimeout(() => { pendingMarkRef.current = null; }, 2000);
+        }
+        return;
+      }
+
+      // - `` ` ``: start jump-mark sequence
+      if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === '`') {
+        e.preventDefault();
+        pendingMarkRef.current = 'jump';
+        if (markTimerRef.current) clearTimeout(markTimerRef.current);
+        markTimerRef.current = setTimeout(() => { pendingMarkRef.current = null; }, 2000);
         return;
       }
 

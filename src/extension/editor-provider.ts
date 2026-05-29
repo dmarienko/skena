@@ -43,6 +43,9 @@ import {
   ChatMessage,
   MsgFloatingChatHistoryRestored,
   MsgFloatingChatSaveUIState,
+  MsgSaveMarks,
+  MsgMarksRestored,
+  CanvasMark,
 } from '../shared/types';
 import { MAX_FILE_FULL_BYTES, MAX_FILE_PREVIEW_BYTES, MAX_NOTEBOOK_BYTES } from '../shared/constants';
 
@@ -137,6 +140,10 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
               pos:       savedUI?.pos,
               size:      savedUI?.size,
             } satisfies MsgFloatingChatHistoryRestored);
+            // - restore canvas marks (vim-style bookmarks) from workspaceState
+            const marksKey   = `skena.marks.${document.uri.toString()}`;
+            const savedMarks = this.context.workspaceState.get<Record<string, CanvasMark>>(marksKey) ?? {};
+            send({ type: 'marksRestored', marks: savedMarks } satisfies MsgMarksRestored);
             // - forward VS Code markdown preview settings so the webview matches the editor look
             const mdPreview = vscode.workspace.getConfiguration('markdown.preview');
             const md        = vscode.workspace.getConfiguration('markdown');
@@ -178,6 +185,11 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             pos:       (msg as MsgFloatingChatSaveUIState).pos,
             size:      (msg as MsgFloatingChatSaveUIState).size,
           });
+          break;
+        }
+        case 'saveMarks': {
+          const marksKey = `skena.marks.${document.uri.toString()}`;
+          void this.context.workspaceState.update(marksKey, (msg as MsgSaveMarks).marks);
           break;
         }
         case 'dropFiles':            this.handleDropFiles(msg.uris, msg.position, canvasDir, resolver, send); break;

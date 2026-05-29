@@ -369,7 +369,8 @@ export type HostToWebview =
   | MsgFloatingChatDone
   | MsgFloatingChatError
   | MsgFloatingChatNodeAdded
-  | MsgFloatingChatHistoryRestored;
+  | MsgFloatingChatHistoryRestored
+  | MsgMarksRestored;
 
 // - Webview → Host messages
 
@@ -458,6 +459,27 @@ export interface MsgFloatingChatAbort {
   type: 'floatingChatAbort';
 }
 
+// ─── Canvas marks (vim-style bookmarks) ───────────────────────────────────────
+
+/** - one stored bookmark: focused node + viewport state at mark time */
+export interface CanvasMark {
+  /** - id of the focused node; null for the `` ` `` (previous-position) register */
+  nodeId: string | null;
+  viewport: { x: number; y: number; zoom: number };
+}
+
+/** - Webview → Host: persist current marks map to workspaceState */
+export interface MsgSaveMarks {
+  type: 'saveMarks';
+  marks: Record<string, CanvasMark>;
+}
+
+/** - Host → Webview: restore marks map on canvas open */
+export interface MsgMarksRestored {
+  type: 'marksRestored';
+  marks: Record<string, CanvasMark>;
+}
+
 export type WebviewToHost =
   | MsgRequestFile
   | MsgSaveCanvas
@@ -474,7 +496,8 @@ export type WebviewToHost =
   | MsgCopyAbsolutePath
   | MsgFloatingChatSend
   | MsgFloatingChatSaveUIState
-  | MsgFloatingChatAbort;
+  | MsgFloatingChatAbort
+  | MsgSaveMarks;
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────
 

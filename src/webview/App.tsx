@@ -179,6 +179,9 @@ export function App(): JSX.Element {
             size:      msg.size,
           });
           break;
+        case 'marksRestored':
+          window.dispatchEvent(new CustomEvent('skena:marksRestored', { detail: msg.marks }));
+          break;
       }
     };
 
