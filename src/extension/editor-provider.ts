@@ -19,7 +19,7 @@ import { FileWatcher } from './file-watcher';
 import { parseNotebook } from './notebook-parser';
 import { renderMarkdownToHtml } from './markdown-html';
 import { getVaults } from './settings';
-import { ClaudeClient } from './claude-client';
+import { createLLMClient, CANVAS_TOOLS, ILLMClient } from './llm-client';
 import { buildSystemPrompt, nodeTitle, nodeContent } from './context-builder';
 import { assignLabel } from '../shared/nodeLabels';
 import {
@@ -91,8 +91,13 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
    */
   static activePanel: vscode.WebviewPanel | null = null;
 
-  /** - one shared Claude client per editor provider instance */
-  private readonly claudeClient = new ClaudeClient();
+  /** - lazily-created LLM client; null until first chat request */
+  private _llmClient: ILLMClient | null = null;
+
+  private async llmClient(): Promise<ILLMClient> {
+    if (!this._llmClient) this._llmClient = await createLLMClient();
+    return this._llmClient;
+  }
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -221,7 +226,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         }
         case 'chatMessage':          await this.handleChatMessage(msg, panel); break;
         case 'floatingChatSend':  await this.handleFloatingChatSend(msg, panel, document, canvasDir); break;
-        case 'floatingChatAbort': this.claudeClient.abort(); break;
+        case 'floatingChatAbort': this._llmClient?.abort(); break;
         case 'floatingChatSaveUIState': {
           const uiKey = `skena.chatUI.${document.uri.toString()}`;
           void this.context.workspaceState.update(uiKey, {
@@ -336,6 +341,13 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       }
     });
 
+    // - re-create LLM client when provider/key/model settings change
+    const cfgDisposable = vscode.workspace.onDidChangeConfiguration(e => {
+      if (e.affectsConfiguration('skena.ai')) {
+        this._llmClient = null;   // - force re-creation on next chat
+      }
+    });
+
     panel.onDidDispose(() => {
       if (SkenaEditorProvider.activePanel === panel) {
         SkenaEditorProvider.activePanel = null;
@@ -343,6 +355,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       canvasWatcher.dispose();
       workspaceWatcher.dispose();
       saveDisposable.dispose();
+      cfgDisposable.dispose();
       unsubscribe();
     });
 
@@ -899,7 +912,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       { role: 'user' as const, content: msg.message },
     ];
 
-    await this.claudeClient.chat(systemPrompt, apiHistory, {
+    const client = await this.llmClient();
+    await client.chat(systemPrompt, apiHistory, CANVAS_TOOLS, {
       onText: (delta) => {
         send({ type: 'floatingChatDelta', delta });
       },
