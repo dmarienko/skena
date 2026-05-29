@@ -18,34 +18,27 @@ export const HANDLE_STYLE: React.CSSProperties = {
 
 /**
  * Hook — returns additional inline styles for the node wrapper when the node
- * is selected.  All pixel values are scaled by 1/zoom so the ring appears at
- * a constant SCREEN size regardless of how far the canvas is zoomed out.
+ * is selected.
  *
- * Target screen sizes (approximate):
- *   solid ring  = 10 screen px
- *   inner glow  = 25 screen px blur
- *   outer halo  = 60 screen px blur
+ * Uses `outline` + `outlineOffset` (no blur, no glow) — a plain crisp border
+ * drawn just outside the node edge.  Pixel values are scaled by 1/zoom so the
+ * ring appears at a constant screen size regardless of canvas zoom level.
+ *
+ * Target screen sizes:
+ *   line width  ≈ 2.5 screen px
+ *   gap from node edge ≈ 4 screen px
  */
 export function useSelectedStyle(selected: boolean): React.CSSProperties {
-  // - s = inverse zoom: canvas px needed to equal 1 screen px
-  // - capped so values don't explode when zoom < 0.1
-  const s = useStore(st => 1 / Math.max(0.1, st.transform[2]));
-
+  const zoom = useStore(st => st.transform[2]);
   if (!selected) return {};
 
-  const ring  = Math.round(10 * s);
-  const glow  = Math.round(25 * s);
-  const halo  = Math.round(60 * s);
-  const gSpread = Math.round(10 * s);
-  const hSpread = Math.round(24 * s);
+  // - convert desired screen px → canvas px:  canvas = screen / zoom
+  const sc     = Math.max(0.15, zoom);
+  const lineW  = Math.min(20, Math.max(1.5, 2.5 / sc));
+  const offset = Math.min(30, Math.max(2,   4   / sc));
 
   return {
-    borderColor: '#00ffff',
-    borderWidth:  '2.5px',
-    boxShadow: [
-      `0 0 0 ${ring}px rgba(0,255,255,0.55)`,
-      `0 0 ${glow}px ${gSpread}px rgba(0,229,255,0.55)`,
-      `0 0 ${halo}px ${hSpread}px rgba(0,229,255,0.22)`,
-    ].join(', '),
+    outline:       `${lineW.toFixed(1)}px solid rgba(0,220,255,0.8)`,
+    outlineOffset: `${offset.toFixed(1)}px`,
   };
 }
