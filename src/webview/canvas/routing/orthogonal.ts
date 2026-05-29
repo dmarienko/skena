@@ -33,11 +33,11 @@ const MARGIN   = PAD + 20; // - margin for boundary candidates (channels pass we
 
 // ─── geometry primitives ─────────────────────────────────────────────────────
 
-/** Exit point: MIN_EXIT px from handle in the handle direction. */
-function exitPt(x: number, y: number, pos: Position): Pt {
+/** Exit point: `len` px from handle in the handle direction (default MIN_EXIT). */
+function exitPt(x: number, y: number, pos: Position, len: number = MIN_EXIT): Pt {
   const dx = pos === Position.Right ? 1 : pos === Position.Left  ? -1 : 0;
   const dy = pos === Position.Bottom ? 1 : pos === Position.Top   ? -1 : 0;
-  return [x + dx * MIN_EXIT, y + dy * MIN_EXIT];
+  return [x + dx * len, y + dy * len];
 }
 
 /** True if the horizontal segment at y from xa to xb is clear of all padded rects. */
@@ -114,7 +114,12 @@ export function routeOrthogonal(
   tx: number, ty: number, tPos: Position,
   rects: NodeRect[],
 ): Pt[] {
-  const ep = exitPt(sx, sy, sPos);
+  // - adaptive exit: scale stem length with distance so fork points are clearly
+  // - visible away from the source node (e.g. tree fan-out below a parent node).
+  // - Entry stays fixed at MIN_EXIT to avoid crossing the target's padded boundary.
+  const dist    = Math.hypot(tx - sx, ty - sy);
+  const exitLen = Math.max(MIN_EXIT, Math.min(dist * 0.35, 80));
+  const ep = exitPt(sx, sy, sPos, exitLen);
   const np = exitPt(tx, ty, tPos);
 
   // ── 1. L-shapes (1 bend) ─────────────────────────────────────────────────
