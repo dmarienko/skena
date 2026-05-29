@@ -114,22 +114,37 @@ export function routeOrthogonal(
   tx: number, ty: number, tPos: Position,
   rects: NodeRect[],
 ): Pt[] {
-  // - adaptive exit: scale stem length with distance so fork points are clearly
-  // - visible away from the source node (e.g. tree fan-out below a parent node).
-  // - Entry stays fixed at MIN_EXIT to avoid crossing the target's padded boundary.
   const dist    = Math.hypot(tx - sx, ty - sy);
-  const exitLen = Math.max(MIN_EXIT, Math.min(dist * 0.35, 80));
+  // - floor 60 px: stem always visible even for close nodes.
+  // - cap at 50% of distance: exit never overshoots the midpoint.
+  const exitLen = Math.min(
+    Math.max(60, Math.min(dist * 0.4, 150)),
+    dist * 0.5,
+  );
   const ep = exitPt(sx, sy, sPos, exitLen);
   const np = exitPt(tx, ty, tPos);
 
-  // ── 1. L-shapes (1 bend) ─────────────────────────────────────────────────
-  let mid = tryLH(ep, np, rects) ?? tryLV(ep, np, rects);
-  if (mid) return [[sx, sy], ...mid, [tx, ty]];
-
-  // ── 2. Z-shapes via midpoint (2 bends) ───────────────────────────────────
   const mx = (ep[0] + np[0]) / 2;
   const my = (ep[1] + np[1]) / 2;
-  mid = tryZV(ep, np, mx, rects) ?? tryZH(ep, np, my, rects);
+
+  // - for opposite-facing handles (Right→Left, Bottom→Top …) prefer the
+  // - symmetric Z at midpoint so fan-out edges share a clean branch column/row
+  // - rather than bending right at the target (the L-shape pattern).
+  const oppH = (sPos === Position.Right && tPos === Position.Left) ||
+               (sPos === Position.Left  && tPos === Position.Right);
+  const oppV = (sPos === Position.Bottom && tPos === Position.Top) ||
+               (sPos === Position.Top   && tPos === Position.Bottom);
+
+  // ── 1. Primary attempt ───────────────────────────────────────────────────
+  let mid: Pt[] | null = (oppH ? tryZV(ep, np, mx, rects) : null)
+                      ?? (oppV ? tryZH(ep, np, my, rects) : null)
+                      ?? tryLH(ep, np, rects)
+                      ?? tryLV(ep, np, rects);
+  if (mid) return [[sx, sy], ...mid, [tx, ty]];
+
+  // ── 2. Remaining Z at midpoint (not tried in step 1) ────────────────────
+  mid = (!oppH ? tryZV(ep, np, mx, rects) : null)
+     ?? (!oppV ? tryZH(ep, np, my, rects) : null);
   if (mid) return [[sx, sy], ...mid, [tx, ty]];
 
   // ── 3. Scan obstacle boundaries for a clear channel ───────────────────────
