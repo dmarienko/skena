@@ -19,7 +19,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { EdgeProps, BaseEdge, EdgeLabelRenderer, getSmoothStepPath, Position, useStore } from '@xyflow/react';
+import { EdgeProps, BaseEdge, EdgeLabelRenderer, Position, useStore } from '@xyflow/react';
 import { useHeatmap } from '../../context/HeatmapContext';
 
 // ─── backward-path builder ────────────────────────────────────────────────────
@@ -61,21 +61,52 @@ const CORNER_R = 8;
 const GAP      = 40; // - clearance beyond the actual node boundary before turning
 
 /**
- * Route an edge that needs to "go backwards" — handle pointing away from target.
+ * Adaptive bezier: control-point length scales with handle distance so nearby nodes
+ * get gentle curves and distant nodes get proportional arcs. Eliminates the harsh
+ * right-angle zigzag that fixed-offset SmoothStep produces for close nodes.
  *
- * @param nodeRight  - right boundary of the widest of the two nodes (flow coords)
- * @param nodeBottom - bottom boundary of the tallest of the two nodes (flow coords)
+ * cpLen = clamp(dist * 0.45, 30, 150)
+ */
+function adaptiveBezierPath(
+  sx: number, sy: number, sPos: Position,
+  tx: number, ty: number, tPos: Position,
+): [string, number, number] {
+  const dir: Record<Position, [number, number]> = {
+    [Position.Left]:   [-1,  0],
+    [Position.Right]:  [ 1,  0],
+    [Position.Top]:    [ 0, -1],
+    [Position.Bottom]: [ 0,  1],
+  };
+  const [sdx, sdy] = dir[sPos];
+  const [tdx, tdy] = dir[tPos];
+  const dist  = Math.hypot(tx - sx, ty - sy);
+  const cpLen = Math.max(30, Math.min(dist * 0.45, 150));
+  const cp1x  = sx + sdx * cpLen;
+  const cp1y  = sy + sdy * cpLen;
+  const cp2x  = tx + tdx * cpLen;
+  const cp2y  = ty + tdy * cpLen;
+  // - midpoint of cubic bezier at t=0.5 via De Casteljau
+  const lx = (sx + 3 * cp1x + 3 * cp2x + tx) / 8;
+  const ly = (sy + 3 * cp1y + 3 * cp2y + ty) / 8;
+  return [`M ${sx},${sy} C ${cp1x},${cp1y} ${cp2x},${cp2y} ${tx},${ty}`, lx, ly];
+}
+
+/**
+ * Route an edge that is clearly "going backwards" — handle pointing away from target
+ * with the target more than BACK_THRESH px in the wrong direction.
  *
- * For vertical backward edges (e.g. B.bottom → A.top with A above B):
- *   exits handle direction → sweeps right past nodeRight+GAP → travels up → enters target
- * For horizontal backward edges: same logic rotated 90°.
+ * For vertical backward (e.g. B.bottom → A.top with A above B):
+ *   pick left or right side depending on which is closer to the pair midpoint.
+ * For horizontal backward: pick top or bottom side by the same criterion.
  */
 function buildBackwardPath(
   sx: number, sy: number, sPos: Position,
   tx: number, ty: number, tPos: Position,
-  offset: number,
-  nodeRight:  number,
-  nodeBottom: number,
+  offset:     number,
+  nodeLeft:   number,  // - min X of both node left edges
+  nodeRight:  number,  // - max X of both node right edges
+  nodeTop:    number,  // - min Y of both node top edges
+  nodeBottom: number,  // - max Y of both node bottom edges
 ): [string, number, number] {
 
   const isVert =
@@ -85,8 +116,11 @@ function buildBackwardPath(
   if (isVert) {
     const sExitY  = sPos === Position.Bottom ? sy + offset : sy - offset;
     const tEntryY = tPos === Position.Top    ? ty - offset : ty + offset;
-    // - route outside the rightmost boundary of both nodes
-    const sideX   = nodeRight + GAP;
+    // - pick left or right: whichever side requires less horizontal travel
+    const midX  = (sx + tx) / 2;
+    const leftX = nodeLeft  - GAP;
+    const rightX = nodeRight + GAP;
+    const sideX  = Math.abs(midX - leftX) < Math.abs(midX - rightX) ? leftX : rightX;
 
     const pts: [number, number][] = [
       [sx,    sy],
@@ -98,15 +132,18 @@ function buildBackwardPath(
     ];
     return [
       waypointPath(pts, CORNER_R),
-      sideX,              // - label on the vertical side segment
+      sideX,
       (sExitY + tEntryY) / 2,
     ];
   }
 
-  // - horizontal backward: route below the bottommost boundary of both nodes
+  // - horizontal backward: pick top or bottom side by the same criterion
   const sExitX  = sPos === Position.Right ? sx + offset : sx - offset;
   const tEntryX = tPos === Position.Left  ? tx - offset : tx + offset;
-  const sideY   = nodeBottom + GAP;
+  const midY   = (sy + ty) / 2;
+  const topY   = nodeTop    - GAP;
+  const botY   = nodeBottom + GAP;
+  const sideY  = Math.abs(midY - topY) < Math.abs(midY - botY) ? topY : botY;
 
   const pts: [number, number][] = [
     [sx,      sy],
@@ -119,7 +156,7 @@ function buildBackwardPath(
   return [
     waypointPath(pts, CORNER_R),
     (sExitX + tEntryX) / 2,
-    sideY,                // - label on the horizontal bottom segment
+    sideY,
   ];
 }
 
@@ -163,10 +200,14 @@ export function LabeledEdgeComponent({
 
   const cancel = useCallback(() => setEditing(false), []);
 
-  // - look up actual node dimensions so routing clears the node bodies
+  // - look up actual node dimensions so backward-path routing clears node bodies
   const sNode = useStore(s => s.nodes.find(n => n.id === source));
   const tNode = useStore(s => s.nodes.find(n => n.id === target));
 
+  const nodeLeft = Math.min(
+    sNode ? sNode.position.x : sourceX - 100,
+    tNode ? tNode.position.x : targetX - 100,
+  );
   const nodeRight = Math.max(
     sNode
       ? sNode.position.x + (sNode.measured?.width  ?? Number((sNode.style as React.CSSProperties | undefined)?.width  ?? 200))
@@ -174,6 +215,10 @@ export function LabeledEdgeComponent({
     tNode
       ? tNode.position.x + (tNode.measured?.width  ?? Number((tNode.style as React.CSSProperties | undefined)?.width  ?? 200))
       : targetX + 100,
+  );
+  const nodeTop = Math.min(
+    sNode ? sNode.position.y : sourceY - 75,
+    tNode ? tNode.position.y : targetY - 75,
   );
   const nodeBottom = Math.max(
     sNode
@@ -184,24 +229,25 @@ export function LabeledEdgeComponent({
       : targetY + 75,
   );
 
+  // - only use explicit U-routing for edges that are clearly going the wrong way (> 30 px).
+  // - mild backward cases are handled naturally by adaptiveBezierPath.
+  const BACK_THRESH = 30;
   const isBackward =
-    (sourcePosition === Position.Bottom && targetY < sourceY) ||
-    (sourcePosition === Position.Top    && targetY > sourceY) ||
-    (sourcePosition === Position.Left   && targetX > sourceX) ||
-    (sourcePosition === Position.Right  && targetX < sourceX);
+    (sourcePosition === Position.Bottom && targetY < sourceY - BACK_THRESH) ||
+    (sourcePosition === Position.Top    && targetY > sourceY + BACK_THRESH) ||
+    (sourcePosition === Position.Left   && targetX > sourceX + BACK_THRESH) ||
+    (sourcePosition === Position.Right  && targetX < sourceX - BACK_THRESH);
 
   const [edgePath, labelX, labelY] = isBackward
     ? buildBackwardPath(
         sourceX, sourceY, sourcePosition,
         targetX, targetY, targetPosition,
-        40, nodeRight, nodeBottom,
+        40, nodeLeft, nodeRight, nodeTop, nodeBottom,
       )
-    : getSmoothStepPath({
+    : adaptiveBezierPath(
         sourceX, sourceY, sourcePosition,
         targetX, targetY, targetPosition,
-        borderRadius: 8,
-        offset: 40,
-      });
+      );
 
   const activeStyle = selected
     ? {
