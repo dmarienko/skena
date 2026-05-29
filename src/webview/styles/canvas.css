@@ -51,14 +51,16 @@
 
 /* - focus ring: handled by useSelectedStyle hook (outline on .skena-node inline style) */
 
-/* - space-pinned: orange outline on the outer RF node wrapper.
- * - Placed on .react-flow__node (not .skena-node) so it coexists with the
- * - cyan focus outline (which is on .skena-node) without conflict.
- * - Offset at 13px → appears outside the focus ring (7px) when both are active,
- * - creating a distinct outer orange + inner cyan nested-ring pattern. */
-.react-flow__node.skena-pinned {
-  outline: 5px solid rgba(255, 152, 48, 0.9);
-  outline-offset: 13px;
+/* - space-pinned: orange box-shadow ring on .skena-node.
+ * - box-shadow follows border-radius automatically (rounded corners).
+ * - box-shadow and outline are different CSS properties → coexist when
+ * - the node is both pinned and focused simultaneously.
+ * - 6px spread puts the ring at 0–6px from the node border; the focus
+ * - outline starts at 7px offset → they sit adjacent, never overlap. */
+.react-flow__node.skena-pinned .skena-node {
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.6),
+    0 0 0 6px rgba(255, 152, 48, 0.92);
 }
 
 /* ─── Resize controls ─────────────────────────────────────────────────────── */
