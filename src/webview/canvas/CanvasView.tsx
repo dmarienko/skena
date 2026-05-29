@@ -1463,62 +1463,47 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         lastCPressRef.current = now;
       }
 
-      // - c: add edge from the one space-pinned node to the keyboard-focused node
-      // - sides chosen by the direction vector between the two node centres
+      // - c: toggle edge between the space-pinned node and the keyboard-focused node.
+      // - if edges already exist in either direction → remove them (disconnect).
+      // - if no edges exist → add a new edge (connect), sides chosen by direction vector.
       if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'c') {
         const pinned = [...spaceSelectedRef.current];
         if (pinned.length !== 1) return;
-        const pinnedNode = nodesRef.current.find(n => n.id === pinned[0]);
+        const pinnedId  = pinned[0];
+        const pinnedNode = nodesRef.current.find(n => n.id === pinnedId);
         const targetNode = nodesRef.current.find(n => n.selected && n.type !== 'group' && !spaceSelectedRef.current.has(n.id));
         if (!pinnedNode || !targetNode) return;
         e.preventDefault();
-        // - compute direction vector between centres to pick nearest sides
-        const pw = Number(pinnedNode.style?.width  ?? 400), ph = Number(pinnedNode.style?.height ?? 300);
-        const tw = Number(targetNode.style?.width  ?? 400), th = Number(targetNode.style?.height ?? 300);
-        const dx = (targetNode.position.x + tw / 2) - (pinnedNode.position.x + pw / 2);
-        const dy = (targetNode.position.y + th / 2) - (pinnedNode.position.y + ph / 2);
-        const fromSide: CanvasEdge['fromSide'] = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'right' : 'left') : (dy >= 0 ? 'bottom' : 'top');
-        const toSide:   CanvasEdge['fromSide'] = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'left'  : 'right') : (dy >= 0 ? 'top'    : 'bottom');
-        const newEdge: CanvasEdge = {
-          id:       `${pinnedNode.id}-${targetNode.id}-${Date.now()}`,
-          fromNode: pinnedNode.id,
-          fromSide,
-          toNode:   targetNode.id,
-          toSide,
-          toEnd:    'arrow',
-        };
-        pushHistory();
-        setEdges(eds => addEdge(toFlowEdge(newEdge), eds));
-        canvasRef.current = { ...canvasRef.current, edges: [...canvasRef.current.edges, newEdge] };
-        scheduleSave();
-        return;
-      }
-
-      // - Shift+C: remove all edges between the pinned node and the focused node
-      if (!e.ctrlKey && !e.metaKey && e.shiftKey && !e.altKey && e.key === 'C') {
-        const pinned = [...spaceSelectedRef.current];
-        if (pinned.length !== 1) return;
-        const pinnedId = pinned[0];
-        const targetNode = nodesRef.current.find(n => n.selected && n.type !== 'group' && !spaceSelectedRef.current.has(n.id));
-        if (!targetNode) return;
         const targetId = targetNode.id;
-        // - collect edge ids that connect the two nodes in either direction
-        const toRemove = new Set(
-          canvasRef.current.edges
-            .filter(ce =>
-              (ce.fromNode === pinnedId && ce.toNode === targetId) ||
-              (ce.fromNode === targetId && ce.toNode === pinnedId)
-            )
-            .map(ce => ce.id)
+        const existing = canvasRef.current.edges.filter(ce =>
+          (ce.fromNode === pinnedId && ce.toNode === targetId) ||
+          (ce.fromNode === targetId && ce.toNode === pinnedId)
         );
-        if (toRemove.size === 0) return;
-        e.preventDefault();
         pushHistory();
-        setEdges(eds => eds.filter(fe => !toRemove.has(fe.id)));
-        canvasRef.current = {
-          ...canvasRef.current,
-          edges: canvasRef.current.edges.filter(ce => !toRemove.has(ce.id)),
-        };
+        if (existing.length > 0) {
+          // - disconnect: remove all edges between the two nodes
+          const toRemove = new Set(existing.map(ce => ce.id));
+          setEdges(eds => eds.filter(fe => !toRemove.has(fe.id)));
+          canvasRef.current = { ...canvasRef.current, edges: canvasRef.current.edges.filter(ce => !toRemove.has(ce.id)) };
+        } else {
+          // - connect: add edge with sides chosen by direction vector between centres
+          const pw = Number(pinnedNode.style?.width  ?? 400), ph = Number(pinnedNode.style?.height ?? 300);
+          const tw = Number(targetNode.style?.width  ?? 400), th = Number(targetNode.style?.height ?? 300);
+          const dx = (targetNode.position.x + tw / 2) - (pinnedNode.position.x + pw / 2);
+          const dy = (targetNode.position.y + th / 2) - (pinnedNode.position.y + ph / 2);
+          const fromSide: CanvasEdge['fromSide'] = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'right' : 'left') : (dy >= 0 ? 'bottom' : 'top');
+          const toSide:   CanvasEdge['fromSide'] = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'left'  : 'right') : (dy >= 0 ? 'top'    : 'bottom');
+          const newEdge: CanvasEdge = {
+            id:       `${pinnedId}-${targetId}-${Date.now()}`,
+            fromNode: pinnedId,
+            fromSide,
+            toNode:   targetId,
+            toSide,
+            toEnd:    'arrow',
+          };
+          setEdges(eds => addEdge(toFlowEdge(newEdge), eds));
+          canvasRef.current = { ...canvasRef.current, edges: [...canvasRef.current.edges, newEdge] };
+        }
         scheduleSave();
         return;
       }
