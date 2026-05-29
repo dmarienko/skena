@@ -47,6 +47,7 @@ import { PortalNodeComponent } from './nodes/PortalNode';
 import { LabeledEdgeComponent } from './edges/LabeledEdge';
 import { HelperLines } from './HelperLines';
 import { CanvasSearch } from './CanvasSearch';
+import { MarksPanel  } from './MarksPanel';
 
 const NODE_TYPES: NodeTypes = {
   file:   FileNodeComponent,
@@ -307,6 +308,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const marksRef       = useRef<Record<string, CanvasMark>>({});
   const pendingMarkRef = useRef<'set' | 'jump' | null>(null);
   const markTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [marksOpen, setMarksOpen] = useState(false);
 
   // - restore marks from workspaceState (sent by host on canvas open)
   useEffect(() => {
@@ -753,6 +755,26 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     return bestId;
   }, []); // - rfRef + nodesRef always current
 
+  // - jump to a stored mark: save current viewport to `` ` ``, animate, focus node
+  const jumpToMark = useCallback((register: string) => {
+    const target = marksRef.current[register];
+    if (!target) return;
+    // - skip if the mark pointed to a node that no longer exists
+    if (target.nodeId !== null && !nodesRef.current.some(n => n.id === target.nodeId)) return;
+    const currentFocused = nodesRef.current.find(n => n.selected && n.type !== 'group');
+    marksRef.current = {
+      ...marksRef.current,
+      '`': { nodeId: currentFocused?.id ?? null, viewport: rfRef.current.getViewport() },
+    };
+    rfRef.current.setViewport(target.viewport, { duration: 300 });
+    if (target.nodeId) {
+      const id = target.nodeId;
+      setTimeout(() => focusNodeById(id), 320);
+    }
+    vscodePostMessage({ type: 'saveMarks', marks: marksRef.current });
+    setMarksOpen(false);
+  }, [focusNodeById]);
+
   // ─── add text node in direction (shared by keyboard and VS Code command paths) ─
 
   /**
@@ -1010,8 +1032,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
       // ── vim marks: consume second key of m{x} / `{x} sequence ──────────────
       if (pendingMarkRef.current !== null) {
-        // - only printable single-char keys act as registers; Escape cancels
-        if (e.key.length === 1 || e.key === 'Escape') {
+        // - modifier + key is not a register (e.g. Ctrl+M opens panel, not register 'm')
+        if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key.length === 1 || e.key === 'Escape')) {
           e.preventDefault();
           if (markTimerRef.current) { clearTimeout(markTimerRef.current); markTimerRef.current = null; }
 
@@ -1025,23 +1047,19 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
                 vscodePostMessage({ type: 'saveMarks', marks: marksRef.current });
               }
             } else {
-              // - `{x}: jump to register x; save current position in `` ` `` first
-              const target = marksRef.current[reg];
-              if (target && target.nodeId && nodesRef.current.some(n => n.id === target.nodeId)) {
-                const currentFocused = nodesRef.current.find(n => n.selected && n.type !== 'group');
-                marksRef.current = {
-                  ...marksRef.current,
-                  '`': { nodeId: currentFocused?.id ?? null, viewport: rfRef.current.getViewport() },
-                };
-                rfRef.current.setViewport(target.viewport, { duration: 300 });
-                setTimeout(() => focusNodeById(target.nodeId!), 320);
-                vscodePostMessage({ type: 'saveMarks', marks: marksRef.current });
-              }
-              // - if node is gone or mark doesn't exist: do nothing (spec)
+              // - `{x}: delegate to jumpToMark (saves `` ` ``, animates, focuses)
+              jumpToMark(reg);
             }
           }
           pendingMarkRef.current = null;
         }
+        return;
+      }
+
+      // - Ctrl+M: open bookmarks panel
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === 'm') {
+        e.preventDefault();
+        setMarksOpen(true);
         return;
       }
 
@@ -1053,7 +1071,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           const scrollEl = nodeEl?.querySelector('.skena-scrollable') as HTMLElement | null;
           if (scrollEl && scrollEl.scrollHeight > scrollEl.clientHeight + 1) {
             e.preventDefault();
-            scrollEl.scrollBy({ top: scrollEl.clientHeight / 2 * (e.key === 'u' ? -1 : 1), behavior: 'smooth' });
+            scrollEl.scrollBy({ top: scrollEl.clientHeight / 4 * (e.key === 'u' ? -1 : 1), behavior: 'smooth' });
             return;
           }
         }
@@ -1447,7 +1465,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, pushHistory, handleCopy, handlePaste, deleteSelectedNodes]); // - nodesRef + spaceSelectedRef carry live state
+  }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, pushHistory, handleCopy, handlePaste, deleteSelectedNodes, jumpToMark]); // - nodesRef + spaceSelectedRef carry live state
 
   // - handle skena:addNodeTrigger from VS Code ctrl+n command override
   // - compute viewport centre in flow coords, avoid overlaps, send addNodeRequest
@@ -1819,6 +1837,14 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           nodes={canvasRef.current.nodes}
           onFocus={focusNodeById}
           onClose={() => setSearchOpen(false)}
+        />
+      )}
+      {marksOpen && (
+        <MarksPanel
+          marks={marksRef.current}
+          nodes={nodes}
+          onJump={jumpToMark}
+          onClose={() => setMarksOpen(false)}
         />
       )}
       {contextMenu && (
