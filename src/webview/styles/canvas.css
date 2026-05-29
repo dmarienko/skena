@@ -60,7 +60,7 @@
 .react-flow__node.skena-pinned .skena-node {
   box-shadow:
     0 4px 20px rgba(0, 0, 0, 0.6),
-    0 0 0 6px rgba(255, 152, 48, 0.92);
+    0 0 0 12px rgba(255, 152, 48, 0.92);
 }
 
 /* ─── Resize controls ─────────────────────────────────────────────────────── */

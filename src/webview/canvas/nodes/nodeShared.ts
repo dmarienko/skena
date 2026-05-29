@@ -34,7 +34,7 @@ export function useSelectedStyle(selected: boolean): React.CSSProperties {
 
   // - convert desired screen px → canvas px:  canvas = screen / zoom
   const sc     = Math.max(0.15, zoom);
-  const lineW  = Math.min(40, Math.max(3,   7.5  / sc));
+  const lineW  = Math.min(30, Math.max(2,   3.75 / sc));
   const offset = Math.min(40, Math.max(3,   7    / sc));
 
   return {
