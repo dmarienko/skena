@@ -27,9 +27,9 @@ type Pt = [number, number];
 
 export const ORTHOGONAL_CORNER_R = 8;
 
-const MIN_EXIT = 20;
-const PAD      = 14;   // - clearance around obstacle bounding boxes
-const MARGIN   = PAD + 8; // - margin for boundary candidates
+const MIN_EXIT = 28;
+const PAD      = 24;   // - clearance around obstacle bounding boxes (visual breathing room)
+const MARGIN   = PAD + 20; // - margin for boundary candidates (channels pass well clear of nodes)
 
 // ─── geometry primitives ─────────────────────────────────────────────────────
 
