@@ -2,14 +2,10 @@
  * LabeledEdge — canvas edge with optional label at midpoint.
  *
  * Routing strategy:
- *   Normal connections  → getSmoothStepPath (orthogonal + rounded corners)
- *   Backward connections (handle points away from the target, e.g. B.bottom → A.top
- *   where A is above B) → explicit U-shaped path that routes outside both node bodies.
- *
- *   Root cause of the degeneration: getSmoothStepPath computes an x-offset of
- *   |sourceX − targetX| / 2, which collapses to zero when nodes are vertically stacked,
- *   drawing a straight line through both bodies.  We detect this case and replace the
- *   path with a 6-waypoint route that clears the actual node boundaries.
+ *   All connections use the orthogonal router (routing/orthogonal.ts) which produces
+ *   PCB-style axis-aligned polylines that avoid all node bounding boxes.  The router
+ *   tries L-shapes first, then Z-shapes, then scans obstacle boundaries for a clear
+ *   channel.  Corners are drawn with small quadratic-bezier rounds (8 px radius).
  *
  * Label editing:
  *   Double-click the edge path (or existing label) → enters inline edit mode.
@@ -20,14 +16,11 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { EdgeProps, BaseEdge, EdgeLabelRenderer, Position, useStore } from '@xyflow/react';
+import { routeOrthogonal, ORTHOGONAL_CORNER_R, NodeRect } from '../routing/orthogonal';
 import { useHeatmap } from '../../context/HeatmapContext';
 
-// ─── backward-path builder ────────────────────────────────────────────────────
+// ─── SVG path builder ────────────────────────────────────────────────────────
 
-/**
- * Compute a rounded corner segment at `via` coming from `from` and continuing to `to`.
- * Returns SVG commands (L ... Q ... ) without the leading move.
- */
 function roundedCorner(
   from: [number, number],
   via:  [number, number],
@@ -46,7 +39,6 @@ function roundedCorner(
   return `L ${b1x},${b1y} Q ${via[0]},${via[1]} ${b2x},${b2y}`;
 }
 
-/** - build a waypoint list → SVG path string with rounded corners */
 function waypointPath(pts: [number, number][], r: number): string {
   if (pts.length < 2) return '';
   let d = `M ${pts[0][0]},${pts[0][1]}`;
@@ -55,109 +47,6 @@ function waypointPath(pts: [number, number][], r: number): string {
   }
   d += ` L ${pts[pts.length - 1][0]},${pts[pts.length - 1][1]}`;
   return d;
-}
-
-const CORNER_R = 8;
-const GAP      = 40; // - clearance beyond the actual node boundary before turning
-
-/**
- * Adaptive bezier: control-point length scales with handle distance so nearby nodes
- * get gentle curves and distant nodes get proportional arcs. Eliminates the harsh
- * right-angle zigzag that fixed-offset SmoothStep produces for close nodes.
- *
- * cpLen = clamp(dist * 0.45, 30, 150)
- */
-function adaptiveBezierPath(
-  sx: number, sy: number, sPos: Position,
-  tx: number, ty: number, tPos: Position,
-): [string, number, number] {
-  const dir: Record<Position, [number, number]> = {
-    [Position.Left]:   [-1,  0],
-    [Position.Right]:  [ 1,  0],
-    [Position.Top]:    [ 0, -1],
-    [Position.Bottom]: [ 0,  1],
-  };
-  const [sdx, sdy] = dir[sPos];
-  const [tdx, tdy] = dir[tPos];
-  const dist  = Math.hypot(tx - sx, ty - sy);
-  const cpLen = Math.max(30, Math.min(dist * 0.45, 150));
-  const cp1x  = sx + sdx * cpLen;
-  const cp1y  = sy + sdy * cpLen;
-  const cp2x  = tx + tdx * cpLen;
-  const cp2y  = ty + tdy * cpLen;
-  // - midpoint of cubic bezier at t=0.5 via De Casteljau
-  const lx = (sx + 3 * cp1x + 3 * cp2x + tx) / 8;
-  const ly = (sy + 3 * cp1y + 3 * cp2y + ty) / 8;
-  return [`M ${sx},${sy} C ${cp1x},${cp1y} ${cp2x},${cp2y} ${tx},${ty}`, lx, ly];
-}
-
-/**
- * Route an edge that is clearly "going backwards" — handle pointing away from target
- * with the target more than BACK_THRESH px in the wrong direction.
- *
- * For vertical backward (e.g. B.bottom → A.top with A above B):
- *   pick left or right side depending on which is closer to the pair midpoint.
- * For horizontal backward: pick top or bottom side by the same criterion.
- */
-function buildBackwardPath(
-  sx: number, sy: number, sPos: Position,
-  tx: number, ty: number, tPos: Position,
-  offset:     number,
-  nodeLeft:   number,  // - min X of both node left edges
-  nodeRight:  number,  // - max X of both node right edges
-  nodeTop:    number,  // - min Y of both node top edges
-  nodeBottom: number,  // - max Y of both node bottom edges
-): [string, number, number] {
-
-  const isVert =
-    (sPos === Position.Top    || sPos === Position.Bottom) &&
-    (tPos === Position.Top    || tPos === Position.Bottom);
-
-  if (isVert) {
-    const sExitY  = sPos === Position.Bottom ? sy + offset : sy - offset;
-    const tEntryY = tPos === Position.Top    ? ty - offset : ty + offset;
-    // - pick left or right: whichever side requires less horizontal travel
-    const midX  = (sx + tx) / 2;
-    const leftX = nodeLeft  - GAP;
-    const rightX = nodeRight + GAP;
-    const sideX  = Math.abs(midX - leftX) < Math.abs(midX - rightX) ? leftX : rightX;
-
-    const pts: [number, number][] = [
-      [sx,    sy],
-      [sx,    sExitY],
-      [sideX, sExitY],
-      [sideX, tEntryY],
-      [tx,    tEntryY],
-      [tx,    ty],
-    ];
-    return [
-      waypointPath(pts, CORNER_R),
-      sideX,
-      (sExitY + tEntryY) / 2,
-    ];
-  }
-
-  // - horizontal backward: pick top or bottom side by the same criterion
-  const sExitX  = sPos === Position.Right ? sx + offset : sx - offset;
-  const tEntryX = tPos === Position.Left  ? tx - offset : tx + offset;
-  const midY   = (sy + ty) / 2;
-  const topY   = nodeTop    - GAP;
-  const botY   = nodeBottom + GAP;
-  const sideY  = Math.abs(midY - topY) < Math.abs(midY - botY) ? topY : botY;
-
-  const pts: [number, number][] = [
-    [sx,      sy],
-    [sExitX,  sy],
-    [sExitX,  sideY],
-    [tEntryX, sideY],
-    [tEntryX, ty],
-    [tx,      ty],
-  ];
-  return [
-    waypointPath(pts, CORNER_R),
-    (sExitX + tEntryX) / 2,
-    sideY,
-  ];
 }
 
 // ─── component ────────────────────────────────────────────────────────────────
@@ -200,54 +89,28 @@ export function LabeledEdgeComponent({
 
   const cancel = useCallback(() => setEditing(false), []);
 
-  // - look up actual node dimensions so backward-path routing clears node bodies
-  const sNode = useStore(s => s.nodes.find(n => n.id === source));
-  const tNode = useStore(s => s.nodes.find(n => n.id === target));
+  // - build obstacle list from all non-group nodes for orthogonal routing
+  const allNodes = useStore(s => s.nodes);
+  const rects: NodeRect[] = allNodes
+    .filter(n => n.type !== 'group')
+    .map(n => ({
+      x: n.position.x,
+      y: n.position.y,
+      w: n.measured?.width  ?? Number((n.style as React.CSSProperties | undefined)?.width  ?? 200),
+      h: n.measured?.height ?? Number((n.style as React.CSSProperties | undefined)?.height ?? 150),
+    }));
 
-  const nodeLeft = Math.min(
-    sNode ? sNode.position.x : sourceX - 100,
-    tNode ? tNode.position.x : targetX - 100,
+  // - orthogonal route (obstacle-avoiding, PCB-style)
+  const pts = routeOrthogonal(
+    sourceX, sourceY, sourcePosition,
+    targetX, targetY, targetPosition,
+    rects,
   );
-  const nodeRight = Math.max(
-    sNode
-      ? sNode.position.x + (sNode.measured?.width  ?? Number((sNode.style as React.CSSProperties | undefined)?.width  ?? 200))
-      : sourceX + 100,
-    tNode
-      ? tNode.position.x + (tNode.measured?.width  ?? Number((tNode.style as React.CSSProperties | undefined)?.width  ?? 200))
-      : targetX + 100,
-  );
-  const nodeTop = Math.min(
-    sNode ? sNode.position.y : sourceY - 75,
-    tNode ? tNode.position.y : targetY - 75,
-  );
-  const nodeBottom = Math.max(
-    sNode
-      ? sNode.position.y + (sNode.measured?.height ?? Number((sNode.style as React.CSSProperties | undefined)?.height ?? 150))
-      : sourceY + 75,
-    tNode
-      ? tNode.position.y + (tNode.measured?.height ?? Number((tNode.style as React.CSSProperties | undefined)?.height ?? 150))
-      : targetY + 75,
-  );
-
-  // - only use explicit U-routing for edges that are clearly going the wrong way (> 30 px).
-  // - mild backward cases are handled naturally by adaptiveBezierPath.
-  const BACK_THRESH = 30;
-  const isBackward =
-    (sourcePosition === Position.Bottom && targetY < sourceY - BACK_THRESH) ||
-    (sourcePosition === Position.Top    && targetY > sourceY + BACK_THRESH) ||
-    (sourcePosition === Position.Left   && targetX > sourceX + BACK_THRESH) ||
-    (sourcePosition === Position.Right  && targetX < sourceX - BACK_THRESH);
-
-  const [edgePath, labelX, labelY] = isBackward
-    ? buildBackwardPath(
-        sourceX, sourceY, sourcePosition,
-        targetX, targetY, targetPosition,
-        40, nodeLeft, nodeRight, nodeTop, nodeBottom,
-      )
-    : adaptiveBezierPath(
-        sourceX, sourceY, sourcePosition,
-        targetX, targetY, targetPosition,
-      );
+  const edgePath = waypointPath(pts, ORTHOGONAL_CORNER_R);
+  // - label at midpoint of the middle segment
+  const mi     = Math.max(1, Math.floor(pts.length / 2));
+  const labelX = (pts[mi - 1][0] + pts[mi][0]) / 2;
+  const labelY = (pts[mi - 1][1] + pts[mi][1]) / 2;
 
   const activeStyle = selected
     ? {
