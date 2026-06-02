@@ -275,29 +275,49 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
   // ─── Monaco setup ─────────────────────────────────────────────────────────
 
   // - define a VS Code-synced theme before the editor is created.
-  // - Reads --vscode-editor-background so the Monaco panel matches the webview
-  // - background exactly, and adds explicit markdown token colours (Monaco's
-  // - built-in vs-dark/vs have no dedicated markdown rules).
+  // - Monaco markdown grammar uses tokenPostfix ".md", so actual emitted tokens are
+  // - strong.md, emphasis.md, variable.md, keyword.md, etc.  We use the suffixed
+  // - names so our rules are more specific and don't accidentally bleed into embedded
+  // - code blocks (where JS variables emit "variable.js", not "variable.md").
+  //
+  // - vs-dark base theme has "strong" and "emphasis" with fontStyle only (no foreground),
+  // - so bold/italic text appears as plain white.  We add explicit colors here.
   const beforeMount = useCallback<BeforeMount>((monacoInstance) => {
     const style = getComputedStyle(document.body);
     const bg    = style.getPropertyValue('--vscode-editor-background').trim();
+    const fg    = style.getPropertyValue('--vscode-editor-foreground').trim();
     const dark  = isDark;
 
     monacoInstance.editor.defineTheme('skena-editor', {
       base:    dark ? 'vs-dark' : 'vs',
       inherit: true,
       rules: [
-        // - token names come from Monaco's built-in Monarch markdown tokenizer
-        { token: 'keyword',         foreground: dark ? '569cd6' : '0070c1',                     },  // headings + list markers
-        { token: 'strong',          foreground: dark ? 'dcdcaa' : '795e26', fontStyle: 'bold'   },  // **bold**
-        { token: 'emphasis',        foreground: dark ? 'ce9178' : 'a31515', fontStyle: 'italic' },  // *italic*
-        { token: 'string.link',     foreground: dark ? '4ec9b0' : '267f99'                      },  // [links](url)
-        { token: 'comment',         foreground: dark ? '6a9955' : '008000', fontStyle: 'italic' },  // > blockquotes
-        { token: 'string',          foreground: dark ? 'ce9178' : 'a31515'                      },  // ``` fences
-        { token: 'variable.source', foreground: dark ? 'd7ba7d' : '795e26'                      },  // code block content
+        // - headings (#, ##, …), list markers (- * +), table borders (|)
+        { token: 'keyword.md',         foreground: dark ? '569cd6' : '0070c1'                      },
+        // - **bold** / __bold__ — base theme has bold style only; we add a color
+        { token: 'strong.md',          foreground: dark ? 'dcdcaa' : '795e26', fontStyle: 'bold'   },
+        // - *italic* / _italic_ — base theme has italic style only; we add a color
+        { token: 'emphasis.md',        foreground: dark ? 'ce9178' : 'a31515', fontStyle: 'italic' },
+        // - `inline code` — base theme maps 'variable' to light-blue; we prefer gold
+        { token: 'variable.md',        foreground: dark ? 'd7ba7d' : '795e26'                      },
+        // - [link text](url)
+        { token: 'string.link.md',     foreground: dark ? '4ec9b0' : '267f99'                      },
+        // - > blockquotes
+        { token: 'comment.md',         foreground: dark ? '6a9955' : '008000', fontStyle: 'italic' },
+        // - ``` fenced code block markers (opening/closing backtick lines)
+        { token: 'string.md',          foreground: dark ? 'ce9178' : 'a31515'                      },
+        // - code block content (more specific than variable.md — wins for block lines)
+        { token: 'variable.source.md', foreground: dark ? 'd7ba7d' : '795e26'                      },
+        // - *** / --- / === separator lines
+        { token: 'meta.separator.md',  foreground: dark ? '555555' : 'bbbbbb'                      },
+        // - table header cells (more specific than keyword.md)
+        { token: 'keyword.table.header.md', foreground: dark ? '569cd6' : '0070c1', fontStyle: 'bold' },
       ],
       colors: {
-        'editor.background': bg || (dark ? '#1e1e1e' : '#ffffff'),
+        'editor.background':           bg || (dark ? '#1e1e1e' : '#ffffff'),
+        // - explicit foreground ensures regular text has the right colour even when
+        // - the VS Code theme's editor.foreground isn't inherited through Monaco
+        'editor.foreground':           fg || (dark ? '#d4d4d4' : '#383a42'),
         // - kill the line-highlight rectangle visible on single-line edits
         'editor.lineHighlightBackground':  '#00000000',
         'editor.lineHighlightBorderColor': '#00000000',
