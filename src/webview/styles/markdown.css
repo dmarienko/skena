@@ -31,7 +31,7 @@
 .skena-markdown h2 { font-size: 13px; font-weight: 700; margin: 6px 0 3px; }
 .skena-markdown h3 { font-size: 12px; font-weight: 600; margin: 5px 0 2px; }
 .skena-markdown p  { margin: 4px 0; }
-.skena-markdown ul, .skena-markdown ol { padding-left: 16px; margin: 4px 0; }
+.skena-markdown ul, .skena-markdown ol { padding-left: 20px; margin: 4px 0; }
 .skena-markdown li { margin: 2px 0; }
 .skena-markdown code { font-family: var(--vscode-editor-font-family); font-size: 10px; background: var(--vscode-textCodeBlock-background); padding: 1px 4px; border-radius: 3px; }
 .skena-markdown pre { background: var(--vscode-textCodeBlock-background); padding: 8px; border-radius: 4px; overflow: auto; font-size: 10px; }

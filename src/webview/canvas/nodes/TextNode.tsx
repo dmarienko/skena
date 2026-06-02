@@ -515,7 +515,7 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
         </div>
       ) : (
         // - baseUri="." so relative image paths (./img.png) resolve against canvas dir
-        <ScrollableContent scrollKey={id} style={{ padding: 8 }}>
+        <ScrollableContent scrollKey={id} style={{ padding: '6px 8px 6px 12px' }}>
           <MarkdownRenderer content={draft} baseUri="." />
         </ScrollableContent>
       )}
