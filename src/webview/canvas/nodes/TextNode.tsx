@@ -26,7 +26,7 @@
  *   so this only fires in Monaco's own insert/non-vim context.
  */
 
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useLayoutEffect } from 'react';
 import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import Editor, { OnMount, BeforeMount } from '@monaco-editor/react';
 import type { editor as MonacoEditor } from 'monaco-editor';
