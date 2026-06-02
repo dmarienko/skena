@@ -452,10 +452,18 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
       onDoubleClick={enterEdit}
       // - Enter key while node is React-Flow-selected AND DOM-focused → enter edit mode
       onKeyDown={e => {
-        if (!editing && selected && e.key === 'Enter') {
-          e.stopPropagation();
-          e.preventDefault();
-          enterEdit();
+        if (e.key === 'Enter') {
+          if (editing) {
+            // - Monaco is open but lost focus (user clicked away then navigated back);
+            // - re-focus the editor so editing can continue without a mouse click
+            e.stopPropagation();
+            e.preventDefault();
+            editorRef.current?.focus();
+          } else if (selected) {
+            e.stopPropagation();
+            e.preventDefault();
+            enterEdit();
+          }
         }
       }}
     >
