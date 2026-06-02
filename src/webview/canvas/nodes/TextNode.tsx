@@ -225,6 +225,10 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
   const editorRef       = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   // - persists cursor position across edit sessions (saveViewState / restoreViewState)
   const savedViewState  = useRef<MonacoEditor.ICodeEditorViewState | null>(null);
+  // - ref to the markdown scroll container so we can restore the viewing position
+  const scrollableRef   = useRef<HTMLDivElement | null>(null);
+  // - cursor-line fraction (0–1) saved at commitEdit, consumed by the scroll effect
+  const pendingScrollFraction = useRef<number | null>(null);
 
   const borderColor = node.accentColor ?? '#454545';
   const isDark = document.body.classList.contains('vscode-dark') ||
@@ -233,6 +237,16 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
   const commitEdit = useCallback((text: string) => {
     // - save cursor position before Monaco is destroyed so we can restore it next session
     savedViewState.current = editorRef.current?.saveViewState() ?? null;
+    // - save where the cursor was as a fraction of total lines so the markdown
+    // - viewer can scroll to the same area after the editor closes
+    const editor = editorRef.current;
+    if (editor) {
+      const pos       = editor.getPosition();
+      const lineCount = editor.getModel()?.getLineCount() ?? 1;
+      pendingScrollFraction.current = pos
+        ? (pos.lineNumber - 1) / Math.max(lineCount - 1, 1)
+        : null;
+    }
     setEditing(false);
     editorRef.current = null;
     setDraft(text);
@@ -242,6 +256,24 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
     // - restore focus to the node wrapper so Enter key works immediately next time
     requestAnimationFrame(() => wrapperRef.current?.focus());
   }, [node.text, id]);
+
+  // - when edit mode closes, scroll the markdown view so the cursor line is centred
+  useLayoutEffect(() => {
+    if (editing || pendingScrollFraction.current === null) return;
+    const fraction = pendingScrollFraction.current;
+    pendingScrollFraction.current = null;
+    const el = scrollableRef.current;
+    if (!el || el.scrollHeight <= el.clientHeight) return; // - nothing to scroll
+
+    const apply = () => {
+      // - target: put the cursor line in the middle of the visible area
+      const target = Math.round(fraction * el.scrollHeight - el.clientHeight / 2);
+      el.scrollTop = Math.max(0, target);
+    };
+    apply();
+    // - content-visibility:auto may underestimate scrollHeight on first render; retry
+    requestAnimationFrame(apply);
+  }, [editing]);
 
   // ─── clipboard response handler ─────────────────────────────────────────
   // - permanent (component lifetime) listener:
@@ -543,7 +575,7 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
         </div>
       ) : (
         // - baseUri="." so relative image paths (./img.png) resolve against canvas dir
-        <ScrollableContent scrollKey={id} style={{ padding: '6px 8px 6px 12px' }}>
+        <ScrollableContent ref={scrollableRef} scrollKey={id} style={{ padding: '6px 8px 6px 12px' }}>
           <MarkdownRenderer content={draft} baseUri="." />
         </ScrollableContent>
       )}

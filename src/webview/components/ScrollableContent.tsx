@@ -33,7 +33,7 @@
  *  suppress onScroll during programmatic restores via `restoringRef`.
  */
 
-import React, { useRef, useEffect, useLayoutEffect } from 'react';
+import React, { forwardRef, useRef, useEffect, useLayoutEffect, MutableRefObject, useCallback } from 'react';
 
 interface ScrollableContentProps {
   children:   React.ReactNode;
@@ -113,14 +113,23 @@ window.addEventListener('beforeunload', onPageHide);
 
 // ─── component ────────────────────────────────────────────────────────────────
 
-export function ScrollableContent({
+export const ScrollableContent = forwardRef<HTMLDivElement, ScrollableContentProps>(
+function ScrollableContent({
   children, style, className, scrollKey, hidden, contentLoaded,
-}: ScrollableContentProps): JSX.Element {
-  const ref          = useRef<HTMLDivElement>(null);
+}: ScrollableContentProps, forwardedRef): JSX.Element {
+  const localRef     = useRef<HTMLDivElement>(null);
   // - true while we are programmatically setting scrollTop during a restore.
   // - Suppresses the onScroll handler so the clamped-to-0 value from an
   // - unloaded-content restore does NOT overwrite the real saved position.
   const restoringRef = useRef(false);
+  // - callback ref: feeds both localRef (internal) and any forwarded ref from parent
+  const ref = localRef;  // - keep alias so inner code is unchanged
+  const setRef = useCallback((el: HTMLDivElement | null) => {
+    (localRef as MutableRefObject<HTMLDivElement | null>).current = el;
+    if (!forwardedRef) return;
+    if (typeof forwardedRef === 'function') forwardedRef(el);
+    else (forwardedRef as MutableRefObject<HTMLDivElement | null>).current = el;
+  }, [forwardedRef]);
 
   // ─── scroll persistence ─────────────────────────────────────────────────
 
@@ -194,7 +203,7 @@ export function ScrollableContent({
 
   return (
     <div
-      ref={ref}
+      ref={setRef}
       className={`skena-scrollable${className ? ` ${className}` : ''}`}
       style={{
         flex: 1, overflow: 'auto', padding: '6px 8px', minHeight: 0,
@@ -205,4 +214,4 @@ export function ScrollableContent({
       {children}
     </div>
   );
-}
+});  // - end forwardRef
