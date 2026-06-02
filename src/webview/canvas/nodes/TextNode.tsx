@@ -219,16 +219,20 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
   const selectedStyle = useSelectedStyle(selected);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(node.text);
-  const vimStatusRef = useRef<HTMLDivElement | null>(null);
-  const wrapperRef   = useRef<HTMLDivElement | null>(null);
+  const vimStatusRef    = useRef<HTMLDivElement | null>(null);
+  const wrapperRef      = useRef<HTMLDivElement | null>(null);
   // - stable ref to the Monaco instance so the clipboard event handler can reach it
-  const editorRef    = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
+  const editorRef       = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
+  // - persists cursor position across edit sessions (saveViewState / restoreViewState)
+  const savedViewState  = useRef<MonacoEditor.ICodeEditorViewState | null>(null);
 
   const borderColor = node.accentColor ?? '#454545';
   const isDark = document.body.classList.contains('vscode-dark') ||
                  document.body.classList.contains('vscode-high-contrast');
 
   const commitEdit = useCallback((text: string) => {
+    // - save cursor position before Monaco is destroyed so we can restore it next session
+    savedViewState.current = editorRef.current?.saveViewState() ?? null;
     setEditing(false);
     editorRef.current = null;
     setDraft(text);
@@ -303,6 +307,11 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
 
   const onEditorMount: OnMount = useCallback((editorInstance, monacoInstance) => {
     editorRef.current = editorInstance;
+    // - restore cursor position from previous edit session (if any)
+    if (savedViewState.current) {
+      editorInstance.restoreViewState(savedViewState.current);
+      savedViewState.current = null;
+    }
     editorInstance.focus();
 
     // - refresh clipboard cache whenever Monaco gains focus (covers copy-outside-then-back)

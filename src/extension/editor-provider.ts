@@ -295,8 +295,19 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         const canvas = await readCanvas(document.uri.fsPath);
         document.updateFromDisk(canvas);
         send({ type: 'canvasChanged' });
-        setTimeout(() => {
+        setTimeout(async () => {
           send({ type: 'canvasLoaded', canvas, canvasPath: document.uri.fsPath });
+          // - re-send marks after external reload: canvasChanged unmounts CanvasView
+          // - which resets marksRef to {}; without this, the next marks op by the
+          // - user would overwrite the bookmarks file with an empty marks object.
+          const wsFolder = vscode.workspace.getWorkspaceFolder(document.uri);
+          let savedMarks: Record<string, CanvasMark> = {};
+          if (wsFolder) {
+            const bf  = await readBookmarksFile(wsFolder.uri);
+            const key = canvasBookmarkKey(document.uri, wsFolder.uri);
+            savedMarks = bf.canvases[key] ?? {};
+          }
+          send({ type: 'marksRestored', marks: savedMarks } satisfies MsgMarksRestored);
         }, 50);
       } catch { /* ignore parse errors during in-progress external edits */ }
     });
