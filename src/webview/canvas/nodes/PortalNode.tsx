@@ -8,7 +8,6 @@ import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import { PortalNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { useHeatmap } from '../../context/HeatmapContext';
-import { HANDLE_STYLE, useSelectedStyle } from './nodeShared';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -24,7 +23,6 @@ export function PortalNodeComponent({ data, id, selected }: NodeProps): JSX.Elem
   const node = data as unknown as PortalNode & { accentColor?: string };
   const { visible: hmVisible, nodeGlow } = useHeatmap();
   const hmNode = hmVisible ? nodeGlow.get(data.id as string) : undefined;
-  const selectedStyle = useSelectedStyle(selected);
   const borderColor = node.accentColor ?? '#53dfdd';
 
   const open = () => vscodePostMessage({ type: 'openFile', uri: node.canvas });
@@ -51,8 +49,6 @@ export function PortalNodeComponent({ data, id, selected }: NodeProps): JSX.Elem
           borderColor: hmNode.borderColor,
           opacity:     hmNode.opacity,
         } : {}),
-        // - sci-fi focus ring (circular because borderRadius:'50%' is preserved)
-        ...selectedStyle,
       }}
       onClick={open}
     >
@@ -63,16 +59,16 @@ export function PortalNodeComponent({ data, id, selected }: NodeProps): JSX.Elem
           detail: { id, x: Math.round(p.x), y: Math.round(p.y), width: Math.round(p.width), height: Math.round(p.height) },
         }))}
       />
+      <Handle type="source" position={Position.Top}    id="top"    />
+      <Handle type="source" position={Position.Right}  id="right"  />
+      <Handle type="source" position={Position.Bottom} id="bottom" />
+      <Handle type="source" position={Position.Left}   id="left"   />
 
       <span style={{ fontSize: 18, fontWeight: 600, opacity: 0.85, textAlign: 'center', wordBreak: 'break-word', lineHeight: 1.2 }}>
         {node.label ?? canvasBasename(node.canvas)}
       </span>
       <span style={{ fontSize: 11, opacity: 0.4, textAlign: 'center' }}>canvas</span>
     </div>
-    <Handle type="source" position={Position.Top}    id="top"    style={HANDLE_STYLE} />
-    <Handle type="source" position={Position.Right}  id="right"  style={HANDLE_STYLE} />
-    <Handle type="source" position={Position.Bottom} id="bottom" style={HANDLE_STYLE} />
-    <Handle type="source" position={Position.Left}   id="left"   style={HANDLE_STYLE} />
     </>
   );
 }

@@ -18,5 +18,11 @@
         "name": "xl",                                                                                                                   
         "path": "~/docs/knowledge-db"
       }
-    ]
+    ],
+
+    "skena.ai.provider": "openai-compat",
+    "skena.ai.baseURL":  "http://localhost:11434/v1",
+    // "skena.ai.model":    "qwen2.5:7b",
+    "skena.ai.model":    "smollm2",
+    "skena.ai.apiKey":   "ollama"
   }

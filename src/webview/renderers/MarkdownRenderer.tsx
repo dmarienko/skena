@@ -17,6 +17,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
+import rehypeRaw from 'rehype-raw';
 import { useFileContent } from '../hooks/useFileContent';
 import { useMarkdownConfig } from '../context/MarkdownConfigContext';
 
@@ -107,7 +108,7 @@ function MarkdownRendererInner({ content, baseUri }: MarkdownRendererProps): JSX
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        rehypePlugins={[[rehypeKatex, { output: 'mathml', throwOnError: false } as any]]}
+        rehypePlugins={[rehypeRaw, [rehypeKatex, { output: 'html', throwOnError: false } as any]]}
         components={components}
       >
         {content}

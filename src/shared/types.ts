@@ -47,6 +47,14 @@ export interface CanvasNodeBase {
    * Ignored by Obsidian.
    */
   creationIndex?: number;
+  /**
+   * Monotonically increasing integer, stamped (re-stamped) every time the node's
+   * content is edited. Shares the same counter pool as creationIndex so the two
+   * values are directly comparable. The heatmap uses max(creationIndex, editIndex)
+   * so a recently edited node glows as brightly as a recently created one.
+   * Ignored by Obsidian.
+   */
+  editIndex?: number;
 }
 
 export interface FileNode extends CanvasNodeBase {

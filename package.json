@@ -246,7 +246,10 @@
         },
         "skena.ai.provider": {
           "type": "string",
-          "enum": ["anthropic", "openai-compat"],
+          "enum": [
+            "anthropic",
+            "openai-compat"
+          ],
           "default": "anthropic",
           "description": "LLM provider for the AI companion. Use 'openai-compat' for Ollama, Groq, OpenAI, LM Studio, or any OpenAI-format endpoint.",
           "scope": "window"
@@ -323,6 +326,7 @@
     "react-dom": "^18.2.0",
     "react-markdown": "^9.0.0",
     "rehype-katex": "^7.0.1",
+    "rehype-raw": "^7.0.0",
     "rehype-stringify": "^10.0.0",
     "remark-gfm": "^4.0.0",
     "remark-math": "^6.0.0",

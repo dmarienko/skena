@@ -96,7 +96,12 @@ export function computeHeatmapData(
     if (!clusterMembers.has(cid)) clusterMembers.set(cid, []);
     clusterMembers.get(cid)!.push({
       id:  n.id,
-      idx: (n.data.creationIndex as number | undefined) ?? 0,
+      // - use the later of creation and last-edit so recently edited nodes
+      // - rank as highly as recently created ones
+      idx: Math.max(
+        (n.data.creationIndex as number | undefined) ?? 0,
+        (n.data.editIndex     as number | undefined) ?? 0,
+      ),
     });
   }
 

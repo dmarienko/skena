@@ -227,8 +227,10 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
   const savedViewState  = useRef<MonacoEditor.ICodeEditorViewState | null>(null);
   // - ref to the markdown scroll container so we can restore the viewing position
   const scrollableRef   = useRef<HTMLDivElement | null>(null);
-  // - cursor-line fraction (0–1) saved at commitEdit, consumed by the scroll effect
+  // - cursor-line fraction (0–1): fallback when text-anchor search fails
   const pendingScrollFraction = useRef<number | null>(null);
+  // - stripped text near cursor line: used to find the matching rendered element
+  const pendingAnchorText = useRef<string | null>(null);
 
   const borderColor = node.accentColor ?? '#454545';
   const isDark = document.body.classList.contains('vscode-dark') ||
@@ -241,11 +243,36 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
     // - viewer can scroll to the same area after the editor closes
     const editor = editorRef.current;
     if (editor) {
-      const pos       = editor.getPosition();
-      const lineCount = editor.getModel()?.getLineCount() ?? 1;
-      pendingScrollFraction.current = pos
-        ? (pos.lineNumber - 1) / Math.max(lineCount - 1, 1)
-        : null;
+      const pos   = editor.getPosition();
+      const model = editor.getModel();
+      if (pos && model) {
+        // - fallback: line-fraction (inaccurate but always available)
+        const lineCount = model.getLineCount();
+        pendingScrollFraction.current = (pos.lineNumber - 1) / Math.max(lineCount - 1, 1);
+
+        // - primary: strip markdown markers from cursor line (and up to 5 lines above)
+        // - to get the plain text that ReactMarkdown will render, then search for it
+        // - in the rendered DOM.  Much more accurate than fraction×scrollHeight.
+        let anchor = '';
+        for (let ln = pos.lineNumber; ln >= Math.max(1, pos.lineNumber - 5); ln--) {
+          const stripped = model.getLineContent(ln)
+            .replace(/^#{1,6}\s+/, '')              // - headings
+            .replace(/^\s*[-*+>]\s+/, '')           // - list / blockquote markers
+            .replace(/^\s*\d+\.\s+/, '')            // - numbered list
+            .replace(/\*\*([^*]+)\*\*/g, '$1')      // - **bold**
+            .replace(/__([^_]+)__/g, '$1')           // - __bold__
+            .replace(/\*([^*]+)\*/g, '$1')           // - *italic*
+            .replace(/_([^_]+)_/g, '$1')             // - _italic_
+            .replace(/`([^`]+)`/g, '$1')             // - `code`
+            .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // - [link](url)
+            .trim();
+          if (stripped.length >= 8) { anchor = stripped.slice(0, 60); break; }
+        }
+        pendingAnchorText.current = anchor || null;
+      } else {
+        pendingScrollFraction.current = null;
+        pendingAnchorText.current     = null;
+      }
     }
     setEditing(false);
     editorRef.current = null;
@@ -257,22 +284,63 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
     requestAnimationFrame(() => wrapperRef.current?.focus());
   }, [node.text, id]);
 
-  // - when edit mode closes, scroll the markdown view so the cursor line is centred
+  // - when edit mode closes, scroll the markdown view to the cursor position.
+  //
+  // - Strategy: text-anchor search (primary) + fraction fallback.
+  //
+  // - Text-anchor: strip markdown markers from the cursor line, search the rendered
+  //   DOM for an element containing that plain text, then centre it in the viewport.
+  //   Accurate because it anchors to actual rendered content.
+  //
+  // - Fraction fallback: used when the cursor was on an empty/too-short line
+  //   (no text to anchor on). Forces content-visibility:visible before measuring
+  //   so scrollHeight reflects real rendered heights, not 80px estimates.
+  //
+  // - All DOM reads/writes happen in one synchronous useLayoutEffect tick — the
+  //   browser never paints the intermediate state (no visible flicker).
   useLayoutEffect(() => {
-    if (editing || pendingScrollFraction.current === null) return;
-    const fraction = pendingScrollFraction.current;
-    pendingScrollFraction.current = null;
-    const el = scrollableRef.current;
-    if (!el || el.scrollHeight <= el.clientHeight) return; // - nothing to scroll
+    if (editing) return;
+    if (pendingAnchorText.current === null && pendingScrollFraction.current === null) return;
 
-    const apply = () => {
-      // - target: put the cursor line in the middle of the visible area
-      const target = Math.round(fraction * el.scrollHeight - el.clientHeight / 2);
-      el.scrollTop = Math.max(0, target);
-    };
-    apply();
-    // - content-visibility:auto may underestimate scrollHeight on first render; retry
-    requestAnimationFrame(apply);
+    const anchor   = pendingAnchorText.current;
+    const fraction = pendingScrollFraction.current;
+    pendingAnchorText.current     = null;
+    pendingScrollFraction.current = null;
+
+    const el = scrollableRef.current;
+    if (!el || el.scrollHeight <= el.clientHeight) return;
+
+    // - force all content-visibility:auto blocks to render so positions are accurate
+    const cvEls = el.querySelectorAll<HTMLElement>('.skena-markdown > *');
+    cvEls.forEach(c => { c.style.contentVisibility = 'visible'; });
+
+    let scrollSet = false;
+
+    if (anchor) {
+      const search = anchor.slice(0, 25);
+      const query  = '.skena-markdown h1,.skena-markdown h2,.skena-markdown h3,' +
+                     '.skena-markdown h4,.skena-markdown h5,.skena-markdown h6,' +
+                     '.skena-markdown p,.skena-markdown li,.skena-markdown blockquote';
+      const containerTop = el.getBoundingClientRect().top;
+      for (const elem of Array.from(el.querySelectorAll<HTMLElement>(query))) {
+        if ((elem.textContent ?? '').includes(search)) {
+          // - offset from container's current visible top → centre the element
+          const relTop = elem.getBoundingClientRect().top - containerTop;
+          el.scrollTop = Math.max(0, el.scrollTop + relTop - (el.clientHeight - elem.offsetHeight) / 2);
+          scrollSet = true;
+          break;
+        }
+      }
+    }
+
+    if (!scrollSet && fraction !== null) {
+      // - fallback: scrollHeight is now accurate (all blocks forced visible above)
+      el.scrollTop = Math.max(0, Math.round(fraction * el.scrollHeight - el.clientHeight / 2));
+    }
+
+    // - restore the CSS optimisation — the inline override is removed so the
+    // - .skena-markdown > * { content-visibility:auto } class rule takes back over
+    cvEls.forEach(c => { c.style.contentVisibility = ''; });
   }, [editing]);
 
   // ─── clipboard response handler ─────────────────────────────────────────
@@ -307,49 +375,51 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
   // ─── Monaco setup ─────────────────────────────────────────────────────────
 
   // - define a VS Code-synced theme before the editor is created.
-  // - Monaco markdown grammar uses tokenPostfix ".md", so actual emitted tokens are
-  // - strong.md, emphasis.md, variable.md, keyword.md, etc.  We use the suffixed
-  // - names so our rules are more specific and don't accidentally bleed into embedded
-  // - code blocks (where JS variables emit "variable.js", not "variable.md").
   //
-  // - vs-dark base theme has "strong" and "emphasis" with fontStyle only (no foreground),
-  // - so bold/italic text appears as plain white.  We add explicit colors here.
+  // - Monaco's markdown Monarch grammar uses tokenPostfix ".md", so the runtime
+  // - token names are "keyword.md", "strong.md", "variable.md", etc.
+  //
+  // - We use UN-suffixed rule tokens ("keyword", "strong", …).  Monaco's trie
+  // - match() falls back to the parent node's rule when no child exists for a
+  // - segment, so "keyword" matches "keyword.md" via prefix — this is the
+  // - documented and stable prefix-matching behaviour.
+  //
+  // - Using un-suffixed names is safer than ".md"-suffixed names because it
+  // - avoids interactions with vs-dark's deeper rules (keyword.flow, keyword.json,
+  // - string.key.json, …) that create intermediate trie nodes and can corrupt
+  // - the clone chain when our ".md" child is inserted.
+  //
+  // - vs-dark base theme has "strong" and "emphasis" with fontStyle only (no
+  // - foreground colour), so bold/italic text appears as plain white.  We
+  // - override those rules with colours here.
   const beforeMount = useCallback<BeforeMount>((monacoInstance) => {
     const style = getComputedStyle(document.body);
     const bg    = style.getPropertyValue('--vscode-editor-background').trim();
-    const fg    = style.getPropertyValue('--vscode-editor-foreground').trim();
     const dark  = isDark;
 
     monacoInstance.editor.defineTheme('skena-editor', {
       base:    dark ? 'vs-dark' : 'vs',
       inherit: true,
       rules: [
-        // - headings (#, ##, …), list markers (- * +), table borders (|)
-        { token: 'keyword.md',         foreground: dark ? '569cd6' : '0070c1'                      },
-        // - **bold** / __bold__ — base theme has bold style only; we add a color
-        { token: 'strong.md',          foreground: dark ? 'dcdcaa' : '795e26', fontStyle: 'bold'   },
-        // - *italic* / _italic_ — base theme has italic style only; we add a color
-        { token: 'emphasis.md',        foreground: dark ? 'ce9178' : 'a31515', fontStyle: 'italic' },
-        // - `inline code` — base theme maps 'variable' to light-blue; we prefer gold
-        { token: 'variable.md',        foreground: dark ? 'd7ba7d' : '795e26'                      },
+        // - headings (#, ##, …), list markers (-, *, +), table dividers (|)
+        { token: 'keyword',         foreground: dark ? '569cd6' : '0070c1'                      },
+        // - **bold** / __bold__   — vs-dark has fontStyle:bold but NO foreground; add colour
+        { token: 'strong',          foreground: dark ? 'dcdcaa' : '795e26', fontStyle: 'bold'   },
+        // - *italic* / _italic_   — vs-dark has fontStyle:italic but NO foreground; add colour
+        { token: 'emphasis',        foreground: dark ? 'ce9178' : 'a31515', fontStyle: 'italic' },
+        // - `inline code`         — vs-dark maps 'variable' to faint blue; prefer gold
+        { token: 'variable',        foreground: dark ? 'd7ba7d' : '795e26'                      },
+        // - code block content    — more specific than 'variable'; wins for block lines
+        { token: 'variable.source', foreground: dark ? 'd7ba7d' : '795e26'                      },
         // - [link text](url)
-        { token: 'string.link.md',     foreground: dark ? '4ec9b0' : '267f99'                      },
+        { token: 'string.link',     foreground: dark ? '4ec9b0' : '267f99'                      },
         // - > blockquotes
-        { token: 'comment.md',         foreground: dark ? '6a9955' : '008000', fontStyle: 'italic' },
-        // - ``` fenced code block markers (opening/closing backtick lines)
-        { token: 'string.md',          foreground: dark ? 'ce9178' : 'a31515'                      },
-        // - code block content (more specific than variable.md — wins for block lines)
-        { token: 'variable.source.md', foreground: dark ? 'd7ba7d' : '795e26'                      },
-        // - *** / --- / === separator lines
-        { token: 'meta.separator.md',  foreground: dark ? '555555' : 'bbbbbb'                      },
-        // - table header cells (more specific than keyword.md)
-        { token: 'keyword.table.header.md', foreground: dark ? '569cd6' : '0070c1', fontStyle: 'bold' },
+        { token: 'comment',         foreground: dark ? '6a9955' : '008000', fontStyle: 'italic' },
+        // - ``` fenced code block markers
+        { token: 'string',          foreground: dark ? 'ce9178' : 'a31515'                      },
       ],
       colors: {
         'editor.background':           bg || (dark ? '#1e1e1e' : '#ffffff'),
-        // - explicit foreground ensures regular text has the right colour even when
-        // - the VS Code theme's editor.foreground isn't inherited through Monaco
-        'editor.foreground':           fg || (dark ? '#d4d4d4' : '#383a42'),
         // - kill the line-highlight rectangle visible on single-line edits
         'editor.lineHighlightBackground':  '#00000000',
         'editor.lineHighlightBorderColor': '#00000000',

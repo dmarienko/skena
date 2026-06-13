@@ -1627,7 +1627,11 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       const { id, text } = (e as CustomEvent<{ id: string; text: string }>).detail;
       const original = canvasRef.current.nodes.find(n => n.id === id);
       if (!original || original.type !== 'text') return;
-      const updatedNode = { ...original, text };
+      // - stamp editIndex using the shared creationCounter pool so creationIndex
+      // - and editIndex are directly comparable in the heatmap ranking
+      const nextIdx = (canvasRef.current.creationCounter ?? 0) + 1;
+      canvasRef.current = { ...canvasRef.current, creationCounter: nextIdx };
+      const updatedNode = { ...original, text, editIndex: nextIdx };
       const updated: CanvasData = {
         ...canvasRef.current,
         nodes: canvasRef.current.nodes.map(n => n.id === id ? updatedNode : n),
@@ -1635,7 +1639,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       canvasRef.current = updated;
       // - update React Flow node data so markdown re-renders immediately
       setNodes(nds => nds.map(n =>
-        n.id === id ? { ...n, data: { ...n.data, text } } : n
+        n.id === id ? { ...n, data: { ...n.data, text, editIndex: nextIdx } } : n
       ));
       scheduleSave();
     };

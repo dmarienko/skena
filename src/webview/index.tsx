@@ -12,6 +12,10 @@
 
 // - step 1: suppress Monaco workers before Monaco initialises
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
+// - register the markdown Monarch grammar; editor.api.js ships no languages,
+// - so without this import the 'markdown' language ID is unknown and Monaco
+// - treats all text as plain (no tokenisation → single colour).
+import 'monaco-editor/esm/vs/basic-languages/markdown/markdown.contribution.js';
 (self as unknown as Record<string, unknown>)['MonacoEnvironment'] = {
   // - return a stub Worker; Monaco falls back to synchronous mode for language
   // - features — syntax highlighting still works (runs in the main thread)
