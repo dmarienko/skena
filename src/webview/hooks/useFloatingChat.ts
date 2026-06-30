@@ -7,7 +7,7 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { ChatMessage } from '../../shared/types';
+import { ChatMessage, ViewportSnapshot } from '../../shared/types';
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
@@ -183,9 +183,11 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
     const next = [...historyRef.current, userMsg];
     historyRef.current = next;
     setHistory(next);
+    // - snapshot what the user currently sees (zoom, on-screen nodes, scroll)
+    const viewport = (window as unknown as { __skenaGetViewport?: () => ViewportSnapshot }).__skenaGetViewport?.();
     // - send full history with the message so the host can reconstruct context
     // - without reading any sidecar; history is session-only
-    postMessage({ type: 'floatingChatSend', message: trimmed, activeNodeId, history: next });
+    postMessage({ type: 'floatingChatSend', message: trimmed, activeNodeId, history: next, viewport });
     setError(null);
     streamingRef.current = '';
     setStreaming('');

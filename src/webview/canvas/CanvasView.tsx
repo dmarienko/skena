@@ -30,7 +30,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
-import { CanvasData, CanvasNode, CanvasEdge, MsgAddNodeResult, MsgSubCanvasCreated, NodeSide, CanvasMark } from '../../shared/types';
+import { CanvasData, CanvasNode, CanvasEdge, MsgAddNodeResult, MsgSubCanvasCreated, NodeSide, CanvasMark, ViewportSnapshot } from '../../shared/types';
 import { ContextMenu } from './ContextMenu';
 import { CANVAS_COLORS } from '../../shared/constants';
 import { ensureLabels, assignLabel } from './nodeLabels';
@@ -1577,6 +1577,36 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, pushHistory, handleCopy, handlePaste, deleteSelectedNodes, jumpToMark]); // - nodesRef + spaceSelectedRef carry live state
+
+  // - expose a viewport snapshot for the AI companion (what the user actually sees:
+  // - zoom, on-screen node labels, scroll position within the focused node)
+  useEffect(() => {
+    const getViewport = (): ViewportSnapshot => {
+      const vp = rfRef.current.getViewport();
+      const W = window.innerWidth, H = window.innerHeight;
+      const visibleNodes: string[] = [];
+      for (const cn of canvasRef.current.nodes) {
+        if (cn.type === 'group') continue;
+        const sx = cn.x * vp.zoom + vp.x;
+        const sy = cn.y * vp.zoom + vp.y;
+        const sw = cn.width * vp.zoom, sh = cn.height * vp.zoom;
+        if (sx + sw > 0 && sx < W && sy + sh > 0 && sy < H) {
+          visibleNodes.push(cn.nodeLabel ?? cn.id.slice(0, 6));
+        }
+      }
+      let focusedScrollPct: number | undefined;
+      const focused = nodesRef.current.find(n => n.selected && n.type !== 'group');
+      if (focused) {
+        const el = document.querySelector(`.react-flow__node[data-id="${focused.id}"] .skena-scrollable`) as HTMLElement | null;
+        if (el && el.scrollHeight > el.clientHeight + 1) {
+          focusedScrollPct = Math.round((el.scrollTop / (el.scrollHeight - el.clientHeight)) * 100);
+        }
+      }
+      return { zoom: Math.round(vp.zoom * 100) / 100, visibleNodes, focusedScrollPct };
+    };
+    (window as unknown as { __skenaGetViewport?: () => ViewportSnapshot }).__skenaGetViewport = getViewport;
+    return () => { delete (window as unknown as { __skenaGetViewport?: () => ViewportSnapshot }).__skenaGetViewport; };
+  }, []);
 
   // - handle skena:addNodeTrigger from VS Code ctrl+n command override
   // - compute viewport centre in flow coords, avoid overlaps, send addNodeRequest

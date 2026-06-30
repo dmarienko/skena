@@ -285,7 +285,7 @@ export class HarnessAdapter implements ILLMClient {
       while ((nl = s.buf.indexOf('\n')) >= 0) {
         const line = s.buf.slice(0, nl).trim();
         s.buf = s.buf.slice(nl + 1);
-        if (line) this.onEvent(s, line);
+        if (line) this.onEvent(canvasPath, s, line);
       }
     });
     s.proc.stderr!.on('data', (chunk: Buffer) => { s.stderr += chunk.toString('utf8'); });
@@ -293,7 +293,7 @@ export class HarnessAdapter implements ILLMClient {
     s.proc.on('error', (err) => { this.log(`process error: ${err.message}`); });
   }
 
-  private onEvent(s: HarnessSession, line: string): void {
+  private onEvent(canvasPath: string, s: HarnessSession, line: string): void {
     let ev: Record<string, unknown>;
     try { ev = JSON.parse(line); } catch { return; }
 
@@ -315,15 +315,38 @@ export class HarnessAdapter implements ILLMClient {
         s.lastResultText = typeof ev['result'] === 'string' ? (ev['result'] as string) : '';
         if (typeof ev['session_id'] === 'string') s.sessionId = ev['session_id'];
         this.log(`result: is_error=${s.isError} cost_usd=${ev['total_cost_usd']} session=${s.sessionId}`);
-        this.finishTurn(s);
+        this.finishTurn(canvasPath, s);
         break;
     }
   }
 
-  private finishTurn(s: HarnessSession): void {
+  /**
+   * - resume of a stale/foreign session id failed (e.g. the id was created under a
+   * - different config dir before isolation) → kill it, start a FRESH session and
+   * - replay the pending message. Self-heals: the new id is then persisted.
+   */
+  private respawnFresh(canvasPath: string, s: HarnessSession, cb: LLMCallbacks): boolean {
+    if (!s.usedResume || s.everSucceeded) return false;
+    try { s.proc.kill(); } catch { /* already gone */ }
+    this.log('resume failed — starting a fresh session');
+    const proc = this.launch(s.bin, s.freshArgs, s.cwd, s.configDir);
+    if (!proc) return false;
+    const fresh: HarnessSession = {
+      ...s, proc, buf: '', usedResume: false, cb: null,
+      anyText: false, lastResultText: '', isError: false, aborted: false, stderr: '',
+    };
+    this.wire(canvasPath, fresh);
+    this._sessions.set(canvasPath, fresh);
+    this.beginTurn(fresh, s.pendingMessage, cb);
+    return true;
+  }
+
+  private finishTurn(canvasPath: string, s: HarnessSession): void {
     const cb = s.cb;
     s.cb = null;
     if (s.isError) {
+      // - a failed --resume surfaces as an is_error result (process stays alive)
+      if (cb && this.respawnFresh(canvasPath, s, cb)) return;
       cb?.onError(s.stderr.trim() || s.lastResultText || 'Claude reported an error.');
       return;
     }
@@ -336,22 +359,14 @@ export class HarnessAdapter implements ILLMClient {
   }
 
   private onClose(canvasPath: string, s: HarnessSession, code: number | null): void {
+    if (this._sessions.get(canvasPath) !== s) return;   // - superseded by a respawn; ignore
     this._sessions.delete(canvasPath);
-    if (!s.cb) return;   // - idle process exit (e.g. disposed) — nothing to report
-
-    // - resume failed before first success → respawn fresh and replay the message
-    if (s.usedResume && !s.everSucceeded) {
-      this.log(`resume failed (exit ${code}) — respawning fresh`);
-      const proc = this.launch(s.bin, s.freshArgs, s.cwd, s.configDir);
-      if (proc) {
-        const fresh: HarnessSession = { ...s, proc, buf: '', usedResume: false, cb: null };
-        this.wire(canvasPath, fresh);
-        this._sessions.set(canvasPath, fresh);
-        this.beginTurn(fresh, s.pendingMessage, s.cb);
-        return;
-      }
-    }
-    s.cb.onError(s.stderr.trim() || `claude exited with code ${code}`);
+    const cb = s.cb;
+    if (!cb) return;   // - idle process exit (e.g. disposed) — nothing to report
+    s.cb = null;
+    // - resume failed before first success (process exited) → recover fresh
+    if (this.respawnFresh(canvasPath, s, cb)) return;
+    cb.onError(s.stderr.trim() || `claude exited with code ${code}`);
   }
 }
 

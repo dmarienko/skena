@@ -19,6 +19,7 @@ import {
   ChatNode,
   PortalNode,
   LinkNode,
+  ViewportSnapshot,
 } from '../shared/types';
 
 const MAX_ACTIVE_CONTENT   = 3000;   // - chars shown for the focused node
@@ -37,6 +38,8 @@ export interface SystemPromptOptions {
   fileNodeMode?: 'content' | 'path';
   /** - resolve a node uri (vault://, relative, absolute) to an absolute fs path */
   resolveFsPath?: (uri: string) => string | null;
+  /** - what the user currently sees on screen (viewport awareness) */
+  viewport?: ViewportSnapshot;
 }
 
 /**
@@ -98,7 +101,21 @@ export async function buildCanvasContext(
     }
   }
 
-  return `CURRENTLY FOCUSED NODE:
+  // - viewport awareness: what the user is actually looking at right now
+  let viewportPart = '';
+  if (opts.viewport) {
+    const v = opts.viewport;
+    const lines = [
+      `ON SCREEN NOW (zoom ${v.zoom}×):`,
+      `  Visible nodes: ${v.visibleNodes.length ? v.visibleNodes.join(', ') : '(none in view)'}`,
+    ];
+    if (v.focusedScrollPct !== undefined) {
+      lines.push(`  The user has scrolled ~${v.focusedScrollPct}% down inside the focused node (they may be looking at a specific part, not the whole node).`);
+    }
+    viewportPart = lines.join('\n') + '\n\n';
+  }
+
+  return `${viewportPart}CURRENTLY FOCUSED NODE:
 ${activePart}
 
 ${connectedPart}ALL CANVAS NODES:

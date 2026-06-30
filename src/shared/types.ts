@@ -453,6 +453,15 @@ export interface MsgCopyAbsolutePath {
 }
 
 /** - Webview → Host: user sends a message in the floating chat overlay */
+/** - what the user is actually looking at: zoom, on-screen nodes, scroll position */
+export interface ViewportSnapshot {
+  zoom: number;
+  /** - labels of nodes currently within the viewport */
+  visibleNodes: string[];
+  /** - 0..100 scroll position within the focused node, if it is scrollable */
+  focusedScrollPct?: number;
+}
+
 export interface MsgFloatingChatSend {
   type: 'floatingChatSend';
   message: string;
@@ -460,6 +469,8 @@ export interface MsgFloatingChatSend {
   activeNodeId: string | null;
   /** - full conversation history (session-only; no sidecar persistence) */
   history: ChatMessage[];
+  /** - what the user currently sees on screen (viewport awareness) */
+  viewport?: ViewportSnapshot;
 }
 
 /** - Webview → Host: abort the current streaming request */

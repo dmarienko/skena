@@ -957,12 +957,12 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       if (provider === 'harness') {
         systemPrompt = buildStaticSystemPrompt(path.basename(document.uri.fsPath, '.canvas'));
         const snapshot = await buildCanvasContext(document.uri.fsPath, document.canvas, msg.activeNodeId, {
-          fileNodeMode: 'path', resolveFsPath,
+          fileNodeMode: 'path', resolveFsPath, viewport: msg.viewport,
         });
         apiHistory = [{ role: 'user', content: `${snapshot}\n\n---\n\n${msg.message}` }];
       } else {
         systemPrompt = await buildSystemPrompt(document.uri.fsPath, document.canvas, msg.activeNodeId, {
-          fileNodeMode: 'content', resolveFsPath,
+          fileNodeMode: 'content', resolveFsPath, viewport: msg.viewport,
         });
         apiHistory = [...priorHistory, { role: 'user', content: msg.message }];
       }
