@@ -914,7 +914,11 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
 
     // - harness agent has a Read tool → give it file paths (handles .ipynb etc);
     // - other adapters have no file tools → inline content as before
-    const provider = vscode.workspace.getConfiguration('skena.ai').get<string>('provider') ?? 'anthropic';
+    const aiCfg          = vscode.workspace.getConfiguration('skena.ai');
+    const provider       = aiCfg.get<string>('provider') ?? 'anthropic';
+    const restoreSession = aiCfg.get<boolean>('session.restore') ?? true;
+    const sessionKey     = `skena.chatSession.${document.uri.toString()}`;
+    const sessionId      = restoreSession ? this.context.workspaceState.get<string>(sessionKey) ?? null : null;
 
     // - build system prompt with canvas context
     let systemPrompt: string;
@@ -986,10 +990,14 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
 
       onDone:  () => send({ type: 'floatingChatDone' }),
       onError: (message) => send({ type: 'floatingChatError', message }),
+      // - persist the CC session id so the next open can --resume it
+      onSessionId: (id) => { void this.context.workspaceState.update(sessionKey, id); },
     }, {
       canvasPath:   document.uri.fsPath,
       activeNodeId: msg.activeNodeId,
       workspaceDir,
+      sessionId,
+      restoreSession,
     });
   }
 

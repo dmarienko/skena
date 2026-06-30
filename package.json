@@ -241,7 +241,7 @@
         "skena.ai.model": {
           "type": "string",
           "default": "claude-sonnet-4-5",
-          "description": "Claude model used by the floating AI companion (e.g. claude-opus-4-5, claude-sonnet-4-5).",
+          "markdownDescription": "Model used by the floating AI companion. Applies to all providers.\n- **anthropic**: full id, e.g. `claude-opus-4-5`, `claude-sonnet-4-5`.\n- **harness**: full id or a CLI alias like `opus`, `sonnet`, `haiku`.",
           "scope": "window"
         },
         "skena.ai.provider": {
@@ -277,6 +277,12 @@
           "type": "number",
           "default": 16,
           "description": "Max agent turns per message for the harness provider (bounds tool-use loops).",
+          "scope": "window"
+        },
+        "skena.ai.session.restore": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Harness provider: resume the prior Claude Code session for a canvas when it is reopened (via `--resume`), so the conversation continues with full prior context. If the stored session can't be resumed, it falls back to a fresh one.",
           "scope": "window"
         },
         "skena.ai.baseURL": {

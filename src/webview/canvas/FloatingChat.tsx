@@ -500,7 +500,7 @@ export function FloatingChat({
           : '0 8px 32px rgba(0,0,0,0.5)',
         transition:    'box-shadow 0.15s ease',
         overflow:      'hidden',
-        fontFamily:    'var(--vscode-font-family)',
+        fontFamily:    'var(--vscode-editor-font-family, var(--vscode-font-family))',
         fontSize:      13,
       }}
     >
@@ -569,9 +569,23 @@ export function FloatingChat({
             display:       'flex',
             flexDirection: 'column',
             userSelect:    'text',
+            position:      'relative',
           }}>
-            {/* - Monaco editor — padding keeps text away from panel border and splitter */}
-            <div style={{ flex: 1, minHeight: 0, height: inputEditorH, paddingLeft: 6, paddingRight: 6 }}>
+            {/* - prompt glyph: decorative chat-input marker in the left gutter */}
+            <div style={{
+              position:      'absolute',
+              top:           7,
+              left:          6,
+              color:         '#38BDF8',
+              fontSize:      12,
+              opacity:       0.9,
+              pointerEvents: 'none',
+              zIndex:        1,
+            }}>
+              ➤
+            </div>
+            {/* - Monaco editor — left padding clears the prompt glyph + panel border */}
+            <div style={{ flex: 1, minHeight: 0, height: inputEditorH, paddingLeft: 20, paddingRight: 6 }}>
               <Editor
                 height={inputEditorH}
                 defaultLanguage="markdown"
@@ -706,23 +720,24 @@ function ChatBubble({
       gap:           6,
       alignItems:    'flex-start',
     }}>
-      {/* - role dot: cyan = user, purple = assistant */}
+      {/* - role dot: green = user prompt, purple = assistant */}
       <div style={{
         width:        5,
         height:       5,
         borderRadius: '50%',
         marginTop:    7,
         flexShrink:   0,
-        background:   isUser ? '#38BDF8' : '#A78BFA',
+        background:   isUser ? '#10aa10' : '#A78BFA',
       }} />
 
       <div style={{
         maxWidth:     '95%',
         padding:      '4px 8px',
         borderRadius: '2px 8px 8px 8px',
-        background:   isUser ? 'rgba(56,189,248,0.10)' : 'rgba(167,139,250,0.07)',
-        border:       `1px solid ${isUser ? 'rgba(56,189,248,0.18)' : 'rgba(167,139,250,0.13)'}`,
-        color:        'var(--vscode-foreground)',
+        background:   isUser ? 'rgba(16,170,16,0.10)' : 'rgba(167,139,250,0.07)',
+        border:       `1px solid ${isUser ? 'rgba(16,170,16,0.22)' : 'rgba(167,139,250,0.13)'}`,
+        // - user prompts rendered in green so they stand out from assistant replies
+        color:        isUser ? '#10aa10' : 'var(--vscode-foreground)',
         fontSize:     12,
         lineHeight:   1.55,
         userSelect:   'text',

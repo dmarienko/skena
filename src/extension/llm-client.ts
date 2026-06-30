@@ -37,6 +37,10 @@ export interface LLMContext {
   canvasPath?:   string;
   activeNodeId?: string | null;
   workspaceDir?: string;
+  /** - prior CC session id for this canvas (harness --resume); null = fresh */
+  sessionId?:    string | null;
+  /** - whether to resume the prior session (skena.ai.session.restore) */
+  restoreSession?: boolean;
 }
 
 /** - streaming callbacks — same contract as the old ClaudeClient */
@@ -52,6 +56,8 @@ export interface LLMCallbacks {
   onDone:    () => void;
   /** - called on network or API errors */
   onError:   (message: string) => void;
+  /** - harness: report the CC session id so it can be resumed next time */
+  onSessionId?: (id: string) => void;
 }
 
 // ─── interface ────────────────────────────────────────────────────────────────
