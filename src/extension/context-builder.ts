@@ -109,10 +109,16 @@ export async function buildCanvasContext(
       `ON SCREEN NOW (zoom ${v.zoom}×):`,
       `  Visible nodes: ${v.visibleNodes.length ? v.visibleNodes.join(', ') : '(none in view)'}`,
     ];
-    if (v.focusedScrollPct !== undefined) {
-      lines.push(`  The user has scrolled ~${v.focusedScrollPct}% down inside the focused node (they may be looking at a specific part, not the whole node).`);
+    if (v.focusedVisibleText) {
+      // - the literal rendered text in the user's viewport — trust this over the % guess
+      lines.push('  The user is looking at THIS exact text in the focused node right now (verbatim on-screen render — do not infer beyond it):');
+      viewportPart = `${lines.join('\n')}\n  """\n${v.focusedVisibleText}\n  """\n\n`;
+    } else {
+      if (v.focusedScrollPct !== undefined) {
+        lines.push(`  Scrolled ~${v.focusedScrollPct}% down inside the focused node.`);
+      }
+      viewportPart = lines.join('\n') + '\n\n';
     }
-    viewportPart = lines.join('\n') + '\n\n';
   }
 
   return `${viewportPart}CURRENTLY FOCUSED NODE:

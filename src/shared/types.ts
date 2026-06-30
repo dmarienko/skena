@@ -460,6 +460,8 @@ export interface ViewportSnapshot {
   visibleNodes: string[];
   /** - 0..100 scroll position within the focused node, if it is scrollable */
   focusedScrollPct?: number;
+  /** - the actual on-screen text of the focused node (DOM blocks in view), capped */
+  focusedVisibleText?: string;
 }
 
 export interface MsgFloatingChatSend {

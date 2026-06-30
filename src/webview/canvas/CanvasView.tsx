@@ -1595,14 +1595,32 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         }
       }
       let focusedScrollPct: number | undefined;
+      let focusedVisibleText: string | undefined;
       const focused = nodesRef.current.find(n => n.selected && n.type !== 'group');
       if (focused) {
         const el = document.querySelector(`.react-flow__node[data-id="${focused.id}"] .skena-scrollable`) as HTMLElement | null;
         if (el && el.scrollHeight > el.clientHeight + 1) {
           focusedScrollPct = Math.round((el.scrollTop / (el.scrollHeight - el.clientHeight)) * 100);
         }
+        if (el) {
+          // - the literal on-screen text: rendered blocks whose rect intersects the
+          // - node's visible scroll window (avoids the unreliable %→source mapping)
+          const scRect = el.getBoundingClientRect();
+          const md     = el.querySelector('.skena-markdown');
+          const blocks = md ? Array.from(md.children) : Array.from(el.children);
+          const parts: string[] = [];
+          for (const c of blocks) {
+            const r = c.getBoundingClientRect();
+            if (r.bottom > scRect.top + 2 && r.top < scRect.bottom - 2) {
+              const t = (c as HTMLElement).innerText?.trim();
+              if (t) parts.push(t);
+            }
+          }
+          const joined = parts.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+          if (joined) focusedVisibleText = joined.slice(0, 2000);
+        }
       }
-      return { zoom: Math.round(vp.zoom * 100) / 100, visibleNodes, focusedScrollPct };
+      return { zoom: Math.round(vp.zoom * 100) / 100, visibleNodes, focusedScrollPct, focusedVisibleText };
     };
     (window as unknown as { __skenaGetViewport?: () => ViewportSnapshot }).__skenaGetViewport = getViewport;
     return () => { delete (window as unknown as { __skenaGetViewport?: () => ViewportSnapshot }).__skenaGetViewport; };
