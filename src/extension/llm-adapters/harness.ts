@@ -179,9 +179,10 @@ export class HarnessAdapter implements ILLMClient {
     // - so the companion can read/write research material. Skipped under bypass
     // - (which already ignores the directory sandbox).
     if (permMode !== 'bypassPermissions') {
-      // - pre-approve listed tools (e.g. Bash) so they run without a (headless-undeliverable) prompt
-      const allowed = cfg.get<string[]>('harnessAllowedTools') ?? [];
-      if (allowed.length) freshArgs.push('--allowedTools', ...allowed);
+      // - always allow the skena canvas tools (the companion's own functions); plus the
+      // - user's listed tools (Bash etc.). Headless can't prompt, so un-allowed = denied.
+      const allowed = ['mcp__skena', ...(cfg.get<string[]>('harnessAllowedTools') ?? [])];
+      freshArgs.push('--allowedTools', ...allowed);
       for (const dir of this.accessDirs()) { freshArgs.push('--add-dir', dir); }
     }
     if (configDir) freshArgs.push('--strict-mcp-config');   // - isolated: only the merged config loads

@@ -72,11 +72,17 @@ export async function buildCanvasContext(
 
   // - active node section
   let activePart = 'No node currently focused.';
+  let placementHint = '';
   const activeNode = activeNodeId ? canvas.nodes.find(n => n.id === activeNodeId) : null;
   if (activeNode) {
     const content = await nodeContent(activeNode, canvasDir, MAX_ACTIVE_CONTENT, opts);
     const label   = activeNode.nodeLabel ?? activeNode.id.slice(0, 6);
     activePart    = `[${label}] (${activeNode.type}) ${nodeTitle(activeNode)}\n\n${content}`;
+    // - new nodes default to the far right of the whole canvas; give an explicit
+    // - target beside the focused node so AI-added notes appear where the user is
+    const aw = activeNode.width ?? 400, ah = activeNode.height ?? 300;
+    const px = Math.round(activeNode.x + aw + 60), py = Math.round(activeNode.y);
+    placementHint = `\nPLACEMENT: the focused node is at (x=${Math.round(activeNode.x)}, y=${Math.round(activeNode.y)}, w=${aw}, h=${ah}). When adding a node related to it, pass x=${px}, y=${py} to canvas_add_node so it appears right beside the focused node (NOT at the canvas edge), then connect it with canvas_add_edge.\n`;
   }
 
   // - connected nodes section
@@ -123,7 +129,7 @@ export async function buildCanvasContext(
 
   return `${viewportPart}CURRENTLY FOCUSED NODE:
 ${activePart}
-
+${placementHint}
 ${connectedPart}ALL CANVAS NODES:
 ${nodeSummaryList}`.trim();
 }

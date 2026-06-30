@@ -310,15 +310,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     // - so when that flag is set we compare disk content to lastWrittenJson: if it
     // - differs, an external write slipped through and we must still reload the webview.
     const canvasWatcher = vscode.workspace.createFileSystemWatcher(document.uri.fsPath);
-    canvasWatcher.onDidChange(async () => {
-      if (isSelfSaving) {
-        // - check whether this is our own echo or an external write
-        try {
-          const raw = await fs.readFile(document.uri.fsPath, 'utf-8');
-          if (raw === lastWrittenJson) return; // - definitely our own echo, skip
-          // - content differs → external write (MCP etc.) arrived during our save window
-        } catch { return; }
-      }
+
+    // - reload the webview from disk after an external write
+    const reloadFromDisk = async () => {
       try {
         const canvas = await readCanvas(document.uri.fsPath);
         document.updateFromDisk(canvas);
@@ -338,6 +332,20 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           send({ type: 'marksRestored', marks: savedMarks } satisfies MsgMarksRestored);
         }, 50);
       } catch { /* ignore parse errors during in-progress external edits */ }
+    };
+
+    // - debounce: an AI add-note is two writes (canvas_add_node + canvas_add_edge);
+    // - coalesce rapid external writes into a single reload to avoid double redraw
+    let reloadTimer: ReturnType<typeof setTimeout> | null = null;
+    canvasWatcher.onDidChange(async () => {
+      if (isSelfSaving) {
+        try {
+          const raw = await fs.readFile(document.uri.fsPath, 'utf-8');
+          if (raw === lastWrittenJson) return; // - our own echo, skip
+        } catch { return; }
+      }
+      if (reloadTimer) clearTimeout(reloadTimer);
+      reloadTimer = setTimeout(() => { reloadTimer = null; void reloadFromDisk(); }, 200);
     });
 
     // - helper: convert an absolute fsPath to the URI the canvas node uses.
