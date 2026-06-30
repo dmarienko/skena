@@ -238,17 +238,46 @@ export class HarnessAdapter implements ILLMClient {
    * - global config) if creds can't be staged.
    */
   private prepareProfile(): string | undefined {
-    const profile  = path.join(os.homedir(), '.skena', 'cc-profile');
-    const srcCreds = path.join(os.homedir(), '.claude', '.credentials.json');
+    const claudeDir = path.join(os.homedir(), '.claude');
+    const profile   = path.join(os.homedir(), '.skena', 'cc-profile');
+    const srcCreds  = path.join(claudeDir, '.credentials.json');
     try {
       if (!fs.existsSync(srcCreds)) { this.log('no global creds to stage — using global config'); return undefined; }
       fs.mkdirSync(profile, { recursive: true });
       fs.copyFileSync(srcCreds, path.join(profile, '.credentials.json'));  // - refresh each spawn
+      this.syncProfile(profile, claudeDir);
       return profile;
     } catch (e) {
       this.log(`profile setup failed (${(e as Error).message}) — using global config`);
       return undefined;
     }
+  }
+
+  /**
+   * - bring the user's CC ecosystem into the isolated profile: symlink (live)
+   * - agents/commands/skills + global CLAUDE.md, and copy settings.json with
+   * - `hooks` stripped — so the companion keeps the user's agents/skills/memory
+   * - WITHOUT the SessionStart hook tax. Plugins are deliberately NOT linked
+   * - (their hooks would re-introduce the tax).
+   */
+  private syncProfile(profile: string, claudeDir: string): void {
+    for (const name of ['agents', 'commands', 'skills', 'CLAUDE.md']) {
+      const src = path.join(claudeDir, name);
+      const dst = path.join(profile, name);
+      if (!fs.existsSync(src)) continue;
+      try {
+        const st = fs.lstatSync(dst);
+        if (st.isSymbolicLink()) fs.unlinkSync(dst);   // - refresh stale link
+        else continue;                                  // - real file/dir present → don't clobber
+      } catch { /* dst absent */ }
+      try { fs.symlinkSync(src, dst); } catch (e) { this.log(`link ${name} failed: ${(e as Error).message}`); }
+    }
+    // - settings.json minus hooks (keeps permissions/allowlist; drops the tax)
+    try {
+      const j = JSON.parse(fs.readFileSync(path.join(claudeDir, 'settings.json'), 'utf8')) as Record<string, unknown>;
+      delete j.hooks;
+      fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify(j, null, 2));
+    } catch { /* no global settings — fine */ }
   }
 
   /** - write the MCP config: skena server + (when isolated) the user's own servers */
