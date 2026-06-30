@@ -311,26 +311,16 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     // - differs, an external write slipped through and we must still reload the webview.
     const canvasWatcher = vscode.workspace.createFileSystemWatcher(document.uri.fsPath);
 
-    // - reload the webview from disk after an external write
+    // - reload the webview from disk after an external write.
+    // - SOFT reload: send canvasLoaded WITHOUT canvasChanged — the latter sets
+    // - ready=false which unmounts CanvasView ("Loading canvas…" flash). CanvasView
+    // - re-syncs nodes/edges in place from the canvas prop, so an AI add-note just
+    // - mounts the one new node (React Flow diffs by id) instead of remounting all.
     const reloadFromDisk = async () => {
       try {
         const canvas = await readCanvas(document.uri.fsPath);
         document.updateFromDisk(canvas);
-        send({ type: 'canvasChanged' });
-        setTimeout(async () => {
-          send({ type: 'canvasLoaded', canvas, canvasPath: document.uri.fsPath });
-          // - re-send marks after external reload: canvasChanged unmounts CanvasView
-          // - which resets marksRef to {}; without this, the next marks op by the
-          // - user would overwrite the bookmarks file with an empty marks object.
-          const wsFolder = vscode.workspace.getWorkspaceFolder(document.uri);
-          let savedMarks: Record<string, CanvasMark> = {};
-          if (wsFolder) {
-            const bf  = await readBookmarksFile(wsFolder.uri);
-            const key = canvasBookmarkKey(document.uri, wsFolder.uri);
-            savedMarks = bf.canvases[key] ?? {};
-          }
-          send({ type: 'marksRestored', marks: savedMarks } satisfies MsgMarksRestored);
-        }, 50);
+        send({ type: 'canvasLoaded', canvas, canvasPath: document.uri.fsPath });
       } catch { /* ignore parse errors during in-progress external edits */ }
     };
 
