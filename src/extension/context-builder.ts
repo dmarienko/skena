@@ -27,10 +27,23 @@ const MAX_CONNECTED_NODES   = 8;     // - max connected nodes to include
 
 // ─── public API ───────────────────────────────────────────────────────────────
 
+export interface SystemPromptOptions {
+  /**
+   * - how to surface `file` node bodies:
+   * - 'content' inlines file text (default — for adapters with no file tools),
+   * - 'path' emits the resolved absolute path instead (for the harness agent,
+   * -   which has a Read tool and handles notebooks/binary natively).
+   */
+  fileNodeMode?: 'content' | 'path';
+  /** - resolve a node uri (vault://, relative, absolute) to an absolute fs path */
+  resolveFsPath?: (uri: string) => string | null;
+}
+
 export async function buildSystemPrompt(
   canvasPath: string,
   canvas: CanvasData,
   activeNodeId: string | null,
+  opts: SystemPromptOptions = {},
 ): Promise<string> {
   const canvasName = path.basename(canvasPath, '.canvas');
   const canvasDir  = path.dirname(canvasPath);
@@ -46,7 +59,7 @@ export async function buildSystemPrompt(
   let activePart = 'No node currently focused.';
   const activeNode = activeNodeId ? canvas.nodes.find(n => n.id === activeNodeId) : null;
   if (activeNode) {
-    const content = await nodeContent(activeNode, canvasDir, MAX_ACTIVE_CONTENT);
+    const content = await nodeContent(activeNode, canvasDir, MAX_ACTIVE_CONTENT, opts);
     const label   = activeNode.nodeLabel ?? activeNode.id.slice(0, 6);
     activePart    = `[${label}] (${activeNode.type}) ${nodeTitle(activeNode)}\n\n${content}`;
   }
@@ -65,7 +78,7 @@ export async function buildSystemPrompt(
 
     if (connectedNodes.length > 0) {
       const parts = await Promise.all(connectedNodes.map(async n => {
-        const preview = await nodeContent(n, canvasDir, MAX_CONNECTED_CONTENT);
+        const preview = await nodeContent(n, canvasDir, MAX_CONNECTED_CONTENT, opts);
         const label   = n.nodeLabel ?? n.id.slice(0, 6);
         return `### [${label}] (${n.type}) ${nodeTitle(n)}\n${preview}`;
       }));
@@ -107,6 +120,7 @@ export async function nodeContent(
   node: CanvasNode,
   canvasDir: string,
   maxChars: number,
+  opts: SystemPromptOptions = {},
 ): Promise<string> {
   let raw = '';
 
@@ -119,12 +133,26 @@ export async function nodeContent(
       break;
     case 'file': {
       const uri = (node as FileNode).file;
-      if (uri.startsWith('vault://') || uri.startsWith('http')) {
-        raw = `[external: ${uri}]`;
+      if (uri.startsWith('http')) {
+        raw = `[external URL: ${uri}]`;
         break;
       }
+      // - resolve to an absolute path (vault:// via resolver, else relative to canvas)
+      const absPath = uri.startsWith('vault://')
+        ? opts.resolveFsPath?.(uri) ?? null
+        : (path.isAbsolute(uri) ? uri : path.resolve(canvasDir, uri));
+
+      // - path mode: hand the agent the file path (it reads via its own tools);
+      // - avoids inlining large/binary files like .ipynb notebooks
+      if (opts.fileNodeMode === 'path') {
+        raw = absPath
+          ? `[file on disk — read it yourself if needed: ${absPath}]`
+          : `[unresolved file: ${uri}]`;
+        break;
+      }
+      // - content mode (default): inline the file text
+      if (!absPath) { raw = `[external: ${uri}]`; break; }
       try {
-        const absPath = path.isAbsolute(uri) ? uri : path.resolve(canvasDir, uri);
         raw = await fs.readFile(absPath, 'utf-8');
       } catch {
         raw = '[file not found]';

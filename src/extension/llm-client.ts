@@ -29,6 +29,16 @@ export interface LLMToolCall {
   input: Record<string, unknown>;
 }
 
+/**
+ * - per-call canvas context. Used by the harness adapter to target the MCP
+ * - server + tell the model which canvas to operate on. Other adapters ignore it.
+ */
+export interface LLMContext {
+  canvasPath?:   string;
+  activeNodeId?: string | null;
+  workspaceDir?: string;
+}
+
 /** - streaming callbacks — same contract as the old ClaudeClient */
 export interface LLMCallbacks {
   /** - called for each streamed text chunk */
@@ -56,6 +66,7 @@ export interface ILLMClient {
     history:      LLMMessage[],
     tools:        LLMTool[],
     callbacks:    LLMCallbacks,
+    context?:     LLMContext,
   ): Promise<void>;
 
   /** - cancel the current in-flight request */
@@ -115,6 +126,11 @@ export const CANVAS_TOOLS: LLMTool[] = [
 export async function createLLMClient(): Promise<ILLMClient> {
   const cfg      = vscode.workspace.getConfiguration('skena.ai');
   const provider = cfg.get<string>('provider') ?? 'anthropic';
+
+  if (provider === 'harness') {
+    const { HarnessAdapter } = await import('./llm-adapters/harness');
+    return new HarnessAdapter();
+  }
 
   if (provider === 'openai-compat') {
     const { OpenAICompatAdapter } = await import('./llm-adapters/openai-compat');

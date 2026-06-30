@@ -248,10 +248,35 @@
           "type": "string",
           "enum": [
             "anthropic",
-            "openai-compat"
+            "openai-compat",
+            "harness"
           ],
           "default": "anthropic",
-          "description": "LLM provider for the AI companion. Use 'openai-compat' for Ollama, Groq, OpenAI, LM Studio, or any OpenAI-format endpoint.",
+          "markdownDescription": "LLM provider for the AI companion.\n- **anthropic**: Anthropic API (needs `skena.ai.apiKey`).\n- **openai-compat**: Ollama, Groq, OpenAI, LM Studio, or any OpenAI-format endpoint.\n- **harness**: drive the local `claude` CLI — NO API key (uses your Claude Code `/login`); tools run via the bundled skena MCP server.",
+          "scope": "window"
+        },
+        "skena.ai.harnessPath": {
+          "type": "string",
+          "default": "claude",
+          "markdownDescription": "Path to the `claude` CLI for the **harness** provider. Defaults to `claude` on PATH; falls back to `~/.local/bin/claude` if not found.",
+          "scope": "window"
+        },
+        "skena.ai.harnessPermissionMode": {
+          "type": "string",
+          "enum": [
+            "bypassPermissions",
+            "acceptEdits",
+            "default",
+            "plan"
+          ],
+          "default": "bypassPermissions",
+          "markdownDescription": "Permission mode for the **harness** provider. `bypassPermissions` runs tools with no prompts (needed for headless use, but the companion can run any allowed tool — incl. Bash/file edits — without confirmation). Dial back to `acceptEdits`/`default` for prompts, or `plan` for read-only planning.",
+          "scope": "window"
+        },
+        "skena.ai.harnessMaxTurns": {
+          "type": "number",
+          "default": 16,
+          "description": "Max agent turns per message for the harness provider (bounds tool-use loops).",
           "scope": "window"
         },
         "skena.ai.baseURL": {

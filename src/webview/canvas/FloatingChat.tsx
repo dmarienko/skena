@@ -200,10 +200,15 @@ export function FloatingChat({
   onHistoryRestored,
 }: Props): JSX.Element {
   const chat             = useFloatingChat(postMessage);
-  const outputEl         = useRef<HTMLDivElement>(null);
+  const outputEl         = useRef<HTMLDivElement | null>(null);
   const editorRef        = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   const vimRef           = useRef<{ dispose: () => void } | null>(null);
   const pendingPasteRef  = useRef(false);
+  // - survive collapse/expand (which unmounts the body): unsent draft + scroll pos
+  const draftRef         = useRef('');
+  const scrollTopRef     = useRef(0);
+  // - current vim mode of the prompt editor; Shift+hjkl scrolls output only in normal mode
+  const vimModeRef       = useRef<string>('normal');
   const [isChatFocused, setIsChatFocused] = useState(false);
 
   // - stable ref so the window capture handler always calls the latest sendMessage
@@ -325,6 +330,34 @@ export function FloatingChat({
     return () => window.removeEventListener('keydown', handler, { capture: true });
   }, [chat.collapsed, chat.toggleCollapsed]);
 
+  // ─── Shift+{H,J,K,L}: scroll output while prompt focused in vim normal mode ──
+  //
+  // Capture phase so we beat monaco-vim (which maps J=join, H/L=screen-move in
+  // normal mode). Only fires when the input has focus AND is NOT in insert mode,
+  // so typing capital letters in insert mode is untouched.
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (!['H', 'J', 'K', 'L'].includes(e.key)) return;
+      if (!editorRef.current?.hasTextFocus() || vimModeRef.current !== 'normal') return;
+      const el = outputEl.current;
+      if (!el) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const vStep = el.clientHeight / 4;
+      const hStep = el.clientWidth  / 4;
+      switch (e.key) {
+        case 'J': el.scrollBy({ top:  vStep, behavior: 'smooth' }); break;
+        case 'K': el.scrollBy({ top: -vStep, behavior: 'smooth' }); break;
+        case 'L': el.scrollBy({ left:  hStep, behavior: 'smooth' }); break;
+        case 'H': el.scrollBy({ left: -hStep, behavior: 'smooth' }); break;
+      }
+    };
+    window.addEventListener('keydown', handler, { capture: true });
+    return () => window.removeEventListener('keydown', handler, { capture: true });
+  }, []);
+
   // ─── auto-scroll output ────────────────────────────────────────────────
 
   useEffect(() => {
@@ -368,8 +401,21 @@ export function FloatingChat({
       padding:              { top: 6, bottom: 6 },
     });
 
+    // - restore an unsent draft typed before the panel was collapsed
+    if (draftRef.current) {
+      editor.setValue(draftRef.current);
+      const model = editor.getModel();
+      if (model) editor.setPosition(model.getFullModelRange().getEndPosition());
+    }
+    // - mirror every edit into draftRef so it survives the next collapse/unmount
+    editor.onDidChangeModelContent(() => { draftRef.current = editor.getValue(); });
+
     // - vim mode without status bar element
     vimRef.current = initVimMode(editor, null) as { dispose: () => void };
+
+    // - track vim mode so Shift+hjkl only hijacks keys when NOT editing text (insert)
+    (vimRef.current as unknown as { on?: (ev: string, cb: (e: { mode: string }) => void) => void })
+      .on?.('vim-mode-change', (ev) => { vimModeRef.current = ev.mode; });
 
     // - patch o/O newline command and wire clipboard relay
     patchVimNewlineAndIndent();
@@ -566,7 +612,12 @@ export function FloatingChat({
 
           {/* ── Right: message output ── */}
           <div
-            ref={outputEl}
+            ref={node => {
+              outputEl.current = node;
+              // - on re-expand the div remounts at scrollTop 0; restore prior position
+              if (node) node.scrollTop = scrollTopRef.current;
+            }}
+            onScroll={e => { scrollTopRef.current = e.currentTarget.scrollTop; }}
             style={{
               flex:          1,
               overflowY:     'auto',

@@ -6,7 +6,7 @@
  * through the extension host. Canvas nodes are the semantic memory.
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { ChatMessage } from '../../shared/types';
 
 // ─── types ────────────────────────────────────────────────────────────────────
@@ -33,6 +33,15 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
   const [streaming, setStreaming] = useState('');       // - partial current assistant reply
   const [thinking,  setThinking]  = useState(false);   // - waiting for first token
   const [error,     setError]     = useState<string | null>(null);
+
+  // - refs mirror history + streaming so completion handlers can build the next
+  // - state without nested setState updaters (and persist it to the host)
+  const historyRef   = useRef<ChatMessage[]>([]);
+  const streamingRef = useRef('');
+
+  const persistHistory = useCallback((h: ChatMessage[]) => {
+    postMessage({ type: 'floatingChatPersistHistory', history: h });
+  }, [postMessage]);
 
   // ─── UI state persistence ─────────────────────────────────────────────────
 
@@ -106,38 +115,47 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.altKey && e.key === '`') {
+      // - match key OR code: some layouts emit a dead-key for Alt+` so e.key isn't '`'
+      if (e.altKey && (e.key === '`' || e.code === 'Backquote')) {
         e.preventDefault();
+        e.stopPropagation();
         toggleCollapsed();
       }
     };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
+    // - capture phase: Monaco stopPropagation()s keydown when focused, so a
+    // - bubble-phase listener never fires while the chat input has focus
+    window.addEventListener('keydown', handler, { capture: true });
+    return () => window.removeEventListener('keydown', handler, { capture: true });
   }, [toggleCollapsed]);
 
   // ─── incoming streaming tokens ────────────────────────────────────────────
 
   const appendDelta = useCallback((delta: string) => {
     setThinking(false);
+    streamingRef.current += delta;
     setStreaming(s => s + delta);
   }, []);
 
   const completeDelta = useCallback(() => {
-    setStreaming(partial => {
-      if (partial) {
-        setHistory(h => [
-          ...h,
-          { role: 'assistant', content: partial, timestamp: new Date().toISOString() },
-        ]);
-      }
-      return '';
-    });
+    const partial = streamingRef.current;
+    streamingRef.current = '';
+    setStreaming('');
     setThinking(false);
-  }, []);
+    if (partial) {
+      const next = [
+        ...historyRef.current,
+        { role: 'assistant' as const, content: partial, timestamp: new Date().toISOString() },
+      ];
+      historyRef.current = next;
+      setHistory(next);
+      persistHistory(next);   // - keep the latest reply across canvas close/reopen
+    }
+  }, [persistHistory]);
 
   const handleError = useCallback((msg: string) => {
     setError(msg);
     setThinking(false);
+    streamingRef.current = '';
     setStreaming('');
   }, []);
 
@@ -152,14 +170,14 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
       content:   trimmed,
       timestamp: new Date().toISOString(),
     };
-    setHistory(h => {
-      const next = [...h, userMsg];
-      // - send full history with the message so the host can reconstruct context
-      // - without reading any sidecar; history is session-only
-      postMessage({ type: 'floatingChatSend', message: trimmed, activeNodeId, history: next });
-      return next;
-    });
+    const next = [...historyRef.current, userMsg];
+    historyRef.current = next;
+    setHistory(next);
+    // - send full history with the message so the host can reconstruct context
+    // - without reading any sidecar; history is session-only
+    postMessage({ type: 'floatingChatSend', message: trimmed, activeNodeId, history: next });
     setError(null);
+    streamingRef.current = '';
     setStreaming('');
     setThinking(true);
   }, [postMessage]);
@@ -172,6 +190,7 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
     pos?:       FloatingChatPos;
     size?:      FloatingChatSize;
   }) => {
+    historyRef.current = payload.history;
     setHistory(payload.history);
     if (payload.collapsed !== undefined) setCollapsed(payload.collapsed);
     if (payload.pos)  setPos(payload.pos);
@@ -182,12 +201,15 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
 
   const addNodeAdded = useCallback((note: string) => {
     // - add a small system notification into the chat history so the user sees it
-    setHistory(h => [...h, {
-      role:      'assistant',
+    const next = [...historyRef.current, {
+      role:      'assistant' as const,
       content:   `📌 *Added to canvas:*\n\n${note}`,
       timestamp: new Date().toISOString(),
-    }]);
-  }, []);
+    }];
+    historyRef.current = next;
+    setHistory(next);
+    persistHistory(next);
+  }, [persistHistory]);
 
   return {
     pos, size, collapsed,

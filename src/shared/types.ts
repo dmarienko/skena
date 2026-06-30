@@ -467,6 +467,17 @@ export interface MsgFloatingChatAbort {
   type: 'floatingChatAbort';
 }
 
+/**
+ * - Webview → Host: persist the full conversation history.
+ * - Sent after an assistant turn completes (and after AI node-adds) so the
+ * - latest reply survives canvas close/reopen — floatingChatSend only ever
+ * - carries history up to the user message.
+ */
+export interface MsgFloatingChatPersistHistory {
+  type: 'floatingChatPersistHistory';
+  history: ChatMessage[];
+}
+
 // ─── Canvas marks (vim-style bookmarks) ───────────────────────────────────────
 
 /** - one stored bookmark: focused node + viewport state at mark time */
@@ -505,6 +516,7 @@ export type WebviewToHost =
   | MsgFloatingChatSend
   | MsgFloatingChatSaveUIState
   | MsgFloatingChatAbort
+  | MsgFloatingChatPersistHistory
   | MsgSaveMarks;
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────

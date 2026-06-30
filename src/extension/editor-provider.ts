@@ -40,6 +40,7 @@ import {
   MsgAddNodeRequest,
   MsgMoveToSubCanvas,
   MsgFloatingChatSend,
+  MsgFloatingChatPersistHistory,
   ChatMessage,
   MsgFloatingChatHistoryRestored,
   MsgFloatingChatSaveUIState,
@@ -225,8 +226,14 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           break;
         }
         case 'chatMessage':          await this.handleChatMessage(msg, panel); break;
-        case 'floatingChatSend':  await this.handleFloatingChatSend(msg, panel, document, canvasDir); break;
+        case 'floatingChatSend':  await this.handleFloatingChatSend(msg, panel, document, canvasDir, resolver); break;
         case 'floatingChatAbort': this._llmClient?.abort(); break;
+        case 'floatingChatPersistHistory': {
+          // - persist full history incl. the latest assistant reply (survives close/reopen)
+          const historyKey = `skena.chatHistory.${document.uri.toString()}`;
+          void this.context.workspaceState.update(historyKey, (msg as MsgFloatingChatPersistHistory).history ?? []);
+          break;
+        }
         case 'floatingChatSaveUIState': {
           const uiKey = `skena.chatUI.${document.uri.toString()}`;
           void this.context.workspaceState.update(uiKey, {
@@ -890,6 +897,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     panel:     vscode.WebviewPanel,
     document:  SkenaDocument,
     canvasDir: string,
+    resolver:  FileResolver,
   ): Promise<void> {
     const send = (m: HostToWebview) => panel.webview.postMessage(m);
 
@@ -904,6 +912,10 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       .slice(0, -1)
       .map(m => ({ role: m.role, content: m.content }));
 
+    // - harness agent has a Read tool → give it file paths (handles .ipynb etc);
+    // - other adapters have no file tools → inline content as before
+    const provider = vscode.workspace.getConfiguration('skena.ai').get<string>('provider') ?? 'anthropic';
+
     // - build system prompt with canvas context
     let systemPrompt: string;
     try {
@@ -911,6 +923,13 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         document.uri.fsPath,
         document.canvas,
         msg.activeNodeId,
+        {
+          fileNodeMode:  provider === 'harness' ? 'path' : 'content',
+          resolveFsPath: (uri) => {
+            const r = resolver.resolve(uri, canvasDir);
+            return r && !r.isNotion ? r.fsPath : null;
+          },
+        },
       );
     } catch (e) {
       send({ type: 'floatingChatError', message: `Context error: ${(e as Error).message}` });
@@ -922,6 +941,10 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       ...priorHistory,
       { role: 'user' as const, content: msg.message },
     ];
+
+    // - harness provider needs the canvas path + workspace dir to target its MCP server
+    const workspaceDir = vscode.workspace.getWorkspaceFolder(document.uri)?.uri.fsPath
+                      ?? path.dirname(document.uri.fsPath);
 
     const client = await this.llmClient();
     await client.chat(systemPrompt, apiHistory, CANVAS_TOOLS, {
@@ -963,6 +986,10 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
 
       onDone:  () => send({ type: 'floatingChatDone' }),
       onError: (message) => send({ type: 'floatingChatError', message }),
+    }, {
+      canvasPath:   document.uri.fsPath,
+      activeNodeId: msg.activeNodeId,
+      workspaceDir,
     });
   }
 

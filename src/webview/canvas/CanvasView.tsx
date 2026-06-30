@@ -308,6 +308,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const marksRef       = useRef<Record<string, CanvasMark>>({});
   const pendingMarkRef = useRef<'set' | 'jump' | null>(null);
   const markTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // - Alt+X add-node chord: armed until the next h/j/k/l (or 2s timeout)
+  const chordRef       = useRef(false);
+  const chordTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [marksOpen, setMarksOpen] = useState(false);
 
   // - restore marks from workspaceState (sent by host on canvas open)
@@ -1040,6 +1043,45 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       return bestId;
     };
 
+    // - add a node off the focused node in the given direction (Alt+X chord target)
+    const requestAddNodeInDirection = (key: 'H' | 'J' | 'K' | 'L') => {
+      const current = nodesRef.current.find(n => n.selected && n.type !== 'group');
+      if (!current) return;
+      const cw = Number(current.style?.width  ?? 400);
+      const ch = Number(current.style?.height ?? 300);
+      const nw = 400, nh = 300, GAP = 40;
+      type PD = -1 | 0 | 1;
+      const dirMap: Record<string, { dx: number; dy: number; pushX: PD; pushY: PD; fromSide: NodeSide; toSide: NodeSide }> = {
+        L: { dx:  cw + GAP, dy: 0,         pushX:  1, pushY:  0, fromSide: 'right',  toSide: 'left'   },
+        H: { dx: -nw - GAP, dy: 0,         pushX: -1, pushY:  0, fromSide: 'left',   toSide: 'right'  },
+        J: { dx: 0,         dy:  ch + GAP, pushX:  0, pushY:  1, fromSide: 'bottom', toSide: 'top'    },
+        K: { dx: 0,         dy: -nh - GAP, pushX:  0, pushY: -1, fromSide: 'top',    toSide: 'bottom' },
+      };
+      const { dx, dy, pushX, pushY, fromSide, toSide } = dirMap[key];
+      const { x, y } = findFreePosition(nodesRef.current, current.position.x + dx, current.position.y + dy, nw, nh, pushX, pushY);
+      vscodePostMessage({ type: 'addNodeRequest', position: { x, y }, fromNodeId: current.id, fromSide, toSide });
+    };
+
+    // - scroll the focused node's content (Shift+hjkl); returns false if nothing scrollable
+    const scrollFocusedNode = (key: 'H' | 'J' | 'K' | 'L'): boolean => {
+      const focused = nodesRef.current.find(n => n.selected && n.type !== 'group');
+      if (!focused) return false;
+      const nodeEl   = document.querySelector(`.react-flow__node[data-id="${focused.id}"]`);
+      const scrollEl = nodeEl?.querySelector('.skena-scrollable') as HTMLElement | null;
+      if (!scrollEl) return false;
+      const vScrollable = scrollEl.scrollHeight > scrollEl.clientHeight + 1;
+      const hScrollable = scrollEl.scrollWidth  > scrollEl.clientWidth  + 1;
+      const vStep = scrollEl.clientHeight / 4;
+      const hStep = scrollEl.clientWidth  / 4;
+      switch (key) {
+        case 'J': if (vScrollable) { scrollEl.scrollBy({ top:  vStep, behavior: 'smooth' }); return true; } break;
+        case 'K': if (vScrollable) { scrollEl.scrollBy({ top: -vStep, behavior: 'smooth' }); return true; } break;
+        case 'L': if (hScrollable) { scrollEl.scrollBy({ left:  hStep, behavior: 'smooth' }); return true; } break;
+        case 'H': if (hScrollable) { scrollEl.scrollBy({ left: -hStep, behavior: 'smooth' }); return true; } break;
+      }
+      return false;
+    };
+
     const handler = (e: KeyboardEvent) => {
       // - Ctrl+F or /: open canvas search bar (intercept before input / Monaco checks)
       if (
@@ -1082,6 +1124,27 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           }
           pendingMarkRef.current = null;
         }
+        return;
+      }
+
+      // ── Alt+X chord: consume second key (h/j/k/l → add node in that direction) ──
+      if (chordRef.current) {
+        if (chordTimerRef.current) { clearTimeout(chordTimerRef.current); chordTimerRef.current = null; }
+        chordRef.current = false;
+        e.preventDefault();
+        if (!e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && ['h', 'j', 'k', 'l'].includes(e.key)) {
+          requestAddNodeInDirection(e.key.toUpperCase() as 'H' | 'J' | 'K' | 'L');
+        }
+        // - any other key silently cancels the chord (swallowed, no action)
+        return;
+      }
+
+      // - Alt+X: arm the add-node chord (next h/j/k/l adds a node off the focused node)
+      if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'x' || e.key === 'X')) {
+        e.preventDefault();
+        chordRef.current = true;
+        if (chordTimerRef.current) clearTimeout(chordTimerRef.current);
+        chordTimerRef.current = setTimeout(() => { chordRef.current = false; }, 2000);
         return;
       }
 
@@ -1200,7 +1263,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         return;
       }
 
-      // - Shift+{H,J,K,L}: move pinned nodes if any are pinned, otherwise add a new node
+      // - Shift+{H,J,K,L}: move pinned nodes if any are pinned, otherwise scroll inside
+      // - the focused node's content (add-node moved to the Alt+X chord)
       if (e.shiftKey && ['H', 'J', 'K', 'L'].includes(e.key)) {
         // - if any nodes are space-pinned, shift+hjkl moves them by one grid step
         if (spaceSelectedRef.current.size > 0) {
@@ -1226,35 +1290,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           return;
         }
 
-        const current = nodesRef.current.find(n => n.selected && n.type !== 'group');
-        if (!current) return;
+        // - nothing pinned → scroll the focused node's content in that direction
         e.preventDefault();
-
-        const cw = Number(current.style?.width  ?? 400);
-        const ch = Number(current.style?.height ?? 300);
-        const nw = 400, nh = 300, GAP = 40;
-
-        type PD = -1 | 0 | 1;
-        const dirMap: Record<string, { dx: number; dy: number; pushX: PD; pushY: PD; fromSide: NodeSide; toSide: NodeSide }> = {
-          L: { dx:  cw + GAP, dy: 0,        pushX:  1, pushY:  0, fromSide: 'right',  toSide: 'left'   },
-          H: { dx: -nw - GAP, dy: 0,        pushX: -1, pushY:  0, fromSide: 'left',   toSide: 'right'  },
-          J: { dx: 0,         dy:  ch + GAP, pushX:  0, pushY:  1, fromSide: 'bottom', toSide: 'top'    },
-          K: { dx: 0,         dy: -nh - GAP, pushX:  0, pushY: -1, fromSide: 'top',    toSide: 'bottom' },
-        };
-        const { dx, dy, pushX, pushY, fromSide, toSide } = dirMap[e.key];
-
-        // - find the first collision-free position in the placement direction
-        const rawX = current.position.x + dx;
-        const rawY = current.position.y + dy;
-        const { x, y } = findFreePosition(nodesRef.current, rawX, rawY, nw, nh, pushX, pushY);
-
-        vscodePostMessage({
-          type:       'addNodeRequest',
-          position:   { x, y },
-          fromNodeId: current.id,
-          fromSide,
-          toSide,
-        });
+        scrollFocusedNode(e.key as 'H' | 'J' | 'K' | 'L');
         return;
       }
 
