@@ -467,6 +467,16 @@ export interface MsgFloatingChatAbort {
   type: 'floatingChatAbort';
 }
 
+/** - Webview → Host: clear session + history, kill the live CC process (fresh start) */
+export interface MsgFloatingChatReset {
+  type: 'floatingChatReset';
+}
+
+/** - Webview → Host: compact the live CC session (/compact) */
+export interface MsgFloatingChatCompact {
+  type: 'floatingChatCompact';
+}
+
 /**
  * - Webview → Host: persist the full conversation history.
  * - Sent after an assistant turn completes (and after AI node-adds) so the
@@ -517,6 +527,8 @@ export type WebviewToHost =
   | MsgFloatingChatSaveUIState
   | MsgFloatingChatAbort
   | MsgFloatingChatPersistHistory
+  | MsgFloatingChatReset
+  | MsgFloatingChatCompact
   | MsgSaveMarks;
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────

@@ -23,7 +23,7 @@
  *   Ctrl+C  → writeClipboard via host
  */
 
-import { useRef, useEffect, useCallback, useState } from 'react';
+import { useRef, useEffect, useCallback, useState, type CSSProperties } from 'react';
 import Editor, { OnMount, BeforeMount } from '@monaco-editor/react';
 import type { editor as MonacoEditor } from 'monaco-editor';
 import { initVimMode, VimMode } from 'monaco-vim';
@@ -40,6 +40,18 @@ import { useFloatingChat } from '../hooks/useFloatingChat';
 const HEADER_H    = 26;   // - collapsed bar height
 const INPUT_COL_W = 240;  // - right-side input column width
 const HINT_BAR_H  = 20;   // - send-hint bar below Monaco
+
+const titleBtnStyle: CSSProperties = {
+  background: 'none',
+  border:     'none',
+  cursor:     'pointer',
+  color:      'var(--vscode-foreground)',
+  opacity:    0.55,
+  fontSize:   12,
+  padding:    '0 2px',
+  lineHeight: 1,
+  userSelect: 'none',
+};
 
 // ─── vscode message relay ─────────────────────────────────────────────────────
 
@@ -539,6 +551,28 @@ export function FloatingChat({
           </span>
         )}
 
+        {!collapsed && (
+          <>
+            <button
+              onClick={() => postMessage({ type: 'floatingChatCompact' })}
+              title="Compact session (summarise to shrink context)"
+              style={titleBtnStyle}
+            >
+              ⤵
+            </button>
+            <button
+              onClick={() => {
+                chat.clearHistory();
+                postMessage({ type: 'floatingChatReset' });
+              }}
+              title="Reset — new session, clear history"
+              style={titleBtnStyle}
+            >
+              ⟲
+            </button>
+          </>
+        )}
+
         <button
           onClick={chat.toggleCollapsed}
           title={collapsed ? 'Expand (Alt+`)' : 'Collapse (Alt+`)'}
@@ -635,16 +669,16 @@ export function FloatingChat({
             style={{
               flex:          1,
               overflowY:     'auto',
-              padding:       '8px 10px',
+              padding:       0,
               display:       'flex',
               flexDirection: 'column',
-              gap:           10,
+              gap:           0,
               minHeight:     0,
               minWidth:      0,
             }}
           >
             {chat.history.length === 0 && !chat.thinking && !chat.streaming && (
-              <div style={{ color: 'var(--vscode-foreground)', opacity: 0.3, fontSize: 11, paddingTop: 6 }}>
+              <div style={{ color: 'var(--vscode-foreground)', opacity: 0.3, fontSize: 11, padding: '10px 12px' }}>
                 Ask anything about the canvas.
               </div>
             )}
@@ -661,7 +695,7 @@ export function FloatingChat({
             )}
 
             {chat.thinking && !chat.streaming && (
-              <div style={{ color: 'var(--vscode-foreground)', opacity: 0.4, fontSize: 12 }}>
+              <div style={{ color: 'var(--vscode-foreground)', opacity: 0.4, fontSize: 12, padding: '10px 12px' }}>
                 ● ● ●
               </div>
             )}
@@ -712,31 +746,32 @@ function ChatBubble({
   streaming?: boolean;
 }): JSX.Element {
   const isUser = msg.role === 'user';
+  const accent = isUser ? '#10aa10' : '#A78BFA';
 
+  // - full-width area (not a bubble): subtle background tint + left accent rule
   return (
     <div style={{
-      display:       'flex',
-      flexDirection: 'row',
-      gap:           6,
-      alignItems:    'flex-start',
+      width:        '100%',
+      padding:      '8px 12px',
+      background:   isUser ? 'rgba(16,170,16,0.06)' : 'transparent',
+      borderLeft:   `2px solid ${isUser ? 'rgba(16,170,16,0.55)' : 'rgba(167,139,250,0.45)'}`,
+      borderBottom: '1px solid var(--vscode-panel-border, #2a2a3a)',
     }}>
-      {/* - role dot: green = user prompt, purple = assistant */}
+      {/* - role label */}
       <div style={{
-        width:        5,
-        height:       5,
-        borderRadius: '50%',
-        marginTop:    7,
-        flexShrink:   0,
-        background:   isUser ? '#10aa10' : '#A78BFA',
-      }} />
+        fontSize:       9,
+        fontWeight:     700,
+        letterSpacing:  '0.5px',
+        textTransform:  'uppercase',
+        opacity:        0.65,
+        color:          accent,
+        marginBottom:   3,
+      }}>
+        {isUser ? 'You' : 'Claude'}
+      </div>
 
       <div style={{
-        maxWidth:     '95%',
-        padding:      '4px 8px',
-        borderRadius: '2px 8px 8px 8px',
-        background:   isUser ? 'rgba(16,170,16,0.10)' : 'rgba(167,139,250,0.07)',
-        border:       `1px solid ${isUser ? 'rgba(16,170,16,0.22)' : 'rgba(167,139,250,0.13)'}`,
-        // - user prompts rendered in green so they stand out from assistant replies
+        // - user text in green so prompts stand out from assistant replies
         color:        isUser ? '#10aa10' : 'var(--vscode-foreground)',
         fontSize:     12,
         lineHeight:   1.55,

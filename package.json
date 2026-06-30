@@ -264,19 +264,44 @@
         "skena.ai.harnessPermissionMode": {
           "type": "string",
           "enum": [
-            "bypassPermissions",
-            "acceptEdits",
             "default",
+            "acceptEdits",
+            "bypassPermissions",
             "plan"
           ],
-          "default": "bypassPermissions",
-          "markdownDescription": "Permission mode for the **harness** provider. `bypassPermissions` runs tools with no prompts (needed for headless use, but the companion can run any allowed tool — incl. Bash/file edits — without confirmation). Dial back to `acceptEdits`/`default` for prompts, or `plan` for read-only planning.",
+          "default": "acceptEdits",
+          "markdownDescription": "Permission mode for the **harness** provider.\n- **acceptEdits** (default): auto-accepts file reads/edits within the workspace + `skena.ai.harnessAddDirs`. Pair with `harnessAllowedTools` to also pre-approve Bash etc.\n- **default**: stricter — file writes are blocked too.\n- **bypassPermissions**: runs ALL tools anywhere with no checks — full power, no directory sandbox, no guardrails.\n- **plan**: read-only planning, never executes tools.",
+          "scope": "window"
+        },
+        "skena.ai.harnessIsolate": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Run the **harness** companion in an isolated Claude Code profile (`~/.skena/cc-profile`): keyless auth (creds copied) but WITHOUT your global `~/.claude` hooks — eliminating the per-message SessionStart token tax. Your MCP servers from `~/.claude.json` are re-injected automatically. Turn off to use your full global config (hooks, memory, skills). Applies on next session (Reset/reopen).",
+          "scope": "window"
+        },
+        "skena.ai.harnessAllowedTools": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [
+            "Bash"
+          ],
+          "markdownDescription": "Tools the **harness** companion may use WITHOUT a prompt (headless can't prompt, so un-listed gated tools are denied). `Bash` allows all shell commands; scope it with patterns like `Bash(git *)`, `Bash(ls *)` for more safety. Ignored under `bypassPermissions`. Applies on next session (Reset/reopen).",
           "scope": "window"
         },
         "skena.ai.harnessMaxTurns": {
           "type": "number",
           "default": 16,
           "description": "Max agent turns per message for the harness provider (bounds tool-use loops).",
+          "scope": "window"
+        },
+        "skena.ai.harnessAddDirs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [
+            "~/projects",
+            "~/.claude"
+          ],
+          "markdownDescription": "Extra directories the **harness** companion may read/write beyond the canvas workspace (e.g. `~/projects`, `~/.claude`, knowledge vaults). Configured `skena.vaults` paths are added automatically. Non-existent entries are skipped. Ignored under `bypassPermissions` (which has no directory sandbox). Applies on the next session — Reset (⟲) or reopen the canvas to take effect.",
           "scope": "window"
         },
         "skena.ai.session.restore": {

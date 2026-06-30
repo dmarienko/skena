@@ -39,16 +39,28 @@ export interface SystemPromptOptions {
   resolveFsPath?: (uri: string) => string | null;
 }
 
-export async function buildSystemPrompt(
+/**
+ * - static role intro. For the persistent harness this is the --system-prompt
+ * - set once at spawn; the (changing) canvas snapshot rides in each user message.
+ */
+export function buildStaticSystemPrompt(canvasName: string): string {
+  return `You are an AI research assistant embedded in the Skena visual canvas inside VS Code.
+You help the user with their research, analysis, and thinking.
+Canvas: ${canvasName}`;
+}
+
+/**
+ * - the dynamic canvas snapshot: focused node + 1-hop connections + node list.
+ * - Changes as the user works, so it is rebuilt per turn.
+ */
+export async function buildCanvasContext(
   canvasPath: string,
   canvas: CanvasData,
   activeNodeId: string | null,
   opts: SystemPromptOptions = {},
 ): Promise<string> {
-  const canvasName = path.basename(canvasPath, '.canvas');
-  const canvasDir  = path.dirname(canvasPath);
-
-  const allNodes = canvas.nodes.filter(n => n.type !== 'group');
+  const canvasDir = path.dirname(canvasPath);
+  const allNodes  = canvas.nodes.filter(n => n.type !== 'group');
 
   // - canvas node summary (title only, one per line)
   const nodeSummaryList = allNodes
@@ -86,15 +98,25 @@ export async function buildSystemPrompt(
     }
   }
 
-  return `You are an AI research assistant embedded in the Skena visual canvas inside VS Code.
-You help the user with their research, analysis, and thinking.
-Canvas: ${canvasName}
-
-CURRENTLY FOCUSED NODE:
+  return `CURRENTLY FOCUSED NODE:
 ${activePart}
 
 ${connectedPart}ALL CANVAS NODES:
-${nodeSummaryList}
+${nodeSummaryList}`.trim();
+}
+
+export async function buildSystemPrompt(
+  canvasPath: string,
+  canvas: CanvasData,
+  activeNodeId: string | null,
+  opts: SystemPromptOptions = {},
+): Promise<string> {
+  const canvasName = path.basename(canvasPath, '.canvas');
+  const context    = await buildCanvasContext(canvasPath, canvas, activeNodeId, opts);
+
+  return `${buildStaticSystemPrompt(canvasName)}
+
+${context}
 
 When you produce findings, insights, or conclusions worth preserving, use the add_note tool to add them directly to the canvas. The note will be placed and connected to the currently focused node. Be concise and specific — these notes become permanent research artefacts.
 

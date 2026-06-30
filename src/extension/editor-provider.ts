@@ -20,7 +20,7 @@ import { parseNotebook } from './notebook-parser';
 import { renderMarkdownToHtml } from './markdown-html';
 import { getVaults } from './settings';
 import { createLLMClient, CANVAS_TOOLS, ILLMClient } from './llm-client';
-import { buildSystemPrompt, nodeTitle, nodeContent } from './context-builder';
+import { buildSystemPrompt, buildStaticSystemPrompt, buildCanvasContext, nodeTitle, nodeContent } from './context-builder';
 import { assignLabel } from '../shared/nodeLabels';
 import {
   CanvasData,
@@ -98,6 +98,11 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
   private async llmClient(): Promise<ILLMClient> {
     if (!this._llmClient) this._llmClient = await createLLMClient();
     return this._llmClient;
+  }
+
+  /** - called from deactivate(): kill any persistent harness processes */
+  dispose(): void {
+    this._llmClient?.disposeAll?.();
   }
 
   constructor(
@@ -232,6 +237,22 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           // - persist full history incl. the latest assistant reply (survives close/reopen)
           const historyKey = `skena.chatHistory.${document.uri.toString()}`;
           void this.context.workspaceState.update(historyKey, (msg as MsgFloatingChatPersistHistory).history ?? []);
+          break;
+        }
+        case 'floatingChatReset': {
+          // - clear persisted session + history and kill the live CC process → next message starts fresh
+          void this.context.workspaceState.update(`skena.chatSession.${document.uri.toString()}`, undefined);
+          void this.context.workspaceState.update(`skena.chatHistory.${document.uri.toString()}`, []);
+          this._llmClient?.resetSession?.(document.uri.fsPath);
+          break;
+        }
+        case 'floatingChatCompact': {
+          this._llmClient?.compact?.(document.uri.fsPath, {
+            onText:    (delta) => send({ type: 'floatingChatDelta', delta }),
+            onToolUse: async () => '',
+            onDone:    () => send({ type: 'floatingChatDone' }),
+            onError:   (message) => send({ type: 'floatingChatError', message }),
+          });
           break;
         }
         case 'floatingChatSaveUIState': {
@@ -370,6 +391,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       if (SkenaEditorProvider.activePanel === panel) {
         SkenaEditorProvider.activePanel = null;
       }
+      // - kill this canvas's persistent harness process when its panel closes
+      this._llmClient?.disposeSession?.(document.uri.fsPath);
       canvasWatcher.dispose();
       workspaceWatcher.dispose();
       saveDisposable.dispose();
@@ -920,31 +943,33 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const sessionKey     = `skena.chatSession.${document.uri.toString()}`;
     const sessionId      = restoreSession ? this.context.workspaceState.get<string>(sessionKey) ?? null : null;
 
-    // - build system prompt with canvas context
+    const resolveFsPath = (uri: string) => {
+      const r = resolver.resolve(uri, canvasDir);
+      return r && !r.isNotion ? r.fsPath : null;
+    };
+
+    // - harness: static role is set once at spawn; the live canvas snapshot is
+    //   folded into THIS message (the persistent CC process keeps prior turns,
+    //   so history is never re-sent). Other adapters: full system + replayed history.
     let systemPrompt: string;
+    let apiHistory: { role: 'user' | 'assistant'; content: string }[];
     try {
-      systemPrompt = await buildSystemPrompt(
-        document.uri.fsPath,
-        document.canvas,
-        msg.activeNodeId,
-        {
-          fileNodeMode:  provider === 'harness' ? 'path' : 'content',
-          resolveFsPath: (uri) => {
-            const r = resolver.resolve(uri, canvasDir);
-            return r && !r.isNotion ? r.fsPath : null;
-          },
-        },
-      );
+      if (provider === 'harness') {
+        systemPrompt = buildStaticSystemPrompt(path.basename(document.uri.fsPath, '.canvas'));
+        const snapshot = await buildCanvasContext(document.uri.fsPath, document.canvas, msg.activeNodeId, {
+          fileNodeMode: 'path', resolveFsPath,
+        });
+        apiHistory = [{ role: 'user', content: `${snapshot}\n\n---\n\n${msg.message}` }];
+      } else {
+        systemPrompt = await buildSystemPrompt(document.uri.fsPath, document.canvas, msg.activeNodeId, {
+          fileNodeMode: 'content', resolveFsPath,
+        });
+        apiHistory = [...priorHistory, { role: 'user', content: msg.message }];
+      }
     } catch (e) {
       send({ type: 'floatingChatError', message: `Context error: ${(e as Error).message}` });
       return;
     }
-
-    // - map prior history + current message → API format
-    const apiHistory = [
-      ...priorHistory,
-      { role: 'user' as const, content: msg.message },
-    ];
 
     // - harness provider needs the canvas path + workspace dir to target its MCP server
     const workspaceDir = vscode.workspace.getWorkspaceFolder(document.uri)?.uri.fsPath

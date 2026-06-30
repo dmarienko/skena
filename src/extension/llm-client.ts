@@ -80,6 +80,18 @@ export interface ILLMClient {
 
   /** - force re-read of API key on next call (call after settings change) */
   invalidate(): void;
+
+  /** - harness: tear down the persistent process for a canvas (on panel close) */
+  disposeSession?(canvasPath: string): void;
+
+  /** - harness: kill + forget the session so the next message starts fresh */
+  resetSession?(canvasPath: string): void;
+
+  /** - harness: summarise the live session via /compact */
+  compact?(canvasPath: string, callbacks: LLMCallbacks): void;
+
+  /** - harness: kill ALL persistent processes (on extension shutdown) */
+  disposeAll?(): void;
 }
 
 // ─── canvas tool definitions ──────────────────────────────────────────────────

@@ -17,6 +17,7 @@ import { getVaults } from './settings';
 
 let indexer: VaultIndexer | undefined;
 let watcher: FileWatcher | undefined;
+let editorProvider: SkenaEditorProvider | undefined;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   console.log('Skena: activating');
@@ -26,7 +27,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   watcher = new FileWatcher(indexer);
 
   // - register the custom editor for *.canvas files
-  const editorProvider = new SkenaEditorProvider(context, indexer, watcher);
+  editorProvider = new SkenaEditorProvider(context, indexer, watcher);
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider(
       'skena.canvasEditor',
@@ -149,6 +150,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 }
 
 export function deactivate(): void {
+  editorProvider?.dispose();   // - kill persistent harness CC processes
   watcher?.dispose();
   indexer?.dispose();
 }

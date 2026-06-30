@@ -159,6 +159,16 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
     setStreaming('');
   }, []);
 
+  // - clear the visible conversation (Reset button; host clears persistence + process)
+  const clearHistory = useCallback(() => {
+    historyRef.current = [];
+    streamingRef.current = '';
+    setHistory([]);
+    setStreaming('');
+    setThinking(false);
+    setError(null);
+  }, []);
+
   // ─── send message ─────────────────────────────────────────────────────────
 
   const sendMessage = useCallback((text: string, activeNodeId: string | null) => {
@@ -218,6 +228,6 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
     toggleCollapsed,
     sendMessage,
     appendDelta, completeDelta, handleError, addNodeAdded,
-    restoreHistory,
+    restoreHistory, clearHistory,
   };
 }
