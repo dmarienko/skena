@@ -15,6 +15,7 @@ export interface FloatingChatPos  { x: number; y: number }
 export interface FloatingChatSize { w: number; h: number }
 
 const DEFAULT_SIZE: FloatingChatSize = { w: 620, h: 400 };
+const DEFAULT_INPUT_W = 240;   // - initial input-column width; user-adjustable via splitter
 
 function defaultPos(): FloatingChatPos {
   return {
@@ -28,6 +29,7 @@ function defaultPos(): FloatingChatPos {
 export function useFloatingChat(postMessage: (msg: unknown) => void) {
   const [pos,       setPos]       = useState<FloatingChatPos>(defaultPos);
   const [size,      setSize]      = useState<FloatingChatSize>(DEFAULT_SIZE);
+  const [inputW,    setInputW]    = useState(DEFAULT_INPUT_W);
   const [collapsed, setCollapsed] = useState(false);
   const [history,   setHistory]   = useState<ChatMessage[]>([]);
   const [streaming, setStreaming] = useState('');       // - partial current assistant reply
@@ -38,6 +40,7 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
   // - state without nested setState updaters (and persist it to the host)
   const historyRef   = useRef<ChatMessage[]>([]);
   const streamingRef = useRef('');
+  const inputWRef    = useRef(DEFAULT_INPUT_W);   // - mirror so saveUIState needn't depend on inputW
 
   const persistHistory = useCallback((h: ChatMessage[]) => {
     postMessage({ type: 'floatingChatPersistHistory', history: h });
@@ -50,7 +53,7 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
     s: FloatingChatSize,
     c: boolean,
   ) => {
-    postMessage({ type: 'floatingChatSaveUIState', collapsed: c, pos: p, size: s });
+    postMessage({ type: 'floatingChatSaveUIState', collapsed: c, pos: p, size: s, inputW: inputWRef.current });
   }, [postMessage]);
 
   // ─── drag ─────────────────────────────────────────────────────────────────
@@ -96,6 +99,29 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup',   onUp);
       setSize(s => { saveUIState(pos, s, collapsed); return s; });
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup',   onUp);
+  }, [size, pos, collapsed, saveUIState]);
+
+  // ─── input/output splitter ────────────────────────────────────────────────
+
+  const onSplitMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startW = inputWRef.current;
+
+    const onMove = (me: MouseEvent) => {
+      // - clamp so both columns stay usable
+      const nw = Math.max(140, Math.min(size.w - 180, startW + (me.clientX - startX)));
+      inputWRef.current = nw;
+      setInputW(nw);
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup',   onUp);
+      saveUIState(pos, size, collapsed);
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup',   onUp);
@@ -201,12 +227,14 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
     collapsed?: boolean;
     pos?:       FloatingChatPos;
     size?:      FloatingChatSize;
+    inputW?:    number;
   }) => {
     historyRef.current = payload.history;
     setHistory(payload.history);
     if (payload.collapsed !== undefined) setCollapsed(payload.collapsed);
     if (payload.pos)  setPos(payload.pos);
     if (payload.size) setSize(payload.size);
+    if (payload.inputW) { inputWRef.current = payload.inputW; setInputW(payload.inputW); }
   }, []);
 
   // ─── node added by AI ────────────────────────────────────────────────────
@@ -224,9 +252,9 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
   }, [persistHistory]);
 
   return {
-    pos, size, collapsed,
+    pos, size, collapsed, inputW,
     history, streaming, thinking, error,
-    onHeaderMouseDown, onResizeMouseDown,
+    onHeaderMouseDown, onResizeMouseDown, onSplitMouseDown,
     toggleCollapsed,
     sendMessage,
     appendDelta, completeDelta, handleError, addNodeAdded,

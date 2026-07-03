@@ -176,13 +176,14 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             const historyKey = `skena.chatHistory.${document.uri.toString()}`;
             const uiKey      = `skena.chatUI.${document.uri.toString()}`;
             const savedHistory = this.context.workspaceState.get<ChatMessage[]>(historyKey) ?? [];
-            const savedUI      = this.context.workspaceState.get<{ collapsed?: boolean; pos?: { x: number; y: number }; size?: { w: number; h: number } }>(uiKey);
+            const savedUI      = this.context.workspaceState.get<{ collapsed?: boolean; pos?: { x: number; y: number }; size?: { w: number; h: number }; inputW?: number }>(uiKey);
             send({
               type:      'floatingChatHistoryRestored',
               history:   savedHistory,
               collapsed: true,              // - always start collapsed; user opens explicitly
               pos:       savedUI?.pos,
               size:      savedUI?.size,
+              inputW:    savedUI?.inputW,
             } satisfies MsgFloatingChatHistoryRestored);
             // - restore canvas marks (vim-style bookmarks) from .vscode/skena-bookmarks.json
             {
@@ -261,6 +262,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             collapsed: (msg as MsgFloatingChatSaveUIState).collapsed,
             pos:       (msg as MsgFloatingChatSaveUIState).pos,
             size:      (msg as MsgFloatingChatSaveUIState).size,
+            inputW:    (msg as MsgFloatingChatSaveUIState).inputW,
           });
           break;
         }

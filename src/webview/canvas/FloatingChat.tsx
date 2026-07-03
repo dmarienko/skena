@@ -38,7 +38,6 @@ import { useFloatingChat } from '../hooks/useFloatingChat';
 // ─── constants ─────────────────────────────────────────────────────────────────
 
 const HEADER_H    = 26;   // - collapsed bar height
-const INPUT_COL_W = 240;  // - right-side input column width
 const HINT_BAR_H  = 20;   // - send-hint bar below Monaco
 
 const titleBtnStyle: CSSProperties = {
@@ -491,11 +490,14 @@ export function FloatingChat({
   //
   // onKeyDown/onKeyUp stop propagation so CanvasView's keyboard handlers
   // (space=pin, hjkl=nav) don't consume Monaco's keystrokes.
+  // Alt-combos MUST bubble to window: VS Code's keybinding forwarder listens
+  // there — swallowing them killed user bindings like Alt+H. Skena's own
+  // Alt+I / Alt+` are consumed earlier in capture phase, so they never get here.
 
   return (
     <div
-      onKeyDown={e => e.stopPropagation()}
-      onKeyUp={e => e.stopPropagation()}
+      onKeyDown={e => { if (!e.altKey) e.stopPropagation(); }}
+      onKeyUp={e => { if (!e.altKey) e.stopPropagation(); }}
       style={{
         position:      'fixed',
         ...positionStyle,
@@ -598,7 +600,7 @@ export function FloatingChat({
 
           {/* ── Left: input column ── */}
           <div style={{
-            width:         INPUT_COL_W,
+            width:         Math.min(chat.inputW, size.w - 180),
             flexShrink:    0,
             display:       'flex',
             flexDirection: 'column',
@@ -655,8 +657,18 @@ export function FloatingChat({
             </div>
           </div>
 
-          {/* ── Vertical divider ── */}
-          <div style={{ width: 1, flexShrink: 0, background: 'var(--vscode-panel-border, #333)' }} />
+          {/* ── Vertical divider — draggable input/output splitter ── */}
+          <div
+            onMouseDown={chat.onSplitMouseDown}
+            title="Drag to resize input/output split"
+            style={{
+              width:      5,
+              flexShrink: 0,
+              cursor:     'col-resize',
+              // - 1px visible line centered in a 5px grab area
+              background: 'linear-gradient(to right, transparent 2px, var(--vscode-panel-border, #333) 2px, var(--vscode-panel-border, #333) 3px, transparent 3px)',
+            }}
+          />
 
           {/* ── Right: message output ── */}
           <div

@@ -320,6 +320,7 @@ export interface MsgFloatingChatHistoryRestored {
   collapsed?: boolean;
   pos?:       { x: number; y: number };
   size?:      { w: number; h: number };
+  inputW?:    number;
 }
 
 /** Webview → Host: persist floating chat panel UI state (pos/size/collapsed) */
@@ -328,6 +329,7 @@ export interface MsgFloatingChatSaveUIState {
   collapsed: boolean;
   pos:       { x: number; y: number };
   size:      { w: number; h: number };
+  inputW?:   number;
 }
 
 /** Host → Webview: AI added a node to the canvas during tool use */
