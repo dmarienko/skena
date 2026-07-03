@@ -1,6 +1,6 @@
 # Skena — Visual Research Canvas for VS Code
 
-> Render [JSON Canvas](https://jsoncanvas.org/) (`.canvas`) files as interactive node graphs right inside VS Code. Preview markdown notes, notebooks, code, and charts side-by-side. Navigate with vim keys. Works over Remote SSH. Obsidian-compatible.
+> Render [JSON Canvas](https://jsoncanvas.org/) (`.canvas`) files as interactive node graphs right inside VS Code. Preview markdown notes, notebooks, code, and charts side-by-side. Navigate with vim keys. Talk to an AI companion that sees your canvas and works on it with you — no API key needed. Works over Remote SSH. Obsidian-compatible.
 
 ---
 
@@ -42,6 +42,30 @@ It reads and writes the standard [JSON Canvas 1.0](https://jsoncanvas.org/spec/1
 
 ## Features
 
+### AI companion — chat that lives on your canvas
+A floating chat overlay embedded in the canvas itself, not in a side panel. It sees what you see and acts on the canvas directly.
+
+- **Canvas-aware context** — the companion receives the focused node's content, its 1-hop connections, and your current viewport: zoom level, on-screen node labels, and the verbatim text visible in the focused node.
+- **Acts on the canvas** — it can add notes, read and update nodes through Skena's bundled MCP tools. New notes land next to the node you're focused on.
+- **Three providers** (`skena.ai.provider`):
+
+| Provider | What it is | API key |
+|---|---|---|
+| `harness` | Drives your local [Claude Code](https://claude.com/claude-code) CLI | **None** — uses your existing `/login` |
+| `anthropic` | Anthropic API directly | `skena.ai.apiKey` |
+| `openai-compat` | Ollama, LM Studio, Groq, OpenAI, any OpenAI-format endpoint | endpoint-dependent |
+
+- **Harness mode** is the flagship: one persistent Claude Code process per canvas, streaming responses, full agent tool use (file reads, shell, MCP), session **resume** when you reopen a canvas, and an isolated profile (`~/.skena/cc-profile`) that keeps your global hooks out of the token bill. Permission mode, allowed tools, and reachable directories are all configurable.
+- **Chat UX** — Monaco input with vim bindings, markdown + LaTeX rendering in responses, draggable/resizable panel with a draggable input/output splitter, per-canvas history persisted in a `.skena.json` sidecar, Reset (⟲) and Compact (⤵) controls.
+
+| Key | Action |
+|---|---|
+| ``Alt+` `` | Collapse / expand the chat panel |
+| `Alt+I` | Toggle focus between chat input and canvas |
+
+### Activity heatmap
+Press `gh` to toggle a glow layer over the canvas: nodes and edges light up by **thread cluster** (color) and **recency** (intensity). Recently created or edited threads glow brightest — instantly shows where the work is happening on a large board.
+
 ### Rich inline previews
 - **Markdown** (`.md`) — rendered with frontmatter header bar, status badges, scrollable content
 - **Jupyter Notebooks** (`.ipynb`) — code cells, markdown cells, chart outputs, base64 images
@@ -57,16 +81,20 @@ Navigate the canvas without touching the mouse:
 | `Enter` | Open focused file in VS Code editor |
 | `Shift+H/J/K/L` | Add new text node connected in direction |
 | `Space` | Pin node for group movement or edge connection |
-| `c` | Connect edge from pinned node to focused node |
+| `c` | Toggle edge between pinned node and focused node (connect / disconnect) |
 | `yy` / `dd` / `p` | Copy / delete / paste nodes (canvas clipboard) |
 | `u` / `r` | Undo / redo (50-entry canvas history) |
 | `w` / `W` | Widen / narrow focused node |
 | `e` / `E` | Expand / shrink focused node height |
 | `z` / `Z` | Zoom in / out |
+| `Shift+Alt+H/J/K/L` | Pan the viewport (vim scroll semantics) |
+| `Alt+Shift+C` | Center viewport on focused node at readable zoom |
+| `gh` | Toggle activity heatmap |
 | `Ctrl+N` | Add node via fuzzy vault search |
 | `Ctrl+F` or `/` | Search within canvas |
 | `Alt+P` | Pin hovered notebook cell output as a standalone node |
 | `Ctrl+Shift+V` | Paste clipboard as a cell node |
+| ``Alt+` `` / `Alt+I` | AI chat: collapse/expand · focus toggle |
 
 ### Monaco text editor inside nodes
 Double-click any text node to edit it inline — full Monaco editor with vim keybindings, markdown syntax highlighting, and VS Code theme integration.
@@ -109,6 +137,15 @@ All processing runs in the extension host on the remote machine. No local toolch
 ```
 
 4. Press `Ctrl+N` on the canvas to fuzzy-search your vault and add nodes
+5. *(Optional)* Enable the AI companion — if you have [Claude Code](https://claude.com/claude-code) installed and logged in, this is all it takes (no API key):
+
+```jsonc
+{
+  "skena.ai.provider": "harness"
+}
+```
+
+Then press ``Alt+` `` on any canvas to open the chat.
 
 ---
 
@@ -134,9 +171,26 @@ All processing runs in the extension host on the remote machine. No local toolch
   // Show source cells alongside notebook outputs
   "skena.notebook": {
     "showSourceCells": false
-  }
+  },
+
+  // AI companion — pick a provider
+  "skena.ai.provider": "harness",          // harness | anthropic | openai-compat
+  "skena.ai.model": "sonnet",              // model id or CLI alias
+
+  // harness provider (Claude Code CLI — no API key)
+  "skena.ai.harnessPermissionMode": "acceptEdits",
+  "skena.ai.harnessAllowedTools": ["Bash"],
+  "skena.ai.harnessAddDirs": ["~/projects"],
+  "skena.ai.harnessIsolate": true,         // isolated CC profile, no global hooks
+  "skena.ai.session.restore": true,        // resume the canvas conversation on reopen
+
+  // anthropic / openai-compat providers
+  "skena.ai.apiKey": "",                   // or ANTHROPIC_API_KEY env var
+  "skena.ai.baseURL": "http://localhost:11434/v1"  // e.g. Ollama
 }
 ```
+
+> **Multi-root workspaces**: `skena.*` settings are window-scoped — VS Code ignores them in folder-level `.vscode/settings.json` inside a multi-root workspace. Put them in the `settings` block of your `.code-workspace` file instead.
 
 ---
 
