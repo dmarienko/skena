@@ -15,3 +15,6 @@ tsconfig.json
 # - dev deps / metadata
 node_modules/**
 .git/**
+
+# - docs — README screenshots load from GitHub raw URLs; plans/specs are internal
+docs/**
