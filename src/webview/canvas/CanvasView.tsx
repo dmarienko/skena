@@ -1263,6 +1263,22 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         return;
       }
 
+      // - Shift+Alt+{h,j,k,l}: pan the viewport only — selection untouched
+      // - must precede the plain Shift+HJKL branch (it has no alt guard)
+      if (e.shiftKey && e.altKey && !e.ctrlKey && !e.metaKey && ['H', 'J', 'K', 'L'].includes(e.key.toUpperCase())) {
+        e.preventDefault();
+        const PAN = 160;   // - screen px per keypress
+        const { x, y, zoom } = rfRef.current.getViewport();
+        // - vim scroll semantics: j reveals content below (view moves down), l reveals right
+        const d: Record<string, { dx: number; dy: number }> = {
+          H: { dx:  PAN, dy: 0 }, L: { dx: -PAN, dy: 0 },
+          K: { dx: 0, dy:  PAN }, J: { dx: 0, dy: -PAN },
+        };
+        const { dx, dy } = d[e.key.toUpperCase()];
+        rfRef.current.setViewport({ x: x + dx, y: y + dy, zoom }, { duration: 120 });
+        return;
+      }
+
       // - Shift+{H,J,K,L}: move pinned nodes if any are pinned, otherwise scroll inside
       // - the focused node's content (add-node moved to the Alt+X chord)
       if (e.shiftKey && ['H', 'J', 'K', 'L'].includes(e.key)) {
