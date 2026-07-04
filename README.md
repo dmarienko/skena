@@ -78,17 +78,22 @@ Navigate the canvas without touching the mouse:
 | Key | Action |
 |---|---|
 | `h` / `j` / `k` / `l` | Move focus to nearest node in direction |
-| `Enter` | Open focused file in VS Code editor |
-| `Shift+H/J/K/L` | Add new text node connected in direction |
+| `Enter` / `Ctrl+Enter` | Open focused file in editor (beside / maximized) |
+| `Alt+X` then `h/j/k/l` | Add new connected text node in direction |
+| `Ctrl+Shift+H/J/K/L` or arrows | Add empty text node left / below / above / right |
 | `Space` | Pin node for group movement or edge connection |
+| `Shift+H/J/K/L` | Move pinned nodes one grid step — or scroll focused node's content if nothing is pinned |
 | `c` | Toggle edge between pinned node and focused node (connect / disconnect) |
 | `yy` / `dd` / `p` | Copy / delete / paste nodes (canvas clipboard) |
 | `u` / `r` | Undo / redo (50-entry canvas history) |
+| `Ctrl+U` / `Ctrl+D` | Scroll focused node's content up / down (vim half-page) |
 | `w` / `W` | Widen / narrow focused node |
 | `e` / `E` | Expand / shrink focused node height |
 | `z` / `Z` | Zoom in / out |
 | `Shift+Alt+H/J/K/L` | Pan the viewport (vim scroll semantics) |
-| `Alt+Shift+C` | Center viewport on focused node at readable zoom |
+| `Shift+C` | Center viewport on focused node (zoom unchanged) |
+| `Alt+Shift+C` | Center on focused node and zoom to readable scale |
+| `m` `<key>` / `` ` `` `<key>` | Set / jump to mark (`Ctrl+M` opens the marks panel) |
 | `gh` | Toggle activity heatmap |
 | `Ctrl+N` | Add node via fuzzy vault search |
 | `Ctrl+F` or `/` | Search within canvas |
