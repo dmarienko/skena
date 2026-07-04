@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/dmarienko/skena/main/icons/icon.png" width="128" alt="Skena" />
+</p>
+
 # Skena — Visual Research Canvas for VS Code
 
 > Render [JSON Canvas](https://jsoncanvas.org/) (`.canvas`) files as interactive node graphs right inside VS Code. Preview markdown notes, notebooks, code, and charts side-by-side. Navigate with vim keys. Talk to an AI companion that sees your canvas and works on it with you — no API key needed. Works over Remote SSH. Obsidian-compatible.
@@ -79,8 +83,8 @@ Navigate the canvas without touching the mouse:
 |---|---|
 | `h` / `j` / `k` / `l` | Move focus to nearest node in direction |
 | `Enter` / `Ctrl+Enter` | Open focused file in editor (beside / maximized) |
-| `Alt+X` then `h/j/k/l` | Add new connected text node in direction |
-| `Ctrl+Shift+H/J/K/L` or arrows | Add empty text node left / below / above / right |
+| `Alt+X` then `h/j/k/l` | Add node from vault search, connected in direction |
+| `Ctrl+Shift+H/J/K/L` or arrows | Add connected empty text node in direction and start editing it |
 | `Space` | Pin node for group movement or edge connection |
 | `Shift+H/J/K/L` | Move pinned nodes one grid step — or scroll focused node's content if nothing is pinned |
 | `c` | Toggle edge between pinned node and focused node (connect / disconnect) |
