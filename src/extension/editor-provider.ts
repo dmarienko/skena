@@ -241,18 +241,34 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           break;
         }
         case 'floatingChatReset': {
-          // - clear persisted session + history and kill the live CC process → next message starts fresh
-          void this.context.workspaceState.update(`skena.chatSession.${document.uri.toString()}`, undefined);
-          void this.context.workspaceState.update(`skena.chatHistory.${document.uri.toString()}`, []);
-          this._llmClient?.resetSession?.(document.uri.fsPath);
+          // - destructive → native modal confirm; webview clears history only on the ack
+          void vscode.window.showWarningMessage(
+            'Reset the AI session? The conversation history and the live Claude session will be discarded.',
+            { modal: true },
+            'Reset',
+          ).then(choice => {
+            if (choice !== 'Reset') return;
+            // - clear persisted session + history and kill the live CC process → next message starts fresh
+            void this.context.workspaceState.update(`skena.chatSession.${document.uri.toString()}`, undefined);
+            void this.context.workspaceState.update(`skena.chatHistory.${document.uri.toString()}`, []);
+            this._llmClient?.resetSession?.(document.uri.fsPath);
+            send({ type: 'floatingChatResetDone' });
+          });
           break;
         }
         case 'floatingChatCompact': {
-          this._llmClient?.compact?.(document.uri.fsPath, {
-            onText:    (delta) => send({ type: 'floatingChatDelta', delta }),
-            onToolUse: async () => '',
-            onDone:    () => send({ type: 'floatingChatDone' }),
-            onError:   (message) => send({ type: 'floatingChatError', message }),
+          void vscode.window.showWarningMessage(
+            'Compact the AI session? The conversation is summarised in place — detail may be lost.',
+            { modal: true },
+            'Compact',
+          ).then(choice => {
+            if (choice !== 'Compact') return;
+            this._llmClient?.compact?.(document.uri.fsPath, {
+              onText:    (delta) => send({ type: 'floatingChatDelta', delta }),
+              onToolUse: async () => '',
+              onDone:    (usage) => send({ type: 'floatingChatDone', costUsd: usage?.costUsd, deltaUsd: usage?.deltaUsd }),
+              onError:   (message) => send({ type: 'floatingChatError', message }),
+            });
           });
           break;
         }
@@ -1013,7 +1029,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         return 'Unknown tool.';
       },
 
-      onDone:  () => send({ type: 'floatingChatDone' }),
+      onDone:  (usage) => send({ type: 'floatingChatDone', costUsd: usage?.costUsd, deltaUsd: usage?.deltaUsd }),
       onError: (message) => send({ type: 'floatingChatError', message }),
       // - persist the CC session id so the next open can --resume it
       onSessionId: (id) => { void this.context.workspaceState.update(sessionKey, id); },

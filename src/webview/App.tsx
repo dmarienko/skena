@@ -83,8 +83,9 @@ export function App(): JSX.Element {
 
   // - event buses for FloatingChat incoming messages
   const deltaEvt     = useRef(makeEventTarget<string>());
-  const doneEvt      = useRef(makeEventTarget<void>());
+  const doneEvt      = useRef(makeEventTarget<{ costUsd?: number; deltaUsd?: number }>());
   const errorEvt     = useRef(makeEventTarget<string>());
+  const resetDoneEvt = useRef(makeEventTarget<void>());
   const nodeAddedEvt    = useRef(makeEventTarget<string>());
   const historyRestoredEvt = useRef(makeEventTarget<{
     history:    ChatMessage[];
@@ -155,10 +156,13 @@ export function App(): JSX.Element {
           deltaEvt.current.emit(msg.delta);
           break;
         case 'floatingChatDone':
-          doneEvt.current.emit();
+          doneEvt.current.emit({ costUsd: msg.costUsd, deltaUsd: msg.deltaUsd });
           break;
         case 'floatingChatError':
           errorEvt.current.emit(msg.message);
+          break;
+        case 'floatingChatResetDone':
+          resetDoneEvt.current.emit();
           break;
         case 'floatingChatNodeAdded': {
           // - add node to canvas state so it appears immediately
@@ -220,6 +224,7 @@ export function App(): JSX.Element {
         onDelta={deltaEvt.current.subscribe}
         onDone={doneEvt.current.subscribe}
         onError={errorEvt.current.subscribe}
+        onResetDone={resetDoneEvt.current.subscribe}
         onNodeAdded={nodeAddedEvt.current.subscribe}
         onHistoryRestored={historyRestoredEvt.current.subscribe}
       />

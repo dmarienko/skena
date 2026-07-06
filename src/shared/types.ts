@@ -305,12 +305,21 @@ export interface MsgFloatingChatDelta {
 /** Host → Webview: floating chat stream complete */
 export interface MsgFloatingChatDone {
   type: 'floatingChatDone';
+  /** - session-cumulative cost after this turn (harness provider only) */
+  costUsd?:  number;
+  /** - this turn's cost (harness provider only) */
+  deltaUsd?: number;
 }
 
 /** Host → Webview: API error during floating chat */
 export interface MsgFloatingChatError {
   type: 'floatingChatError';
   message: string;
+}
+
+/** Host → Webview: session reset confirmed and performed — clear the visible history */
+export interface MsgFloatingChatResetDone {
+  type: 'floatingChatResetDone';
 }
 
 /** Host → Webview: restore chat state from workspaceState on canvas open */
@@ -378,6 +387,7 @@ export type HostToWebview =
   | MsgFloatingChatDelta
   | MsgFloatingChatDone
   | MsgFloatingChatError
+  | MsgFloatingChatResetDone
   | MsgFloatingChatNodeAdded
   | MsgFloatingChatHistoryRestored
   | MsgMarksRestored;
@@ -552,6 +562,10 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
+  /** - session-cumulative cost after this reply (harness provider only) */
+  costUsd?:  number;
+  /** - this reply's cost (harness provider only) */
+  deltaUsd?: number;
 }
 
 export interface ChatHistory {

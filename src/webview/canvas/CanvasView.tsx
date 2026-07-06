@@ -1263,25 +1263,12 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         return;
       }
 
-      // - Shift+Alt+{h,j,k,l}: pan the viewport only — selection untouched
-      // - must precede the plain Shift+HJKL branch (it has no alt guard)
-      if (e.shiftKey && e.altKey && !e.ctrlKey && !e.metaKey && ['H', 'J', 'K', 'L'].includes(e.key.toUpperCase())) {
-        e.preventDefault();
-        const PAN = 160;   // - screen px per keypress
-        const { x, y, zoom } = rfRef.current.getViewport();
-        // - vim scroll semantics: j reveals content below (view moves down), l reveals right
-        const d: Record<string, { dx: number; dy: number }> = {
-          H: { dx:  PAN, dy: 0 }, L: { dx: -PAN, dy: 0 },
-          K: { dx: 0, dy:  PAN }, J: { dx: 0, dy: -PAN },
-        };
-        const { dx, dy } = d[e.key.toUpperCase()];
-        rfRef.current.setViewport({ x: x + dx, y: y + dy, zoom }, { duration: 120 });
-        return;
-      }
+      // - Shift+Alt+{h,j,k,l} (viewport pan) is handled by the capture-phase
+      // - panCapture listener below — no branch here (double-delivery rule)
 
       // - Shift+{H,J,K,L}: move pinned nodes if any are pinned, otherwise scroll inside
       // - the focused node's content (add-node moved to the Alt+X chord)
-      if (e.shiftKey && ['H', 'J', 'K', 'L'].includes(e.key)) {
+      if (e.shiftKey && !e.altKey && ['H', 'J', 'K', 'L'].includes(e.key)) {
         // - if any nodes are space-pinned, shift+hjkl moves them by one grid step
         if (spaceSelectedRef.current.size > 0) {
           e.preventDefault();
@@ -1590,8 +1577,43 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       focusNodeById(targetId);
     };
 
+    // - Shift+Alt+{hjkl} viewport pan runs at CAPTURE phase with stopPropagation:
+    // - VS Code's webview key-forwarder is a bubble-phase window listener registered
+    // - before ours, so it forwards every keydown to the host regardless of
+    // - preventDefault — user keybindings like shift+alt+h → navigateBack would
+    // - fire on the same press (double delivery). Capture fires first and kills it.
+    const panCapture = (e: KeyboardEvent) => {
+      if (!(e.shiftKey && e.altKey && !e.ctrlKey && !e.metaKey)) return;
+      const k = e.key.toUpperCase();
+      if (!['H', 'J', 'K', 'L'].includes(k)) return;
+      // - never steal keystrokes from Monaco / inputs (capture fires before them)
+      const active = document.activeElement;
+      if (
+        active instanceof HTMLInputElement ||
+        active instanceof HTMLTextAreaElement ||
+        active?.closest('.monaco-editor')
+      ) return;
+      // - mid mark/chord sequence → let the bubble handler consume it as before
+      if (pendingMarkRef.current !== null || chordRef.current) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const PAN = 160;   // - screen px per keypress
+      const { x, y, zoom } = rfRef.current.getViewport();
+      // - vim scroll semantics: j reveals content below (view moves down), l reveals right
+      const d: Record<string, { dx: number; dy: number }> = {
+        H: { dx:  PAN, dy: 0 }, L: { dx: -PAN, dy: 0 },
+        K: { dx: 0, dy:  PAN }, J: { dx: 0, dy: -PAN },
+      };
+      const { dx, dy } = d[k];
+      rfRef.current.setViewport({ x: x + dx, y: y + dy, zoom }, { duration: 120 });
+    };
+
     window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
+    window.addEventListener('keydown', panCapture, { capture: true });
+    return () => {
+      window.removeEventListener('keydown', handler);
+      window.removeEventListener('keydown', panCapture, { capture: true });
+    };
   }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, pushHistory, handleCopy, handlePaste, deleteSelectedNodes, jumpToMark]); // - nodesRef + spaceSelectedRef carry live state
 
   // - expose a viewport snapshot for the AI companion (what the user actually sees:

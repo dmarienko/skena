@@ -43,6 +43,12 @@ export interface LLMContext {
   restoreSession?: boolean;
 }
 
+/** - turn cost: session-cumulative + this turn's delta (harness only) */
+export interface LLMUsage {
+  costUsd:  number;
+  deltaUsd: number;
+}
+
 /** - streaming callbacks — same contract as the old ClaudeClient */
 export interface LLMCallbacks {
   /** - called for each streamed text chunk */
@@ -53,7 +59,7 @@ export interface LLMCallbacks {
    */
   onToolUse: (tool: LLMToolCall) => Promise<string>;
   /** - called once the full exchange (including all tool turns) is complete */
-  onDone:    () => void;
+  onDone:    (usage?: LLMUsage) => void;
   /** - called on network or API errors */
   onError:   (message: string) => void;
   /** - harness: report the CC session id so it can be resumed next time */

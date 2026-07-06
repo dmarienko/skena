@@ -162,7 +162,7 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
     setStreaming(s => s + delta);
   }, []);
 
-  const completeDelta = useCallback(() => {
+  const completeDelta = useCallback((usage?: { costUsd?: number; deltaUsd?: number }) => {
     const partial = streamingRef.current;
     streamingRef.current = '';
     setStreaming('');
@@ -170,7 +170,10 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
     if (partial) {
       const next = [
         ...historyRef.current,
-        { role: 'assistant' as const, content: partial, timestamp: new Date().toISOString() },
+        {
+          role: 'assistant' as const, content: partial, timestamp: new Date().toISOString(),
+          costUsd: usage?.costUsd, deltaUsd: usage?.deltaUsd,
+        },
       ];
       historyRef.current = next;
       setHistory(next);

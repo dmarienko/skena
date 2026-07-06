@@ -187,8 +187,9 @@ interface Props {
   postMessage:  (msg: unknown) => void;
 
   onDelta:           (handler: (delta: string)       => void) => () => void;
-  onDone:            (handler: ()                    => void) => () => void;
+  onDone:            (handler: (usage: { costUsd?: number; deltaUsd?: number }) => void) => () => void;
   onError:           (handler: (msg: string)         => void) => () => void;
+  onResetDone:       (handler: ()                    => void) => () => void;
   onNodeAdded:       (handler: (note: string)        => void) => () => void;
   onHistoryRestored: (handler: (payload: {
     history:    ChatMessage[];
@@ -207,6 +208,7 @@ export function FloatingChat({
   onDelta,
   onDone,
   onError,
+  onResetDone,
   onNodeAdded,
   onHistoryRestored,
 }: Props): JSX.Element {
@@ -240,6 +242,7 @@ export function FloatingChat({
   useEffect(() => onDelta(chat.appendDelta),               [onDelta, chat.appendDelta]);
   useEffect(() => onDone(chat.completeDelta),              [onDone, chat.completeDelta]);
   useEffect(() => onError(chat.handleError),               [onError, chat.handleError]);
+  useEffect(() => onResetDone(chat.clearHistory),          [onResetDone, chat.clearHistory]);
   useEffect(() => onNodeAdded(chat.addNodeAdded),          [onNodeAdded, chat.addNodeAdded]);
   useEffect(() => onHistoryRestored(chat.restoreHistory),  [onHistoryRestored, chat.restoreHistory]);
 
@@ -563,10 +566,8 @@ export function FloatingChat({
               ⤵
             </button>
             <button
-              onClick={() => {
-                chat.clearHistory();
-                postMessage({ type: 'floatingChatReset' });
-              }}
+              // - host shows a modal confirm; history is cleared on the resetDone ack
+              onClick={() => postMessage({ type: 'floatingChatReset' })}
               title="Reset — new session, clear history"
               style={titleBtnStyle}
             >
@@ -769,8 +770,11 @@ function ChatBubble({
       borderLeft:   `2px solid ${isUser ? 'rgba(16,170,16,0.55)' : 'rgba(167,139,250,0.45)'}`,
       borderBottom: '1px solid var(--vscode-panel-border, #2a2a3a)',
     }}>
-      {/* - role label */}
+      {/* - role label + per-reply cost (harness provider only) */}
       <div style={{
+        display:        'flex',
+        justifyContent: 'space-between',
+        alignItems:     'baseline',
         fontSize:       9,
         fontWeight:     700,
         letterSpacing:  '0.5px',
@@ -779,7 +783,12 @@ function ChatBubble({
         color:          accent,
         marginBottom:   3,
       }}>
-        {isUser ? 'You' : 'Claude'}
+        <span>{isUser ? 'You' : 'Claude'}</span>
+        {!isUser && msg.deltaUsd !== undefined && (
+          <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--vscode-foreground)', opacity: 0.7 }}>
+            Δ ${msg.deltaUsd.toFixed(2)}{msg.costUsd !== undefined ? ` · Σ $${msg.costUsd.toFixed(2)}` : ''}
+          </span>
+        )}
       </div>
 
       <div style={{

@@ -22,7 +22,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { spawn, type ChildProcess } from 'child_process';
-import type { ILLMClient, LLMMessage, LLMTool, LLMCallbacks, LLMContext } from '../llm-client';
+import type { ILLMClient, LLMMessage, LLMTool, LLMCallbacks, LLMContext, LLMUsage } from '../llm-client';
 
 const FALLBACK_BIN = path.join(os.homedir(), '.local', 'bin', 'claude');
 
@@ -44,6 +44,8 @@ interface HarnessSession {
   cwd:           string;
   freshArgs:     string[];              // - spawn args WITHOUT --resume (for respawn)
   configDir?:    string;                // - isolated CLAUDE_CONFIG_DIR (no global hooks)
+  lastTotalCost: number;                // - cumulative total_cost_usd after previous turn
+  turnUsage:     LLMUsage | null;       // - cost of the just-finished turn (for onDone)
 }
 
 export class HarnessAdapter implements ILLMClient {
@@ -61,7 +63,8 @@ export class HarnessAdapter implements ILLMClient {
 
   private log(msg: string): void {
     if (!this._out) this._out = vscode.window.createOutputChannel('Skena AI (harness)');
-    this._out.appendLine(msg);
+    // - UTC, second precision — enough to correlate with cache-TTL gaps
+    this._out.appendLine(`[${new Date().toISOString().replace('T', ' ').slice(0, 19)}] ${msg}`);
   }
 
   invalidate(): void { /* - settings read per spawn */ }
@@ -198,6 +201,7 @@ export class HarnessAdapter implements ILLMClient {
       anyText: false, lastResultText: '', isError: false, aborted: false, stderr: '',
       sessionId: '', usedResume: !!resumeId, everSucceeded: false, pendingMessage: '',
       bin, cwd: workspaceDir, freshArgs, configDir,
+      lastTotalCost: 0, turnUsage: null,
     };
     this.wire(canvasPath, s);
     this._sessions.set(canvasPath, s);
@@ -340,13 +344,31 @@ export class HarnessAdapter implements ILLMClient {
         if (text && !s.aborted) { s.cb?.onText(text); s.anyText = true; }
         break;
       }
-      case 'result':
+      case 'result': {
         s.isError = ev['is_error'] === true;
         s.lastResultText = typeof ev['result'] === 'string' ? (ev['result'] as string) : '';
         if (typeof ev['session_id'] === 'string') s.sessionId = ev['session_id'];
-        this.log(`result: is_error=${s.isError} cost_usd=${ev['total_cost_usd']} session=${s.sessionId}`);
-        this.finishTurn(canvasPath, s);
+        // - per-turn cost delta; a resumed/fresh process restarts its cumulative counter,
+        // - so a total below the previous one means "counter reset" → delta = total
+        const total = typeof ev['total_cost_usd'] === 'number' ? ev['total_cost_usd'] : NaN;
+        if (Number.isFinite(total)) {
+          const delta = total >= s.lastTotalCost ? total - s.lastTotalCost : total;
+          s.turnUsage = { costUsd: total, deltaUsd: delta };
+          s.lastTotalCost = total;
+        } else {
+          s.turnUsage = null;
+        }
+        const subtype = typeof ev['subtype'] === 'string' ? ev['subtype'] : '?';
+        this.log(
+          `result: is_error=${s.isError} subtype=${subtype} num_turns=${ev['num_turns']} ` +
+          `delta_usd=${s.turnUsage ? s.turnUsage.deltaUsd.toFixed(4) : '?'} total_usd=${s.turnUsage ? s.turnUsage.costUsd.toFixed(4) : '?'} ` +
+          `session=${s.sessionId}`
+        );
+        // - the error reason lives only in this envelope — log it or lose it
+        if (s.isError) this.log(`  error detail: ${(s.lastResultText || s.stderr || '(none)').slice(0, 400)}`);
+        this.finishTurn(canvasPath, s, subtype);
         break;
+      }
     }
   }
 
@@ -364,6 +386,7 @@ export class HarnessAdapter implements ILLMClient {
     const fresh: HarnessSession = {
       ...s, proc, buf: '', usedResume: false, cb: null,
       anyText: false, lastResultText: '', isError: false, aborted: false, stderr: '',
+      lastTotalCost: 0, turnUsage: null,   // - fresh process restarts its cost counter
     };
     this.wire(canvasPath, fresh);
     this._sessions.set(canvasPath, fresh);
@@ -371,20 +394,23 @@ export class HarnessAdapter implements ILLMClient {
     return true;
   }
 
-  private finishTurn(canvasPath: string, s: HarnessSession): void {
+  private finishTurn(canvasPath: string, s: HarnessSession, subtype?: string): void {
     const cb = s.cb;
     s.cb = null;
     if (s.isError) {
       // - a failed --resume surfaces as an is_error result (process stays alive)
       if (cb && this.respawnFresh(canvasPath, s, cb)) return;
-      cb?.onError(s.stderr.trim() || s.lastResultText || 'Claude reported an error.');
+      const msg = subtype === 'error_max_turns'
+        ? 'Hit the per-message turn cap (skena.ai.harnessMaxTurns) — the reply above may be truncated. Raise the setting or send "continue".'
+        : s.stderr.trim() || s.lastResultText || 'Claude reported an error.';
+      cb?.onError(msg);
       return;
     }
     s.everSucceeded = true;
     if (s.sessionId) s.onSessionId?.(s.sessionId);
     if (cb && !s.aborted) {
       if (!s.anyText && s.lastResultText) cb.onText(s.lastResultText);
-      cb.onDone();
+      cb.onDone(s.turnUsage ?? undefined);
     }
   }
 
