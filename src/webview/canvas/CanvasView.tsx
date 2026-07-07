@@ -300,6 +300,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const lastCPressRef = useRef<number>(0);
   const lastYPressRef = useRef<number>(0);
   const lastDPressRef = useRef<number>(0);
+  // - OS clipboard text captured at last yy; discriminates internal vs content paste (no clipboard timestamps exist)
+  const yySnapshotRef      = useRef<string | null>(null);
+  const awaitingYYSnapshot = useRef(false);
   const [heatmapVisible, setHeatmapVisible] = useState(true);
   const lastGPressRef = useRef<number>(0);
   const toggleHeatmap = useCallback(() => setHeatmapVisible(v => !v), []);
@@ -898,6 +901,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       nodes: canvasRef.current.nodes.filter(n => selectedIds.has(n.id)),
       edges: canvasRef.current.edges.filter(e => selectedIds.has(e.fromNode) && selectedIds.has(e.toNode)),
     };
+    // - snapshot OS clipboard so Ctrl+V can tell "yy then paste" from "external copy then paste"
+    awaitingYYSnapshot.current = true;
+    vscodePostMessage({ type: 'requestClipboardRead' });
   }, []);
 
   const handlePaste = useCallback(() => {
@@ -1949,6 +1955,17 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       window.removeEventListener('skena:clipboardContent', onClip);
     };
   }, [addCellNode]);
+
+  // - record the OS clipboard text that was current when yy happened
+  useEffect(() => {
+    const onClip = (e: Event) => {
+      if (!awaitingYYSnapshot.current) return;
+      awaitingYYSnapshot.current = false;
+      yySnapshotRef.current = (e as CustomEvent<string>).detail;
+    };
+    window.addEventListener('skena:clipboardContent', onClip);
+    return () => window.removeEventListener('skena:clipboardContent', onClip);
+  }, []);
 
   // - handle sub-canvas extraction result from host
   useEffect(() => {
