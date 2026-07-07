@@ -70,6 +70,9 @@ A floating chat overlay embedded in the canvas itself, not in a side panel. It s
 ### Activity heatmap
 Press `gh` to toggle a glow layer over the canvas: nodes and edges light up by **thread cluster** (color) and **recency** (intensity). Recently created or edited threads glow brightest — instantly shows where the work is happening on a large board.
 
+### Paste anything
+`Ctrl+V` on the canvas turns the clipboard into the right node: screenshots and notebook chart/table outputs become cell nodes, copied files become file nodes, URLs become link nodes, text becomes a text node — all connected to the focused node with an edge. `yy` then `Ctrl+V` still duplicates canvas nodes.
+
 ### Rich inline previews
 - **Markdown** (`.md`) — rendered with frontmatter header bar, status badges, scrollable content
 - **Jupyter Notebooks** (`.ipynb`) — code cells, markdown cells, chart outputs, base64 images
@@ -103,6 +106,7 @@ Navigate the canvas without touching the mouse:
 | `Ctrl+F` or `/` | Search within canvas |
 | `Alt+P` | Pin hovered notebook cell output as a standalone node |
 | `Ctrl+Shift+V` | Paste clipboard as a cell node |
+| `Ctrl+V` | Paste clipboard as node — image/table → cell node, file → file node, URL → link node, text → text node; after `yy` pastes the copied nodes |
 | ``Alt+` `` / `Alt+I` | AI chat: collapse/expand · focus toggle |
 
 ### Monaco text editor inside nodes
