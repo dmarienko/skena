@@ -316,6 +316,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const chordRef       = useRef(false);
   const chordTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [marksOpen, setMarksOpen] = useState(false);
+  // - mirrored so the stable document-level paste listener sees panel state without re-subscribing
+  const panelOpenRef = useRef(false);
+  useEffect(() => { panelOpenRef.current = searchOpen || marksOpen; });
 
   // - restore marks from workspaceState (sent by host on canvas open)
   useEffect(() => {
@@ -2009,6 +2012,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     };
 
     const onPaste = (e: ClipboardEvent) => {
+      // - inert while search/marks panel is open (spec); marks panel has no input,
+      // - so the activeElement guard below doesn't cover it
+      if (panelOpenRef.current) return;
       // - inert while any editor/input owns the keyboard (Monaco node edit, chat input, search, marks)
       const ae = document.activeElement as HTMLElement | null;
       if (ae?.closest('.monaco-editor, input, textarea, [contenteditable="true"]')) return;
