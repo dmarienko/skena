@@ -30,7 +30,8 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
-import { CanvasData, CanvasNode, CanvasEdge, MsgAddNodeResult, MsgSubCanvasCreated, NodeSide, CanvasMark, ViewportSnapshot } from '../../shared/types';
+import { CanvasData, CanvasNode, CanvasEdge, MsgAddNodeResult, MsgSubCanvasCreated, MsgVerifyPathResult, NodeSide, CanvasMark, ViewportSnapshot } from '../../shared/types';
+import { classifyClipboard } from './paste-classify';
 import { ContextMenu } from './ContextMenu';
 import { CANVAS_COLORS } from '../../shared/constants';
 import { ensureLabels, assignLabel } from './nodeLabels';
@@ -906,7 +907,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     vscodePostMessage({ type: 'requestClipboardRead' });
   }, []);
 
-  const handlePaste = useCallback(() => {
+  // - paste the internal node clipboard (filled by yy/copy); inline nodes+edges with fresh ids
+  const pasteInternalClipboard = useCallback(() => {
     pushHistory();
     if (!clipboard) return;
     const OFFSET = 40;
@@ -1474,7 +1476,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       // - p: paste canvas clipboard (nodes copied with yy)
       if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'p') {
         e.preventDefault();
-        handlePaste();
+        pasteInternalClipboard();
         return;
       }
 
@@ -1637,7 +1639,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       window.removeEventListener('keydown', handler);
       window.removeEventListener('keydown', panCapture, { capture: true });
     };
-  }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, pushHistory, handleCopy, handlePaste, deleteSelectedNodes, jumpToMark]); // - nodesRef + spaceSelectedRef carry live state
+  }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, jumpToMark]); // - nodesRef + spaceSelectedRef carry live state
 
   // - expose a viewport snapshot for the AI companion (what the user actually sees:
   // - zoom, on-screen node labels, scroll position within the focused node)
@@ -1907,6 +1909,31 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     requestAnimationFrame(() => focusNodeById(id));
   }, [pushHistory, scheduleSave, focusNodeById, setEdges]);
 
+  // - insert a pasted node right of the focused node (edge) or at viewport centre (no edge)
+  const insertPastedNode = useCallback((partial: { type: 'text'; text: string } | { type: 'link'; url: string } | { type: 'file'; file: string }) => {
+    const focused = nodesRef.current.find(n => n.selected && n.type !== 'group');
+    const nw = 400, nh = 300, GAP = 40;
+    let x: number, y: number;
+    if (focused) {
+      const cw = Number(focused.style?.width ?? 400);
+      const pos = findFreePosition(nodesRef.current, focused.position.x + cw + GAP, focused.position.y, nw, nh, 1, 0);
+      x = pos.x; y = pos.y;
+    } else {
+      const { x: vx, y: vy, zoom } = rfRef.current.getViewport();
+      x = Math.round((-vx + window.innerWidth / 2) / zoom - nw / 2);
+      y = Math.round((-vy + window.innerHeight / 2) / zoom - nh / 2);
+    }
+    const id = `paste-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const node: CanvasNode = { ...partial, id, x, y, width: nw, height: nh };
+    const edge: CanvasEdge | undefined = focused
+      ? { id: `${focused.id}-${id}-${Date.now()}`, fromNode: focused.id, fromSide: 'right', toNode: id, toSide: 'left', toEnd: 'arrow' }
+      : undefined;
+    // - reuse the addNodeResult event handler: handles labels/history/save/focus
+    window.dispatchEvent(new CustomEvent('skena:addNodeResult', {
+      detail: { type: 'addNodeResult', node, edge } satisfies MsgAddNodeResult,
+    }));
+  }, []); // - no deps: reads refs, not state
+
   // ─── pin notebook cell output → new CellNode ─────────────────────────────────
   // - fired by NotebookRenderer's 📌 button
 
@@ -1956,7 +1983,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     };
   }, [addCellNode]);
 
-  // - record the OS clipboard text that was current when yy happened
+  // - record the OS clipboard text that was current when yy happened; the read round-trip
+  // - is async, so for a few ms after yy the snapshot may lag the actual clipboard
   useEffect(() => {
     const onClip = (e: Event) => {
       if (!awaitingYYSnapshot.current) return;
@@ -1966,6 +1994,105 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     window.addEventListener('skena:clipboardContent', onClip);
     return () => window.removeEventListener('skena:clipboardContent', onClip);
   }, []);
+
+  // - paste-to-node: DOM paste is the only channel that carries images/files (vscode clipboard API is text-only)
+  useEffect(() => {
+    const pendingVerify = new Map<string, string>();   // - requestId → raw text (text-node fallback)
+
+    const onVerifyResult = (e: Event) => {
+      const msg = (e as CustomEvent<MsgVerifyPathResult>).detail;
+      const raw = pendingVerify.get(msg.requestId);
+      if (raw === undefined) return;
+      pendingVerify.delete(msg.requestId);
+      if (msg.exists && msg.resolvedPath) insertPastedNode({ type: 'file', file: msg.resolvedPath });
+      else insertPastedNode({ type: 'text', text: raw });
+    };
+
+    const onPaste = (e: ClipboardEvent) => {
+      // - inert while any editor/input owns the keyboard (Monaco node edit, chat input, search, marks)
+      const ae = document.activeElement as HTMLElement | null;
+      if (ae?.closest('.monaco-editor, input, textarea, [contenteditable="true"]')) return;
+      const cd = e.clipboardData;
+      if (!cd) return;
+
+      const imageItem = Array.from(cd.items).find(it => it.kind === 'file' && it.type.startsWith('image/'));
+      const action = classifyClipboard({
+        hasImage:   !!imageItem,
+        html:       cd.getData('text/html'),
+        uriList:    cd.getData('text/uri-list'),
+        text:       cd.getData('text/plain'),
+        yySnapshot: yySnapshotRef.current,
+      });
+      if (action.kind === 'none') { if (clipboard) { e.preventDefault(); pasteInternalClipboard(); } return; }
+      e.preventDefault();
+
+      const focused = nodesRef.current.find(n => n.selected && n.type !== 'group');
+      switch (action.kind) {
+        case 'cell-image': {
+          const file = imageItem!.getAsFile();
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onerror = () => vscodePostMessage({ type: 'showWarning', text: 'Skena: failed to read pasted image.' });
+          reader.onload = () => {
+            const dataUri = reader.result as string;
+            if (dataUri.length > 5 * 1024 * 1024) {
+              vscodePostMessage({ type: 'showWarning', text: 'Skena: pasted image exceeds 5 MB — canvas file will grow accordingly.' });
+            }
+            addCellNode(dataUri, 'image', focused?.id);
+          };
+          reader.readAsDataURL(file);
+          return;
+        }
+        case 'cell-html':
+          addCellNode(action.html, 'html', focused?.id);
+          return;
+        case 'files': {
+          // - text/uri-list can carry http links; only file-ish URIs go to the host resolver, web links become link nodes
+          const webUris  = action.uris.filter(u => /^https?:\/\//.test(u));
+          const fileUris = action.uris.filter(u => !/^https?:\/\//.test(u));
+          webUris.forEach(u => insertPastedNode({ type: 'link', url: u }));
+          if (fileUris.length > 0) {
+            const { x: vx, y: vy, zoom } = rfRef.current.getViewport();
+            const position = focused
+              ? { x: focused.position.x + Number(focused.style?.width ?? 400) + 40, y: focused.position.y }
+              : { x: (-vx + window.innerWidth / 2) / zoom, y: (-vy + window.innerHeight / 2) / zoom };
+            vscodePostMessage({ type: 'dropFiles', uris: fileUris, position, connectTo: focused?.id });
+          }
+          return;
+        }
+        case 'internal':
+          pasteInternalClipboard();
+          return;
+        case 'link':
+          insertPastedNode({ type: 'link', url: action.url });
+          return;
+        case 'verify-path': {
+          const requestId = `vp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+          pendingVerify.set(requestId, action.raw);
+          // - 2s timeout → treat as non-existent (spec error handling)
+          setTimeout(() => {
+            if (!pendingVerify.has(requestId)) return;
+            pendingVerify.delete(requestId);
+            insertPastedNode({ type: 'text', text: action.raw });
+          }, 2000);
+          vscodePostMessage({ type: 'verifyPath', requestId, path: action.raw });
+          return;
+        }
+        case 'text':
+          insertPastedNode({ type: 'text', text: action.text });
+          return;
+      }
+    };
+
+    // - verifyPathResult is dispatched on window (App.tsx); paste attaches to document —
+    // - it bubbles there from any focused element, editable or not, in the Chromium webview
+    window.addEventListener('skena:verifyPathResult', onVerifyResult);
+    document.addEventListener('paste', onPaste);
+    return () => {
+      window.removeEventListener('skena:verifyPathResult', onVerifyResult);
+      document.removeEventListener('paste', onPaste);
+    };
+  }, [insertPastedNode, pasteInternalClipboard, addCellNode]);
 
   // - handle sub-canvas extraction result from host
   useEffect(() => {
@@ -2093,7 +2220,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           onAddUrl={handleMenuAddUrl}
           onSearch={handleMenuSearch}
           onCopy={handleCopy}
-          onPaste={handlePaste}
+          onPaste={pasteInternalClipboard}
           onMoveToSubCanvas={handleMoveToSubCanvas}
         />
       )}
