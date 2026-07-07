@@ -12,12 +12,15 @@ A window-level DOM `paste` listener in the webview turns clipboard content into 
 
 | Clipboard content | Result |
 |---|---|
-| Image (screenshot, copied image) | Text node containing `![](data:image/png;base64,...)` — renders inline via MarkdownRenderer |
+| Image (screenshot, copied image, notebook chart output) | **CellNode** `format: 'image'`, content = base64 data-URI — identical to what Alt+P pin produces |
+| `text/html` flavor (e.g. notebook table output) | **CellNode** `format: 'html'` |
 | File(s) (`text/uri-list`, e.g. copy in VS Code Explorer / OS file manager) | File node per URI (same resolution as drag-and-drop `onDrop`) |
 | Text equal to the `yy` snapshot | Internal node paste — existing `p` behavior |
 | Single-line `http(s)://…` | Link node |
 | Single-line `file://` URI or absolute/`~/` path that exists on disk | File node (host-verified); non-existent → text node |
 | Any other text | Text node |
+
+Notebook cell outputs are covered by the first two rows: "Copy Output" in a notebook puts an image (charts) or `text/html` (tables) on the clipboard; both reuse the existing `addCellNode(content, format)` helper that Alt+P and Ctrl+Shift+V already funnel into.
 
 Placement: right of the keyboard-focused node via `findFreePosition`, arrow edge `right → left` from the focused node (same pattern as `addTextNodeInDirection('L')`). No focused node → viewport center, no edge. Multiple URIs → nodes stacked with the free-position search, each connected to the focused node.
 
@@ -29,24 +32,27 @@ Placement: right of the keyboard-focused node via `findFreePosition`, arrow edge
 
 ## Smart dispatch (priority order)
 
-1. `clipboardData.items` contains an image item → **image paste**.
-2. `text/uri-list` present → **file node(s)**.
-3. Plain text present:
+1. `clipboardData.items` contains an image item → **CellNode** (`format: 'image'`).
+2. `text/html` flavor present → **CellNode** (`format: 'html'`).
+3. `text/uri-list` present → **file node(s)**.
+4. Plain text present:
    a. text === `yy` snapshot → **internal node paste** (delegate to existing paste logic).
    b. trimmed single-line `http(s)://` URL → **link node**.
    c. trimmed single-line `file://` URI or path starting with `/` or `~/` → `verifyPath` round-trip → **file node** if it exists, else **text node**.
    d. otherwise → **text node**.
-4. Nothing usable in the event → fall back to internal node paste if non-empty, else no-op.
+5. Nothing usable in the event → fall back to internal node paste if non-empty, else no-op.
+
+Note: rule 2 sits above uri-list/text deliberately — notebook "Copy Output" often ships both `text/html` and a plain-text fallback; html is the richer flavor. A copied URL from a browser can also carry `text/html` (anchor markup) — guard: if the plain-text flavor is a single-line URL, prefer rule 4b (link node) over rule 2.
 
 ### yy snapshot
 
 On `yy`, the webview stores the current OS clipboard text (already pushed by the host relay / requested via `requestClipboardRead`) in a ref. On paste, `clipboardData.getData('text/plain')` is compared against it. Equal → the user's most recent copy was the `yy`; different → the OS clipboard is newer. No clipboard timestamps exist; this comparison is the discriminator.
 
-## Image handling (user decision: data-URI, not asset files)
+## Image handling (user decision: CellNode + data-URI, not asset files)
 
-- `FileReader.readAsDataURL` on the image blob → text node with `![](<data-uri>)`.
-- Node size: default 400×300.
-- Data-URI > 5 MB: still paste, show a one-line warning toast about canvas JSON size (accepted tradeoff — no asset files, no extra dirs, Obsidian-compatible since it's a plain text node).
+- `FileReader.readAsDataURL` on the image blob → `addCellNode(dataUri, 'image')` — the same helper Alt+P pin uses.
+- Node size: `addCellNode` defaults.
+- Data-URI > 5 MB: still paste, show a one-line warning toast about canvas JSON size (accepted tradeoff — no asset files, no extra dirs; `cell` nodes are a skena extension type that Obsidian silently ignores).
 
 ## Host side (editor-provider)
 
@@ -77,7 +83,8 @@ paste event → guards → classifyClipboard(payload) → PasteAction
 ## Testing
 
 `test/paste-classify.mjs` (node, behavioral — same style as `test/heatmap-bfs.mjs`):
-- image beats uri-list beats text (priority order)
+- image beats html beats uri-list beats text (priority order)
+- html flavor + single-line-URL plain text → link node (browser-copied-URL guard)
 - yy-snapshot match → internal; mismatch → content
 - URL vs `file://` vs `~/` path vs multi-line text discrimination
 - whitespace-trimmed URL still a link; multi-line text containing a URL → text node
@@ -89,4 +96,4 @@ Manual smoke: paste screenshot, paste file copied from Explorer, paste URL, past
 
 - Asset-file image storage (rejected by user in favor of data-URI).
 - Paste into a node in edit mode (Monaco owns it).
-- HTML clipboard flavor conversion (rich text → markdown) — future.
+- HTML → markdown conversion (html pastes as CellNode html verbatim; converting rich text to markdown is future work).
