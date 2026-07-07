@@ -1912,19 +1912,22 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     requestAnimationFrame(() => focusNodeById(id));
   }, [pushHistory, scheduleSave, focusNodeById, setEdges]);
 
-  // - insert a pasted node right of the focused node (edge) or at viewport centre (no edge)
-  const insertPastedNode = useCallback((partial: { type: 'text'; text: string } | { type: 'link'; url: string } | { type: 'file'; file: string }) => {
+  // - insert a pasted node right of the focused node (edge) or at viewport centre (no edge).
+  // - offsetIndex spreads same-tick batch inserts vertically (nodesRef can't see siblings yet)
+  const insertPastedNode = useCallback((partial: { type: 'text'; text: string } | { type: 'link'; url: string } | { type: 'file'; file: string }, offsetIndex = 0) => {
     const focused = nodesRef.current.find(n => n.selected && n.type !== 'group');
-    const nw = 400, nh = 300, GAP = 40;
+    // - link nodes are compact (matches editor-provider link node size)
+    const [nw, nh] = partial.type === 'link' ? [320, 80] : [400, 300];
+    const GAP = 40;
     let x: number, y: number;
     if (focused) {
       const cw = Number(focused.style?.width ?? 400);
-      const pos = findFreePosition(nodesRef.current, focused.position.x + cw + GAP, focused.position.y, nw, nh, 1, 0);
+      const pos = findFreePosition(nodesRef.current, focused.position.x + cw + GAP, focused.position.y + offsetIndex * (nh + GAP), nw, nh, 1, 0);
       x = pos.x; y = pos.y;
     } else {
       const { x: vx, y: vy, zoom } = rfRef.current.getViewport();
       x = Math.round((-vx + window.innerWidth / 2) / zoom - nw / 2);
-      y = Math.round((-vy + window.innerHeight / 2) / zoom - nh / 2);
+      y = Math.round((-vy + window.innerHeight / 2) / zoom - nh / 2) + offsetIndex * (nh + GAP);
     }
     const id = `paste-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
     const node: CanvasNode = { ...partial, id, x, y, width: nw, height: nh };
@@ -2001,6 +2004,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   // - paste-to-node: DOM paste is the only channel that carries images/files (vscode clipboard API is text-only)
   useEffect(() => {
     const pendingVerify = new Map<string, string>();   // - requestId → raw text (text-node fallback)
+    const verifyTimeouts = new Set<ReturnType<typeof setTimeout>>();   // - cleared on unmount (canvas switch)
 
     const onVerifyResult = (e: Event) => {
       const msg = (e as CustomEvent<MsgVerifyPathResult>).detail;
@@ -2036,7 +2040,10 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       switch (action.kind) {
         case 'cell-image': {
           const file = imageItem!.getAsFile();
-          if (!file) return;
+          if (!file) {
+            vscodePostMessage({ type: 'showWarning', text: 'Skena: could not read pasted image.' });
+            return;
+          }
           const reader = new FileReader();
           reader.onerror = () => vscodePostMessage({ type: 'showWarning', text: 'Skena: failed to read pasted image.' });
           reader.onload = () => {
@@ -2056,7 +2063,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           // - text/uri-list can carry http links; only file-ish URIs go to the host resolver, web links become link nodes
           const webUris  = action.uris.filter(u => /^https?:\/\//.test(u));
           const fileUris = action.uris.filter(u => !/^https?:\/\//.test(u));
-          webUris.forEach(u => insertPastedNode({ type: 'link', url: u }));
+          webUris.forEach((u, i) => insertPastedNode({ type: 'link', url: u }, i));
           if (fileUris.length > 0) {
             const { x: vx, y: vy, zoom } = rfRef.current.getViewport();
             const position = focused
@@ -2076,11 +2083,13 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           const requestId = `vp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
           pendingVerify.set(requestId, action.raw);
           // - 2s timeout → treat as non-existent (spec error handling)
-          setTimeout(() => {
+          const tid = setTimeout(() => {
+            verifyTimeouts.delete(tid);
             if (!pendingVerify.has(requestId)) return;
             pendingVerify.delete(requestId);
             insertPastedNode({ type: 'text', text: action.raw });
           }, 2000);
+          verifyTimeouts.add(tid);
           vscodePostMessage({ type: 'verifyPath', requestId, path: action.raw });
           return;
         }
@@ -2097,6 +2106,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     return () => {
       window.removeEventListener('skena:verifyPathResult', onVerifyResult);
       document.removeEventListener('paste', onPaste);
+      verifyTimeouts.forEach(clearTimeout);
     };
   }, [insertPastedNode, pasteInternalClipboard, addCellNode]);
 
