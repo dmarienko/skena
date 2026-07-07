@@ -21,7 +21,8 @@ export type PasteAction =
 
 const isSingleLine = (s: string) => !/\r|\n/.test(s);
 const isUrl  = (s: string) => /^https?:\/\/\S+$/.test(s);
-const isPath = (s: string) => /^(file:\/\/|\/|~\/)/.test(s) && !/\s/.test(s);
+// - permissive: spaces allowed — host-side existence check filters false positives
+const isPath = (s: string) => /^(file:\/\/|\/|~\/)/.test(s);
 
 export function classifyClipboard(input: ClipboardInput): PasteAction {
   const trimmed = input.text.trim();
