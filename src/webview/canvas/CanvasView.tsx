@@ -680,7 +680,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   // - listen for resolved nodes coming back from host after drop
   useEffect(() => {
     const handler = (e: Event) => {
-      const incoming = (e as CustomEvent<CanvasNode[]>).detail;
+      const { nodes: incoming, connectTo } =
+        (e as CustomEvent<{ nodes: CanvasNode[]; connectTo?: string }>).detail;
       // - assign labels to all dropped nodes, avoiding collisions with each other
       // - and with existing canvas nodes (same logic as addNodeResult path)
       const labelled: CanvasNode[] = [];
@@ -699,11 +700,27 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           nodes: [...canvasRef.current.nodes, cn],
         };
       });
+      // - paste-to-node: arrow from source node to each new node (skip if source vanished)
+      const sourceExists = connectTo && canvasRef.current.nodes.some(n => n.id === connectTo);
+      const newEdges: CanvasEdge[] = sourceExists
+        ? labelled.map((cn, i) => ({
+            id:       `edge-paste-${Date.now()}-${i}`,
+            fromNode: connectTo,
+            fromSide: 'right' as NodeSide,
+            toNode:   cn.id,
+            toSide:   'left' as NodeSide,
+            toEnd:    'arrow' as const,
+          }))
+        : [];
+      if (newEdges.length > 0) {
+        setEdges(eds => [...eds, ...newEdges.map(toFlowEdge)]);
+        canvasRef.current = { ...canvasRef.current, edges: [...canvasRef.current.edges, ...newEdges] };
+      }
       scheduleSave();
     };
     window.addEventListener('skena:nodesFromDrop', handler);
     return () => window.removeEventListener('skena:nodesFromDrop', handler);
-  }, [setNodes, scheduleSave, pushHistory]);
+  }, [setNodes, setEdges, scheduleSave, pushHistory]);
 
   // ─── keyboard navigation between nodes (hjkl / arrow keys) ──────────────────
 

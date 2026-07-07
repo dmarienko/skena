@@ -129,7 +129,7 @@ export function App(): JSX.Element {
           window.dispatchEvent(new CustomEvent('skena:searchResults', { detail: msg }));
           break;
         case 'nodesFromDrop':
-          window.dispatchEvent(new CustomEvent('skena:nodesFromDrop', { detail: msg.nodes }));
+          window.dispatchEvent(new CustomEvent('skena:nodesFromDrop', { detail: { nodes: msg.nodes, connectTo: msg.connectTo } }));
           break;
         case 'addNodeResult':
           window.dispatchEvent(new CustomEvent('skena:addNodeResult', { detail: msg }));

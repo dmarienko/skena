@@ -359,6 +359,8 @@ export interface MsgSearchResults {
 export interface MsgNodesFromDrop {
   type: 'nodesFromDrop';
   nodes: CanvasNode[];
+  /** - echoed from dropFiles: draw an arrow edge from this node to each new node */
+  connectTo?: string;
 }
 
 /** - host → webview: system clipboard text in response to requestClipboardRead */
@@ -446,6 +448,8 @@ export interface MsgDropFiles {
   type: 'dropFiles';
   uris: string[];
   position: { x: number; y: number };
+  /** - when set, webview draws an arrow edge from this node to each dropped node */
+  connectTo?: string;
 }
 
 /** - webview → host: does this pasted filesystem path exist? */

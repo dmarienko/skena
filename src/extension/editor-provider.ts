@@ -299,7 +299,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           }
           break;
         }
-        case 'dropFiles':            this.handleDropFiles(msg.uris, msg.position, canvasDir, resolver, send); break;
+        case 'dropFiles':            this.handleDropFiles(msg.uris, msg.position, canvasDir, resolver, send, msg.connectTo); break;
         case 'addNodeRequest': await this.handleAddNodeRequest(msg, canvasDir, resolver, send); break;
         case 'moveToSubCanvas': await this.handleMoveToSubCanvas(msg, canvasDir, send); break;
         // - clipboard relay: webview sandbox blocks navigator.clipboard; route through host
@@ -648,6 +648,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     canvasDir: string,
     resolver: FileResolver,
     send: (m: HostToWebview) => void,
+    connectTo?: string,
   ): void {
     const nodes: CanvasNode[] = [];
 
@@ -678,7 +679,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     });
 
     if (nodes.length > 0) {
-      send({ type: 'nodesFromDrop', nodes });
+      send({ type: 'nodesFromDrop', nodes, connectTo });
     }
   }
 
