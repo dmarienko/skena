@@ -134,6 +134,9 @@ export function App(): JSX.Element {
         case 'addNodeResult':
           window.dispatchEvent(new CustomEvent('skena:addNodeResult', { detail: msg }));
           break;
+        case 'verifyPathResult':
+          window.dispatchEvent(new CustomEvent('skena:verifyPathResult', { detail: msg }));
+          break;
         case 'addNodeTrigger':
           window.dispatchEvent(new CustomEvent('skena:addNodeTrigger'));
           break;

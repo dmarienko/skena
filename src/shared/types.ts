@@ -390,7 +390,8 @@ export type HostToWebview =
   | MsgFloatingChatResetDone
   | MsgFloatingChatNodeAdded
   | MsgFloatingChatHistoryRestored
-  | MsgMarksRestored;
+  | MsgMarksRestored
+  | MsgVerifyPathResult;
 
 // - Webview → Host messages
 
@@ -445,6 +446,28 @@ export interface MsgDropFiles {
   type: 'dropFiles';
   uris: string[];
   position: { x: number; y: number };
+}
+
+/** - webview → host: does this pasted filesystem path exist? */
+export interface MsgVerifyPath {
+  type:      'verifyPath';
+  requestId: string;
+  path:      string;   // - raw pasted text: file:// URI, absolute, or ~/ path
+}
+
+/** - host → webview: verifyPath answer */
+export interface MsgVerifyPathResult {
+  type:         'verifyPathResult';
+  requestId:    string;
+  exists:       boolean;
+  /** - vault:// URI or canvas-dir-relative path suitable for a FileNode.file, set when exists */
+  resolvedPath?: string;
+}
+
+/** - webview → host: show a VS Code warning toast */
+export interface MsgShowWarning {
+  type: 'showWarning';
+  text: string;
 }
 
 /** - webview → host: request system clipboard text (navigator.clipboard is sandboxed) */
@@ -554,7 +577,9 @@ export type WebviewToHost =
   | MsgFloatingChatPersistHistory
   | MsgFloatingChatReset
   | MsgFloatingChatCompact
-  | MsgSaveMarks;
+  | MsgSaveMarks
+  | MsgVerifyPath
+  | MsgShowWarning;
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────
 

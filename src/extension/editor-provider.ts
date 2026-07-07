@@ -11,6 +11,7 @@
 
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as os from 'os';
 import * as fs from 'fs/promises';
 import { readCanvas, writeCanvas } from './canvas-io';
 import { FileResolver } from './file-resolver';
@@ -319,6 +320,25 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           }
           break;
         }
+        case 'verifyPath': {
+          // - expand ~ and file://, answer with the same path convention dropFiles produces
+          let p = msg.path.startsWith('file://') ? vscode.Uri.parse(msg.path).fsPath : msg.path;
+          if (p.startsWith('~/')) p = path.join(os.homedir(), p.slice(2));
+          let exists = false;
+          try { exists = (await fs.stat(p)).isFile(); } catch { /* - stays false */ }
+          send({
+            type: 'verifyPathResult',
+            requestId: msg.requestId,
+            exists,
+            resolvedPath: exists
+              ? resolver.resolveFromFsPath(p) ?? path.relative(canvasDir, p).replace(/\\/g, '/')
+              : undefined,
+          });
+          break;
+        }
+        case 'showWarning':
+          vscode.window.showWarningMessage(msg.text);
+          break;
       }
     });
 
