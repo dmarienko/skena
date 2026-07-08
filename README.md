@@ -73,6 +73,9 @@ Press `gh` to toggle a glow layer over the canvas: nodes and edges light up by *
 ### Paste anything
 `Ctrl+V` on the canvas turns the clipboard into the right node: screenshots and notebook chart/table outputs become cell nodes, copied files become file nodes, URLs become link nodes, text becomes a text node — all connected to the focused node with an edge. `yy` then `Ctrl+V` still duplicates canvas nodes.
 
+### Interactive plotly charts
+Plotly figures render live in cell nodes — from notebook outputs (`go.Figure`), via the `Alt+P` pin, or by pasting `fig.to_json()` output onto the canvas. Pan, zoom, and hover work inside the node. (Jupyter `FigureWidget` outputs carry no offline figure data, so use `go.Figure` or paste the figure JSON.)
+
 ### Rich inline previews
 - **Markdown** (`.md`) — rendered with frontmatter header bar, status badges, scrollable content
 - **Jupyter Notebooks** (`.ipynb`) — code cells, markdown cells, chart outputs, base64 images
