@@ -1858,7 +1858,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
   const addCellNode = useCallback((
     content: string,
-    format: 'html' | 'markdown' | 'image',
+    format: 'html' | 'markdown' | 'image' | 'plotly',
     sourceNodeId?: string,
   ) => {
     pushHistory();
@@ -1947,7 +1947,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     const handler = (e: Event) => {
       const { content, format, sourceNodeId } = (e as CustomEvent<{
         content:      string;
-        format:       'html' | 'markdown' | 'image';
+        format:       'html' | 'markdown' | 'image' | 'plotly';
         sourceNodeId: string;
       }>).detail;
       addCellNode(content, format, sourceNodeId);

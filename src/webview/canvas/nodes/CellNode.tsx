@@ -9,6 +9,7 @@ import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import { CellNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { MarkdownRenderer } from '../../renderers/MarkdownRenderer';
+import { PlotlyRenderer } from '../../renderers/PlotlyRenderer';
 import { ScrollableContent } from '../../components/ScrollableContent';
 import { useHeatmap } from '../../context/HeatmapContext';
 import { HANDLE_STYLE, useSelectedStyle } from './nodeShared';
@@ -55,6 +56,7 @@ export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
         {node.format === 'markdown' && <MarkdownRenderer content={node.content} />}
         {node.format === 'image'    && <img src={node.content} alt="cell" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />}
         {node.format === 'html'     && <div className="skena-cell-html" dangerouslySetInnerHTML={{ __html: node.content }} />}
+        {node.format === 'plotly'   && <PlotlyRenderer json={node.content} />}
       </ScrollableContent>
     </div>
     <Handle type="source" position={Position.Top}    id="top"    style={HANDLE_STYLE} />

@@ -17,6 +17,7 @@ import React, { useEffect } from 'react';
 import { ParsedNotebook, ParsedCell, CellOutput } from '../../extension/notebook-parser';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { CodeRenderer } from './CodeRenderer';
+import { PlotlyRenderer } from './PlotlyRenderer';
 import { useMarkdownConfig } from '../context/MarkdownConfigContext';
 
 // - module-level: callback of the pin button currently under the mouse (for Alt+P hotkey)
@@ -65,7 +66,7 @@ export function NotebookRenderer({ parsedJson, zoom, sourceNodeId }: NotebookRen
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
 // - dispatch pin event; CanvasView creates a CellNode (+ edge to sourceNodeId)
-function pinOutput(content: string, format: 'html' | 'markdown' | 'image', sourceNodeId: string) {
+function pinOutput(content: string, format: 'html' | 'markdown' | 'image' | 'plotly', sourceNodeId: string) {
   window.dispatchEvent(new CustomEvent('skena:pinCellOutput', { detail: { content, format, sourceNodeId } }));
 }
 
@@ -90,6 +91,8 @@ function cellOutputsToHtml(outputs: CellOutput[]): string {
         return out.html;
       if (out.mimeType === 'text/plain')
         return `<pre style="font-size:10px;white-space:pre-wrap;margin:0">${escHtml(out.text)}</pre>`;
+      // - plotly is interactive; can't be inlined into a static "pin all" HTML blob (has its own pin)
+      if (out.mimeType === 'application/vnd.plotly.v1+json') return '';
       return '';  // - placeholders omitted from pinned content
     })
     .filter(Boolean)
@@ -150,6 +153,15 @@ function OutputBlock({
       <div className="skena-notebook__output">
         {showPin && <PinButton onClick={() => pinOutput(out.html, 'html', sourceNodeId)} />}
         <div className="skena-notebook__html-output" dangerouslySetInnerHTML={{ __html: out.html }} />
+      </div>
+    );
+  }
+
+  if (out.mimeType === 'application/vnd.plotly.v1+json') {
+    return (
+      <div className="skena-notebook__output" style={{ position: 'relative', height: 400 }}>
+        {showPin && <PinButton onClick={() => pinOutput(out.json, 'plotly', sourceNodeId)} />}
+        <PlotlyRenderer json={out.json} />
       </div>
     );
   }
