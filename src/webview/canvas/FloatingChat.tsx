@@ -709,11 +709,12 @@ export function FloatingChat({
               </div>
             )}
 
-            {chat.history.map((it, i) =>
-              it.kind === 'text'     ? <ChatBubble key={i} msg={{ role: it.role, content: it.content, timestamp: it.timestamp }} />
-            : it.kind === 'thinking' ? <ThinkingBlock key={i} content={it.content} />
-            :                          <ToolCard key={i} item={it} />
-            )}
+            {chat.history.map((it, i) => {
+              const key = it.kind === 'tool' ? it.id : `${it.kind}-${i}`;
+              return it.kind === 'text'     ? <ChatBubble key={key} msg={it} />
+                   : it.kind === 'thinking' ? <ThinkingBlock key={key} content={it.content} />
+                   :                          <ToolCard key={key} item={it} />;
+            })}
 
             {chat.streaming && (
               <ChatBubble
@@ -847,7 +848,7 @@ function ToolCard({ item }: { item: Extract<ChatItem, { kind: 'tool' }> }): JSX.
   const color = item.status === 'error' ? '#F87171' : 'var(--vscode-foreground)';
   return (
     <div style={{ margin: '3px 8px', padding: '4px 8px', borderRadius: 4, background: 'var(--vscode-editorWidget-background)', border: '1px solid var(--vscode-panel-border, #333)', fontSize: 11 }}>
-      <div style={{ display: 'flex', gap: 6, cursor: 'pointer', color }} onClick={() => setOpen(o => !o)}>
+      <div style={{ display: 'flex', gap: 6, cursor: v.kind === 'todo' ? 'default' : 'pointer', color }} onClick={v.kind === 'todo' ? undefined : () => setOpen(o => !o)}>
         <span>{glyph}</span><span style={{ fontWeight: 600 }}>{v.title}</span>
       </div>
       {v.kind === 'todo' && v.todos && (
