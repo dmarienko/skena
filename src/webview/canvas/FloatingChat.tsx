@@ -34,6 +34,7 @@ import rehypeKatex from 'rehype-katex';
 
 import { ChatItem, ChatMessage, ChatToolEvent, ChatTokenUsage } from '../../shared/types';
 import { useFloatingChat } from '../hooks/useFloatingChat';
+import { toolCardView } from './chat/toolCardView';
 
 // ─── constants ─────────────────────────────────────────────────────────────────
 
@@ -213,6 +214,8 @@ export function FloatingChat({
   onResetDone,
   onNodeAdded,
   onHistoryRestored,
+  onToolEvent,
+  onUsage,
 }: Props): JSX.Element {
   const chat             = useFloatingChat(postMessage);
   const outputEl         = useRef<HTMLDivElement | null>(null);
@@ -246,6 +249,8 @@ export function FloatingChat({
   useEffect(() => onResetDone(chat.clearHistory),          [onResetDone, chat.clearHistory]);
   useEffect(() => onNodeAdded(chat.addNodeAdded),          [onNodeAdded, chat.addNodeAdded]);
   useEffect(() => onHistoryRestored(chat.restoreHistory),  [onHistoryRestored, chat.restoreHistory]);
+  useEffect(() => onToolEvent?.(chat.applyTool),           [onToolEvent, chat.applyTool]);
+  useEffect(() => onUsage?.(chat.applyUsage),              [onUsage, chat.applyUsage]);
 
   // ─── clipboard content response handler ────────────────────────────────
   //
@@ -563,6 +568,12 @@ export function FloatingChat({
           </span>
         )}
 
+        {chat.usage && (
+          <span style={{ fontSize: 10, opacity: 0.6, marginLeft: 8, color: 'var(--vscode-foreground)' }}>
+            {chat.usage.inputTokens + chat.usage.cacheReadTokens}▸{chat.usage.outputTokens} tok
+          </span>
+        )}
+
         {!collapsed && (
           <>
             <button
@@ -698,13 +709,11 @@ export function FloatingChat({
               </div>
             )}
 
-            {/* - Task 7 replaces this with full ChatItem rendering (tool cards etc.);
-                  for now render only text items so the build stays green. */}
-            {chat.history
-              .filter((it): it is Extract<ChatItem, { kind: 'text' }> => it.kind === 'text')
-              .map((msg, i) => (
-                <ChatBubble key={i} msg={msg} />
-              ))}
+            {chat.history.map((it, i) =>
+              it.kind === 'text'     ? <ChatBubble key={i} msg={{ role: it.role, content: it.content, timestamp: it.timestamp }} />
+            : it.kind === 'thinking' ? <ThinkingBlock key={i} content={it.content} />
+            :                          <ToolCard key={i} item={it} />
+            )}
 
             {chat.streaming && (
               <ChatBubble
@@ -824,6 +833,44 @@ function ChatBubble({
           <span style={{ display: 'inline-block', width: 6, height: 12, background: 'var(--vscode-foreground)', opacity: 0.5, marginLeft: 2, borderRadius: 1 }} />
         )}
       </div>
+    </div>
+  );
+}
+
+// ─── ToolCard / ThinkingBlock ───────────────────────────────────────────────────
+
+function ToolCard({ item }: { item: Extract<ChatItem, { kind: 'tool' }> }): JSX.Element | null {
+  const v = toolCardView(item.name, item.input);
+  const [open, setOpen] = useState(false);
+  if (v.hidden) return null;
+  const glyph = item.status === 'running' ? '⏳' : item.status === 'ok' ? '✓' : '✗';
+  const color = item.status === 'error' ? '#F87171' : 'var(--vscode-foreground)';
+  return (
+    <div style={{ margin: '3px 8px', padding: '4px 8px', borderRadius: 4, background: 'var(--vscode-editorWidget-background)', border: '1px solid var(--vscode-panel-border, #333)', fontSize: 11 }}>
+      <div style={{ display: 'flex', gap: 6, cursor: 'pointer', color }} onClick={() => setOpen(o => !o)}>
+        <span>{glyph}</span><span style={{ fontWeight: 600 }}>{v.title}</span>
+      </div>
+      {v.kind === 'todo' && v.todos && (
+        <div style={{ marginTop: 3, opacity: 0.85 }}>
+          {v.todos.map((t, j) => <div key={j}>{t.status === 'completed' ? '☑' : t.status === 'in_progress' ? '◐' : '☐'} {t.text}</div>)}
+        </div>
+      )}
+      {open && v.kind !== 'todo' && (
+        <pre style={{ marginTop: 3, whiteSpace: 'pre-wrap', opacity: 0.7, fontSize: 10 }}>{JSON.stringify(item.input, null, 1)}</pre>
+      )}
+      {v.showResult && item.resultPreview && (
+        <div style={{ marginTop: 3, opacity: 0.7, whiteSpace: 'pre-wrap', fontFamily: 'var(--vscode-editor-font-family, monospace)', fontSize: 10 }}>{item.resultPreview}</div>
+      )}
+    </div>
+  );
+}
+
+function ThinkingBlock({ content }: { content: string }): JSX.Element {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ margin: '3px 8px', fontSize: 11, opacity: 0.55 }}>
+      <div style={{ cursor: 'pointer' }} onClick={() => setOpen(o => !o)}>💭 thinking{open ? ' ▾' : ' ▸'}</div>
+      {open && <pre style={{ whiteSpace: 'pre-wrap', fontSize: 10, marginTop: 2 }}>{content}</pre>}
     </div>
   );
 }
