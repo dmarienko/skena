@@ -1144,6 +1144,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const styleUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview.css')
     );
+    const plotlyUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'plotly.min.js')
+    );
 
     // - Content Security Policy: allow scripts from extension dist + vscode-resource
     // - https: in style-src / font-src is required for user-configured markdown.styles
@@ -1170,7 +1173,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
   </style>
 </head>
 <body>
-  <div id="root"></div>
+  <div id="root" data-plotly-uri="${plotlyUri}"></div>
   <script src="${scriptUri}"></script>
 </body>
 </html>`;

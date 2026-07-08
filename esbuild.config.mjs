@@ -12,6 +12,15 @@
  */
 
 import * as esbuild from 'esbuild';
+import { copyFileSync, mkdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+
+// - copy plotly.js dist asset (lazy-loaded by the webview via <script>, NOT bundled)
+function copyPlotlyAsset() {
+  mkdirSync('dist', { recursive: true });
+  copyFileSync(require.resolve('plotly.js-dist-min/plotly.min.js'), 'dist/plotly.min.js');
+}
 
 const watch      = process.argv.includes('--watch');
 const production = process.argv.includes('--production');
@@ -82,6 +91,7 @@ if (watch) {
     esbuild.context(mcpServerConfig),
   ]);
   await Promise.all([extCtx.watch(), webCtx.watch(), mcpCtx.watch()]);
+  copyPlotlyAsset();
   console.log('Watching for changes...');
 } else {
   await Promise.all([
@@ -89,4 +99,5 @@ if (watch) {
     esbuild.build(webviewConfig),
     esbuild.build(mcpServerConfig),
   ]);
+  copyPlotlyAsset();
 }
