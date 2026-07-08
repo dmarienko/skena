@@ -60,6 +60,7 @@ A floating chat overlay embedded in the canvas itself, not in a side panel. It s
 | `openai-compat` | Ollama, LM Studio, Groq, OpenAI, any OpenAI-format endpoint | endpoint-dependent |
 
 - **Harness mode** is the flagship: one persistent Claude Code process per canvas, streaming responses, full agent tool use (file reads, shell, MCP), session **resume** when you reopen a canvas, and an isolated profile (`~/.skena/cc-profile`) that keeps your global hooks out of the token bill. Permission mode, allowed tools, and reachable directories are all configurable.
+- **Live tool feedback** — watch Claude Code work: tool calls (edits, shell, canvas ops) stream in as cards with running→done status, thinking blocks, and a live token/cost meter. The full timeline is saved with the canvas.
 - **Chat UX** — Monaco input with vim bindings, markdown + LaTeX rendering in responses, draggable/resizable panel with a draggable input/output splitter, per-canvas history persisted in a `.skena.json` sidecar, Reset (⟲) and Compact (⤵) controls.
 
 | Key | Action |
