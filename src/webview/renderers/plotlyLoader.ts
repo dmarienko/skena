@@ -25,5 +25,7 @@ export function loadPlotly(): Promise<PlotlyGlobal> {
     s.onerror = () => reject(new Error('failed to load plotly.min.js'));
     document.head.appendChild(s);
   });
+  // - drop the memo on failure so the next mount retries instead of inheriting a poisoned promise
+  _promise.catch(() => { _promise = null; });
   return _promise;
 }

@@ -20,6 +20,10 @@ export function PlotlyRenderer({ json }: { json: string }): JSX.Element {
 
   useEffect(() => {
     if (!fig) { setError('invalid figure JSON'); setLoading(false); return; }
+    // - fig is valid → clear any stale error and re-enter the loading state before (re)plotting,
+    //   otherwise a transient invalid json would leave `error` set forever
+    setError(null);
+    setLoading(true);
     let cancelled = false;
     let plotly: { purge: (el: HTMLElement) => void } | null = null;
     const el = elRef.current;
@@ -49,11 +53,16 @@ export function PlotlyRenderer({ json }: { json: string }): JSX.Element {
     return () => ro.disconnect();
   }, []);
 
-  if (error) return <div className="skena-error" style={{ padding: 8, fontSize: 11 }}>Plotly: {error}</div>;
-
+  // - error/loading are overlays, never an early return: the plot div must stay mounted so elRef
+  //   remains valid and the effect can re-plot once a later valid json arrives
   return (
     <div className="skena-plotly nowheel nodrag" style={{ width: '100%', height: '100%', position: 'relative' }}>
-      {loading && (
+      {error && (
+        <div className="skena-error" style={{ position: 'absolute', inset: 0, padding: 8, fontSize: 11, background: 'var(--vscode-editor-background)' }}>
+          Plotly: {error}
+        </div>
+      )}
+      {loading && !error && (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.5, fontSize: 11 }}>
           loading plotly…
         </div>
