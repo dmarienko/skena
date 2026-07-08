@@ -83,8 +83,8 @@ export interface LinkNode extends CanvasNodeBase {
 /** Standalone output cell — table, chart image, or HTML snippet */
 export interface CellNode extends CanvasNodeBase {
   type: 'cell';
-  format: 'markdown' | 'image' | 'html';
-  /** - markdown/html: raw string content; image: base64 data URI */
+  format: 'markdown' | 'image' | 'html' | 'plotly';
+  /** - markdown/html: raw string; image: base64 data URI; plotly: figure JSON string */
   content: string;
 }
 

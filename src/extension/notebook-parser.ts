@@ -22,12 +22,18 @@ export interface OutputHtml {
   html: string;
 }
 
+export interface OutputPlotly {
+  mimeType: 'application/vnd.plotly.v1+json';
+  /** - JSON.stringify of the plotly figure spec ({ data, layout }) */
+  json: string;
+}
+
 export interface OutputPlaceholder {
   mimeType: 'placeholder';
   label: string;
 }
 
-export type CellOutput = OutputImage | OutputText | OutputHtml | OutputPlaceholder;
+export type CellOutput = OutputImage | OutputText | OutputHtml | OutputPlotly | OutputPlaceholder;
 
 export interface ParsedCell {
   type: CellType;
@@ -92,6 +98,15 @@ function parseOutputs(rawOutputs: RawOutput[]): CellOutput[] {
     // - display_data or execute_result
     const data = out.data ?? {};
 
+    // - plotly figure: full spec, prefer over any sibling png/text rendering of the same figure
+    if ('application/vnd.plotly.v1+json' in data) {
+      outputs.push({
+        mimeType: 'application/vnd.plotly.v1+json',
+        json: JSON.stringify((data as Record<string, unknown>)['application/vnd.plotly.v1+json']),
+      });
+      continue;
+    }
+
     // - prefer PNG, then SVG
     if (data['image/png']) {
       outputs.push({
@@ -115,16 +130,18 @@ function parseOutputs(rawOutputs: RawOutput[]): CellOutput[] {
       continue;
     }
 
-    if (data['text/plain']) {
-      outputs.push({ mimeType: 'text/plain', text: joinSource(data['text/plain']) });
-      continue;
-    }
-
-    // - plotly, widgets, etc. — show placeholder
-    const knownInteractive = ['application/vnd.plotly.v1+json', 'application/vnd.jupyter.widget-view+json'];
+    // - jupyter widgets (e.g. FigureWidget) — kernel-bound, show placeholder; checked
+    //   before text/plain since the repr (e.g. "FigureWidget(...)") is just fallback noise
+    const knownInteractive = ['application/vnd.jupyter.widget-view+json'];
     const interactiveMime = knownInteractive.find(m => m in data);
     if (interactiveMime) {
       outputs.push({ mimeType: 'placeholder', label: `[interactive: ${interactiveMime}]` });
+      continue;
+    }
+
+    if (data['text/plain']) {
+      outputs.push({ mimeType: 'text/plain', text: joinSource(data['text/plain']) });
+      continue;
     }
   }
 
