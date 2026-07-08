@@ -14,7 +14,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { CanvasView } from './canvas/CanvasView';
 import { FloatingChat } from './canvas/FloatingChat';
 import { useCanvasData } from './hooks/useCanvasData';
-import { HostToWebview, MarkdownConfig, ChatMessage, ChatToolEvent, ChatTokenUsage } from '../shared/types';
+import { HostToWebview, MarkdownConfig, ChatToolEvent, ChatTokenUsage } from '../shared/types';
 import { MarkdownConfigContext, DEFAULT_MARKDOWN_CONFIG } from './context/MarkdownConfigContext';
 
 type VsCodeApi = { postMessage: (msg: unknown) => void };
@@ -90,7 +90,7 @@ export function App(): JSX.Element {
   const toolEventEvt = useRef(makeEventTarget<ChatToolEvent>());
   const usageEvt     = useRef(makeEventTarget<ChatTokenUsage>());
   const historyRestoredEvt = useRef(makeEventTarget<{
-    history:    ChatMessage[];
+    history:    unknown[];
     collapsed?: boolean;
     pos?:       { x: number; y: number };
     size?:      { w: number; h: number };

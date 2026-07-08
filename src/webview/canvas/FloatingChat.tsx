@@ -32,7 +32,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 
-import { ChatMessage, ChatToolEvent, ChatTokenUsage } from '../../shared/types';
+import { ChatItem, ChatMessage, ChatToolEvent, ChatTokenUsage } from '../../shared/types';
 import { useFloatingChat } from '../hooks/useFloatingChat';
 
 // ─── constants ─────────────────────────────────────────────────────────────────
@@ -192,7 +192,7 @@ interface Props {
   onResetDone:       (handler: ()                    => void) => () => void;
   onNodeAdded:       (handler: (note: string)        => void) => () => void;
   onHistoryRestored: (handler: (payload: {
-    history:    ChatMessage[];
+    history:    unknown[];
     collapsed?: boolean;
     pos?:       { x: number; y: number };
     size?:      { w: number; h: number };
@@ -698,9 +698,13 @@ export function FloatingChat({
               </div>
             )}
 
-            {chat.history.map((msg, i) => (
-              <ChatBubble key={i} msg={msg} />
-            ))}
+            {/* - Task 7 replaces this with full ChatItem rendering (tool cards etc.);
+                  for now render only text items so the build stays green. */}
+            {chat.history
+              .filter((it): it is Extract<ChatItem, { kind: 'text' }> => it.kind === 'text')
+              .map((msg, i) => (
+                <ChatBubble key={i} msg={msg} />
+              ))}
 
             {chat.streaming && (
               <ChatBubble

@@ -328,7 +328,7 @@ export interface MsgFloatingChatResetDone {
 /** Host → Webview: restore chat state from workspaceState on canvas open */
 export interface MsgFloatingChatHistoryRestored {
   type: 'floatingChatHistoryRestored';
-  history:   ChatMessage[];
+  history:   ChatItem[];
   collapsed?: boolean;
   pos?:       { x: number; y: number };
   size?:      { w: number; h: number };
@@ -514,7 +514,7 @@ export interface MsgFloatingChatSend {
   /** - id of the currently keyboard-focused canvas node (for context building) */
   activeNodeId: string | null;
   /** - full conversation history (session-only; no sidecar persistence) */
-  history: ChatMessage[];
+  history: ChatItem[];
   /** - what the user currently sees on screen (viewport awareness) */
   viewport?: ViewportSnapshot;
 }
@@ -542,7 +542,7 @@ export interface MsgFloatingChatCompact {
  */
 export interface MsgFloatingChatPersistHistory {
   type: 'floatingChatPersistHistory';
-  history: ChatMessage[];
+  history: ChatItem[];
 }
 
 // ─── Canvas marks (vim-style bookmarks) ───────────────────────────────────────

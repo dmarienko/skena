@@ -42,7 +42,7 @@ import {
   MsgMoveToSubCanvas,
   MsgFloatingChatSend,
   MsgFloatingChatPersistHistory,
-  ChatMessage,
+  ChatItem,
   MsgFloatingChatHistoryRestored,
   MsgFloatingChatSaveUIState,
   MsgSaveMarks,
@@ -176,11 +176,11 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             // - restore chat state from workspaceState (survives panel close + rename)
             const historyKey = `skena.chatHistory.${document.uri.toString()}`;
             const uiKey      = `skena.chatUI.${document.uri.toString()}`;
-            const savedHistory = this.context.workspaceState.get<ChatMessage[]>(historyKey) ?? [];
+            const savedHistory = this.context.workspaceState.get<unknown[]>(historyKey) ?? [];
             const savedUI      = this.context.workspaceState.get<{ collapsed?: boolean; pos?: { x: number; y: number }; size?: { w: number; h: number }; inputW?: number }>(uiKey);
             send({
               type:      'floatingChatHistoryRestored',
-              history:   savedHistory,
+              history:   savedHistory as ChatItem[],
               collapsed: true,              // - always start collapsed; user opens explicitly
               pos:       savedUI?.pos,
               size:      savedUI?.size,
@@ -972,6 +972,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     // - already captured separately as msg.message
     const priorHistory = (msg.history ?? [])
       .slice(0, -1)
+      .filter((m): m is Extract<ChatItem, { kind: 'text' }> => (m as ChatItem).kind === 'text')
       .map(m => ({ role: m.role, content: m.content }));
 
     // - harness agent has a Read tool → give it file paths (handles .ipynb etc);
