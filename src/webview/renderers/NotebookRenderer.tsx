@@ -91,7 +91,7 @@ function cellOutputsToHtml(outputs: CellOutput[]): string {
         return out.html;
       if (out.mimeType === 'text/plain')
         return `<pre style="font-size:10px;white-space:pre-wrap;margin:0">${escHtml(out.text)}</pre>`;
-      // - plotly is interactive; can't be inlined into a static "pin all" HTML blob (has its own pin)
+      // - plotly is interactive; omitted from the static pin-all blob — it keeps its own per-output pin
       if (out.mimeType === 'application/vnd.plotly.v1+json') return '';
       return '';  // - placeholders omitted from pinned content
     })
@@ -160,7 +160,8 @@ function OutputBlock({
   if (out.mimeType === 'application/vnd.plotly.v1+json') {
     return (
       <div className="skena-notebook__output" style={{ position: 'relative', height: 400 }}>
-        {showPin && <PinButton onClick={() => pinOutput(out.json, 'plotly', sourceNodeId)} />}
+        {/* - plotly is never merged into pin-all, so it always keeps its own pin regardless of showPin */}
+        <PinButton onClick={() => pinOutput(out.json, 'plotly', sourceNodeId)} />
         <PlotlyRenderer json={out.json} />
       </div>
     );
