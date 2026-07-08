@@ -39,7 +39,12 @@ export function applyToolEvent(
 export function migrateHistory(raw: unknown[]): ChatItem[] {
   return (raw ?? []).map(r => {
     const o = r as Record<string, unknown>;
-    if (o && typeof o === 'object' && 'kind' in o) return o as unknown as ChatItem;
+    if (o && typeof o === 'object' && 'kind' in o) {
+      const it = o as unknown as ChatItem;
+      // - a card persisted mid-turn (crash before completeDelta) restores as error, not spinning
+      if (it.kind === 'tool' && it.status === 'running') return { ...it, status: 'error' };
+      return it;
+    }
     return { kind: 'text', role: (o?.role as 'user' | 'assistant') ?? 'assistant', content: String(o?.content ?? ''), timestamp: String(o?.timestamp ?? ''), costUsd: o?.costUsd as number | undefined, deltaUsd: o?.deltaUsd as number | undefined };
   });
 }

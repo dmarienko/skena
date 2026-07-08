@@ -173,8 +173,9 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
     setStreaming(r.pending);
     historyRef.current = r.items;
     setHistory(r.items);
-    persistHistory(r.items);
-  }, [persistHistory]);
+    // - no persist mid-turn: running cards would restore as perpetually spinning;
+    // - completeDelta persists the sanitized full timeline at turn end
+  }, []);
 
   const applyUsage = useCallback((u: ChatTokenUsage) => { usageRef.current = u; setUsage(u); }, []);
 
@@ -196,6 +197,7 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
     setThinking(false);
     streamingRef.current = '';
     setStreaming('');
+    setUsage(null); usageRef.current = null;
   }, []);
 
   // - clear the visible conversation (Reset button; host clears persistence + process)
