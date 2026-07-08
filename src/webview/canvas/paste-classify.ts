@@ -36,6 +36,46 @@ function asPlotlyFigure(s: string): string | null {
   return null;
 }
 
+// - return the substring from openIdx spanning balanced open/close brackets, respecting JS string literals.
+function sliceBalanced(s: string, openIdx: number, open: string, close: string): string | null {
+  let depth = 0, inStr = false, esc = false;
+  for (let i = openIdx; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') { inStr = true; continue; }
+    if (ch === open) depth++;
+    else if (ch === close) { depth--; if (depth === 0) return s.slice(openIdx, i + 1); }
+  }
+  return null;   // - unbalanced
+}
+
+// - extract {data, layout} JSON from a pasted plotly HTML export's Plotly.newPlot("id", [data], {layout}, ...) call
+function extractPlotlyFromHtml(s: string): string | null {
+  const marker = 'Plotly.newPlot(';
+  const m = s.indexOf(marker);
+  if (m < 0) return null;
+  const after = m + marker.length;
+  const dataStart = s.indexOf('[', after);   // - arg1 is the element id string; first [ is the data array
+  if (dataStart < 0) return null;
+  const dataStr = sliceBalanced(s, dataStart, '[', ']');
+  if (!dataStr) return null;
+  let data: unknown;
+  try { data = JSON.parse(dataStr); } catch { return null; }
+  if (!Array.isArray(data)) return null;
+  let layout: unknown = {};
+  const layoutStart = s.indexOf('{', dataStart + dataStr.length);
+  if (layoutStart >= 0) {
+    const layoutStr = sliceBalanced(s, layoutStart, '{', '}');
+    if (layoutStr) { try { layout = JSON.parse(layoutStr); } catch { /* - keep {} */ } }
+  }
+  return JSON.stringify({ data, layout });
+}
+
 // - a Python plotly repr (FigureWidget({...}) / Figure({...}) / go.Figure({...})).
 // - NOT figure data: numpy truncates arrays with `...`, so it can't be rendered — paste hints instead.
 function isPythonFigureRepr(s: string): boolean {
@@ -51,6 +91,8 @@ export function classifyClipboard(input: ClipboardInput): PasteAction {
   // - the single-line URL plain flavor is the truer intent
   if (input.html.trim()) {
     if (isSingleLine(trimmed) && isUrl(trimmed)) return { kind: 'link', url: trimmed };
+    const embedded = extractPlotlyFromHtml(input.html);
+    if (embedded) return { kind: 'cell-plotly', json: embedded };
     return { kind: 'cell-html', html: input.html };
   }
 
@@ -61,6 +103,8 @@ export function classifyClipboard(input: ClipboardInput): PasteAction {
 
   if (trimmed) {
     if (input.yySnapshot !== null && input.text === input.yySnapshot) return { kind: 'internal' };
+    const embeddedText = extractPlotlyFromHtml(trimmed);
+    if (embeddedText) return { kind: 'cell-plotly', json: embeddedText };
     const plotly = asPlotlyFigure(trimmed);
     if (plotly) return { kind: 'cell-plotly', json: plotly };
     if (isPythonFigureRepr(trimmed)) return { kind: 'figure-repr', text: input.text };
