@@ -217,9 +217,8 @@ export function FloatingChat({
   const editorRef        = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   const vimRef           = useRef<{ dispose: () => void } | null>(null);
   const pendingPasteRef  = useRef(false);
-  // - survive collapse/expand (which unmounts the body): unsent draft + scroll pos
+  // - survive collapse/expand (which unmounts the body): unsent draft
   const draftRef         = useRef('');
-  const scrollTopRef     = useRef(0);
   // - current vim mode of the prompt editor; Shift+hjkl scrolls output only in normal mode
   const vimModeRef       = useRef<string>('normal');
   const [isChatFocused, setIsChatFocused] = useState(false);
@@ -372,11 +371,17 @@ export function FloatingChat({
     return () => window.removeEventListener('keydown', handler, { capture: true });
   }, []);
 
-  // ─── auto-scroll output ────────────────────────────────────────────────
-
+  // ─── pin output to the latest message ──────────────────────────────────
+  // - fires on open/expand (collapsed→false remounts the body), on restored
+  // - history, and while streaming. RAF waits for the (re)mounted list to lay
+  // - out so scrollHeight is final; instant jump on open, no top-flash.
   useEffect(() => {
-    outputEl.current?.scrollTo({ top: outputEl.current.scrollHeight, behavior: 'smooth' });
-  }, [chat.history, chat.streaming]);
+    if (chat.collapsed) return;
+    const el = outputEl.current;
+    if (!el) return;
+    const id = requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
+    return () => cancelAnimationFrame(id);
+  }, [chat.collapsed, chat.history, chat.streaming]);
 
   // ─── Monaco theme ──────────────────────────────────────────────────────
 
@@ -673,12 +678,7 @@ export function FloatingChat({
 
           {/* ── Right: message output ── */}
           <div
-            ref={node => {
-              outputEl.current = node;
-              // - on re-expand the div remounts at scrollTop 0; restore prior position
-              if (node) node.scrollTop = scrollTopRef.current;
-            }}
-            onScroll={e => { scrollTopRef.current = e.currentTarget.scrollTop; }}
+            ref={node => { outputEl.current = node; }}
             style={{
               flex:          1,
               overflowY:     'auto',
