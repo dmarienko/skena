@@ -26,6 +26,15 @@ import type { ILLMClient, LLMMessage, LLMTool, LLMCallbacks, LLMContext, LLMUsag
 
 const FALLBACK_BIN = path.join(os.homedir(), '.local', 'bin', 'claude');
 
+// - flatten a tool_result content payload to a short display string
+function previewToolResult(content: unknown): string {
+  let s: string;
+  if (typeof content === 'string') s = content;
+  else if (Array.isArray(content)) s = content.map(c => (c && typeof c === 'object' && 'text' in c) ? String((c as { text: unknown }).text) : '').join('');
+  else s = content == null ? '' : JSON.stringify(content);
+  return s.length > 500 ? s.slice(0, 500) + '…' : s;
+}
+
 interface HarnessSession {
   proc:          ChildProcess;
   buf:           string;
@@ -339,9 +348,36 @@ export class HarnessAdapter implements ILLMClient {
         }
         break;
       case 'assistant': {
-        const msg  = ev['message'] as { content?: Array<{ type: string; text?: string }> } | undefined;
-        const text = msg?.content?.filter(c => c.type === 'text').map(c => c.text).join('') ?? '';
-        if (text && !s.aborted) { s.cb?.onText(text); s.anyText = true; }
+        const msg = ev['message'] as {
+          content?: Array<{ type: string; text?: string; thinking?: string; id?: string; name?: string; input?: unknown }>;
+          usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number };
+        } | undefined;
+        if (msg?.usage && !s.aborted) {
+          s.cb?.onUsage?.({
+            inputTokens:       msg.usage.input_tokens ?? 0,
+            outputTokens:      msg.usage.output_tokens ?? 0,
+            cacheReadTokens:   msg.usage.cache_read_input_tokens ?? 0,
+            cacheCreateTokens: msg.usage.cache_creation_input_tokens ?? 0,
+          });
+        }
+        for (const item of msg?.content ?? []) {
+          if (s.aborted) break;
+          if (item.type === 'text' && item.text) { s.cb?.onText(item.text); s.anyText = true; }
+          else if (item.type === 'thinking' && item.thinking) { s.cb?.onToolEvent?.({ kind: 'thinking', content: item.thinking }); }
+          else if (item.type === 'tool_use' && item.id && item.name) { s.cb?.onToolEvent?.({ kind: 'use', id: item.id, name: item.name, input: item.input }); }
+        }
+        break;
+      }
+      case 'user': {
+        if (s.aborted) break;
+        const msg = ev['message'] as {
+          content?: Array<{ type: string; tool_use_id?: string; is_error?: boolean; content?: unknown }>;
+        } | undefined;
+        for (const item of msg?.content ?? []) {
+          if (item.type === 'tool_result' && item.tool_use_id) {
+            s.cb?.onToolEvent?.({ kind: 'result', id: item.tool_use_id, ok: item.is_error !== true, preview: previewToolResult(item.content) });
+          }
+        }
         break;
       }
       case 'result': {

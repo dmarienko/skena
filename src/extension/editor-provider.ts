@@ -269,6 +269,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
               onToolUse: async () => '',
               onDone:    (usage) => send({ type: 'floatingChatDone', costUsd: usage?.costUsd, deltaUsd: usage?.deltaUsd }),
               onError:   (message) => send({ type: 'floatingChatError', message }),
+              onToolEvent: (event) => send({ type: 'floatingChatToolEvent', event }),
+              onUsage:     (usage) => send({ type: 'floatingChatUsage', usage }),
             });
           });
           break;
@@ -1052,6 +1054,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
 
       onDone:  (usage) => send({ type: 'floatingChatDone', costUsd: usage?.costUsd, deltaUsd: usage?.deltaUsd }),
       onError: (message) => send({ type: 'floatingChatError', message }),
+      onToolEvent: (event) => send({ type: 'floatingChatToolEvent', event }),
+      onUsage:     (usage) => send({ type: 'floatingChatUsage', usage }),
       // - persist the CC session id so the next open can --resume it
       onSessionId: (id) => { void this.context.workspaceState.update(sessionKey, id); },
     }, {
