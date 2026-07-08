@@ -2065,7 +2065,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         case 'figure-repr': {
           // - lossy widget repr can't render; prepend an actionable note (text nodes render markdown)
           const hint = '> ⚠️ Truncated Plotly **FigureWidget** repr — array data is abbreviated (`...`), so it can’t be rendered as a chart. In the notebook run `print(fig.to_json())` and paste that output for an interactive chart.\n\n';
-          insertPastedNode({ type: 'text', text: hint + action.text });
+          insertPastedNode({ type: 'text', text: hint + '```\n' + action.text + '\n```' });
           return;
         }
         case 'files': {
