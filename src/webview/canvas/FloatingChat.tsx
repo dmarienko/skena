@@ -32,7 +32,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 
-import { ChatMessage } from '../../shared/types';
+import { ChatMessage, ChatToolEvent, ChatTokenUsage } from '../../shared/types';
 import { useFloatingChat } from '../hooks/useFloatingChat';
 
 // ─── constants ─────────────────────────────────────────────────────────────────
@@ -197,6 +197,8 @@ interface Props {
     pos?:       { x: number; y: number };
     size?:      { w: number; h: number };
   }) => void) => () => void;
+  onToolEvent?:      (cb: (e: ChatToolEvent) => void) => () => void;
+  onUsage?:          (cb: (u: ChatTokenUsage) => void) => () => void;
 }
 
 // ─── component ────────────────────────────────────────────────────────────────

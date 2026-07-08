@@ -14,7 +14,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { CanvasView } from './canvas/CanvasView';
 import { FloatingChat } from './canvas/FloatingChat';
 import { useCanvasData } from './hooks/useCanvasData';
-import { HostToWebview, MarkdownConfig, ChatMessage } from '../shared/types';
+import { HostToWebview, MarkdownConfig, ChatMessage, ChatToolEvent, ChatTokenUsage } from '../shared/types';
 import { MarkdownConfigContext, DEFAULT_MARKDOWN_CONFIG } from './context/MarkdownConfigContext';
 
 type VsCodeApi = { postMessage: (msg: unknown) => void };
@@ -87,6 +87,8 @@ export function App(): JSX.Element {
   const errorEvt     = useRef(makeEventTarget<string>());
   const resetDoneEvt = useRef(makeEventTarget<void>());
   const nodeAddedEvt    = useRef(makeEventTarget<string>());
+  const toolEventEvt = useRef(makeEventTarget<ChatToolEvent>());
+  const usageEvt     = useRef(makeEventTarget<ChatTokenUsage>());
   const historyRestoredEvt = useRef(makeEventTarget<{
     history:    ChatMessage[];
     collapsed?: boolean;
@@ -157,6 +159,12 @@ export function App(): JSX.Element {
         // ── Floating chat events ──
         case 'floatingChatDelta':
           deltaEvt.current.emit(msg.delta);
+          break;
+        case 'floatingChatToolEvent':
+          toolEventEvt.current.emit(msg.event);
+          break;
+        case 'floatingChatUsage':
+          usageEvt.current.emit(msg.usage);
           break;
         case 'floatingChatDone':
           doneEvt.current.emit({ costUsd: msg.costUsd, deltaUsd: msg.deltaUsd });
@@ -230,6 +238,8 @@ export function App(): JSX.Element {
         onResetDone={resetDoneEvt.current.subscribe}
         onNodeAdded={nodeAddedEvt.current.subscribe}
         onHistoryRestored={historyRestoredEvt.current.subscribe}
+        onToolEvent={toolEventEvt.current.subscribe}
+        onUsage={usageEvt.current.subscribe}
       />
     </MarkdownConfigContext.Provider>
   );
