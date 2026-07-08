@@ -2062,6 +2062,12 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         case 'cell-plotly':
           addCellNode(action.json, 'plotly', focused?.id);
           return;
+        case 'figure-repr': {
+          // - lossy widget repr can't render; prepend an actionable note (text nodes render markdown)
+          const hint = '> ⚠️ Truncated Plotly **FigureWidget** repr — array data is abbreviated (`...`), so it can’t be rendered as a chart. In the notebook run `print(fig.to_json())` and paste that output for an interactive chart.\n\n';
+          insertPastedNode({ type: 'text', text: hint + action.text });
+          return;
+        }
         case 'files': {
           // - text/uri-list can carry http links; only file-ish URIs go to the host resolver, web links become link nodes
           const webUris  = action.uris.filter(u => /^https?:\/\//.test(u));

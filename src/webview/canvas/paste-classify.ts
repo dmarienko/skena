@@ -18,6 +18,7 @@ export type PasteAction =
   | { kind: 'verify-path'; raw: string }
   | { kind: 'text'; text: string }
   | { kind: 'cell-plotly'; json: string }
+  | { kind: 'figure-repr'; text: string }
   | { kind: 'none' };
 
 const isSingleLine = (s: string) => !/\r|\n/.test(s);
@@ -33,6 +34,12 @@ function asPlotlyFigure(s: string): string | null {
     if (o && typeof o === 'object' && Array.isArray(o.data)) return s;
   } catch { /* - not JSON */ }
   return null;
+}
+
+// - a Python plotly repr (FigureWidget({...}) / Figure({...}) / go.Figure({...})).
+// - NOT figure data: numpy truncates arrays with `...`, so it can't be rendered — paste hints instead.
+function isPythonFigureRepr(s: string): boolean {
+  return /^(go\.)?Figure(Widget)?\(\s*\{/.test(s);
 }
 
 export function classifyClipboard(input: ClipboardInput): PasteAction {
@@ -56,6 +63,7 @@ export function classifyClipboard(input: ClipboardInput): PasteAction {
     if (input.yySnapshot !== null && input.text === input.yySnapshot) return { kind: 'internal' };
     const plotly = asPlotlyFigure(trimmed);
     if (plotly) return { kind: 'cell-plotly', json: plotly };
+    if (isPythonFigureRepr(trimmed)) return { kind: 'figure-repr', text: input.text };
     if (isSingleLine(trimmed)) {
       if (isUrl(trimmed))  return { kind: 'link', url: trimmed };
       if (isPath(trimmed)) return { kind: 'verify-path', raw: trimmed };
