@@ -17,12 +17,23 @@ export type PasteAction =
   | { kind: 'link'; url: string }
   | { kind: 'verify-path'; raw: string }
   | { kind: 'text'; text: string }
+  | { kind: 'cell-plotly'; json: string }
   | { kind: 'none' };
 
 const isSingleLine = (s: string) => !/\r|\n/.test(s);
 const isUrl  = (s: string) => /^https?:\/\/\S+$/.test(s);
 // - permissive: spaces allowed — host-side existence check filters false positives
 const isPath = (s: string) => /^(file:\/\/|\/|~\/)/.test(s);
+
+// - a plotly figure spec: a single JSON object with a `data` array (+ usually `layout`)
+function asPlotlyFigure(s: string): string | null {
+  if (!s.startsWith('{')) return null;   // - cheap pre-filter before JSON.parse
+  try {
+    const o = JSON.parse(s);
+    if (o && typeof o === 'object' && Array.isArray(o.data)) return s;
+  } catch { /* - not JSON */ }
+  return null;
+}
 
 export function classifyClipboard(input: ClipboardInput): PasteAction {
   const trimmed = input.text.trim();
@@ -43,6 +54,8 @@ export function classifyClipboard(input: ClipboardInput): PasteAction {
 
   if (trimmed) {
     if (input.yySnapshot !== null && input.text === input.yySnapshot) return { kind: 'internal' };
+    const plotly = asPlotlyFigure(trimmed);
+    if (plotly) return { kind: 'cell-plotly', json: plotly };
     if (isSingleLine(trimmed)) {
       if (isUrl(trimmed))  return { kind: 'link', url: trimmed };
       if (isPath(trimmed)) return { kind: 'verify-path', raw: trimmed };

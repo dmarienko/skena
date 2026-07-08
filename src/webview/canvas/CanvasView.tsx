@@ -2059,6 +2059,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         case 'cell-html':
           addCellNode(action.html, 'html', focused?.id);
           return;
+        case 'cell-plotly':
+          addCellNode(action.json, 'plotly', focused?.id);
+          return;
         case 'files': {
           // - text/uri-list can carry http links; only file-ish URIs go to the host resolver, web links become link nodes
           const webUris  = action.uris.filter(u => /^https?:\/\//.test(u));
