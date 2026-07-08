@@ -311,6 +311,9 @@ export interface MsgFloatingChatDone {
   deltaUsd?: number;
 }
 
+export interface MsgFloatingChatToolEvent { type: 'floatingChatToolEvent'; event: ChatToolEvent; }
+export interface MsgFloatingChatUsage     { type: 'floatingChatUsage'; usage: ChatTokenUsage; }
+
 /** Host → Webview: API error during floating chat */
 export interface MsgFloatingChatError {
   type: 'floatingChatError';
@@ -387,6 +390,8 @@ export type HostToWebview =
   | MsgSubCanvasCreated
   | MsgClipboardContent
   | MsgFloatingChatDelta
+  | MsgFloatingChatToolEvent
+  | MsgFloatingChatUsage
   | MsgFloatingChatDone
   | MsgFloatingChatError
   | MsgFloatingChatResetDone
@@ -600,6 +605,23 @@ export interface ChatMessage {
 export interface ChatHistory {
   nodeId: string;
   messages: ChatMessage[];
+}
+
+/** - interleaved chat timeline item: assistant/user text, a tool call, or a thinking block */
+export type ChatItem =
+  | { kind: 'text'; role: 'user' | 'assistant'; content: string; timestamp: string; costUsd?: number; deltaUsd?: number }
+  | { kind: 'tool'; id: string; name: string; input: unknown; status: 'running' | 'ok' | 'error'; resultPreview?: string; timestamp: string }
+  | { kind: 'thinking'; content: string; timestamp: string };
+
+/** - display-only tool/thinking event streamed from Claude Code (harness) */
+export type ChatToolEvent =
+  | { kind: 'use'; id: string; name: string; input: unknown }
+  | { kind: 'result'; id: string; ok: boolean; preview: string }
+  | { kind: 'thinking'; content: string };
+
+/** - live token usage for the running turn (harness) */
+export interface ChatTokenUsage {
+  inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreateTokens: number;
 }
 
 /**

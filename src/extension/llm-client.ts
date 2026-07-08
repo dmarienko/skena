@@ -9,6 +9,7 @@
  */
 
 import * as vscode from 'vscode';
+import type { ChatToolEvent, ChatTokenUsage } from '../shared/types';
 
 // ─── shared types ─────────────────────────────────────────────────────────────
 
@@ -64,6 +65,10 @@ export interface LLMCallbacks {
   onError:   (message: string) => void;
   /** - harness: report the CC session id so it can be resumed next time */
   onSessionId?: (id: string) => void;
+  /** - harness: display-only tool/thinking events (CC executes the tool itself) */
+  onToolEvent?: (e: ChatToolEvent) => void;
+  /** - harness: live token usage for the running turn */
+  onUsage?:     (u: ChatTokenUsage) => void;
 }
 
 // ─── interface ────────────────────────────────────────────────────────────────
