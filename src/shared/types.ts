@@ -490,6 +490,12 @@ export interface MsgWriteClipboard {
   text: string;
 }
 
+/** - webview → host: run a VS Code focus-navigation command (chat editor swallows some keys) */
+export interface MsgNavigateFocus {
+  type: 'navigateFocus';
+  dir:  'left' | 'right' | 'up' | 'down';
+}
+
 /** - webview → host: resolve a canvas-relative / vault:// URI and copy absolute fsPath to clipboard */
 export interface MsgCopyAbsolutePath {
   type: 'copyAbsolutePath';
@@ -579,6 +585,7 @@ export type WebviewToHost =
   | MsgMoveToSubCanvas
   | MsgRequestClipboardRead
   | MsgWriteClipboard
+  | MsgNavigateFocus
   | MsgCopyAbsolutePath
   | MsgFloatingChatSend
   | MsgFloatingChatSaveUIState
