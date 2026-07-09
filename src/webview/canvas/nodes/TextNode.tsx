@@ -219,6 +219,15 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
   const selectedStyle = useSelectedStyle(selected);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(node.text);
+
+  // - re-sync the view buffer when node.text changes from OUTSIDE this component
+  // - (external MCP write / disk reload → soft re-sync updates the data.text prop, but
+  // -  React Flow keeps this instance by id so `draft` would stay stale → the edit is
+  // -  invisible). Skip while editing so it never clobbers in-progress typing; on local
+  // -  edit-exit node.text already equals the typed text, so this is a no-op there.
+  useEffect(() => {
+    if (!editing) setDraft(node.text);
+  }, [node.text, editing]);
   const vimStatusRef    = useRef<HTMLDivElement | null>(null);
   const wrapperRef      = useRef<HTMLDivElement | null>(null);
   // - stable ref to the Monaco instance so the clipboard event handler can reach it
