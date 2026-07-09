@@ -171,8 +171,31 @@ export function computeHeatmapData(
 
 // ─── React hook ───────────────────────────────────────────────────────────────
 
+// - stable empty results so the "no nodes" path never churns the context value
+const EMPTY_NODE_GLOW = new Map<string, HeatmapNode>();
+const EMPTY_EDGE_GLOW = new Map<string, EdgeGlow>();
+
 /**
- * Memoized hook — re-runs BFS when nodes/edges change identity or zoom changes.
+ * Signature of ONLY the fields that affect glow output (node id + creationIndex +
+ * editIndex, edge source→target). Deliberately excludes `selected`/`position`, so a
+ * selection move or chat toggle — which re-creates the nodes array but changes no glow
+ * input — produces the same signature and the memo below holds its reference. That
+ * referential stability is what stops every node re-rendering on each hjkl/Alt+I.
+ */
+export function heatmapSignature(
+  nodes: Array<{ id: string; data?: Record<string, unknown> }>,
+  edges: Array<{ source: string; target: string }>,
+): string {
+  let s = '';
+  for (const n of nodes) s += `${n.id}:${n.data?.creationIndex ?? ''}:${n.data?.editIndex ?? ''};`;
+  s += '#';
+  for (const e of edges) s += `${e.source}>${e.target};`;
+  return s;
+}
+
+/**
+ * Memoized hook — recomputes glow ONLY when the glow signature or zoom changes,
+ * not on every nodes/edges array identity change (selection, chat toggle, etc.).
  * Call inside CanvasViewInner (or HeatmapProvider) where nodes/edges are available.
  */
 export function useActivityHeatmap(
@@ -180,8 +203,14 @@ export function useActivityHeatmap(
   edges: Edge[],
   zoom = 1,
 ): { nodeGlow: Map<string, HeatmapNode>; edgeGlow: Map<string, EdgeGlow> } {
+  // - cheap O(n) signature each render; the expensive BFS below only re-runs on change
+  const sig = heatmapSignature(nodes, edges);
   return useMemo(
-    () => computeHeatmapData(nodes, edges, zoom),
-    [nodes, edges, zoom],
+    () => (nodes.length === 0
+      ? { nodeGlow: EMPTY_NODE_GLOW, edgeGlow: EMPTY_EDGE_GLOW }
+      : computeHeatmapData(nodes, edges, zoom)),
+    // - keyed on sig (not nodes/edges refs) so selection/chat re-renders don't recompute
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sig, zoom],
   );
 }

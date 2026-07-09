@@ -17,7 +17,7 @@
  *   const { visible, nodeGlow } = useHeatmap();
  */
 
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
 import type { Node, Edge, Viewport } from '@xyflow/react';
 import { useOnViewportChange } from '@xyflow/react';
 import type { HeatmapNode, EdgeGlow } from '../../shared/types';
@@ -32,6 +32,11 @@ interface HeatmapContextValue {
 
 const EMPTY_MAP_NODE = new Map<string, HeatmapNode>();
 const EMPTY_MAP_EDGE = new Map<string, EdgeGlow>();
+
+// - stable empty arrays for the heatmap-off path: passing a fresh [] literal each
+// - render would churn useActivityHeatmap's memo and re-render every node consumer
+const EMPTY_NODES: Node[] = [];
+const EMPTY_EDGES: Edge[] = [];
 
 const HeatmapContext = createContext<HeatmapContextValue>({
   visible:  false,
@@ -61,13 +66,21 @@ export function HeatmapProvider({ nodes, edges, visible, toggle, children }: Hea
   });
 
   const { nodeGlow, edgeGlow } = useActivityHeatmap(
-    visible ? nodes : [],
-    visible ? edges : [],
+    visible ? nodes : EMPTY_NODES,
+    visible ? edges : EMPTY_EDGES,
     zoom,
   );
 
+  // - memoize the context value: an inline object literal would change identity every
+  // - render, forcing EVERY node/edge consumer of useHeatmap() to re-render on any
+  // - parent re-render (hjkl nav, Alt+I, etc.) — the root cause of the >20-node lag.
+  const value = useMemo(
+    () => ({ visible, toggle, nodeGlow, edgeGlow }),
+    [visible, toggle, nodeGlow, edgeGlow],
+  );
+
   return (
-    <HeatmapContext.Provider value={{ visible, toggle, nodeGlow, edgeGlow }}>
+    <HeatmapContext.Provider value={value}>
       {children}
     </HeatmapContext.Provider>
   );
