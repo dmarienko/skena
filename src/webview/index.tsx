@@ -16,6 +16,19 @@ import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 // - so without this import the 'markdown' language ID is unknown and Monaco
 // - treats all text as plain (no tokenisation → single colour).
 import 'monaco-editor/esm/vs/basic-languages/markdown/markdown.contribution.js';
+
+// - Monaco default-binds Alt+L to "toggle find in selection" (find/browser/findModel.js).
+// - Whenever a Monaco field in the webview is focused (chat input, text nodes), Monaco
+// - consumes Alt+L → the VS Code webview never forwards it → the user's Alt+L keybinding
+// - (e.g. navigateRight) dies, while Alt+H (unbound in Monaco) works. Unbind Alt+hjkl so
+// - all four vim-direction combos fall through to VS Code everywhere in skena.
+monaco.editor.addKeybindingRules?.([
+  { keybinding: monaco.KeyMod.Alt | monaco.KeyCode.KeyH, command: null },
+  { keybinding: monaco.KeyMod.Alt | monaco.KeyCode.KeyJ, command: null },
+  { keybinding: monaco.KeyMod.Alt | monaco.KeyCode.KeyK, command: null },
+  { keybinding: monaco.KeyMod.Alt | monaco.KeyCode.KeyL, command: null },
+]);
+
 (self as unknown as Record<string, unknown>)['MonacoEnvironment'] = {
   // - return a stub Worker; Monaco falls back to synchronous mode for language
   // - features — syntax highlighting still works (runs in the main thread)
