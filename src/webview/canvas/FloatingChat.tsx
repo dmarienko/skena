@@ -483,16 +483,6 @@ export function FloatingChat({
       },
     );
 
-    // - Monaco default-binds Alt+L to "toggle find in selection", which swallows the
-    // - user's Alt+L (navigateRight) while the chat is focused (Alt+H has no Monaco
-    // - binding, so it forwards fine). Override Alt+L for this editor and re-route it to
-    // - VS Code via the host so it navigates like it does from the canvas. Editor-scoped:
-    // - fires only when the chat input is focused, so canvas Alt+L is untouched.
-    editor.addCommand(
-      monaco.KeyMod.Alt | monaco.KeyCode.KeyL,
-      () => vscodePostMessage({ type: 'navigateFocus', dir: 'right' }),
-    );
-
     setTimeout(() => editor.focus(), 100);
   }, []); // - no chat.sendMessage dep: Ctrl+Enter now uses sendMessageRef via capture listener
 

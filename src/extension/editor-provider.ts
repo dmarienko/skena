@@ -314,13 +314,6 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           await vscode.env.clipboard.writeText(msg.text);
           break;
         }
-        case 'navigateFocus': {
-          // - chat editor swallows some Alt+nav keys (Monaco's Alt+L find-in-selection);
-          // - re-route to the matching VS Code focus-navigation command
-          const cmd = { left: 'navigateLeft', right: 'navigateRight', up: 'navigateUp', down: 'navigateDown' }[msg.dir];
-          await vscode.commands.executeCommand(`workbench.action.${cmd}`);
-          break;
-        }
         case 'copyAbsolutePath': {
           const resolved = resolver.resolve(msg.uri, canvasDir);
           if (resolved?.fsPath) {
