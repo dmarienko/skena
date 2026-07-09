@@ -350,6 +350,27 @@ export function FloatingChat({
     return () => window.removeEventListener('keydown', handler, { capture: true });
   }, [chat.collapsed, chat.toggleCollapsed]);
 
+  // ─── Alt+L: forward to VS Code navigateRight while the chat input is focused ──
+  //
+  // Monaco default-binds Alt+L to "toggle find in selection" and stopPropagation()s
+  // it, so the VS Code webview never forwards it → the user's Alt+L (navigateRight)
+  // dies only when the chat is focused (Alt+H has no Monaco binding, so it works).
+  // Capture phase beats Monaco (same trick as Alt+I above). Guarded by hasTextFocus
+  // so it does NOTHING when the chat is unfocused — canvas Alt+L forwards natively,
+  // untouched. Pure DOM listener; never touches Monaco's (global) keybinding service.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if (e.key.toLowerCase() !== 'l') return;
+      if (!editorRef.current?.hasTextFocus()) return;
+      e.preventDefault();
+      e.stopPropagation();
+      vscodePostMessage({ type: 'navigateFocus', dir: 'right' });
+    };
+    window.addEventListener('keydown', handler, { capture: true });
+    return () => window.removeEventListener('keydown', handler, { capture: true });
+  }, []);
+
   // ─── Shift+{H,J,K,L}: scroll output while prompt focused in vim normal mode ──
   //
   // Capture phase so we beat monaco-vim (which maps J=join, H/L=screen-move in
