@@ -23,7 +23,7 @@
  *   Ctrl+C  → writeClipboard via host
  */
 
-import { useRef, useEffect, useCallback, useState, type CSSProperties } from 'react';
+import { useRef, useEffect, useCallback, useState, memo, type CSSProperties } from 'react';
 import Editor, { OnMount, BeforeMount } from '@monaco-editor/react';
 import type { editor as MonacoEditor } from 'monaco-editor';
 import { initVimMode, VimMode } from 'monaco-vim';
@@ -767,7 +767,10 @@ export function FloatingChat({
 
 // ─── ChatBubble ───────────────────────────────────────────────────────────────
 
-function ChatBubble({
+// - memoized: history rows must NOT re-render when FloatingChat re-renders for an
+// - unrelated reason (e.g. hjkl move → activeNodeId prop change). With stable item
+// - objects only changed/streaming rows re-render — keeps a long transcript cheap.
+const ChatBubble = memo(function ChatBubble({
   msg,
   streaming = false,
 }: {
@@ -836,11 +839,11 @@ function ChatBubble({
       </div>
     </div>
   );
-}
+});
 
 // ─── ToolCard / ThinkingBlock ───────────────────────────────────────────────────
 
-function ToolCard({ item }: { item: Extract<ChatItem, { kind: 'tool' }> }): JSX.Element | null {
+const ToolCard = memo(function ToolCard({ item }: { item: Extract<ChatItem, { kind: 'tool' }> }): JSX.Element | null {
   const v = toolCardView(item.name, item.input);
   const [open, setOpen] = useState(false);
   if (v.hidden) return null;
@@ -864,9 +867,9 @@ function ToolCard({ item }: { item: Extract<ChatItem, { kind: 'tool' }> }): JSX.
       )}
     </div>
   );
-}
+});
 
-function ThinkingBlock({ content }: { content: string }): JSX.Element {
+const ThinkingBlock = memo(function ThinkingBlock({ content }: { content: string }): JSX.Element {
   const [open, setOpen] = useState(false);
   return (
     <div style={{ margin: '3px 8px', fontSize: 11, opacity: 0.55 }}>
@@ -874,4 +877,4 @@ function ThinkingBlock({ content }: { content: string }): JSX.Element {
       {open && <pre style={{ whiteSpace: 'pre-wrap', fontSize: 10, marginTop: 2 }}>{content}</pre>}
     </div>
   );
-}
+});
