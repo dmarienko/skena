@@ -16,10 +16,10 @@
 // ─── node borders (fallback when a node has no Obsidian accent color) ───────────
 // - keyed by NODE TYPE (`node.type`): each is the border of that kind of node.
 export const DEFAULT_NODE_BORDER_BY_TYPE = {
-  text:   '#454545',                 // - text node — inline text / markdown notes
-  file:   '#454545',                 // - file node — file previews (.md/.ipynb/.py/.yaml/images)
-  cell:   '#454545',                 // - cell node — pinned outputs (image / plotly / html / markdown)
-  link:   '#454545',                 // - link node — URL links
+  text:   '#1f96bd',                 // - text node — inline text / markdown notes
+  file:   '#de780b',                 // - file node — file previews (.md/.ipynb/.py/.yaml/images)
+  cell:   '#1f96bd',                 // - cell node — pinned outputs (image / plotly / html / markdown)
+  link:   '#247c06',                 // - link node — URL links
   chat:   '#a882ff',                 // - chat node — AI chat / agent terminal
   portal: '#53dfdd',                 // - portal node — link to another .canvas
   group:  'rgba(255,255,255,0.12)',  // - group node — dashed background container
