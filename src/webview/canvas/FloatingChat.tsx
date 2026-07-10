@@ -235,6 +235,12 @@ export function FloatingChat({
   // - panel); the window-focus effect below re-focuses chat when the webview returns
   const restoreChatOnReturnRef = useRef(false);
   const [isChatFocused, setIsChatFocused] = useState(false);
+  const [compacting, setCompacting] = useState(false);
+  useEffect(() => {
+    const on = (e: Event) => setCompacting((e as CustomEvent<boolean>).detail);
+    window.addEventListener('skena:compacting', on);
+    return () => window.removeEventListener('skena:compacting', on);
+  }, []);
   // - ref mirror of collapsed so the once-registered window-focus listener reads it live
   const collapsedRef = useRef(chat.collapsed);
   useEffect(() => { collapsedRef.current = chat.collapsed; }, [chat.collapsed]);
@@ -807,6 +813,20 @@ export function FloatingChat({
             {chat.thinking && !chat.streaming && (
               <div style={{ color: 'var(--vscode-foreground)', opacity: 0.4, fontSize: 12, padding: '10px 12px' }}>
                 ● ● ●
+              </div>
+            )}
+
+            {compacting && (
+              <div style={{
+                margin:       '6px 8px',
+                padding:      '6px 10px',
+                fontSize:     11,
+                borderRadius: 4,
+                background:   `rgba(${CHAT_ACCENT_RGB},0.12)`,
+                border:       `1px solid rgba(${CHAT_ACCENT_RGB},0.35)`,
+                color:        `rgb(${CHAT_ACCENT_RGB})`,
+              }}>
+                ⏳ Compacting session… summarising the conversation to shrink context.
               </div>
             )}
 

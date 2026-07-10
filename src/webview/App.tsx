@@ -205,6 +205,9 @@ export function App(): JSX.Element {
         case 'chatModelInfo':
           setChatModel({ model: msg.model, provider: msg.provider });
           break;
+        case 'floatingChatCompacting':
+          window.dispatchEvent(new CustomEvent('skena:compacting', { detail: msg.active }));
+          break;
       }
     };
 

@@ -317,6 +317,9 @@ export interface MsgPanelActivated { type: 'panelActivated'; }
 /** - host → webview: current AI model + provider (for the chat title) */
 export interface MsgChatModelInfo { type: 'chatModelInfo'; model: string; provider: string; }
 
+/** - host → webview: session compaction is running (true) or finished (false) */
+export interface MsgFloatingChatCompacting { type: 'floatingChatCompacting'; active: boolean; }
+
 export interface MsgFloatingChatToolEvent { type: 'floatingChatToolEvent'; event: ChatToolEvent; }
 export interface MsgFloatingChatUsage     { type: 'floatingChatUsage'; usage: ChatTokenUsage; }
 
@@ -400,6 +403,7 @@ export type HostToWebview =
   | MsgFloatingChatUsage
   | MsgPanelActivated
   | MsgChatModelInfo
+  | MsgFloatingChatCompacting
   | MsgFloatingChatDone
   | MsgFloatingChatError
   | MsgFloatingChatResetDone

@@ -267,11 +267,19 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             'Compact',
           ).then(choice => {
             if (choice !== 'Compact') return;
+            send({ type: 'floatingChatCompacting', active: true });
             this._llmClient?.compact?.(document.uri.fsPath, {
               onText:    (delta) => send({ type: 'floatingChatDelta', delta }),
               onToolUse: async () => '',
-              onDone:    (usage) => send({ type: 'floatingChatDone', costUsd: usage?.costUsd, deltaUsd: usage?.deltaUsd }),
-              onError:   (message) => send({ type: 'floatingChatError', message }),
+              onDone:    (usage) => {
+                send({ type: 'floatingChatCompacting', active: false });
+                send({ type: 'floatingChatDone', costUsd: usage?.costUsd, deltaUsd: usage?.deltaUsd });
+                void vscode.window.showInformationMessage('Skena: AI session compacted.');
+              },
+              onError:   (message) => {
+                send({ type: 'floatingChatCompacting', active: false });
+                send({ type: 'floatingChatError', message });
+              },
               onToolEvent: (event) => send({ type: 'floatingChatToolEvent', event }),
               onUsage:     (usage) => send({ type: 'floatingChatUsage', usage }),
             });
