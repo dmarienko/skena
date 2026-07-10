@@ -26,18 +26,18 @@ export const DEFAULT_NODE_BORDER_BY_TYPE = {
 } as const;
 
 // ─── connection edges (links between nodes) ─────────────────────────────────────
-export const DEFAULT_EDGE_COLOR = '#1f96bd';   // - default edge stroke (no color set)
+export const DEFAULT_EDGE_COLOR = '#1f96bda0';   // - default edge stroke (no color set)
 export const EDGE_FALLBACK_COLOR = '#888888';  // - last-resort stroke if style has none
 
 // ─── selection / focus ring (crisp outline drawn around the focused node) ───────
-export const SELECTION_RING_COLOR = 'rgba(0, 220, 255, 0.8)';
+export const SELECTION_RING_COLOR = '#02b8faba';
 
 // ─── connection handles (the square ports on node edges) ────────────────────────
 export const HANDLE_RGB = '0, 229, 255';   // - cyan; used as bg 0.06 / border 0.75 / glow 0.25
 
 // ─── node label badge (the "N4" / "M2" reference tag at a node's corner) ────────
 export const LABEL_TEXT_COLOR       = 'rgba(0, 255, 0, 0.92)';   // - label glyph (green)
-export const LABEL_BG_COLOR         = 'rgba(0, 0, 0, 0.55)';     // - label pill background
+export const LABEL_BG_COLOR         = 'rgba(17, 165, 191, 0.27)';     // - label pill background
 export const LABEL_CREATED_BY_BG    = 'rgba(100, 60, 220, 0.80)'; // - "created by AI" badge bg
 
 // ─── AI chat (FloatingChat message roles + input) ───────────────────────────────
