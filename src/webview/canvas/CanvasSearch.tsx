@@ -24,74 +24,12 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { CanvasNode } from '../../shared/types';
+import { parseQuery, matches, nodeVaultName } from './searchMatch';
 
 interface Props {
   nodes:   CanvasNode[];
   onFocus: (id: string) => void;
   onClose: () => void;
-}
-
-// ─── vault parsing ────────────────────────────────────────────────────────────
-
-/** Split "vaultName:rest" from a raw query string. */
-function parseQuery(raw: string): { vault: string | null; text: string } {
-  const colon = raw.indexOf(':');
-  if (colon > 0) {
-    const prefix = raw.slice(0, colon).trim().toLowerCase();
-    const rest   = raw.slice(colon + 1); // - keep leading space intentional? trim later
-    // - only treat as vault filter if prefix has no spaces (i.e. looks like an identifier)
-    if (prefix && !/\s/.test(prefix)) {
-      return { vault: prefix, text: rest.trimStart() };
-    }
-  }
-  return { vault: null, text: raw };
-}
-
-/** Extract vault name from a node's file URI (vault://name/...). */
-function nodeVaultName(n: CanvasNode): string | null {
-  if (n.type !== 'file') return null;
-  const m = n.file.match(/^vault:\/\/([^/]+)\//);
-  return m ? m[1].toLowerCase() : null;
-}
-
-// ─── matching ─────────────────────────────────────────────────────────────────
-
-function nodeContent(n: CanvasNode): string {
-  switch (n.type) {
-    case 'text':   return n.text;
-    case 'file':   return n.file;
-    case 'link':   return n.url;
-    case 'group':  return n.label ?? '';
-    case 'cell':   return n.content;
-    case 'chat':   return `${n.agent} ${n.title}`;
-    case 'portal': return n.canvas;
-    default:       return '';
-  }
-}
-
-function matches(n: CanvasNode, vault: string | null, text: string): boolean {
-  // - vault filter: node must belong to the specified vault
-  if (vault !== null) {
-    if (nodeVaultName(n) !== vault) return false;
-    // - no text yet → show all nodes from this vault
-    if (!text) return true;
-  }
-
-  const ql = text.toLowerCase();
-  if (!ql) return false;
-
-  // - label: exact or prefix (N4, n4, "n" → all labelled nodes)
-  const label = n.nodeLabel?.toLowerCase() ?? '';
-  if (label === ql || label.startsWith(ql)) return true;
-
-  // - content substring
-  if (nodeContent(n).toLowerCase().includes(ql)) return true;
-
-  // - tags
-  const tags = (n as { tags?: string[] }).tags;
-  if (tags?.some(t => t.toLowerCase().includes(ql))) return true;
-
-  return false;
 }
 
 // ─── component ────────────────────────────────────────────────────────────────
