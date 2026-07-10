@@ -245,6 +245,15 @@ export function FloatingChat({
   const collapsedRef = useRef(chat.collapsed);
   useEffect(() => { collapsedRef.current = chat.collapsed; }, [chat.collapsed]);
 
+  // - the body is CSS-hidden (not unmounted) when collapsed, so Monaco can't measure while
+  // - hidden; on expand, force a re-layout and focus (replaces the old auto-focus-on-remount).
+  useEffect(() => {
+    if (chat.collapsed) return;
+    const ed = editorRef.current;
+    if (!ed) return;
+    requestAnimationFrame(() => { ed.layout(); ed.focus(); });
+  }, [chat.collapsed]);
+
   // - stable ref so the window capture handler always calls the latest sendMessage
   // - without needing it in the dependency array
   const sendMessageRef        = useRef(chat.sendMessage);
@@ -567,7 +576,10 @@ export function FloatingChat({
       },
     );
 
-    setTimeout(() => editor.focus(), 100);
+    // - Monaco now mounts with the (possibly collapsed) body; only auto-focus if the panel
+    // - is still open when the timer fires (restore may collapse it right after mount),
+    // - else it would steal focus from the canvas at load.
+    setTimeout(() => { if (!collapsedRef.current) editor.focus(); }, 100);
   }, []); // - no chat.sendMessage dep: Ctrl+Enter now uses sendMessageRef via capture listener
 
   // - cleanup vim on unmount
@@ -701,8 +713,10 @@ export function FloatingChat({
       </div>
 
       {/* ── Body: vertical split — input | output ── */}
-      {!collapsed && (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'row', minHeight: 0 }}>
+      {/* - body stays mounted when collapsed (CSS-hidden), NOT unmounted — so reopening
+           does not re-parse the whole markdown/KaTeX history (was 2-3s on long chats).
+           Rows are memoized, so keeping it mounted adds no per-render cost. */}
+      <div style={{ flex: 1, display: collapsed ? 'none' : 'flex', flexDirection: 'row', minHeight: 0 }}>
 
           {/* ── Left: input column ── */}
           <div style={{
@@ -844,7 +858,6 @@ export function FloatingChat({
             )}
           </div>
         </div>
-      )}
 
       {/* ── Resize handle (expanded only) ── */}
       {!collapsed && (
