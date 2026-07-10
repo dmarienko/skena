@@ -9,6 +9,7 @@ import { LinkNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { useHeatmap } from '../../context/HeatmapContext';
 import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
+import { DEFAULT_NODE_BORDER } from './defaultColors';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -33,7 +34,7 @@ export function LinkNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
   const hmNode = hmVisible ? nodeGlow.get(data.id as string) : undefined;
   const selectedStyle = useSelectedStyle(selected);
   const bw = useZoomInvariantBorderWidth(1.5);
-  const borderColor = node.accentColor ?? '#454545';
+  const borderColor = node.accentColor ?? DEFAULT_NODE_BORDER.link;
   const favicon = getFaviconUrl(node.url);
 
   const open = () => vscodePostMessage({ type: 'openFile', uri: node.url });

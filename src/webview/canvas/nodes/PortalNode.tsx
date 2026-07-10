@@ -9,6 +9,7 @@ import { PortalNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { useHeatmap } from '../../context/HeatmapContext';
 import { useZoomInvariantBorderWidth } from './nodeShared';
+import { DEFAULT_NODE_BORDER } from './defaultColors';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -24,7 +25,7 @@ export function PortalNodeComponent({ data, id, selected }: NodeProps): JSX.Elem
   const node = data as unknown as PortalNode & { accentColor?: string };
   const { visible: hmVisible, nodeGlow } = useHeatmap();
   const hmNode = hmVisible ? nodeGlow.get(data.id as string) : undefined;
-  const borderColor = node.accentColor ?? '#53dfdd';
+  const borderColor = node.accentColor ?? DEFAULT_NODE_BORDER.portal;
   const bw = useZoomInvariantBorderWidth(2);
 
   const open = () => vscodePostMessage({ type: 'openFile', uri: node.canvas });

@@ -8,6 +8,7 @@ import { ChatNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { useHeatmap } from '../../context/HeatmapContext';
 import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
+import { DEFAULT_NODE_BORDER } from './defaultColors';
 
 export function ChatNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as ChatNode & { accentColor?: string };
@@ -15,7 +16,7 @@ export function ChatNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
   const hmNode = hmVisible ? nodeGlow.get(data.id as string) : undefined;
   const selectedStyle = useSelectedStyle(selected);
   const bw = useZoomInvariantBorderWidth(1.5);
-  const borderColor = node.accentColor ?? '#a882ff';
+  const borderColor = node.accentColor ?? DEFAULT_NODE_BORDER.chat;
 
   return (
     <>

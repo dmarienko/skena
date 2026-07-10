@@ -13,6 +13,7 @@ import { PlotlyRenderer } from '../../renderers/PlotlyRenderer';
 import { ScrollableContent } from '../../components/ScrollableContent';
 import { useHeatmap } from '../../context/HeatmapContext';
 import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
+import { DEFAULT_NODE_BORDER } from './defaultColors';
 
 export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as CellNode & { accentColor?: string };
@@ -20,7 +21,7 @@ export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
   const hmNode = hmVisible ? nodeGlow.get(data.id as string) : undefined;
   const selectedStyle = useSelectedStyle(selected);
   const bw = useZoomInvariantBorderWidth(1.5);
-  const borderColor = node.accentColor ?? '#454545';
+  const borderColor = node.accentColor ?? DEFAULT_NODE_BORDER.cell;
 
   return (
     <>

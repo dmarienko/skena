@@ -38,6 +38,7 @@ import { ensureLabels, assignLabel } from './nodeLabels';
 import { ZoomLevelProvider } from '../context/ZoomLevelContext';
 import { HeatmapProvider } from '../context/HeatmapContext';
 
+import { DEFAULT_EDGE_COLOR } from './nodes/defaultColors';
 import { FileNodeComponent }  from './nodes/FileNode';
 import { TextNodeComponent }  from './nodes/TextNode';
 import { GroupNodeComponent } from './nodes/GroupNode';
@@ -94,8 +95,6 @@ function toFlowNode(cn: CanvasNode): Node {
   };
 }
 
-// - default edge color — visible on both dark and light VS Code themes
-const DEFAULT_EDGE_COLOR = '#888888';
 
 // - timestamp label for pin edges: yy-mm-dd hh:mm
 function nowLabel(): string {

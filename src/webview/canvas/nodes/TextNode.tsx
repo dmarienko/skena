@@ -37,6 +37,7 @@ import { MarkdownRenderer } from '../../renderers/MarkdownRenderer';
 import { ScrollableContent } from '../../components/ScrollableContent';
 import { useHeatmap } from '../../context/HeatmapContext';
 import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
+import { DEFAULT_NODE_BORDER } from './defaultColors';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -242,7 +243,7 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
   // - stripped text near cursor line: used to find the matching rendered element
   const pendingAnchorText = useRef<string | null>(null);
 
-  const borderColor = node.accentColor ?? '#454545';
+  const borderColor = node.accentColor ?? DEFAULT_NODE_BORDER.text;
   const isDark = document.body.classList.contains('vscode-dark') ||
                  document.body.classList.contains('vscode-high-contrast');
 
