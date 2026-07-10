@@ -58,7 +58,7 @@ export function LinkNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
         // - heatmap glow overrides: filter (drop-shadow), borderColor, opacity
         ...(hmNode ? {
           filter:      hmNode.glowFilter,
-          borderColor: hmNode.borderColor,
+          border:      `${bw}px solid ${hmNode.borderColor}`,
           opacity:     hmNode.opacity,
         } : {}),
         // - sci-fi focus ring

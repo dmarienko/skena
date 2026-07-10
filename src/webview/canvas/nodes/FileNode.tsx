@@ -187,7 +187,7 @@ function FileNodeInner({ data, id, selected }: NodeProps): JSX.Element {
         // - heatmap glow overrides: filter (drop-shadow), borderColor, opacity
         ...(hmNode ? {
           filter:      hmNode.glowFilter,
-          borderColor: hmNode.borderColor,
+          border:      `${bw}px solid ${hmNode.borderColor}`,
           opacity:     hmNode.opacity,
         } : {}),
         // - sci-fi focus ring

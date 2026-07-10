@@ -49,7 +49,7 @@ export function PortalNodeComponent({ data, id, selected }: NodeProps): JSX.Elem
         // - heatmap glow overrides: filter (drop-shadow), borderColor, opacity
         ...(hmNode ? {
           filter:      hmNode.glowFilter,
-          borderColor: hmNode.borderColor,
+          border:      `${bw}px solid ${hmNode.borderColor}`,
           opacity:     hmNode.opacity,
         } : {}),
       }}
