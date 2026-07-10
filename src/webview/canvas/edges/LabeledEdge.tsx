@@ -18,6 +18,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { EdgeProps, BaseEdge, EdgeLabelRenderer, Position, useStore } from '@xyflow/react';
 import { routeOrthogonal, ORTHOGONAL_CORNER_R, NodeRect } from '../routing/orthogonal';
 import { useHeatmap } from '../../context/HeatmapContext';
+import { useZoomInvariantBorderWidth } from '../nodes/nodeShared';
 
 // ─── SVG path builder ────────────────────────────────────────────────────────
 
@@ -112,13 +113,16 @@ export function LabeledEdgeComponent({
   const labelX = (pts[mi - 1][0] + pts[mi][0]) / 2;
   const labelY = (pts[mi - 1][1] + pts[mi][1]) / 2;
 
+  // - zoom-invariant edge width (shared scaler with node borders) so connectors stay
+  // - visible when zoomed out; wider than the old fixed 1.5px
+  const sw = useZoomInvariantBorderWidth(1.5);
   const activeStyle = selected
     ? {
         ...style,
-        strokeWidth: (Number(style?.strokeWidth) || 1.5) + 1,
+        strokeWidth: sw * 1.6,
         filter: `drop-shadow(0 0 4px ${style?.stroke ?? '#888888'})`,
       }
-    : style;
+    : { ...style, strokeWidth: sw };
 
   const { visible: hmVisible, edgeGlow } = useHeatmap();
   const hmEdge = hmVisible ? edgeGlow.get(id) : undefined;
@@ -186,7 +190,7 @@ export function LabeledEdgeComponent({
             opacity={(hmEdge.intensity * 0.85).toFixed(2)} />
           {/* - thin core line — always visible, carries the arrowhead */}
           <path d={edgePath} className="react-flow__edge-path"
-            stroke={`rgba(${hmEdge.color},${(hmEdge.intensity * 0.8).toFixed(2)})`} strokeWidth="1.5"
+            stroke={`rgba(${hmEdge.color},${(hmEdge.intensity * 0.8).toFixed(2)})`} strokeWidth={sw}
             fill="none" markerEnd={markerEnd} />
         </>
       ) : (

@@ -28,6 +28,23 @@ export const HANDLE_STYLE: React.CSSProperties = {
  *   line width  ≈ 2.5 screen px
  *   gap from node edge ≈ 4 screen px
  */
+/**
+ * Hook — node border width scaled by 1/zoom so the border keeps a roughly constant
+ * SCREEN width as the canvas zooms. React Flow scales the whole viewport, so a fixed
+ * canvas-px border shrinks to near-invisible when zoomed out (obvious with the heatmap
+ * glow off). Floored at the base width (never thinner) and capped so it can't explode
+ * at extreme zoom-out. Same 1/zoom approach as useSelectedStyle's focus ring.
+ */
+// - global multiplier for on-screen node border width; bump to make all borders wider
+const BORDER_WIDTH_SCALE = 1.8;
+
+export function useZoomInvariantBorderWidth(baseScreenPx: number): number {
+  const zoom = useStore(st => st.transform[2]);
+  const sc = Math.max(0.15, zoom);
+  const base = baseScreenPx * BORDER_WIDTH_SCALE;
+  return Math.min(base * 8, Math.max(base, base / sc));
+}
+
 export function useSelectedStyle(selected: boolean): React.CSSProperties {
   const zoom = useStore(st => st.transform[2]);
   if (!selected) return {};
