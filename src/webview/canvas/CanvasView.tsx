@@ -307,6 +307,18 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const lastGPressRef = useRef<number>(0);
   const toggleHeatmap = useCallback(() => setHeatmapVisible(v => !v), []);
 
+  // - React Flow node/edge components re-render on RF STORE changes (zoom, position,
+  // - selection), not on external React-context changes. A `gh` toggle only changes
+  // - HeatmapContext, so glow wouldn't appear/clear until the next store update (a
+  // - viewport move). Force a one-time re-render of all nodes+edges on toggle so the
+  // - heatmap applies immediately. Skip the initial mount (nothing to refresh yet).
+  const heatmapMounted = useRef(false);
+  useEffect(() => {
+    if (!heatmapMounted.current) { heatmapMounted.current = true; return; }
+    setNodes(nds => nds.map(n => ({ ...n })));
+    setEdges(eds => eds.map(e => ({ ...e })));
+  }, [heatmapVisible, setNodes, setEdges]);
+
   // ─── vim marks (m{x} to set, `{x} to jump, `` for previous position) ────────
   const marksRef       = useRef<Record<string, CanvasMark>>({});
   const pendingMarkRef = useRef<'set' | 'jump' | null>(null);
