@@ -197,6 +197,9 @@ export function App(): JSX.Element {
         case 'marksRestored':
           window.dispatchEvent(new CustomEvent('skena:marksRestored', { detail: msg.marks }));
           break;
+        case 'panelActivated':
+          window.dispatchEvent(new CustomEvent('skena:panelActivated'));
+          break;
       }
     };
 

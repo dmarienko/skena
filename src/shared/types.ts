@@ -311,6 +311,9 @@ export interface MsgFloatingChatDone {
   deltaUsd?: number;
 }
 
+/** - host → webview: this canvas panel became the active editor (navigated to) */
+export interface MsgPanelActivated { type: 'panelActivated'; }
+
 export interface MsgFloatingChatToolEvent { type: 'floatingChatToolEvent'; event: ChatToolEvent; }
 export interface MsgFloatingChatUsage     { type: 'floatingChatUsage'; usage: ChatTokenUsage; }
 
@@ -392,6 +395,7 @@ export type HostToWebview =
   | MsgFloatingChatDelta
   | MsgFloatingChatToolEvent
   | MsgFloatingChatUsage
+  | MsgPanelActivated
   | MsgFloatingChatDone
   | MsgFloatingChatError
   | MsgFloatingChatResetDone

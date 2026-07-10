@@ -363,15 +363,36 @@ export function FloatingChat({
   // the chat input, so the user had to press Alt+I again. If chat held focus when we
   // left (restoreChatOnReturnRef, set on the leaving blur), re-focus it on return.
   useEffect(() => {
-    const onWinFocus = () => {
+    // - shared restore: focus the chat input if it held focus when the user left.
+    const doRestore = () => {
       if (!restoreChatOnReturnRef.current) return;
       restoreChatOnReturnRef.current = false;
       if (collapsedRef.current) return;   // - only restore into an OPEN chat
-      // - defer so we win over VS Code's own webview-focus handling on return
       requestAnimationFrame(() => editorRef.current?.focus());
     };
+
+    // - trigger A: host's authoritative "panel became active" — fires when returning from
+    // - another EDITOR group (the active editor toggles).
+    const onPanelActivated = () => doRestore();
+
+    // - trigger B: webview regained focus — needed when returning from a NON-editor panel
+    // - (sidebar/terminal), where the canvas stays the active editor so panelActivated
+    // - never fires. window 'focus' is noisy (transient pairs), so defer + confirm we
+    // - genuinely hold focus before restoring.
+    const onWinFocus = () => {
+      if (!restoreChatOnReturnRef.current) return;
+      setTimeout(() => {
+        if (!document.hasFocus()) return;   // - transient focus that already left → ignore
+        doRestore();
+      }, 0);
+    };
+
+    window.addEventListener('skena:panelActivated', onPanelActivated);
     window.addEventListener('focus', onWinFocus);
-    return () => window.removeEventListener('focus', onWinFocus);
+    return () => {
+      window.removeEventListener('skena:panelActivated', onPanelActivated);
+      window.removeEventListener('focus', onWinFocus);
+    };
   }, []);
 
   // ─── Alt+L: forward to VS Code navigateRight while the chat input is focused ──
@@ -499,9 +520,10 @@ export function FloatingChat({
     editor.onDidBlurEditorText(() => {
       setIsChatFocused(false);
       // - remember to restore chat focus ONLY when focus is leaving the webview entirely
-      // - (→ another VS Code panel): document.hasFocus() is false only then. A blur that
-      // - moves focus to the canvas WITHIN the webview keeps hasFocus() true → don't restore.
-      restoreChatOnReturnRef.current = !document.hasFocus();
+      // - (→ another VS Code panel) vs moving to the canvas within it. document.hasFocus()
+      // - is unreliable read synchronously at blur (focus is mid-transition, still true),
+      // - so defer one tick to read the settled value.
+      setTimeout(() => { restoreChatOnReturnRef.current = !document.hasFocus(); }, 0);
     });
 
     // - Ctrl+Enter is handled by a window capture-phase listener (see useEffect above)

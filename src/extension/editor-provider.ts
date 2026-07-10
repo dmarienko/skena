@@ -422,6 +422,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     panel.onDidChangeViewState(({ webviewPanel }) => {
       if (webviewPanel.active) {
         SkenaEditorProvider.activePanel = webviewPanel;
+        // - authoritative "navigated back to this canvas" signal → let the webview
+        // - restore chat focus if it had it when the user left (window focus is noisy)
+        send({ type: 'panelActivated' });
       }
     });
 
