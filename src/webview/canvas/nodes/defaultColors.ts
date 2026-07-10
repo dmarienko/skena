@@ -7,13 +7,13 @@
  */
 
 export const DEFAULT_NODE_BORDER = {
-  text:   '#454545',                 // - neutral gray
-  file:   '#454545',                 // - neutral gray
-  cell:   '#454545',                 // - neutral gray
-  link:   '#454545',                 // - neutral gray
-  chat:   '#a882ff',                 // - purple
-  portal: '#53dfdd',                 // - cyan
-  group:  'rgba(255,255,255,0.12)',  // - faint white (dashed container)
+  text:   '#454545',                 // - inline text / markdown notes
+  file:   '#454545',                 // - file preview nodes (.md/.ipynb/.py/.yaml/images)
+  cell:   '#454545',                 // - pinned output cells (image / plotly / html / markdown)
+  link:   '#454545',                 // - URL / link nodes
+  chat:   '#a882ff',                 // - AI chat / agent terminal nodes
+  portal: '#53dfdd',                 // - portal nodes linking to another .canvas
+  group:  'rgba(255,255,255,0.12)',  // - group container (dashed background box)
 } as const;
 
 // - default connection edge (link) color, used when an edge has no color assigned.
