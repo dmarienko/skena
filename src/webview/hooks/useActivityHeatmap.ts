@@ -13,19 +13,11 @@
 import { useMemo } from 'react';
 import type { Node, Edge } from '@xyflow/react';
 import type { HeatmapNode, EdgeGlow } from '../../shared/types';
+import { HEATMAP_PALETTE, HEATMAP_GRAY } from '../canvas/palette';
 
 // ─── constants ────────────────────────────────────────────────────────────────
 
-const PALETTE = [
-  '56,189,248',    // - cyan
-  '251,146,60',    // - orange
-  '167,139,250',   // - purple
-  '52,211,153',    // - green
-  '244,114,182',   // - pink
-  '250,204,21',    // - yellow
-] as const;
-
-const GRAY            = '140,140,140';
+const GRAY            = HEATMAP_GRAY;
 const INTENSITY_MIN   = 0.40;   // - raised from 0.18 — ensures old nodes stay visible
 const INTENSITY_MAX   = 0.95;
 // - power curve applied to normalized rank before mapping to intensity.
@@ -111,7 +103,7 @@ export function computeHeatmapData(
     const sorted  = [...members].sort((a, b) => a.idx - b.idx);
     const maxRank = sorted.length - 1;
     const isIso   = cid === null;
-    const color   = isIso ? GRAY : PALETTE[(cid as number) % PALETTE.length];
+    const color   = isIso ? GRAY : HEATMAP_PALETTE[(cid as number) % HEATMAP_PALETTE.length];
 
     sorted.forEach((m, rank) => {
       // - apply power curve: t^INTENSITY_CURVE concentrates range on recent nodes

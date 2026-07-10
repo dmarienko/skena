@@ -19,6 +19,7 @@ import { EdgeProps, BaseEdge, EdgeLabelRenderer, Position, useStore } from '@xyf
 import { routeOrthogonal, ORTHOGONAL_CORNER_R, NodeRect } from '../routing/orthogonal';
 import { useHeatmap } from '../../context/HeatmapContext';
 import { useZoomInvariantBorderWidth } from '../nodes/nodeShared';
+import { EDGE_FALLBACK_COLOR } from '../palette';
 
 // ─── SVG path builder ────────────────────────────────────────────────────────
 
@@ -120,7 +121,7 @@ export function LabeledEdgeComponent({
     ? {
         ...style,
         strokeWidth: sw * 1.6,
-        filter: `drop-shadow(0 0 4px ${style?.stroke ?? '#888888'})`,
+        filter: `drop-shadow(0 0 4px ${style?.stroke ?? EDGE_FALLBACK_COLOR})`,
       }
     : { ...style, strokeWidth: sw };
 
@@ -133,7 +134,7 @@ export function LabeledEdgeComponent({
     : (activeStyle ?? {});
 
   // - match label border to cluster color when heatmap is active, or edge stroke otherwise
-  const edgeColor = hmEdge ? `rgb(${hmEdge.color})` : ((finalStyle?.stroke ?? style?.stroke ?? '#888888') as string);
+  const edgeColor = hmEdge ? `rgb(${hmEdge.color})` : ((finalStyle?.stroke ?? style?.stroke ?? EDGE_FALLBACK_COLOR) as string);
 
   const labelStyle: React.CSSProperties = {
     position:     'absolute',

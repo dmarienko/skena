@@ -38,7 +38,7 @@ import { ensureLabels, assignLabel } from './nodeLabels';
 import { ZoomLevelProvider } from '../context/ZoomLevelContext';
 import { HeatmapProvider } from '../context/HeatmapContext';
 
-import { DEFAULT_EDGE_COLOR } from './nodes/defaultColors';
+import { DEFAULT_EDGE_COLOR } from './palette';
 import { FileNodeComponent }  from './nodes/FileNode';
 import { TextNodeComponent }  from './nodes/TextNode';
 import { GroupNodeComponent } from './nodes/GroupNode';

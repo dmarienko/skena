@@ -51,6 +51,9 @@
 
 /* - focus ring: handled by useSelectedStyle hook (outline on .skena-node inline style) */
 
+/* - NOTE: this orange pinned-ring color + the node drop-shadow hairline above are the
+ * - only skena brand colors that live in CSS (can't import the TS palette). All other
+ * - brand colors are in src/webview/canvas/palette.ts. Keep them roughly in sync. */
 /* - space-pinned: orange box-shadow ring on .skena-node.
  * - box-shadow follows border-radius automatically (rounded corners).
  * - box-shadow and outline are different CSS properties → coexist when

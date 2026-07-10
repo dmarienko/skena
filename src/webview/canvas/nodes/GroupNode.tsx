@@ -8,7 +8,7 @@ import { NodeProps, NodeResizer } from '@xyflow/react';
 import { GroupNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { useZoomInvariantBorderWidth } from './nodeShared';
-import { DEFAULT_NODE_BORDER_BY_TYPE } from './defaultColors';
+import { DEFAULT_NODE_BORDER_BY_TYPE } from '../palette';
 
 export function GroupNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as GroupNode & { accentColor?: string };

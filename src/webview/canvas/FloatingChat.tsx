@@ -34,6 +34,7 @@ import rehypeKatex from 'rehype-katex';
 
 import { ChatItem, ChatMessage, ChatToolEvent, ChatTokenUsage } from '../../shared/types';
 import { useFloatingChat } from '../hooks/useFloatingChat';
+import { CHAT_USER_RGB, CHAT_ASSISTANT_RGB, CHAT_ERROR_RGB, CHAT_ACCENT_RGB } from './palette';
 import { toolCardView } from './chat/toolCardView';
 
 // ─── constants ─────────────────────────────────────────────────────────────────
@@ -598,7 +599,7 @@ export function FloatingChat({
         border:        '1px solid var(--vscode-panel-border, #333)',
         background:    'var(--vscode-sideBar-background, #1e1e2e)',
         boxShadow:     isChatFocused
-          ? '0 8px 32px rgba(0,0,0,0.5), 0 0 0 2px rgba(56,189,248,0.55), 0 0 18px rgba(56,189,248,0.25)'
+          ? `0 8px 32px rgba(0,0,0,0.5), 0 0 0 2px rgba(${CHAT_ACCENT_RGB},0.55), 0 0 18px rgba(${CHAT_ACCENT_RGB},0.25)`
           : '0 8px 32px rgba(0,0,0,0.5)',
         transition:    'box-shadow 0.15s ease',
         overflow:      'hidden',
@@ -704,7 +705,7 @@ export function FloatingChat({
               position:      'absolute',
               top:           7,
               left:          6,
-              color:         '#38BDF8',
+              color:         `rgb(${CHAT_ACCENT_RGB})`,
               fontSize:      12,
               opacity:       0.9,
               pointerEvents: 'none',
@@ -804,12 +805,12 @@ export function FloatingChat({
 
             {chat.error && (
               <div style={{
-                color:        '#F87171',
+                color:        `rgb(${CHAT_ERROR_RGB})`,
                 fontSize:     11,
                 padding:      '4px 8px',
-                background:   'rgba(248,113,113,0.1)',
+                background:   `rgba(${CHAT_ERROR_RGB},0.1)`,
                 borderRadius: 4,
-                border:       '1px solid rgba(248,113,113,0.3)',
+                border:       `1px solid rgba(${CHAT_ERROR_RGB},0.3)`,
               }}>
                 Error: {chat.error}
               </div>
@@ -851,15 +852,15 @@ const ChatBubble = memo(function ChatBubble({
   streaming?: boolean;
 }): JSX.Element {
   const isUser = msg.role === 'user';
-  const accent = isUser ? '#10aa10' : '#A78BFA';
+  const accent = isUser ? `rgb(${CHAT_USER_RGB})` : `rgb(${CHAT_ASSISTANT_RGB})`;
 
   // - full-width area (not a bubble): subtle background tint + left accent rule
   return (
     <div style={{
       width:        '100%',
       padding:      '8px 12px',
-      background:   isUser ? 'rgba(16,170,16,0.06)' : 'transparent',
-      borderLeft:   `2px solid ${isUser ? 'rgba(16,170,16,0.55)' : 'rgba(167,139,250,0.45)'}`,
+      background:   isUser ? `rgba(${CHAT_USER_RGB},0.06)` : 'transparent',
+      borderLeft:   `2px solid ${isUser ? `rgba(${CHAT_USER_RGB},0.55)` : `rgba(${CHAT_ASSISTANT_RGB},0.45)`}`,
       borderBottom: '1px solid var(--vscode-panel-border, #2a2a3a)',
     }}>
       {/* - role label + per-reply cost (harness provider only) */}
@@ -885,7 +886,7 @@ const ChatBubble = memo(function ChatBubble({
 
       <div style={{
         // - user text in green so prompts stand out from assistant replies
-        color:        isUser ? '#10aa10' : 'var(--vscode-foreground)',
+        color:        isUser ? `rgb(${CHAT_USER_RGB})` : 'var(--vscode-foreground)',
         fontSize:     12,
         lineHeight:   1.55,
         userSelect:   'text',
@@ -921,7 +922,7 @@ const ToolCard = memo(function ToolCard({ item }: { item: Extract<ChatItem, { ki
   const [open, setOpen] = useState(false);
   if (v.hidden) return null;
   const glyph = item.status === 'running' ? '⏳' : item.status === 'ok' ? '✓' : '✗';
-  const color = item.status === 'error' ? '#F87171' : 'var(--vscode-foreground)';
+  const color = item.status === 'error' ? `rgb(${CHAT_ERROR_RGB})` : 'var(--vscode-foreground)';
   return (
     <div style={{ margin: '3px 8px', padding: '4px 8px', borderRadius: 4, background: 'var(--vscode-editorWidget-background)', border: '1px solid var(--vscode-panel-border, #333)', fontSize: 11 }}>
       <div style={{ display: 'flex', gap: 6, cursor: v.kind === 'todo' ? 'default' : 'pointer', color }} onClick={v.kind === 'todo' ? undefined : () => setOpen(o => !o)}>

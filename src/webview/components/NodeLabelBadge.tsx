@@ -17,6 +17,7 @@
  */
 
 import React from 'react';
+import { LABEL_TEXT_COLOR, LABEL_BG_COLOR, LABEL_CREATED_BY_BG } from '../canvas/palette';
 
 interface Props {
   label:      string | undefined;
@@ -43,8 +44,8 @@ export function NodeLabelBadge({ label, createdBy }: Props): JSX.Element | null 
             fontSize:        14,
             fontWeight:      800,
             letterSpacing:   '0.03em',
-            color:           'rgba(0,255,0,0.92)',
-            background:      'rgba(0, 0, 0, 0.55)',
+            color:           LABEL_TEXT_COLOR,
+            background:      LABEL_BG_COLOR,
             // - top-right matches node border-radius; bottom-left softens the inner cut
             borderRadius:    '0 6px 0 8px',
             pointerEvents:   'none',
@@ -64,7 +65,7 @@ export function NodeLabelBadge({ label, createdBy }: Props): JSX.Element | null 
             padding:       '2px 6px',
             fontSize:      9,
             fontWeight:    600,
-            background:    'rgba(100, 60, 220, 0.80)',
+            background:    LABEL_CREATED_BY_BG,
             color:         '#fff',
             borderRadius:  '0 4px 0 6px',
             pointerEvents: 'none',
