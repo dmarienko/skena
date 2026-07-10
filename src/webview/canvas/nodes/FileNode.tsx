@@ -35,7 +35,7 @@ import { CodeRenderer } from '../../renderers/CodeRenderer';
 import { ImageRenderer } from '../../renderers/ImageRenderer';
 import { useHeatmap } from '../../context/HeatmapContext';
 import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
-import { DEFAULT_NODE_BORDER } from './defaultColors';
+import { DEFAULT_NODE_BORDER_BY_TYPE } from './defaultColors';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -170,7 +170,7 @@ function FileNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     }
   }, [openInEditor]);
 
-  const borderColor = node.accentColor ?? DEFAULT_NODE_BORDER.file;
+  const borderColor = node.accentColor ?? DEFAULT_NODE_BORDER_BY_TYPE.file;
 
   return (
     <>
