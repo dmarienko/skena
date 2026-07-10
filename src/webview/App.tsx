@@ -80,6 +80,8 @@ export function App(): JSX.Element {
 
   // - active node id exposed to FloatingChat (updated by CanvasView via callback)
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
+  // - current AI model/provider shown in the chat title
+  const [chatModel, setChatModel] = useState<{ model: string; provider: string } | null>(null);
 
   // - event buses for FloatingChat incoming messages
   const deltaEvt     = useRef(makeEventTarget<string>());
@@ -200,6 +202,9 @@ export function App(): JSX.Element {
         case 'panelActivated':
           window.dispatchEvent(new CustomEvent('skena:panelActivated'));
           break;
+        case 'chatModelInfo':
+          setChatModel({ model: msg.model, provider: msg.provider });
+          break;
       }
     };
 
@@ -234,6 +239,8 @@ export function App(): JSX.Element {
       )}
       <FloatingChat
         activeNodeId={activeNodeId}
+        model={chatModel?.model}
+        provider={chatModel?.provider}
         postMessage={postMessage}
         onDelta={deltaEvt.current.subscribe}
         onDone={doneEvt.current.subscribe}

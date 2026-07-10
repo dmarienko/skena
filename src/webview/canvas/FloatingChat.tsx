@@ -186,6 +186,8 @@ function applyVimClipboard(): void {
 interface Props {
   activeNodeId: string | null;
   agentName?:   string;
+  model?:       string;
+  provider?:    string;
   postMessage:  (msg: unknown) => void;
 
   onDelta:           (handler: (delta: string)       => void) => () => void;
@@ -208,6 +210,8 @@ interface Props {
 export function FloatingChat({
   activeNodeId,
   agentName = 'claude',
+  model,
+  provider,
   postMessage,
   onDelta,
   onDone,
@@ -623,17 +627,20 @@ export function FloatingChat({
           borderBottom: collapsed ? 'none' : '1px solid var(--vscode-panel-border, #333)',
         }}
       >
-        <span style={{
-          flex:         1,
-          fontSize:     11,
-          fontWeight:   500,
-          color:        'var(--vscode-foreground)',
-          opacity:      0.7,
-          whiteSpace:   'nowrap',
-          overflow:     'hidden',
-          textOverflow: 'ellipsis',
-        }}>
-          Agent: {agentName}
+        <span
+          title={provider ? `provider: ${provider}` : undefined}
+          style={{
+            flex:         1,
+            fontSize:     11,
+            fontWeight:   500,
+            color:        'var(--vscode-foreground)',
+            opacity:      0.7,
+            whiteSpace:   'nowrap',
+            overflow:     'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          Agent: {model ? `${model} @ ${agentName}` : agentName}
         </span>
 
         {chat.thinking && (

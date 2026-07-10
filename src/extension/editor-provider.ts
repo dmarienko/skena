@@ -173,6 +173,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             // - so vim paste works before any requestClipboardRead round-trip completes
             send({ type: 'clipboardContent', text: clipboardText });
             send({ type: 'vaultIndex', entries: this.indexer.all() });
+            // - current AI model/provider for the chat title
+            const aiCfg0 = vscode.workspace.getConfiguration('skena.ai');
+            send({ type: 'chatModelInfo', model: aiCfg0.get<string>('model') ?? '', provider: aiCfg0.get<string>('provider') ?? '' });
             // - restore chat state from workspaceState (survives panel close + rename)
             const historyKey = `skena.chatHistory.${document.uri.toString()}`;
             const uiKey      = `skena.chatUI.${document.uri.toString()}`;
@@ -432,6 +435,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const cfgDisposable = vscode.workspace.onDidChangeConfiguration(e => {
       if (e.affectsConfiguration('skena.ai')) {
         this._llmClient = null;   // - force re-creation on next chat
+        // - refresh the chat title's model/provider live on settings change
+        const aiCfg = vscode.workspace.getConfiguration('skena.ai');
+        send({ type: 'chatModelInfo', model: aiCfg.get<string>('model') ?? '', provider: aiCfg.get<string>('provider') ?? '' });
       }
     });
 

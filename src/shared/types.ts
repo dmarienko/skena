@@ -314,6 +314,9 @@ export interface MsgFloatingChatDone {
 /** - host → webview: this canvas panel became the active editor (navigated to) */
 export interface MsgPanelActivated { type: 'panelActivated'; }
 
+/** - host → webview: current AI model + provider (for the chat title) */
+export interface MsgChatModelInfo { type: 'chatModelInfo'; model: string; provider: string; }
+
 export interface MsgFloatingChatToolEvent { type: 'floatingChatToolEvent'; event: ChatToolEvent; }
 export interface MsgFloatingChatUsage     { type: 'floatingChatUsage'; usage: ChatTokenUsage; }
 
@@ -396,6 +399,7 @@ export type HostToWebview =
   | MsgFloatingChatToolEvent
   | MsgFloatingChatUsage
   | MsgPanelActivated
+  | MsgChatModelInfo
   | MsgFloatingChatDone
   | MsgFloatingChatError
   | MsgFloatingChatResetDone
