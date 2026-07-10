@@ -12,13 +12,14 @@ import { MarkdownRenderer } from '../../renderers/MarkdownRenderer';
 import { PlotlyRenderer } from '../../renderers/PlotlyRenderer';
 import { ScrollableContent } from '../../components/ScrollableContent';
 import { useHeatmap } from '../../context/HeatmapContext';
-import { HANDLE_STYLE, useSelectedStyle } from './nodeShared';
+import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
 
 export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as CellNode & { accentColor?: string };
   const { visible: hmVisible, nodeGlow } = useHeatmap();
   const hmNode = hmVisible ? nodeGlow.get(data.id as string) : undefined;
   const selectedStyle = useSelectedStyle(selected);
+  const bw = useZoomInvariantBorderWidth(1.5);
   const borderColor = node.accentColor ?? '#454545';
 
   return (
@@ -27,7 +28,7 @@ export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
     <div
       className="skena-node"
       style={{
-        border:        `1.5px solid ${borderColor}`,
+        border:        `${bw}px solid ${borderColor}`,
         height:        '100%',
         borderRadius:  6,
         overflow:      'hidden',

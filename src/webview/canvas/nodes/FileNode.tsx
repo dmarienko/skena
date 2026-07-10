@@ -34,7 +34,7 @@ import { NotebookRenderer } from '../../renderers/NotebookRenderer';
 import { CodeRenderer } from '../../renderers/CodeRenderer';
 import { ImageRenderer } from '../../renderers/ImageRenderer';
 import { useHeatmap } from '../../context/HeatmapContext';
-import { HANDLE_STYLE, useSelectedStyle } from './nodeShared';
+import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -155,6 +155,7 @@ function FileNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   const { visible: hmVisible, nodeGlow } = useHeatmap();
   const hmNode = hmVisible ? nodeGlow.get(data.id as string) : undefined;
   const selectedStyle = useSelectedStyle(selected);
+  const bw = useZoomInvariantBorderWidth(1.5);
   const { status, content, fileType, resourceUri, error, truncated, totalSize, html } = useFileContent(node.file);
 
   const openInEditor = useCallback(() => {
@@ -176,7 +177,7 @@ function FileNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     <div
       className="skena-node skena-node--file"
       style={{
-        border:        `1.5px solid ${borderColor}`,
+        border:        `${bw}px solid ${borderColor}`,
         height:        '100%',
         display:       'flex',
         flexDirection: 'column',

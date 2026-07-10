@@ -36,7 +36,7 @@ import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { MarkdownRenderer } from '../../renderers/MarkdownRenderer';
 import { ScrollableContent } from '../../components/ScrollableContent';
 import { useHeatmap } from '../../context/HeatmapContext';
-import { HANDLE_STYLE, useSelectedStyle } from './nodeShared';
+import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -217,6 +217,7 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
   const { visible: hmVisible, nodeGlow } = useHeatmap();
   const hmNode = hmVisible ? nodeGlow.get(data.id as string) : undefined;
   const selectedStyle = useSelectedStyle(selected);
+  const bw = useZoomInvariantBorderWidth(1.5);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(node.text);
 
@@ -563,7 +564,7 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
       ref={wrapperRef}
       className="skena-node"
       style={{
-        border:        `1.5px solid ${borderColor}`,
+        border:        `${bw}px solid ${borderColor}`,
         height:        '100%',
         borderRadius:  6,
         overflow:      'hidden',

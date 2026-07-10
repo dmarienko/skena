@@ -8,6 +8,7 @@ import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import { PortalNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { useHeatmap } from '../../context/HeatmapContext';
+import { useZoomInvariantBorderWidth } from './nodeShared';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -24,6 +25,7 @@ export function PortalNodeComponent({ data, id, selected }: NodeProps): JSX.Elem
   const { visible: hmVisible, nodeGlow } = useHeatmap();
   const hmNode = hmVisible ? nodeGlow.get(data.id as string) : undefined;
   const borderColor = node.accentColor ?? '#53dfdd';
+  const bw = useZoomInvariantBorderWidth(2);
 
   const open = () => vscodePostMessage({ type: 'openFile', uri: node.canvas });
   return (
@@ -31,7 +33,7 @@ export function PortalNodeComponent({ data, id, selected }: NodeProps): JSX.Elem
     <NodeLabelBadge label={node.nodeLabel} createdBy={(node as any).createdBy} />
     <div
       style={{
-        border:         `2px solid ${borderColor}`,
+        border:         `${bw}px solid ${borderColor}`,
         height:         '100%',
         borderRadius:   '50%',              // - circle shape
         overflow:       'hidden',           // - clip content to circle

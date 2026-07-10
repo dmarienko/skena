@@ -8,7 +8,7 @@ import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import { LinkNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { useHeatmap } from '../../context/HeatmapContext';
-import { HANDLE_STYLE, useSelectedStyle } from './nodeShared';
+import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -32,6 +32,7 @@ export function LinkNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
   const { visible: hmVisible, nodeGlow } = useHeatmap();
   const hmNode = hmVisible ? nodeGlow.get(data.id as string) : undefined;
   const selectedStyle = useSelectedStyle(selected);
+  const bw = useZoomInvariantBorderWidth(1.5);
   const borderColor = node.accentColor ?? '#454545';
   const favicon = getFaviconUrl(node.url);
 
@@ -43,7 +44,7 @@ export function LinkNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
     <div
       className="skena-node"
       style={{
-        border:        `1.5px solid ${borderColor}`,
+        border:        `${bw}px solid ${borderColor}`,
         height:        '100%',
         borderRadius:  6,
         overflow:      'hidden',
