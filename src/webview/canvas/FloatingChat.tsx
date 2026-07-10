@@ -226,7 +226,13 @@ export function FloatingChat({
   const draftRef         = useRef('');
   // - current vim mode of the prompt editor; Shift+hjkl scrolls output only in normal mode
   const vimModeRef       = useRef<string>('normal');
+  // - true when the chat input held focus as focus LEFT the webview (→ another VS Code
+  // - panel); the window-focus effect below re-focuses chat when the webview returns
+  const restoreChatOnReturnRef = useRef(false);
   const [isChatFocused, setIsChatFocused] = useState(false);
+  // - ref mirror of collapsed so the once-registered window-focus listener reads it live
+  const collapsedRef = useRef(chat.collapsed);
+  useEffect(() => { collapsedRef.current = chat.collapsed; }, [chat.collapsed]);
 
   // - stable ref so the window capture handler always calls the latest sendMessage
   // - without needing it in the dependency array
@@ -350,6 +356,24 @@ export function FloatingChat({
     return () => window.removeEventListener('keydown', handler, { capture: true });
   }, [chat.collapsed, chat.toggleCollapsed]);
 
+  // ─── restore chat focus when returning to the canvas from another panel ──────
+  //
+  // Scenario: chat focused → navigate to another VS Code panel (alt+hjkl) → come back
+  // to the canvas. The webview iframe regains focus but VS Code focuses its root, not
+  // the chat input, so the user had to press Alt+I again. If chat held focus when we
+  // left (restoreChatOnReturnRef, set on the leaving blur), re-focus it on return.
+  useEffect(() => {
+    const onWinFocus = () => {
+      if (!restoreChatOnReturnRef.current) return;
+      restoreChatOnReturnRef.current = false;
+      if (collapsedRef.current) return;   // - only restore into an OPEN chat
+      // - defer so we win over VS Code's own webview-focus handling on return
+      requestAnimationFrame(() => editorRef.current?.focus());
+    };
+    window.addEventListener('focus', onWinFocus);
+    return () => window.removeEventListener('focus', onWinFocus);
+  }, []);
+
   // ─── Alt+L: forward to VS Code navigateRight while the chat input is focused ──
   //
   // Monaco default-binds Alt+L to "toggle find in selection" and stopPropagation()s
@@ -472,7 +496,13 @@ export function FloatingChat({
       vscodePostMessage({ type: 'requestClipboardRead' });
       setIsChatFocused(true);
     });
-    editor.onDidBlurEditorText(() => setIsChatFocused(false));
+    editor.onDidBlurEditorText(() => {
+      setIsChatFocused(false);
+      // - remember to restore chat focus ONLY when focus is leaving the webview entirely
+      // - (→ another VS Code panel): document.hasFocus() is false only then. A blur that
+      // - moves focus to the canvas WITHIN the webview keeps hasFocus() true → don't restore.
+      restoreChatOnReturnRef.current = !document.hasFocus();
+    });
 
     // - Ctrl+Enter is handled by a window capture-phase listener (see useEffect above)
     // - to avoid Monaco addCommand priority conflicts with Ctrl+V / Ctrl+C.
