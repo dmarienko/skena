@@ -208,6 +208,9 @@ export function App(): JSX.Element {
         case 'floatingChatCompacting':
           window.dispatchEvent(new CustomEvent('skena:compacting', { detail: msg.active }));
           break;
+        case 'renderMarkdownResult':
+          window.dispatchEvent(new CustomEvent('skena:renderMarkdownResult', { detail: { requestId: msg.requestId, html: msg.html } }));
+          break;
       }
     };
 

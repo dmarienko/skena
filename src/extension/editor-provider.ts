@@ -313,6 +313,16 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           break;
         }
         case 'dropFiles':            this.handleDropFiles(msg.uris, msg.position, canvasDir, resolver, send, msg.connectTo); break;
+        case 'renderMarkdown': {
+          try {
+            const html = await renderMarkdownToHtml(msg.text);
+            send({ type: 'renderMarkdownResult', requestId: msg.requestId, html });
+          } catch {
+            // - never reject: return an error span; webview falls back to its own render
+            send({ type: 'renderMarkdownResult', requestId: msg.requestId, html: `<span class="typst-error">render failed</span>` });
+          }
+          break;
+        }
         case 'addNodeRequest': await this.handleAddNodeRequest(msg, canvasDir, resolver, send); break;
         case 'moveToSubCanvas': await this.handleMoveToSubCanvas(msg, canvasDir, send); break;
         // - clipboard relay: webview sandbox blocks navigator.clipboard; route through host

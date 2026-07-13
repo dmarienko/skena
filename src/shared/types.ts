@@ -320,6 +320,11 @@ export interface MsgChatModelInfo { type: 'chatModelInfo'; model: string; provid
 /** - host → webview: session compaction is running (true) or finished (false) */
 export interface MsgFloatingChatCompacting { type: 'floatingChatCompacting'; active: boolean; }
 
+/** - webview → host: render arbitrary markdown text to HTML (Typst/KaTeX-aware) */
+export interface MsgRenderMarkdown { type: 'renderMarkdown'; requestId: string; text: string; }
+/** - host → webview: rendered HTML for a renderMarkdown request */
+export interface MsgRenderMarkdownResult { type: 'renderMarkdownResult'; requestId: string; html: string; }
+
 export interface MsgFloatingChatToolEvent { type: 'floatingChatToolEvent'; event: ChatToolEvent; }
 export interface MsgFloatingChatUsage     { type: 'floatingChatUsage'; usage: ChatTokenUsage; }
 
@@ -404,6 +409,7 @@ export type HostToWebview =
   | MsgPanelActivated
   | MsgChatModelInfo
   | MsgFloatingChatCompacting
+  | MsgRenderMarkdownResult
   | MsgFloatingChatDone
   | MsgFloatingChatError
   | MsgFloatingChatResetDone
@@ -607,6 +613,7 @@ export type WebviewToHost =
   | MsgFloatingChatCompact
   | MsgSaveMarks
   | MsgVerifyPath
+  | MsgRenderMarkdown
   | MsgShowWarning;
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────
