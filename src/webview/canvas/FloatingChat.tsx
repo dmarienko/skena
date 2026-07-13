@@ -32,6 +32,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 
+import { useHostMarkdown } from '../hooks/useHostMarkdown';
 import { ChatItem, ChatMessage, ChatToolEvent, ChatTokenUsage } from '../../shared/types';
 import { useFloatingChat } from '../hooks/useFloatingChat';
 import { CHAT_USER_RGB, CHAT_ASSISTANT_RGB, CHAT_ERROR_RGB, CHAT_ACCENT_RGB } from './palette';
@@ -894,6 +895,9 @@ const ChatBubble = memo(function ChatBubble({
   const isUser = msg.role === 'user';
   const accent = isUser ? `rgb(${CHAT_USER_RGB})` : `rgb(${CHAT_ASSISTANT_RGB})`;
 
+  // - completed messages with Typst (%..%) render host-side HTML; streaming + plain use ReactMarkdown
+  const hostHtml = useHostMarkdown(streaming ? '' : msg.content);
+
   // - full-width area (not a bubble): subtle background tint + left accent rule
   return (
     <div style={{
@@ -932,21 +936,25 @@ const ChatBubble = memo(function ChatBubble({
         userSelect:   'text',
         wordBreak:    'break-word',
       }}>
-        <ReactMarkdown
-          remarkPlugins={[remarkGfm, remarkMath]}
-          rehypePlugins={[[rehypeKatex, { output: 'mathml', throwOnError: false }]]}
-          components={{
-            p: ({ children }) => <p style={{ margin: '0 0 4px 0' }}>{children}</p>,
-            code: ({ children, className }) => {
-              const isBlock = className?.includes('language-');
-              return isBlock
-                ? <pre style={{ margin: '4px 0', padding: '4px 6px', background: 'rgba(0,0,0,0.3)', borderRadius: 3, overflow: 'auto' }}><code style={{ fontSize: 11 }}>{children}</code></pre>
-                : <code style={{ fontSize: 11, background: 'rgba(0,0,0,0.25)', padding: '0 3px', borderRadius: 2 }}>{children}</code>;
-            },
-          }}
-        >
-          {msg.content}
-        </ReactMarkdown>
+        {hostHtml !== null ? (
+          <div className="skena-markdown" dangerouslySetInnerHTML={{ __html: hostHtml }} />
+        ) : (
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm, remarkMath]}
+            rehypePlugins={[[rehypeKatex, { output: 'mathml', throwOnError: false }]]}
+            components={{
+              p: ({ children }) => <p style={{ margin: '0 0 4px 0' }}>{children}</p>,
+              code: ({ children, className }) => {
+                const isBlock = className?.includes('language-');
+                return isBlock
+                  ? <pre style={{ margin: '4px 0', padding: '4px 6px', background: 'rgba(0,0,0,0.3)', borderRadius: 3, overflow: 'auto' }}><code style={{ fontSize: 11 }}>{children}</code></pre>
+                  : <code style={{ fontSize: 11, background: 'rgba(0,0,0,0.25)', padding: '0 3px', borderRadius: 2 }}>{children}</code>;
+              },
+            }}
+          >
+            {msg.content}
+          </ReactMarkdown>
+        )}
         {streaming && (
           <span style={{ display: 'inline-block', width: 6, height: 12, background: 'var(--vscode-foreground)', opacity: 0.5, marginLeft: 2, borderRadius: 1 }} />
         )}

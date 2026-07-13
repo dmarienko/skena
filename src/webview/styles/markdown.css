@@ -112,3 +112,8 @@
 .skena-loading { font-size: 11px; opacity: 0.4; padding: 8px; }
 .skena-error   { font-size: 11px; color: #fb464c; padding: 8px; }
 .skena-unknown { font-size: 11px; opacity: 0.4; padding: 8px; font-style: italic; }
+
+/* - Typst math SVGs from the host renderer */
+.typst-math.typst-inline { display: inline-block; vertical-align: -0.25em; height: 1.1em; width: auto; }
+.typst-math.typst-block  { display: block; margin: 6px auto; max-width: 100%; }
+.typst-error { color: #F87171; font-size: 0.9em; font-family: monospace; }
