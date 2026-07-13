@@ -44,6 +44,10 @@ const extensionConfig = {
   external: [
     // - VS Code API is provided by the host at runtime — never bundle it
     'vscode',
+    // - native Typst compiler ships a platform .node binary esbuild can't bundle;
+    // - require it at runtime from node_modules (reachable via markdown-html → typst.ts)
+    '@myriaddreamin/typst-ts-node-compiler',
+    '@myriaddreamin/typst-ts-node-compiler-*',
   ],
 };
 

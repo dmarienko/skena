@@ -28,6 +28,32 @@ import remarkRehype        from 'remark-rehype';
 import rehypeKatex         from 'rehype-katex';
 import { toHtml }          from 'hast-util-to-html';
 import type { Root }       from 'hast';
+import { visit }           from 'unist-util-visit';
+import { findTypstSpans }  from './typst-delim';
+import { typstMathToSvg }  from './typst';
+
+// - remark plugin: replace %..% / %%..%% spans in text nodes with raw HTML nodes
+// - carrying the compiled Typst SVG. Splits each matched text node into
+// - [text before][html svg][text after…]. Sync — NodeCompiler.svg() is synchronous.
+function remarkTypstMath() {
+  return (tree: any) => {
+    visit(tree, 'text', (node: any, index: number | undefined, parent: any) => {
+      if (index === undefined || !parent || typeof node.value !== 'string') return;
+      const spans = findTypstSpans(node.value);
+      if (spans.length === 0) return;
+      const out: any[] = [];
+      let last = 0;
+      for (const s of spans) {
+        if (s.start > last) out.push({ type: 'text', value: node.value.slice(last, s.start) });
+        out.push({ type: 'html', value: typstMathToSvg(s.body, s.block) });
+        last = s.end;
+      }
+      if (last < node.value.length) out.push({ type: 'text', value: node.value.slice(last) });
+      parent.children.splice(index, 1, ...out);
+      return index + out.length;
+    });
+  };
+}
 
 // - two singletons: light (no math) for prose-only docs, full (KaTeX) for math docs
 // - KaTeX rendering is expensive (50-200 DOM nodes per equation); skip it entirely
@@ -39,7 +65,8 @@ function buildLightProcessor() {
   return unified()
     .use(remarkParse)
     .use(remarkGfm)
-    .use(remarkRehype, { allowDangerousHtml: false });
+    .use(remarkTypstMath)
+    .use(remarkRehype, { allowDangerousHtml: true });   // - was false; needed for injected SVG html nodes
 }
 
 function buildProcessor() {
@@ -47,7 +74,8 @@ function buildProcessor() {
     .use(remarkParse)
     .use(remarkGfm)
     .use(remarkMath)                              // - parse $...$ and $$...$$ in MDAST
-    .use(remarkRehype, { allowDangerousHtml: false })
+    .use(remarkTypstMath)
+    .use(remarkRehype, { allowDangerousHtml: true })    // - was false; injected SVG html nodes
     // - MathML output: browser's native math engine handles rendering.
     // - HTML output creates 100-200 <span> nodes per equation (KaTeX CSS spans);
     // - MathML output creates ~10 <math> nodes per equation that the browser
@@ -93,14 +121,15 @@ export async function renderMarkdownToHtml(
   content: string,
   resolveImageUri?: (src: string) => string | undefined,
 ): Promise<string> {
-  // - two processors: skip KaTeX for files that contain no math syntax (fast path)
-  const hasMath = content.includes('$');
-  if (hasMath) {
+  // - use the full processor when EITHER math engine is needed; light only for plain prose
+  const hasMath  = content.includes('$');   // - KaTeX
+  const hasTypst = content.includes('%');   // - Typst
+  if (hasMath || hasTypst) {
     if (!_processor) _processor = buildProcessor();
   } else {
     if (!_processorLight) _processorLight = buildLightProcessor();
   }
-  const proc = hasMath ? _processor! : _processorLight!;
+  const proc = (hasMath || hasTypst) ? _processor! : _processorLight!;
 
   const hast = await proc.run(proc.parse(content));
   if (resolveImageUri) {
