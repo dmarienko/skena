@@ -120,9 +120,9 @@ already allows inline SVG in the DOM — no CSP change (this is the whole point 
 - Typst rendering of streaming partials (only completed messages render Typst).
 - Non-math Typst in markdown (arbitrary Typst content blocks) — math delimiters only.
 
-## Open questions (for review)
+## Resolved decisions
 
-1. **`%…%` collision**: even with the strict rules, unusual prose (`%foo%bar`) could false-match.
-   Acceptable with the rules as specified, or prefer a safer inline form (e.g. only `%%…%%` block +
-   a fenced ` ```typst ` for larger snippets, no bare inline `%`)? Current spec: `%…%` inline +
-   `%%…%%` block with strict boundary rules.
+1. **`%…%` collision** → RESOLVED (user, 2026-07-13): go with `%…%` inline + `%%…%%` block using
+   the strict boundary rules (opening `%` followed by non-space, closing `%` preceded by non-space,
+   no crossing newlines, empty `%%` not math). Accepted that rare prose like `%foo%bar` may
+   false-match; the strict rules cover the common "50% off" case.
