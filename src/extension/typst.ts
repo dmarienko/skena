@@ -32,6 +32,6 @@ export function typstMathToSvg(src: string, block: boolean): string {
     // - tag so the webview can style it (inline-block, vertical-align)
     return svg.replace('<svg', `<svg class="typst-math ${block ? 'typst-block' : 'typst-inline'}"`);
   } catch (e) {
-    return `<span class="typst-error">Typst error: ${esc((e as Error).message).slice(0, 120)}</span>`;
+    return `<span class="typst-error">Typst error: ${esc(String((e as Error)?.message ?? e)).slice(0, 120)}</span>`;
   }
 }
