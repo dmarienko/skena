@@ -26,6 +26,22 @@ import type { ILLMClient, LLMMessage, LLMTool, LLMCallbacks, LLMContext, LLMUsag
 
 const FALLBACK_BIN = path.join(os.homedir(), '.local', 'bin', 'claude');
 
+// - turn raw child stderr into a clean, user-facing chat error. Full stderr still goes
+// - to the "Skena AI (harness)" output channel; the chat should not show spawn logs or
+// - multi-line noise. Auth failures get an actionable hint.
+function cleanError(stderr: string, fallback: string): string {
+  const raw = stderr.trim();
+  if (/oauth|authenticate|credentials|not logged in|401|token.*expired|session expired/i.test(raw)) {
+    return 'Claude Code authentication expired. Run /login in a terminal, then press Reset (⟲) in the chat.';
+  }
+  if (!raw) return fallback;
+  // - drop skena's own spawn-log lines and blanks; show the last meaningful line
+  const lines = raw.split('\n').map(l => l.trim())
+    .filter(l => l && !/^\[\d{4}-\d\d-\d\d[ T]/.test(l) && !/^spawn:/.test(l));
+  const last = lines.length ? lines[lines.length - 1] : fallback;
+  return last.length > 300 ? last.slice(0, 300) + '…' : last;
+}
+
 // - flatten a tool_result content payload to a short display string
 function previewToolResult(content: unknown): string {
   let s: string;
@@ -258,7 +274,20 @@ export class HarnessAdapter implements ILLMClient {
     try {
       if (!fs.existsSync(srcCreds)) { this.log('no global creds to stage — using global config'); return undefined; }
       fs.mkdirSync(profile, { recursive: true });
-      fs.copyFileSync(srcCreds, path.join(profile, '.credentials.json'));  // - refresh each spawn
+      // - SYMLINK creds (don't copy): the profile then always reads the LIVE global
+      // - credentials, so a re-login or token refresh in ~/.claude is picked up
+      // - immediately. Copying left them stale until the next respawn → every message
+      // - failed with "OAuth session expired" after a re-login. Re-established each spawn
+      // - (an atomic cred-write by CC may replace the link with a real file; the next
+      // - spawn restores the link). Falls back to copy if symlinks are unsupported.
+      const dstCreds = path.join(profile, '.credentials.json');
+      try { fs.rmSync(dstCreds, { force: true }); } catch { /* absent */ }
+      try {
+        fs.symlinkSync(srcCreds, dstCreds);
+      } catch (e) {
+        this.log(`creds symlink failed (${(e as Error).message}) — copying instead`);
+        fs.copyFileSync(srcCreds, dstCreds);
+      }
       this.syncProfile(profile, claudeDir);
       return profile;
     } catch (e) {
@@ -438,7 +467,7 @@ export class HarnessAdapter implements ILLMClient {
       if (cb && this.respawnFresh(canvasPath, s, cb)) return;
       const msg = subtype === 'error_max_turns'
         ? 'Hit the per-message turn cap (skena.ai.harnessMaxTurns) — the reply above may be truncated. Raise the setting or send "continue".'
-        : s.stderr.trim() || s.lastResultText || 'Claude reported an error.';
+        : cleanError(s.stderr, s.lastResultText || 'Claude reported an error.');
       cb?.onError(msg);
       return;
     }
@@ -458,7 +487,7 @@ export class HarnessAdapter implements ILLMClient {
     s.cb = null;
     // - resume failed before first success (process exited) → recover fresh
     if (this.respawnFresh(canvasPath, s, cb)) return;
-    cb.onError(s.stderr.trim() || `claude exited with code ${code}`);
+    cb.onError(cleanError(s.stderr, `claude exited with code ${code}`));
   }
 }
 
