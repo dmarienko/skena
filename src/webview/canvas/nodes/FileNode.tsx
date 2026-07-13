@@ -33,6 +33,7 @@ import { MarkdownRenderer } from '../../renderers/MarkdownRenderer';
 import { NotebookRenderer } from '../../renderers/NotebookRenderer';
 import { CodeRenderer } from '../../renderers/CodeRenderer';
 import { ImageRenderer } from '../../renderers/ImageRenderer';
+import { HtmlShadow } from '../../renderers/HtmlShadow';
 import { useHeatmap } from '../../context/HeatmapContext';
 import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
 import { DEFAULT_NODE_BORDER_BY_TYPE } from '../palette';
@@ -73,8 +74,8 @@ const MemoContent = memo(function FileNodeContent({
         <CodeRenderer content={content} language={fileType === 'yaml' ? 'yaml' : 'python'} />
       )}
       {fileType === 'image' && <ImageRenderer resourceUri={resourceUri ?? ''} />}
-      {/* - render .html file content directly (dangerouslySetInnerHTML does not run <script>) */}
-      {fileType === 'html' && <div className="skena-html" dangerouslySetInnerHTML={{ __html: content }} />}
+      {/* - shadow-scoped so the doc's global body/ * / :root styles can't leak into the canvas */}
+      {fileType === 'html' && <HtmlShadow html={content} />}
       {fileType !== 'markdown' && fileType !== 'notebook' && fileType !== 'python' &&
        fileType !== 'yaml' && fileType !== 'image' && fileType !== 'html' && (
         <div className="skena-unknown">No preview available</div>
