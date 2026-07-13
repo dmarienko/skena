@@ -380,6 +380,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.97.0",
     "@monaco-editor/react": "^4.7.0",
+    "@myriaddreamin/typst-ts-node-compiler": "^0.7.0",
     "@vscode/codicons": "^0.0.45",
     "@xyflow/react": "^12.0.0",
     "chokidar": "^3.5.3",
