@@ -40,6 +40,8 @@ function extensionToFileType(ext: string): FileType {
     case '.jpeg':
     case '.svg':
     case '.gif':   return 'image';
+    case '.html':
+    case '.htm':   return 'html';
     default:       return 'unknown';
   }
 }

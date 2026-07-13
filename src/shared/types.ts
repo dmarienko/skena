@@ -178,7 +178,7 @@ export type EdgeGlow = {
 
 // ─── Vault / file resolution ──────────────────────────────────────────────────
 
-export type FileType = 'markdown' | 'notebook' | 'python' | 'yaml' | 'image' | 'notion' | 'unknown';
+export type FileType = 'markdown' | 'notebook' | 'python' | 'yaml' | 'image' | 'html' | 'notion' | 'unknown';
 
 export interface VaultConfig {
   name: string;

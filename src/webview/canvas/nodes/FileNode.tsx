@@ -73,8 +73,10 @@ const MemoContent = memo(function FileNodeContent({
         <CodeRenderer content={content} language={fileType === 'yaml' ? 'yaml' : 'python'} />
       )}
       {fileType === 'image' && <ImageRenderer resourceUri={resourceUri ?? ''} />}
+      {/* - render .html file content directly (dangerouslySetInnerHTML does not run <script>) */}
+      {fileType === 'html' && <div className="skena-html" dangerouslySetInnerHTML={{ __html: content }} />}
       {fileType !== 'markdown' && fileType !== 'notebook' && fileType !== 'python' &&
-       fileType !== 'yaml' && fileType !== 'image' && (
+       fileType !== 'yaml' && fileType !== 'image' && fileType !== 'html' && (
         <div className="skena-unknown">No preview available</div>
       )}
       {/* - truncation notice: file was too large to send fully */}
