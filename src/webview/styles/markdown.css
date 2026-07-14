@@ -127,4 +127,4 @@
 /* - faux-weight: a thin same-color stroke on glyphs thickens the light New Computer
    - Modern strokes for legibility (KaTeX-ish). Tune stroke-width (user units) to taste;
    - 0 disables. Only glyph fills get it — bars already carry their own stroke. */
-.typst-math .outline_glyph { stroke: currentColor; stroke-width: 0.4; }
+.typst-math .outline_glyph { stroke: currentColor; stroke-width: 0.7; }
