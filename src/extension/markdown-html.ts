@@ -135,5 +135,7 @@ export async function renderMarkdownToHtml(
   if (resolveImageUri) {
     visitHastImages(hast, resolveImageUri);
   }
-  return toHtml(hast as Root);
+  // - allowDangerousHtml: emit the injected raw <svg> (Typst) nodes verbatim instead of
+  // - escaping them. Safe: SVG is compiler-generated (no script) and only serialized here.
+  return toHtml(hast as Root, { allowDangerousHtml: true });
 }
