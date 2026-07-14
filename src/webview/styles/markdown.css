@@ -124,3 +124,7 @@
 .typst-math { color: var(--vscode-foreground); }
 .typst-math [fill="#000"], .typst-math [fill="#000000"], .typst-math [fill="black"] { fill: currentColor; }
 .typst-math [stroke="#000"], .typst-math [stroke="#000000"], .typst-math [stroke="black"] { stroke: currentColor; }
+/* - faux-weight: a thin same-color stroke on glyphs thickens the light New Computer
+   - Modern strokes for legibility (KaTeX-ish). Tune stroke-width (user units) to taste;
+   - 0 disables. Only glyph fills get it — bars already carry their own stroke. */
+.typst-math .outline_glyph { stroke: currentColor; stroke-width: 0.4; }

@@ -44,7 +44,11 @@ export function typstMathToSvg(src: string, block: boolean): string {
     const wm = svg.match(/data-width="([\d.]+)"/);
     const hm = svg.match(/data-height="([\d.]+)"/);
     if (wm && hm) {
-      const dims = `width:${(+wm[1] / EM_UNITS).toFixed(3)}em;height:${(+hm[1] / EM_UNITS).toFixed(3)}em;`;
+      const wem = (+wm[1] / EM_UNITS).toFixed(3);
+      const hem = (+hm[1] / EM_UNITS).toFixed(3);
+      // - block: fixed width + auto height so max-width:100% in a narrow container (chat)
+      // - scales proportionally instead of squishing; inline: both fixed (small, no wrap).
+      const dims = block ? `width:${wem}em;height:auto;` : `width:${wem}em;height:${hem}em;`;
       out = out.includes('style="')
         ? out.replace('style="', `style="${dims}`)
         : out.replace('<svg', `<svg style="${dims}"`);
