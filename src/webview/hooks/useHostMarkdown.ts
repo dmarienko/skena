@@ -21,16 +21,19 @@ export function useHostMarkdown(text: string): string | null {
     if (cached !== undefined) { setHtml(cached); return; }
     const requestId = `md-${++seq}`;
     reqRef.current = requestId;
+    let settled = false;   // - once the host replies, the fallback must NOT null a good result
     const onResult = (e: Event) => {
       const d = (e as CustomEvent<{ requestId: string; html: string }>).detail;
       if (d.requestId !== requestId) return;
+      settled = true;
+      clearTimeout(t);
       cache.set(text, d.html);
       if (reqRef.current === requestId) setHtml(d.html);
     };
     window.addEventListener('skena:renderMarkdownResult', onResult);
     post({ type: 'renderMarkdown', requestId, text });
-    // - 2s fallback: give up → null → caller uses in-webview render
-    const t = setTimeout(() => { if (reqRef.current === requestId) setHtml(null); }, 2000);
+    // - fallback only if the host never answered; a delivered result clears this
+    const t = setTimeout(() => { if (!settled && reqRef.current === requestId) setHtml(null); }, 2000);
     return () => { window.removeEventListener('skena:renderMarkdownResult', onResult); clearTimeout(t); };
   }, [text, needs]);
 
