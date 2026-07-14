@@ -354,6 +354,17 @@
           },
           "description": "Canvas color palette (matches Obsidian color codes 1-6)",
           "scope": "window"
+        },
+        "skena.markdownTheme": {
+          "type": "string",
+          "enum": ["vscode", "factors"],
+          "enumDescriptions": [
+            "Adapt to the active VS Code color theme (default)",
+            "Dark teal research-terminal theme (IBM Plex, syntax-colored code)"
+          ],
+          "default": "vscode",
+          "description": "Theme for rendered markdown in nodes and chat.",
+          "scope": "window"
         }
       }
     }

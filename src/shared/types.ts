@@ -747,6 +747,8 @@ export interface MarkdownConfig {
   styles:               string[]; // - markdown.styles (external CSS URLs)
   /** - when false (default) notebook code cells show outputs only, source is hidden */
   notebookShowSource?:  boolean;  // - skena.notebook.showSourceCells
+  /** - rendered-markdown theme: 'vscode' adapts to the editor, 'factors' = dark teal terminal */
+  theme?:               'vscode' | 'factors';  // - skena.markdownTheme
 }
 
 export interface MsgMarkdownConfig {
