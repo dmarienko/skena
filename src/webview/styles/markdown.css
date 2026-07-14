@@ -117,3 +117,7 @@
 .typst-math.typst-inline { display: inline-block; vertical-align: -0.25em; height: 1.1em; width: auto; }
 .typst-math.typst-block  { display: block; margin: 6px auto; max-width: 100%; }
 .typst-error { color: #F87171; font-size: 0.9em; font-family: monospace; }
+/* - Typst fills glyphs/rules with fill="#000" (SVG presentation attr, lowest cascade
+   - priority); a direct rule recolors them to the surrounding text color in any theme. */
+.typst-math { color: var(--vscode-foreground); }
+.typst-math path, .typst-math use, .typst-math rect { fill: currentColor; }
