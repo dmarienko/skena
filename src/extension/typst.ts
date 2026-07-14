@@ -40,7 +40,7 @@ export function typstMathToSvg(src: string, block: boolean): string {
     // - (display fractions get their true height). The SVG's data-width/height are in
     // - Typst units where a single text line ≈ 12; EM_UNITS tunes the on-screen size
     // - (÷10 → a single line ≈ 1.2em, a touch larger than KaTeX for legibility).
-    const EM_UNITS = 13;
+    const EM_UNITS = 9;
     const wm = svg.match(/data-width="([\d.]+)"/);
     const hm = svg.match(/data-height="([\d.]+)"/);
     if (wm && hm) {
