@@ -118,13 +118,15 @@
 .typst-math.typst-inline { display: inline-block; vertical-align: -0.28em; }
 .typst-math.typst-block  { display: block; margin: 8px auto; max-width: 100%; }
 .typst-error { color: #F87171; font-size: 0.9em; font-family: monospace; }
-/* - Typst inks #000 as fill (glyphs) AND stroke (fraction bars / rules, which are
-   - fill="none"); presentation attrs are lowest cascade priority so a direct rule wins.
-   - Match by value so only the black ink is recolored — fill="none"/stroke="none" stay. */
 .typst-math { color: var(--vscode-foreground); }
-.typst-math [fill="#000"], .typst-math [fill="#000000"], .typst-math [fill="black"] { fill: currentColor; }
+/* - Typst styles glyphs via its own internal <style> using CSS vars (--glyph_fill /
+   - --glyph_stroke). Setting them here recolors ALL glyphs incl. those drawn with <use>
+   - (a .outline_glyph selector can't reach <use> shadow trees). --glyph_stroke + an
+   - inherited stroke-width faux-bolds the light New Computer Modern face (KaTeX-ish);
+   - stroke-width is in glyph units — tune it (0 = no bolding). Glyphs carry no own
+   - stroke-width so they inherit this; fraction bars keep their own. */
+.typst-math { --glyph_fill: currentColor; --glyph_stroke: currentColor; stroke-width: 0.5; }
+/* - fraction bars / rules are separate shapes stroked #000 (not glyphs) */
 .typst-math [stroke="#000"], .typst-math [stroke="#000000"], .typst-math [stroke="black"] { stroke: currentColor; }
-/* - faux-weight: a thin same-color stroke on glyphs thickens the light New Computer
-   - Modern strokes for legibility (KaTeX-ish). Tune stroke-width (user units) to taste;
-   - 0 disables. Only glyph fills get it — bars already carry their own stroke. */
-.typst-math .outline_glyph { stroke: currentColor; stroke-width: 0.7; }
+/* - any non-glyph filled #000 shape */
+.typst-math [fill="#000"], .typst-math [fill="#000000"], .typst-math [fill="black"] { fill: currentColor; }
