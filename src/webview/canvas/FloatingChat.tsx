@@ -33,6 +33,7 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 
 import { useHostMarkdown } from '../hooks/useHostMarkdown';
+import { useCodeHighlight } from '../lib/codeHighlight';
 import { ChatItem, ChatMessage, ChatToolEvent, ChatTokenUsage } from '../../shared/types';
 import { useFloatingChat } from '../hooks/useFloatingChat';
 import { CHAT_USER_RGB, CHAT_ASSISTANT_RGB, CHAT_ERROR_RGB, CHAT_ACCENT_RGB } from './palette';
@@ -897,6 +898,7 @@ const ChatBubble = memo(function ChatBubble({
 
   // - completed messages with Typst (%..%) render host-side HTML; streaming + plain use ReactMarkdown
   const hostHtml = useHostMarkdown(streaming ? '' : msg.content);
+  const mdRef = useCodeHighlight(hostHtml);
 
   // - full-width area (not a bubble): subtle background tint + left accent rule
   return (
@@ -937,7 +939,7 @@ const ChatBubble = memo(function ChatBubble({
         wordBreak:    'break-word',
       }}>
         {hostHtml !== null ? (
-          <div className="skena-markdown skena-chat-md" dangerouslySetInnerHTML={{ __html: hostHtml }} />
+          <div ref={mdRef} className="skena-markdown skena-chat-md" dangerouslySetInnerHTML={{ __html: hostHtml }} />
         ) : (
           <ReactMarkdown
             remarkPlugins={[remarkGfm, remarkMath]}

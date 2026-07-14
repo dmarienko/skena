@@ -34,6 +34,7 @@ import { initVimMode, VimMode } from 'monaco-vim';
 import { TextNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { MarkdownRenderer } from '../../renderers/MarkdownRenderer';
+import { useCodeHighlight } from '../../lib/codeHighlight';
 import { useHostMarkdown } from '../../hooks/useHostMarkdown';
 import { ScrollableContent } from '../../components/ScrollableContent';
 import { useHeatmap } from '../../context/HeatmapContext';
@@ -223,6 +224,7 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(node.text);
   const hostHtml = useHostMarkdown(draft);
+  const mdRef = useCodeHighlight(hostHtml);
 
   // - re-sync the view buffer when node.text changes from OUTSIDE this component
   // - (external MCP write / disk reload → soft re-sync updates the data.text prop, but
@@ -660,7 +662,7 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
         // - baseUri="." so relative image paths (./img.png) resolve against canvas dir
         <ScrollableContent ref={scrollableRef} scrollKey={id} style={{ padding: '6px 8px 6px 12px' }}>
           {hostHtml !== null
-            ? <div className="skena-markdown" dangerouslySetInnerHTML={{ __html: hostHtml }} />
+            ? <div ref={mdRef} className="skena-markdown" dangerouslySetInnerHTML={{ __html: hostHtml }} />
             : <MarkdownRenderer content={draft} baseUri="." />}
         </ScrollableContent>
       )}
