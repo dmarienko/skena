@@ -125,7 +125,7 @@
    - inherited stroke-width faux-bolds the light New Computer Modern face (KaTeX-ish);
    - stroke-width is in glyph units — tune it (0 = no bolding). Glyphs carry no own
    - stroke-width so they inherit this; fraction bars keep their own. */
-.typst-math { --glyph_fill: currentColor; --glyph_stroke: currentColor; stroke-width: 0.5; }
+.typst-math { --glyph_fill: currentColor; --glyph_stroke: currentColor; stroke-width: 1.5; }
 /* - fraction bars / rules are separate shapes stroked #000 (not glyphs) */
 .typst-math [stroke="#000"], .typst-math [stroke="#000000"], .typst-math [stroke="black"] { stroke: currentColor; }
 /* - any non-glyph filled #000 shape */
