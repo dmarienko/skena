@@ -60,11 +60,18 @@ async function highlightContainer(el: HTMLElement): Promise<void> {
 export function useCodeHighlight(html: string | null | undefined): React.RefObject<HTMLDivElement> {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    if (document.documentElement.dataset.mdTheme !== 'factors') return;
-    if (!html || !html.includes('language-')) return;
-    void highlightContainer(el);
+    // - re-runnable: fires on html change AND on 'skena:mdTheme' (the theme attribute is
+    // - set after nodes mount, so a mount-time run would miss it)
+    const run = () => {
+      const el = ref.current;
+      if (!el) return;
+      if (document.documentElement.dataset.mdTheme !== 'factors') return;
+      if (!el.querySelector('pre > code[class*="language-"]')) return;
+      void highlightContainer(el);
+    };
+    run();
+    window.addEventListener('skena:mdTheme', run);
+    return () => window.removeEventListener('skena:mdTheme', run);
   }, [html]);
   return ref;
 }

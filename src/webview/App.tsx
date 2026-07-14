@@ -118,6 +118,8 @@ export function App(): JSX.Element {
           setMdConfig(msg.config);
           // - stamp the theme on the root so scoped CSS ([data-md-theme=…]) applies everywhere
           document.documentElement.dataset.mdTheme = msg.config.theme ?? 'vscode';
+          // - nodes mount before this arrives; nudge the code highlighter to (re)run
+          window.dispatchEvent(new CustomEvent('skena:mdTheme', { detail: msg.config.theme ?? 'vscode' }));
           const urls = msg.config.styles.filter(s => s.startsWith('http'));
           syncMarkdownStyleLinks(urls);
           styleUrlsRef.current = urls;
