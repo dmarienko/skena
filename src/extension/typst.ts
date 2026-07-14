@@ -29,8 +29,13 @@ export function typstMathToSvg(src: string, block: boolean): string {
     if (typeof svg !== 'string' || !svg.trimStart().startsWith('<svg')) {
       return `<span class="typst-error">Typst: no output</span>`;
     }
-    // - tag so the webview can style it (inline-block, vertical-align)
-    return svg.replace('<svg', `<svg class="typst-math ${block ? 'typst-block' : 'typst-inline'}"`);
+    // - tag so the webview can style it (inline-block, vertical-align). The compiler's
+    // - <svg> already has class="typst-doc" — merge into it rather than add a 2nd class
+    // - attr (duplicate attrs: browser keeps the first, silently drops the rest).
+    const cls = `typst-math ${block ? 'typst-block' : 'typst-inline'}`;
+    return svg.includes('class="')
+      ? svg.replace('class="', `class="${cls} `)
+      : svg.replace('<svg', `<svg class="${cls}"`);
   } catch (e) {
     return `<span class="typst-error">Typst error: ${esc(String((e as Error)?.message ?? e)).slice(0, 120)}</span>`;
   }
