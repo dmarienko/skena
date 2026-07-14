@@ -303,7 +303,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   // - OS clipboard text captured at last yy; discriminates internal vs content paste (no clipboard timestamps exist)
   const yySnapshotRef      = useRef<string | null>(null);
   const awaitingYYSnapshot = useRef(false);
-  const [heatmapVisible, setHeatmapVisible] = useState(true);
+  // - heatmap glow off by default (toggle with `gh`); the drop-shadow was distracting
+  const [heatmapVisible, setHeatmapVisible] = useState(false);
   const lastGPressRef = useRef<number>(0);
   const toggleHeatmap = useCallback(() => setHeatmapVisible(v => !v), []);
 
