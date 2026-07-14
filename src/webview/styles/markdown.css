@@ -127,4 +127,4 @@
 .typst-math [stroke="#000"], .typst-math [stroke="#000000"], .typst-math [stroke="black"] { stroke: currentColor; }
 /* - chat overlay isn't zoomed like canvas nodes, so math reads smaller there; scale it up
    - (svg dims are in em → font-size on the svg rescales them). Nodes are unaffected. */
-.skena-chat-md .typst-math { font-size: 1.2em; }
+.skena-chat-md .typst-math { font-size: 1.3em; }
