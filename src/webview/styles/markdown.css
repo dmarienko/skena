@@ -117,7 +117,9 @@
 .typst-math.typst-inline { display: inline-block; vertical-align: -0.25em; height: 1.1em; width: auto; }
 .typst-math.typst-block  { display: block; margin: 6px auto; max-width: 100%; }
 .typst-error { color: #F87171; font-size: 0.9em; font-family: monospace; }
-/* - Typst fills glyphs/rules with fill="#000" (SVG presentation attr, lowest cascade
-   - priority); a direct rule recolors them to the surrounding text color in any theme. */
+/* - Typst inks #000 as fill (glyphs) AND stroke (fraction bars / rules, which are
+   - fill="none"); presentation attrs are lowest cascade priority so a direct rule wins.
+   - Match by value so only the black ink is recolored — fill="none"/stroke="none" stay. */
 .typst-math { color: var(--vscode-foreground); }
-.typst-math path, .typst-math use, .typst-math rect { fill: currentColor; }
+.typst-math [fill="#000"], .typst-math [fill="#000000"], .typst-math [fill="black"] { fill: currentColor; }
+.typst-math [stroke="#000"], .typst-math [stroke="#000000"], .typst-math [stroke="black"] { stroke: currentColor; }
