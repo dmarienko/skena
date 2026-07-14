@@ -567,7 +567,7 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
     <NodeLabelBadge label={node.nodeLabel} createdBy={(node as any).createdBy} />
     <div
       ref={wrapperRef}
-      className="skena-node"
+      className="skena-node skena-node--text"
       style={{
         border:        `${bw}px solid ${borderColor}`,
         height:        '100%',
