@@ -937,7 +937,7 @@ const ChatBubble = memo(function ChatBubble({
         wordBreak:    'break-word',
       }}>
         {hostHtml !== null ? (
-          <div className="skena-markdown" dangerouslySetInnerHTML={{ __html: hostHtml }} />
+          <div className="skena-markdown skena-chat-md" dangerouslySetInnerHTML={{ __html: hostHtml }} />
         ) : (
           <ReactMarkdown
             remarkPlugins={[remarkGfm, remarkMath]}
