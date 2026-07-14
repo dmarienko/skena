@@ -55,6 +55,47 @@ function remarkTypstMath() {
   };
 }
 
+// - Extract multiline Typst blocks fenced by a line that is exactly '%%', BEFORE markdown
+// - parsing. remark would split such a block across text/break nodes (a trailing '\' is a
+// - hard break), so the text-node visitor never sees it whole. Here we pull the block from
+// - the raw source, compile it, and leave a sentinel paragraph; the SVG is swapped back in
+// - after rendering, so it never passes through the markdown parser. Lines inside ``` / ~~~
+// - code fences are skipped so a literal '%%' in a code block is left alone.
+// - Single-line '%%x%%' and inline '%x%' are NOT touched here (their lines aren't bare '%%')
+// - and stay with remarkTypstMath.
+const TYPST_BLOCK_TOKEN = (i: number) => `zzztypstblk${i}zzz`;
+
+function preRenderTypstBlocks(src: string): { text: string; blocks: string[] } {
+  const lines = src.split('\n');
+  const out: string[] = [];
+  const blocks: string[] = [];
+  let inCode = false;
+  let fenceChar = '';
+  let i = 0;
+  while (i < lines.length) {
+    const trimmed = lines[i].trim();
+    const fence = trimmed.match(/^(```+|~~~+)/);
+    if (fence) {
+      if (!inCode) { inCode = true; fenceChar = fence[1][0]; }
+      else if (trimmed[0] === fenceChar) { inCode = false; }
+      out.push(lines[i]); i++; continue;
+    }
+    if (!inCode && trimmed === '%%') {
+      let j = i + 1;
+      while (j < lines.length && lines[j].trim() !== '%%') j++;
+      if (j < lines.length) {
+        const body = lines.slice(i + 1, j).join('\n');
+        out.push('', TYPST_BLOCK_TOKEN(blocks.length), '');   // - sentinel paragraph
+        blocks.push(typstMathToSvg(body, true));
+        i = j + 1; continue;
+      }
+      // - no closing '%%': leave the line as-is
+    }
+    out.push(lines[i]); i++;
+  }
+  return { text: out.join('\n'), blocks };
+}
+
 // - two singletons: light (no math) for prose-only docs, full (KaTeX) for math docs
 // - KaTeX rendering is expensive (50-200 DOM nodes per equation); skip it entirely
 // - when the content contains no '$' characters — typical for prose/research notes
@@ -121,9 +162,14 @@ export async function renderMarkdownToHtml(
   content: string,
   resolveImageUri?: (src: string) => string | undefined,
 ): Promise<string> {
+  // - pre-extract multiline %%…%% Typst blocks (fence lines) before markdown parsing
+  const { text: source, blocks } = content.includes('%%')
+    ? preRenderTypstBlocks(content)
+    : { text: content, blocks: [] as string[] };
+
   // - use the full processor when EITHER math engine is needed; light only for plain prose
-  const hasMath  = content.includes('$');   // - KaTeX
-  const hasTypst = content.includes('%');   // - Typst
+  const hasMath  = source.includes('$');   // - KaTeX
+  const hasTypst = source.includes('%');   // - Typst
   if (hasMath || hasTypst) {
     if (!_processor) _processor = buildProcessor();
   } else {
@@ -131,11 +177,17 @@ export async function renderMarkdownToHtml(
   }
   const proc = (hasMath || hasTypst) ? _processor! : _processorLight!;
 
-  const hast = await proc.run(proc.parse(content));
+  const hast = await proc.run(proc.parse(source));
   if (resolveImageUri) {
     visitHastImages(hast, resolveImageUri);
   }
   // - allowDangerousHtml: emit the injected raw <svg> (Typst) nodes verbatim instead of
   // - escaping them. Safe: SVG is compiler-generated (no script) and only serialized here.
-  return toHtml(hast as Root, { allowDangerousHtml: true });
+  let html = toHtml(hast as Root, { allowDangerousHtml: true });
+  // - swap the sentinels back to the compiled block SVGs (strip the <p> wrapper markdown adds)
+  for (let k = 0; k < blocks.length; k++) {
+    const token = TYPST_BLOCK_TOKEN(k);
+    html = html.replace(`<p>${token}</p>`, blocks[k]).replace(token, blocks[k]);
+  }
+  return html;
 }
