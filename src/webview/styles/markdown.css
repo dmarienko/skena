@@ -114,8 +114,9 @@
 .skena-unknown { font-size: 11px; opacity: 0.4; padding: 8px; font-style: italic; }
 
 /* - Typst math SVGs from the host renderer */
-.typst-math.typst-inline { display: inline-block; vertical-align: -0.25em; height: 1.1em; width: auto; }
-.typst-math.typst-block  { display: block; margin: 6px auto; max-width: 100%; }
+/* - width/height come from typst.ts as em (scales with font + true content height) */
+.typst-math.typst-inline { display: inline-block; vertical-align: -0.28em; }
+.typst-math.typst-block  { display: block; margin: 8px auto; max-width: 100%; }
 .typst-error { color: #F87171; font-size: 0.9em; font-family: monospace; }
 /* - Typst inks #000 as fill (glyphs) AND stroke (fraction bars / rules, which are
    - fill="none"); presentation attrs are lowest cascade priority so a direct rule wins.

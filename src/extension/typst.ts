@@ -33,9 +33,23 @@ export function typstMathToSvg(src: string, block: boolean): string {
     // - <svg> already has class="typst-doc" — merge into it rather than add a 2nd class
     // - attr (duplicate attrs: browser keeps the first, silently drops the rest).
     const cls = `typst-math ${block ? 'typst-block' : 'typst-inline'}`;
-    return svg.includes('class="')
+    let out = svg.includes('class="')
       ? svg.replace('class="', `class="${cls} `)
       : svg.replace('<svg', `<svg class="${cls}"`);
+    // - Size in em so math scales with the surrounding font AND grows with content
+    // - (display fractions get their true height). The SVG's data-width/height are in
+    // - Typst units where a single text line ≈ 12; EM_UNITS tunes the on-screen size
+    // - (÷10 → a single line ≈ 1.2em, a touch larger than KaTeX for legibility).
+    const EM_UNITS = 10;
+    const wm = svg.match(/data-width="([\d.]+)"/);
+    const hm = svg.match(/data-height="([\d.]+)"/);
+    if (wm && hm) {
+      const dims = `width:${(+wm[1] / EM_UNITS).toFixed(3)}em;height:${(+hm[1] / EM_UNITS).toFixed(3)}em;`;
+      out = out.includes('style="')
+        ? out.replace('style="', `style="${dims}`)
+        : out.replace('<svg', `<svg style="${dims}"`);
+    }
+    return out;
   } catch (e) {
     return `<span class="typst-error">Typst error: ${esc(String((e as Error)?.message ?? e)).slice(0, 120)}</span>`;
   }
