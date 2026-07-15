@@ -99,6 +99,25 @@ export function App(): JSX.Element {
     size?:      { w: number; h: number };
   }>());
 
+  // ─── markdown link clicks (host-rendered HTML) ─────────────────────────
+  // - host-rendered markdown (Typst/code text nodes, .md file nodes, chat) is injected as
+  // - raw HTML, so its <a> links have no React handler. Delegate at the document (bubble
+  // - phase): if a MarkdownRenderer link already handled it, defaultPrevented is set → skip.
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0) return;
+      const a = (e.target as HTMLElement | null)?.closest?.('a[href]');
+      if (!a || !a.closest('.skena-markdown')) return;
+      const href = a.getAttribute('href');   // - raw href, not the browser-resolved URL
+      if (!href) return;
+      e.preventDefault();
+      (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']
+        ?.postMessage({ type: 'openFile', uri: href });
+    };
+    document.addEventListener('click', onClick);
+    return () => document.removeEventListener('click', onClick);
+  }, []);
+
   // ─── host message handler ─────────────────────────────────────────────
 
   useEffect(() => {
