@@ -38,6 +38,16 @@ function highlighter(): Promise<Highlighter> {
   return _hl;
 }
 
+/**
+ * Kick off shiki's (WASM) init during idle so the first code node doesn't pay it
+ * mid-interaction. Safe to call repeatedly; no-op once warm. Call under factors theme.
+ */
+export function warmCodeHighlighter(): void {
+  const idle = (window as unknown as { requestIdleCallback?: (cb: () => void) => void }).requestIdleCallback
+    ?? ((cb: () => void) => setTimeout(cb, 200));
+  idle(() => { void highlighter(); });
+}
+
 // - the host escapes code content; undo it to recover the source shiki will re-highlight
 function decodeEntities(s: string): string {
   return s
