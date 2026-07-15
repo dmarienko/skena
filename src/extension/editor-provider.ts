@@ -1194,7 +1194,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     // - (e.g. cdn.jsdelivr.net CSS that may also reference external fonts)
     const csp = [
       `default-src 'none'`,
-      `script-src ${webview.cspSource} 'unsafe-inline'`,
+      // - wasm-unsafe-eval: shiki's oniguruma syntax-highlighter is WebAssembly; without
+      // - this the WASM compile is CSP-blocked (breaks code highlighting in nodes + CodeRenderer)
+      `script-src ${webview.cspSource} 'unsafe-inline' 'wasm-unsafe-eval'`,
       `style-src ${webview.cspSource} 'unsafe-inline' https:`,
       `img-src ${webview.cspSource} data: blob: https:`,
       `font-src ${webview.cspSource} data: https:`,

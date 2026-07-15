@@ -37,23 +37,19 @@ function highlighter(): Promise<Highlighter> {
 
 async function highlightContainer(el: HTMLElement): Promise<void> {
   const blocks = Array.from(el.querySelectorAll<HTMLElement>('pre > code[class*="language-"]'));
-  console.log('[skena-hl] blocks:', blocks.length);   // - DIAG
   if (blocks.length === 0) return;
   let hl: Highlighter;
-  try { hl = await highlighter(); } catch (e) { console.warn('[skena-hl] highlighter load failed', e); return; }
+  try { hl = await highlighter(); } catch { return; }
   const loaded = new Set(hl.getLoadedLanguages());
-  console.log('[skena-hl] loaded langs:', [...loaded]);   // - DIAG
   for (const code of blocks) {
     const pre = code.parentElement;
     if (!pre) continue;
     const raw = (/language-([\w+-]+)/.exec(code.className)?.[1] ?? '').toLowerCase();
     const lang = ALIAS[raw] ?? raw;
-    console.log('[skena-hl] block lang:', raw, '->', lang, 'loaded?', loaded.has(lang));   // - DIAG
     if (!loaded.has(lang)) continue;   // - unknown language → leave the themed-but-plain block
     try {
       pre.outerHTML = hl.codeToHtml(code.textContent ?? '', { lang, theme: 'factors' });
-      console.log('[skena-hl] highlighted', lang);   // - DIAG
-    } catch (e) { console.warn('[skena-hl] codeToHtml failed', lang, e); }
+    } catch { /* - keep plain block */ }
   }
 }
 
