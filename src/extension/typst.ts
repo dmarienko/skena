@@ -1,12 +1,26 @@
 // - host-side Typst compiler: compile a math snippet to a standalone inline SVG.
-// - NodeCompiler bundles fonts + a warm compile cache (~2ms); one lazy singleton.
-import { NodeCompiler } from '@myriaddreamin/typst-ts-node-compiler';
+// - The compiler is a platform-specific native .node binary. Load it LAZILY via require()
+// - in a try/catch: a top-level import runs at activation (markdown-html.ts imports this)
+// - and would crash the WHOLE extension on any platform whose binary isn't shipped. On
+// - load failure Typst degrades to a small notice; everything else keeps working.
+import type { NodeCompiler } from '@myriaddreamin/typst-ts-node-compiler';   // - type only, erased at build
 
 let _compiler: NodeCompiler | null = null;
+let _loadFailed = false;
 
-function compiler(): NodeCompiler {
-  if (!_compiler) _compiler = NodeCompiler.create();
-  return _compiler;
+function compiler(): NodeCompiler | null {
+  if (_compiler) return _compiler;
+  if (_loadFailed) return null;
+  try {
+    // - externalized from the esbuild bundle → resolved from node_modules at runtime
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const mod = require('@myriaddreamin/typst-ts-node-compiler') as typeof import('@myriaddreamin/typst-ts-node-compiler');
+    _compiler = mod.NodeCompiler.create();
+    return _compiler;
+  } catch {
+    _loadFailed = true;   // - missing/incompatible binary → give up quietly, don't retry
+    return null;
+  }
 }
 
 // - escape for safe embedding in an HTML text node (error path only)
@@ -20,12 +34,14 @@ function esc(s: string): string {
  * failure returns a small error span so the surrounding document still renders.
  */
 export function typstMathToSvg(src: string, block: boolean): string {
+  const c = compiler();
+  if (!c) return `<span class="typst-error">Typst not available on this platform</span>`;
   // - auto-sized transparent page; wrap the snippet in Typst math mode
   const doc =
     '#set page(width: auto, height: auto, margin: 2pt, fill: none)\n' +
     (block ? `$ ${src} $` : `$${src}$`);
   try {
-    const svg = compiler().svg({ mainFileContent: doc });
+    const svg = c.svg({ mainFileContent: doc });
     if (typeof svg !== 'string' || !svg.trimStart().startsWith('<svg')) {
       return `<span class="typst-error">Typst: no output</span>`;
     }
