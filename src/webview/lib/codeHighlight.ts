@@ -2,13 +2,16 @@
  * Webview-side syntax highlighting for markdown code blocks (factors theme).
  *
  * Reuses shiki — already bundled for CodeRenderer — so this adds no host cost.
- * The host renders code as <pre><code class="language-x">…</code></pre>; after that
- * HTML is injected we swap each block for shiki output in the factors palette.
- * Only runs when the factors markdown theme is active. Never throws.
+ * The host renders code as <pre><code class="language-x">…</code></pre>. We rewrite the
+ * HTML STRING (targeted per code block, leaving the rest incl. Typst SVGs untouched) and
+ * the caller injects the result. Highlighting the string rather than mutating the DOM
+ * post-render means a remount (React Flow unmounts off-screen nodes) re-injects the
+ * already-highlighted HTML from cache instead of losing the colors. Only runs under the
+ * factors theme. Never throws.
  */
 
 import { createHighlighter, type Highlighter } from 'shiki';
-import { useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 
 const FACTORS_THEME = {
   name: 'factors',
@@ -35,43 +38,70 @@ function highlighter(): Promise<Highlighter> {
   return _hl;
 }
 
-async function highlightContainer(el: HTMLElement): Promise<void> {
-  const blocks = Array.from(el.querySelectorAll<HTMLElement>('pre > code[class*="language-"]'));
-  if (blocks.length === 0) return;
+// - the host escapes code content; undo it to recover the source shiki will re-highlight
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'")
+    .replace(/&amp;/g, '&');   // - last, so &amp;lt; → &lt;
+}
+
+// - matches a fenced code block emitted by the host markdown pipeline
+const CODE_RE = /<pre><code class="[^"]*\blanguage-([\w+-]+)[^"]*">([\s\S]*?)<\/code><\/pre>/g;
+
+const cache = new Map<string, string>();   // - rawHtml → highlighted html
+
+async function highlightHtml(html: string): Promise<string> {
+  const matches = [...html.matchAll(CODE_RE)];
+  if (matches.length === 0) return html;
   let hl: Highlighter;
-  try { hl = await highlighter(); } catch { return; }
+  try { hl = await highlighter(); } catch { return html; }
   const loaded = new Set(hl.getLoadedLanguages());
-  for (const code of blocks) {
-    const pre = code.parentElement;
-    if (!pre) continue;
-    const raw = (/language-([\w+-]+)/.exec(code.className)?.[1] ?? '').toLowerCase();
-    const lang = ALIAS[raw] ?? raw;
-    if (!loaded.has(lang)) continue;   // - unknown language → leave the themed-but-plain block
-    try {
-      pre.outerHTML = hl.codeToHtml(code.textContent ?? '', { lang, theme: 'factors' });
-    } catch { /* - keep plain block */ }
+  let out = html;
+  // - splice from last match to first so earlier match indices stay valid
+  for (let i = matches.length - 1; i >= 0; i--) {
+    const m = matches[i];
+    const lang = ALIAS[m[1].toLowerCase()] ?? m[1].toLowerCase();
+    if (!loaded.has(lang)) continue;
+    let shiki: string;
+    try { shiki = hl.codeToHtml(decodeEntities(m[2]), { lang, theme: 'factors' }); }
+    catch { continue; }
+    out = out.slice(0, m.index) + shiki + out.slice(m.index! + m[0].length);
   }
+  return out;
 }
 
 /**
- * Ref for a container holding host-rendered markdown. When `html` changes and the
- * factors theme is active, highlights its code blocks in place. No-op otherwise.
+ * Given host-rendered markdown HTML, returns it with code blocks syntax-highlighted
+ * when the factors theme is active (else the input unchanged). Async — returns the raw
+ * HTML first, then the highlighted version once shiki resolves; cached by input string
+ * so remounts inject the highlighted HTML immediately.
  */
-export function useCodeHighlight(html: string | null | undefined): React.RefObject<HTMLDivElement> {
-  const ref = useRef<HTMLDivElement>(null);
+export function useHighlightedHtml(html: string | null | undefined): string | null {
+  // - data-md-theme is stamped after nodes mount; bump on the event so `needs` recomputes
+  const [, setThemeTick] = useState(0);
   useEffect(() => {
-    // - re-runnable: fires on html change AND on 'skena:mdTheme' (the theme attribute is
-    // - set after nodes mount, so a mount-time run would miss it)
-    const run = () => {
-      const el = ref.current;
-      if (!el) return;
-      if (document.documentElement.dataset.mdTheme !== 'factors') return;
-      if (!el.querySelector('pre > code[class*="language-"]')) return;
-      void highlightContainer(el);
-    };
-    run();
-    window.addEventListener('skena:mdTheme', run);
-    return () => window.removeEventListener('skena:mdTheme', run);
-  }, [html]);
-  return ref;
+    const onTheme = () => setThemeTick(t => t + 1);
+    window.addEventListener('skena:mdTheme', onTheme);
+    return () => window.removeEventListener('skena:mdTheme', onTheme);
+  }, []);
+
+  const active = typeof document !== 'undefined' && document.documentElement.dataset.mdTheme === 'factors';
+  const needs = active && !!html && html.includes('language-');
+  const [out, setOut] = useState<string | null>(() =>
+    !html ? null : needs ? (cache.get(html) ?? html) : html,
+  );
+
+  useEffect(() => {
+    if (!html) { setOut(null); return; }
+    if (!needs) { setOut(html); return; }
+    const cached = cache.get(html);
+    if (cached) { setOut(cached); return; }
+    let cancelled = false;
+    setOut(html);   // - show plain immediately; upgrade when ready
+    void highlightHtml(html).then(h => { cache.set(html, h); if (!cancelled) setOut(h); });
+    return () => { cancelled = true; };
+  }, [html, needs]);
+
+  return out;
 }
