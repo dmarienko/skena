@@ -71,7 +71,12 @@ interface HarnessSession {
   configDir?:    string;                // - isolated CLAUDE_CONFIG_DIR (no global hooks)
   lastTotalCost: number;                // - cumulative total_cost_usd after previous turn
   turnUsage:     LLMUsage | null;       // - cost of the just-finished turn (for onDone)
+  autoContinues: number;                // - auto-"continue" resumes used this user message
 }
+
+// - on hitting --max-turns, silently send "continue" up to this many times before asking
+// - the user; bounds a runaway agent while sparing them the manual "continue" typing
+const MAX_AUTO_CONTINUES = 4;
 
 export class HarnessAdapter implements ILLMClient {
   private _sessions = new Map<string, HarnessSession>();
@@ -147,6 +152,7 @@ export class HarnessAdapter implements ILLMClient {
 
     if (s.cb) { callbacks.onError('Still working on the previous message — please wait or stop it.'); return; }
 
+    s.autoContinues = 0;   // - fresh user message: reset the auto-continue budget
     this.beginTurn(s, message, callbacks);
   }
 
@@ -175,7 +181,7 @@ export class HarnessAdapter implements ILLMClient {
     const bin      = cfg.get<string>('harnessPath')?.trim() || 'claude';
     const model    = cfg.get<string>('model') ?? 'claude-sonnet-4-5';
     const permMode = cfg.get<string>('harnessPermissionMode') ?? 'acceptEdits';
-    const maxTurns = cfg.get<number>('harnessMaxTurns') ?? 16;
+    const maxTurns = cfg.get<number>('harnessMaxTurns') ?? 40;
     const system   = `${systemPrompt}\n\n${harnessDirective(canvasPath)}`;
 
     // - isolate from the user's global ~/.claude (drops the per-message SessionStart
@@ -226,7 +232,7 @@ export class HarnessAdapter implements ILLMClient {
       anyText: false, lastResultText: '', isError: false, aborted: false, stderr: '',
       sessionId: '', usedResume: !!resumeId, everSucceeded: false, pendingMessage: '',
       bin, cwd: workspaceDir, freshArgs, configDir,
-      lastTotalCost: 0, turnUsage: null,
+      lastTotalCost: 0, turnUsage: null, autoContinues: 0,
     };
     this.wire(canvasPath, s);
     this._sessions.set(canvasPath, s);
@@ -451,7 +457,7 @@ export class HarnessAdapter implements ILLMClient {
     const fresh: HarnessSession = {
       ...s, proc, buf: '', usedResume: false, cb: null,
       anyText: false, lastResultText: '', isError: false, aborted: false, stderr: '',
-      lastTotalCost: 0, turnUsage: null,   // - fresh process restarts its cost counter
+      lastTotalCost: 0, turnUsage: null, autoContinues: 0,   // - fresh process restarts counters
     };
     this.wire(canvasPath, fresh);
     this._sessions.set(canvasPath, fresh);
@@ -465,8 +471,16 @@ export class HarnessAdapter implements ILLMClient {
     if (s.isError) {
       // - a failed --resume surfaces as an is_error result (process stays alive)
       if (cb && this.respawnFresh(canvasPath, s, cb)) return;
+      // - turn-cap hit: auto-send "continue" (process is alive) instead of asking the user,
+      // - bounded so a genuinely runaway agent still stops
+      if (subtype === 'error_max_turns' && cb && s.autoContinues < MAX_AUTO_CONTINUES) {
+        s.autoContinues++;
+        this._out?.appendLine(`[harness] turn cap hit — auto-continuing (${s.autoContinues}/${MAX_AUTO_CONTINUES})`);
+        this.beginTurn(s, 'continue', cb);
+        return;
+      }
       const msg = subtype === 'error_max_turns'
-        ? 'Hit the per-message turn cap (skena.ai.harnessMaxTurns) — the reply above may be truncated. Raise the setting or send "continue".'
+        ? `Still going after ${MAX_AUTO_CONTINUES} auto-continues (skena.ai.harnessMaxTurns=${vscode.workspace.getConfiguration('skena.ai').get<number>('harnessMaxTurns') ?? 40}). Send "continue" to keep going, or raise the setting.`
         : cleanError(s.stderr, s.lastResultText || 'Claude reported an error.');
       cb?.onError(msg);
       return;

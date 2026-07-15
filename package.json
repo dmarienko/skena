@@ -297,8 +297,8 @@
         },
         "skena.ai.harnessMaxTurns": {
           "type": "number",
-          "default": 16,
-          "description": "Max agent turns per message for the harness provider (bounds tool-use loops).",
+          "default": 40,
+          "description": "Max agent turns per message for the harness provider. On hitting it the reply auto-continues a few times before asking you.",
           "scope": "window"
         },
         "skena.ai.harnessAddDirs": {
