@@ -1,6 +1,7 @@
-// - returns host-rendered HTML for `text` ONLY when it contains a `%` (Typst delimiter);
-// - otherwise null so the caller renders with its usual in-webview markdown (zero cost).
-// - Caches by text so reopen/scroll/re-render don't re-request; the host also caches.
+// - returns host-rendered HTML for `text` when it contains a `%` (Typst delimiter), OR
+// - when the factors theme is active AND it has a fenced code block (so shiki can color
+// - it — the in-webview MarkdownRenderer path can't be highlighted). Otherwise null so the
+// - caller uses its usual in-webview markdown. Caches by text; the host also caches.
 import { useEffect, useRef, useState } from 'react';
 
 const cache = new Map<string, string>();   // - text → html
@@ -11,7 +12,16 @@ function post(msg: unknown) {
 }
 
 export function useHostMarkdown(text: string): string | null {
-  const needs = text.includes('%');
+  // - the theme attribute is stamped after nodes mount; recompute routing when it flips
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const on = () => setTick(t => t + 1);
+    window.addEventListener('skena:mdTheme', on);
+    return () => window.removeEventListener('skena:mdTheme', on);
+  }, []);
+
+  const factors = typeof document !== 'undefined' && document.documentElement.dataset.mdTheme === 'factors';
+  const needs = text.includes('%') || (factors && text.includes('```'));
   const [html, setHtml] = useState<string | null>(() => (needs ? cache.get(text) ?? null : null));
   const reqRef = useRef<string>('');
 
