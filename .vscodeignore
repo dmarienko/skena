@@ -14,6 +14,13 @@ tsconfig.json
 
 # - dev deps / metadata
 node_modules/**
+# - EXCEPT the native Typst compiler: it's externalized from the esbuild bundle
+# - (a .node binary esbuild can't bundle) and require()d at runtime, so it MUST ship
+# - or the extension crashes on activation. Ship the JS wrapper + only the glibc
+# - (gnu) linux-x64 binary — the target server is glibc. Add another platform's
+# - package here (e.g. -musl, -darwin-arm64) if you distribute for it.
+!node_modules/@myriaddreamin/typst-ts-node-compiler/**
+!node_modules/@myriaddreamin/typst-ts-node-compiler-linux-x64-gnu/**
 .git/**
 
 # - docs — README screenshots load from GitHub raw URLs; plans/specs are internal

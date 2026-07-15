@@ -2,7 +2,7 @@
   "name": "skena",
   "displayName": "Skena",
   "description": "Visual research canvas for VS Code — renders JSON Canvas files as interactive node graphs with rich content previews, a canvas-aware AI companion (Claude Code, Anthropic, or any OpenAI-compatible backend), and a markdown knowledge vault.",
-  "version": "0.6.19",
+  "version": "0.7.0",
   "publisher": "DmitryMarienko",
   "license": "MIT",
   "repository": {
@@ -372,7 +372,7 @@
   "scripts": {
     "dev": "node esbuild.config.mjs --watch",
     "build": "node esbuild.config.mjs",
-    "package": "node esbuild.config.mjs && vsce package --no-dependencies",
+    "package": "node esbuild.config.mjs && vsce package",
     "lint": "eslint src --ext ts,tsx",
     "typecheck": "tsc --noEmit"
   },
