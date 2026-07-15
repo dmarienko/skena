@@ -642,7 +642,13 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       return;
     }
 
-    const resolved = resolver.resolve(msg.uri, canvasDir);
+    // - optional GitHub-style line fragment: file.py#L37 or file.py#37 → open at that line
+    let target = msg.uri;
+    let line: number | undefined;
+    const frag = target.match(/#L?(\d+)$/);
+    if (frag) { line = parseInt(frag[1], 10); target = target.slice(0, frag.index); }
+
+    const resolved = resolver.resolve(target, canvasDir);
     if (!resolved || resolved.isNotion) return;
 
     const fsUri = vscode.Uri.file(resolved.fsPath);
@@ -673,7 +679,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       } else {
         // - .md and all other text files → open in text editor (edit mode)
         const doc = await vscode.workspace.openTextDocument(resolved.fsPath);
-        await vscode.window.showTextDocument(doc, { viewColumn, preview: !msg.modal });
+        // - if a #L<n> line was given, place the cursor there and reveal it
+        const selection = line ? new vscode.Range(line - 1, 0, line - 1, 0) : undefined;
+        await vscode.window.showTextDocument(doc, { viewColumn, preview: !msg.modal, selection });
       }
     } catch (e) {
       vscode.window.showErrorMessage(`Skena: cannot open file: ${e}`);
