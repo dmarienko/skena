@@ -7,26 +7,15 @@
 }
 
 /*
- * content-visibility: auto — instructs the browser to skip layout, paint, and
- * compositing for block elements that are outside the scroll container's visible
- * area. For a 10,000px-tall markdown document, only the ~300px visible portion
- * is ever rasterized into the node's GPU texture; the rest is skipped entirely.
- *
- * contain-intrinsic-size: auto 80px
- *   auto — after the first time an element is rendered, the browser remembers
- *          and reuses the actual measured height instead of the fallback.
- *   80px — cold-start fallback height (typical paragraph ≈ 40–80px at 12px).
- *          A larger value is safer than a small one: it overestimates scrollHeight
- *          so savedScrollTop is never clamped to 0 on the first load.
- *          (The previous 0 2em = 24px caused scrollTop clamping to 0.)
- *
- * Chromium respects the nearest overflow:auto container as the viewport for
- * content-visibility, making this effective for our .skena-scrollable nodes.
+ * NOTE: content-visibility:auto was removed here. Chromium keys its relevance off the
+ * viewport, so panning the canvas (nodes move across the viewport via transform) toggled
+ * every block's render state continuously — a storm of contentvisibilityautostatechange +
+ * re-layout/re-paint that made pan lag (confirmed by a performance trace: 772 toggle
+ * events in a ~3s pan). The node already has `contain: layout style paint`, which bounds
+ * layout/paint without the per-frame toggle. If a very large markdown doc ever needs
+ * off-screen skipping again, gate content-visibility to the idle state (disable it while
+ * a pan/zoom is in progress) rather than leaving it always-on.
  */
-.skena-markdown > * {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 80px;
-}
 .skena-markdown h1 { font-size: 15px; font-weight: 700; margin: 8px 0 4px; }
 .skena-markdown h2 { font-size: 13px; font-weight: 700; margin: 6px 0 3px; }
 .skena-markdown h3 { font-size: 12px; font-weight: 600; margin: 5px 0 2px; }
