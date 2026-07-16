@@ -651,6 +651,12 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const resolved = resolver.resolve(target, canvasDir);
     if (!resolved || resolved.isNotion) return;
 
+    // - clean, actionable message for a broken link instead of VS Code's raw error dump
+    if (!resolver.exists(resolved.fsPath)) {
+      vscode.window.showWarningMessage(`Skena: linked file not found — ${target}`);
+      return;
+    }
+
     const fsUri = vscode.Uri.file(resolved.fsPath);
     const ext   = path.extname(resolved.fsPath).toLowerCase();
 
