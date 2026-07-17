@@ -459,6 +459,11 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         const aiCfg = vscode.workspace.getConfiguration('skena.ai');
         send({ type: 'chatModelInfo', model: aiCfg.get<string>('model') ?? '', provider: aiCfg.get<string>('provider') ?? '' });
       }
+      // - keep this canvas's file resolver current when vaults change, so vault:// nodes
+      // - added after a vault is configured resolve without reopening the canvas
+      if (e.affectsConfiguration('skena.vaults') || e.affectsConfiguration('skena.vaultDirectories')) {
+        void getVaults().then(v => resolver.updateVaults(v));
+      }
     });
 
     panel.onDidDispose(() => {
