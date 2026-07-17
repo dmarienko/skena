@@ -453,8 +453,9 @@ export function FloatingChat({
       if (!el) return;
       e.preventDefault();
       e.stopPropagation();
-      const vStep = el.clientHeight / 4;
-      const hStep = el.clientWidth  / 4;
+      // - ~3 lines per press: small enough to follow the content, not a quarter-page jump
+      const vStep = 60;
+      const hStep = 120;
       switch (e.key) {
         case 'J': el.scrollBy({ top:  vStep, behavior: 'smooth' }); break;
         case 'K': el.scrollBy({ top: -vStep, behavior: 'smooth' }); break;
@@ -464,6 +465,24 @@ export function FloatingChat({
     };
     window.addEventListener('keydown', handler, { capture: true });
     return () => window.removeEventListener('keydown', handler, { capture: true });
+  }, []);
+
+  // - finer mouse-wheel scroll in the chat output — the native step felt too big to follow.
+  // - Normalize line/page delta modes to px and take a smaller step. Non-passive so we can
+  // - preventDefault; ctrl+wheel is left alone (host zoom).
+  useEffect(() => {
+    const el = outputEl.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey) return;
+      const px = e.deltaMode === 1 ? e.deltaY * 18
+               : e.deltaMode === 2 ? e.deltaY * el.clientHeight
+               : e.deltaY;
+      el.scrollBy({ top: px * 0.5 });
+      e.preventDefault();
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
   }, []);
 
   // ─── pin output to the latest message ──────────────────────────────────
