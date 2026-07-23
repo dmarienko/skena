@@ -30,7 +30,7 @@ export const DEFAULT_EDGE_COLOR = '#1f96bda0';   // - default edge stroke (no co
 export const EDGE_FALLBACK_COLOR = '#888888';  // - last-resort stroke if style has none
 
 // ─── selection / focus ring (crisp outline drawn around the focused node) ───────
-export const SELECTION_RING_COLOR = '#02b8faba';
+export const SELECTION_RING_COLOR = '#f7430280';
 
 // ─── connection handles (the square ports on node edges) ────────────────────────
 export const HANDLE_RGB = '0, 229, 255';   // - cyan; used as bg 0.06 / border 0.75 / glow 0.25
