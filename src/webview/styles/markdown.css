@@ -157,7 +157,11 @@
 :root[data-md-theme="factors"] .skena-markdown th,
 :root[data-md-theme="factors"] .skena-markdown td { border: 1px solid #2b3b48; padding: 4px 9px; text-align: left; }
 :root[data-md-theme="factors"] .skena-markdown th { background: #0e151c; color: var(--f-dim); font-weight: 600; text-transform: uppercase; letter-spacing: .08em; font-size: 10.5px; border-bottom: 2px solid var(--f-teal-deep); }
-:root[data-md-theme="factors"] .skena-markdown td { color: var(--f-txt); }
+/* - force cell text to the theme text color: something (untraced) tints numeric cells
+   - chartreuse; !important + inherit on children guarantees readable grey. Links stay teal. */
+:root[data-md-theme="factors"] .skena-markdown td { color: var(--f-txt) !important; }
+:root[data-md-theme="factors"] .skena-markdown td * { color: inherit !important; }
+:root[data-md-theme="factors"] .skena-markdown td a { color: var(--f-teal) !important; }
 /* - zebra striping so dense data tables are readable */
 :root[data-md-theme="factors"] .skena-markdown tbody tr:nth-child(even) td { background: rgba(255,255,255,0.03); }
 :root[data-md-theme="factors"] .skena-markdown tbody tr:hover td { background: var(--f-hover); }

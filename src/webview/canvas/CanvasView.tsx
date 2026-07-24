@@ -2198,7 +2198,13 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         defaultViewport={canvas.viewport ?? { x: 0, y: 0, zoom: 1 }}
         fitView={!canvas.viewport}
         // - save viewport to canvas JSON whenever the user stops panning/zooming
+        onMoveStart={() => {
+          // - promote nodes to GPU layers only while panning/zooming (see canvas.css);
+          // - at rest they render crisp at the real scale instead of a scaled cached texture
+          document.documentElement.setAttribute('data-skena-interacting', '1');
+        }}
         onMoveEnd={(_e, viewport) => {
+          document.documentElement.removeAttribute('data-skena-interacting');
           canvasRef.current = { ...canvasRef.current, viewport };
           scheduleSave();
         }}

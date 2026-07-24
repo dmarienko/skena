@@ -42,11 +42,18 @@
    * GPU texture — pan/zoom just moves/scales the cached textures, no repaint.
    * Tiled rasterization means even large nodes only upload the visible tile.
    */
-  will-change: transform;
+  /* - will-change only DURING pan/zoom (data-skena-interacting set by CanvasView).
+   * - At rest, a promoted layer is a cached texture scaled at fractional zoom → blurry
+   * - text; without it the browser paints at the real scale → crisp. */
+  will-change: auto;
 }
+:root[data-skena-interacting="1"] .skena-node { will-change: transform; }
 
+/* - keep the SAME drop-shadow geometry as the base (0 2px 8px); only brighten the 1px
+   - ring on hover. Changing the shadow size shifted the node's paint bounds a couple px
+   - and forced a layer re-raster on mouse-out (visible "jump"/blur). */
 .skena-node:hover {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.16);
 }
 
 /* - focus ring: handled by useSelectedStyle hook (outline on .skena-node inline style) */
