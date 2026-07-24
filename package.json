@@ -2,7 +2,7 @@
   "name": "skena",
   "displayName": "Skena",
   "description": "Visual research canvas for VS Code — renders JSON Canvas files as interactive node graphs with rich content previews, a canvas-aware AI companion (Claude Code, Anthropic, or any OpenAI-compatible backend), and a markdown knowledge vault.",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "publisher": "DmitryMarienko",
   "license": "MIT",
   "repository": {
