@@ -672,9 +672,9 @@ export function FloatingChat({
           style={{
             flex:         1,
             fontSize:     11,
-            fontWeight:   500,
-            color:        'var(--vscode-foreground)',
-            opacity:      0.7,
+            fontWeight:   600,
+            color:        '#4cc8a0',   // - teal; signals the title is clickable (model picker)
+            opacity:      0.9,
             whiteSpace:   'nowrap',
             overflow:     'hidden',
             textOverflow: 'ellipsis',
