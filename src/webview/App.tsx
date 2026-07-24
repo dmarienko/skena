@@ -138,6 +138,10 @@ export function App(): JSX.Element {
           setMdConfig(msg.config);
           // - stamp the theme on the root so scoped CSS ([data-md-theme=…]) applies everywhere
           document.documentElement.dataset.mdTheme = msg.config.theme ?? 'vscode';
+          // - readable-column width for markdown nodes (0/undefined = unlimited)
+          document.documentElement.style.setProperty(
+            '--skena-md-maxw', msg.config.maxWidth ? `${msg.config.maxWidth}ch` : 'none',
+          );
           // - nodes mount before this arrives; nudge the code highlighter to (re)run
           window.dispatchEvent(new CustomEvent('skena:mdTheme', { detail: msg.config.theme ?? 'vscode' }));
           // - warm shiki on idle so its WASM init doesn't hitch the first pan/interaction

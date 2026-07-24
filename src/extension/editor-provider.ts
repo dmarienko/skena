@@ -209,6 +209,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             const md        = vscode.workspace.getConfiguration('markdown');
             const nbCfg     = vscode.workspace.getConfiguration('skena').get<{ showSourceCells?: boolean }>('notebook') ?? {};
             const mdTheme   = vscode.workspace.getConfiguration('skena').get<'vscode' | 'factors'>('markdownTheme') ?? 'vscode';
+            const mdMaxW    = vscode.workspace.getConfiguration('skena').get<number>('markdownMaxWidth') ?? 0;
             send({
               type: 'markdownConfig',
               config: {
@@ -217,6 +218,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
                 styles:             md.get<string[]>('styles') ?? [],
                 notebookShowSource: nbCfg.showSourceCells ?? false,
                 theme:              mdTheme,
+                maxWidth:           mdMaxW,
               },
             });
           } catch (e) {

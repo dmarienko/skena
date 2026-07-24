@@ -749,6 +749,8 @@ export interface MarkdownConfig {
   notebookShowSource?:  boolean;  // - skena.notebook.showSourceCells
   /** - rendered-markdown theme: 'vscode' adapts to the editor, 'factors' = dark teal terminal */
   theme?:               'vscode' | 'factors';  // - skena.markdownTheme
+  /** - max line length (chars) for readable columns in md nodes; 0/undefined = unlimited */
+  maxWidth?:            number;                 // - skena.markdownMaxWidth
 }
 
 export interface MsgMarkdownConfig {

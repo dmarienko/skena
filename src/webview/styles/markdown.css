@@ -166,3 +166,14 @@
 :root[data-md-theme="factors"] .skena-node--file {
   background: #0c1117 !important;
 }
+
+/* - #3: under factors, code file nodes (shiki) sit directly on the node bg — no mismatched
+   - dark-plus slab. The factors shiki theme provides the token colors. */
+:root[data-md-theme="factors"] .skena-code .shiki,
+:root[data-md-theme="factors"] .skena-code pre.shiki { background: transparent !important; }
+
+/* - #2: readable line length in markdown nodes. Width driven by skena.markdownMaxWidth
+   - (chars); App sets --skena-md-maxw (or 'none'). Tables/pre/images opt out so wide
+   - content still uses the full node width. */
+.skena-markdown { max-width: var(--skena-md-maxw, none); }
+.skena-markdown table, .skena-markdown pre, .skena-markdown img { max-width: 100%; }

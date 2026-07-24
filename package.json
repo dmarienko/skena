@@ -365,6 +365,12 @@
           "default": "vscode",
           "description": "Theme for rendered markdown in nodes and chat.",
           "scope": "window"
+        },
+        "skena.markdownMaxWidth": {
+          "type": "number",
+          "default": 0,
+          "description": "Max line length (in characters) for rendered markdown nodes — widening a node past this keeps a readable text column instead of reflowing full width. 0 = unlimited. Try ~88.",
+          "scope": "window"
         }
       }
     }

@@ -13,7 +13,7 @@
 import { createHighlighter, type Highlighter } from 'shiki';
 import { useEffect, useState } from 'react';
 
-const FACTORS_THEME = {
+export const FACTORS_THEME = {
   name: 'factors',
   type: 'dark' as const,
   colors: { 'editor.background': '#0f161d', 'editor.foreground': '#c7d1cc' },

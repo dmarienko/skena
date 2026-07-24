@@ -8,13 +8,15 @@
 
 import React, { useEffect, useState } from 'react';
 import { createHighlighter, Highlighter } from 'shiki';
+import { FACTORS_THEME } from '../lib/codeHighlight';
 
 let highlighterPromise: Promise<Highlighter> | null = null;
 
 function getHighlighter(): Promise<Highlighter> {
   if (!highlighterPromise) {
     highlighterPromise = createHighlighter({
-      themes: ['dark-plus'],
+      // - dark-plus for the default theme; factors palette when that theme is active
+      themes: ['dark-plus', FACTORS_THEME],
       // - only languages we actually preview in canvas nodes
       langs:  ['python', 'yaml'],
     });
@@ -29,16 +31,24 @@ interface CodeRendererProps {
 
 export function CodeRenderer({ content, language }: CodeRendererProps): JSX.Element {
   const [html, setHtml] = useState<string | null>(null);
+  // - re-highlight when the markdown theme flips (data-md-theme set/changed after mount)
+  const [themeTick, setThemeTick] = useState(0);
+  useEffect(() => {
+    const on = () => setThemeTick(t => t + 1);
+    window.addEventListener('skena:mdTheme', on);
+    return () => window.removeEventListener('skena:mdTheme', on);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
+    const theme = document.documentElement.dataset.mdTheme === 'factors' ? 'factors' : 'dark-plus';
     getHighlighter().then(hl => {
       if (cancelled) return;
-      const highlighted = hl.codeToHtml(content, { lang: language, theme: 'dark-plus' });
+      const highlighted = hl.codeToHtml(content, { lang: language, theme });
       setHtml(highlighted);
     }).catch(() => setHtml(null));
     return () => { cancelled = true; };
-  }, [content, language]);
+  }, [content, language, themeTick]);
 
   if (html) {
     return (
