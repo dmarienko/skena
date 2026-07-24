@@ -179,7 +179,8 @@ export class HarnessAdapter implements ILLMClient {
 
     const cfg      = vscode.workspace.getConfiguration('skena.ai');
     const bin      = cfg.get<string>('harnessPath')?.trim() || 'claude';
-    const model    = cfg.get<string>('model') ?? 'claude-sonnet-4-5';
+    // - per-canvas override (canvas.metadata.aiModel) wins over the global setting
+    const model    = context?.model?.trim() || cfg.get<string>('model') || 'claude-sonnet-4-5';
     const permMode = cfg.get<string>('harnessPermissionMode') ?? 'acceptEdits';
     const maxTurns = cfg.get<number>('harnessMaxTurns') ?? 40;
     const system   = `${systemPrompt}\n\n${harnessDirective(canvasPath)}`;

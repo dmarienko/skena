@@ -143,6 +143,11 @@ export interface CanvasData {
    * Persisted so the sequence survives canvas reopen.
    */
   creationCounter?: number;
+  /** - canvas-scoped skena metadata (portable in the .canvas file) */
+  metadata?: {
+    /** - AI model for this canvas's chat; overrides the global skena.ai.model */
+    aiModel?: string;
+  };
 }
 
 // ─── Activity heatmap types ────────────────────────────────────────────────────
@@ -316,6 +321,8 @@ export interface MsgPanelActivated { type: 'panelActivated'; }
 
 /** - host → webview: current AI model + provider (for the chat title) */
 export interface MsgChatModelInfo { type: 'chatModelInfo'; model: string; provider: string; }
+/** - webview → host: user clicked the chat title to change this canvas's model */
+export interface MsgPickModel { type: 'pickModel'; }
 
 /** - host → webview: session compaction is running (true) or finished (false) */
 export interface MsgFloatingChatCompacting { type: 'floatingChatCompacting'; active: boolean; }
@@ -614,7 +621,8 @@ export type WebviewToHost =
   | MsgSaveMarks
   | MsgVerifyPath
   | MsgRenderMarkdown
-  | MsgShowWarning;
+  | MsgShowWarning
+  | MsgPickModel;
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────
 

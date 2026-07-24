@@ -667,7 +667,8 @@ export function FloatingChat({
         }}
       >
         <span
-          title={provider ? `provider: ${provider}` : undefined}
+          title={`Click to change the model for this canvas${provider ? ` · provider: ${provider}` : ''}`}
+          onClick={() => (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage({ type: 'pickModel' })}
           style={{
             flex:         1,
             fontSize:     11,
@@ -677,9 +678,10 @@ export function FloatingChat({
             whiteSpace:   'nowrap',
             overflow:     'hidden',
             textOverflow: 'ellipsis',
+            cursor:       'pointer',
           }}
         >
-          Agent: {model ? `${model} @ ${agentName}` : agentName}
+          Agent: {model ? `${model} @ ${agentName}` : agentName} ▾
         </span>
 
         {chat.thinking && (

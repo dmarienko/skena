@@ -38,6 +38,8 @@ export interface LLMContext {
   canvasPath?:   string;
   activeNodeId?: string | null;
   workspaceDir?: string;
+  /** - per-canvas model override (canvas.metadata.aiModel); falls back to skena.ai.model */
+  model?:        string;
   /** - prior CC session id for this canvas (harness --resume); null = fresh */
   sessionId?:    string | null;
   /** - whether to resume the prior session (skena.ai.session.restore) */
