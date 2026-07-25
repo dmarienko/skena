@@ -1103,7 +1103,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     // - so we re-resolve nodes by id here instead of writing the object captured at entry.
     const applyAndPersist = async (
       status: 'ok' | 'error',
-      output: { format: 'markdown' | 'image' | 'html'; content: string } | null,
+      output: { format: 'markdown' | 'image' | 'html' | 'plotly'; content: string } | null,
     ) => {
       const c  = document.canvas;
       const cn = c.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code') as CodeNode | undefined;
@@ -1157,17 +1157,20 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     // - build output content: stream text as a code block, then the last rich
     // - mime (image → data URI, html → raw, json → fenced), plus any error trace
     const rich = out.rich[out.rich.length - 1];
-    let format: 'markdown' | 'image' | 'html' = 'markdown';
+    let format: 'markdown' | 'image' | 'html' | 'plotly' = 'markdown';
     let content = out.streamText ? '```\n' + out.streamText + '\n```' : '';
     if (rich) {
-      if (rich.mime.startsWith('image/'))       { format = 'image'; content = `data:${rich.mime};base64,${rich.data}`; }
-      else if (rich.mime === 'text/html')       { format = 'html';  content = rich.data; }
-      else if (rich.mime === 'application/json') content += '\n\n```json\n' + rich.data + '\n```';
-      else                                       content += '\n\n' + rich.data;
+      if (rich.mime === 'application/vnd.plotly.v1+json') { format = 'plotly'; content = rich.data; }
+      else if (rich.mime.startsWith('image/'))            { format = 'image';  content = `data:${rich.mime};base64,${rich.data}`; }
+      else if (rich.mime === 'text/html')                 { format = 'html';   content = rich.data; }
+      else if (rich.mime === 'application/json')          content += '\n\n```json\n' + rich.data + '\n```';
+      else                                                content += '\n\n' + rich.data;
     }
     if (out.error) content += '\n\n```\n' + out.error + '\n```';
 
-    try { await applyAndPersist(out.status === 'error' ? 'error' : 'ok', { format, content }); }
+    // - only write an output node when the run actually produced something
+    const hasOutput = !!rich || out.streamText.length > 0 || !!out.error;
+    try { await applyAndPersist(out.status === 'error' ? 'error' : 'ok', hasOutput ? { format, content } : null); }
     catch (e) { vscode.window.showErrorMessage(`Skena: failed to save run output: ${e}`); }
 
     send({

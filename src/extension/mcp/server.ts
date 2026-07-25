@@ -700,38 +700,42 @@ async function canvasRunCell(args: Record<string, unknown>): Promise<string> {
 
     // - collapse the collected output into a single cell-node payload
     const rich = out.rich[out.rich.length - 1];
-    let format: 'markdown' | 'image' | 'html' = 'markdown';
+    let format: 'markdown' | 'image' | 'html' | 'plotly' = 'markdown';
     let content = out.streamText ? '```\n' + out.streamText + '\n```' : '';
     if (rich) {
-      if (rich.mime.startsWith('image/')) { format = 'image'; content = `data:${rich.mime};base64,${rich.data}`; }
-      else if (rich.mime === 'text/html') { format = 'html'; content = rich.data; }
-      else { content += (content ? '\n\n' : '') + rich.data; }
+      if (rich.mime === 'application/vnd.plotly.v1+json') { format = 'plotly'; content = rich.data; }
+      else if (rich.mime.startsWith('image/'))            { format = 'image';  content = `data:${rich.mime};base64,${rich.data}`; }
+      else if (rich.mime === 'text/html')                 { format = 'html';   content = rich.data; }
+      else                                                 { content += (content ? '\n\n' : '') + rich.data; }
     }
     if (out.error) content += '\n\n```\n' + out.error + '\n```';
 
-    // - reuse the linked output node if it exists, else create + link one at the cell's right edge
-    const existing = cell.outputNodeId ? d.nodes.find(n => n.id === cell.outputNodeId) : undefined;
-    let outLabel: string;
-    if (existing && existing.type === 'cell') {
-      existing.format  = format;
-      existing.content = content;
-      outLabel = existing.nodeLabel ?? existing.id;
-    } else {
-      const outNode: CellNode = {
-        id:     uid(),
-        type:   'cell',
-        format, content,
-        x:      Math.round(cell.x + cell.width + 60),
-        y:      Math.round(cell.y),
-        width:  480,
-        height: 320,
-        createdBy: 'ai',
-      };
-      const labeled = assignLabel(outNode, d.nodes);
-      d.nodes.push(labeled);
-      d.edges.push({ id: `edge-out-${uid()}`, fromNode: cell.id, fromSide: 'right', toNode: labeled.id, toSide: 'left', toEnd: 'arrow' });
-      cell.outputNodeId = labeled.id;
-      outLabel = labeled.nodeLabel ?? labeled.id;
+    const hasOutput = !!rich || out.streamText.length > 0 || !!out.error;
+    let outLabel = '(no output)';
+    if (hasOutput) {
+      // - reuse the linked output node if it exists, else create + link one at the cell's right edge
+      const existing = cell.outputNodeId ? d.nodes.find(n => n.id === cell.outputNodeId) : undefined;
+      if (existing && existing.type === 'cell') {
+        existing.format  = format;
+        existing.content = content;
+        outLabel = existing.nodeLabel ?? existing.id;
+      } else {
+        const outNode: CellNode = {
+          id:     uid(),
+          type:   'cell',
+          format, content,
+          x:      Math.round(cell.x + cell.width + 60),
+          y:      Math.round(cell.y),
+          width:  480,
+          height: 320,
+          createdBy: 'ai',
+        };
+        const labeled = assignLabel(outNode, d.nodes);
+        d.nodes.push(labeled);
+        d.edges.push({ id: `edge-out-${uid()}`, fromNode: cell.id, fromSide: 'right', toNode: labeled.id, toSide: 'left', toEnd: 'arrow' });
+        cell.outputNodeId = labeled.id;
+        outLabel = labeled.nodeLabel ?? labeled.id;
+      }
     }
 
     cell.lastStatus = out.status === 'error' ? 'error' : 'ok';

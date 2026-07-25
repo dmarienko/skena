@@ -564,12 +564,14 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     if (!targetNodeId) {
       const fromSide = (connectionState.fromHandle?.id ?? 'right') as NodeSide;
       const opposite: Record<NodeSide, NodeSide> = { left: 'right', right: 'left', top: 'bottom', bottom: 'top' };
-      const fromKernel = connectionState.fromNode.type === 'kernel';
-      const nw = fromKernel ? 360 : 400;
-      const nh = fromKernel ? 200 : 300;
+      // - dragging off a kernel OR a code cell makes another code cell (its natural chain); else a text note
+      const fromType = connectionState.fromNode.type;
+      const makeCode = fromType === 'kernel' || fromType === 'code';
+      const nw = makeCode ? 360 : 400;
+      const nh = makeCode ? 200 : 300;
       const p = screenToFlowPosition({ x: mouseEvent.clientX, y: mouseEvent.clientY });
-      const nodeId = `${fromKernel ? 'code' : 'text'}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-      const newNode: CanvasNode = fromKernel
+      const nodeId = `${makeCode ? 'code' : 'text'}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      const newNode: CanvasNode = makeCode
         ? { id: nodeId, type: 'code', code: '', language: 'python', x: Math.round(p.x), y: Math.round(p.y - nh / 2), width: nw, height: nh }
         : { id: nodeId, type: 'text', text: '', x: Math.round(p.x), y: Math.round(p.y - nh / 2), width: nw, height: nh };
       const newEdge: CanvasEdge = {
@@ -1891,15 +1893,38 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       setNodes(nds => nds.map(n =>
         n.id === cellNodeId ? { ...n, data: { ...n.data, lastStatus: state } } : n
       ));
-      if (kernelNodeId) {
-        const running = state === 'running';
-        setEdges(eds => eds.map(ed =>
-          (ed.source === cellNodeId && ed.target === kernelNodeId) ||
-          (ed.source === kernelNodeId && ed.target === cellNodeId)
-            ? { ...ed, animated: running }
-            : ed
-        ));
-      }
+      setEdges(eds => {
+        // - not running → clear every run animation (only run status uses `animated`)
+        if (state !== 'running' || !kernelNodeId) {
+          return eds.some(ed => ed.animated) ? eds.map(ed => ed.animated ? { ...ed, animated: false } : ed) : eds;
+        }
+        // - running → animate the edge path cell → … → kernel (BFS), so a chained cell
+        // - lights its whole route, not just a (non-existent) direct cell↔kernel edge
+        const adj = new Map<string, { edgeId: string; other: string }[]>();
+        const link = (a: string, edgeId: string, b: string) => {
+          const list = adj.get(a) ?? []; list.push({ edgeId, other: b }); adj.set(a, list);
+        };
+        for (const ed of eds) { link(ed.source, ed.id, ed.target); link(ed.target, ed.id, ed.source); }
+        const prevEdge = new Map<string, string>();
+        const prevNode = new Map<string, string>();
+        const seen = new Set<string>([cellNodeId]);
+        const queue = [cellNodeId];
+        let found = false;
+        while (queue.length && !found) {
+          const cur = queue.shift() as string;
+          for (const { edgeId, other } of adj.get(cur) ?? []) {
+            if (seen.has(other)) continue;
+            seen.add(other); prevEdge.set(other, edgeId); prevNode.set(other, cur);
+            if (other === kernelNodeId) { found = true; break; }
+            queue.push(other);
+          }
+        }
+        const pathEdgeIds = new Set<string>();
+        for (let n = kernelNodeId; found && n !== cellNodeId && prevEdge.has(n); n = prevNode.get(n) as string) {
+          pathEdgeIds.add(prevEdge.get(n) as string);
+        }
+        return eds.map(ed => pathEdgeIds.has(ed.id) ? { ...ed, animated: true } : ed);
+      });
     };
     window.addEventListener('skena:runStatus', handler);
     return () => window.removeEventListener('skena:runStatus', handler);

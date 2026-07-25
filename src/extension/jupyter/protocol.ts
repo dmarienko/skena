@@ -76,8 +76,10 @@ export function parseReply(raw: unknown): ParsedReply {
   }
 }
 
-// - preference order when picking a single rich mime from a data bundle
-const RICH_MIMES = ['image/png', 'image/jpeg', 'text/html', 'application/json', 'text/plain'];
+// - preference order when picking a single rich mime from a data bundle.
+// - plotly first: it also emits a text/html fallback whose <script> can't run in the
+// - sandboxed webview, so route the figure JSON to the plotly renderer instead.
+const RICH_MIMES = ['application/vnd.plotly.v1+json', 'image/png', 'image/jpeg', 'text/html', 'application/json', 'text/plain'];
 
 function pickRich(data: Record<string, unknown>): { mime: string; data: string } | null {
   for (const mime of RICH_MIMES) {
