@@ -17,6 +17,7 @@
  *   canvas_remove_node  delete one or more nodes (and their edges)
  *   canvas_add_edge     connect two nodes
  *   canvas_pin_output   create a CellNode linked back to a source node
+ *   canvas_run_cell     run a code node on a bound kernel, write output to a cell node
  */
 
 import * as fs       from 'fs/promises';
@@ -25,8 +26,10 @@ import * as os       from 'os';
 import * as readline from 'readline';
 import * as crypto   from 'crypto';
 
-import { CanvasData, CanvasNode, CanvasEdge, CanvasNodeBase } from '../../shared/types';
+import { CanvasData, CanvasNode, CanvasEdge, CanvasNodeBase, CellNode } from '../../shared/types';
 import { assignLabel, ensureLabels } from '../../shared/nodeLabels';
+import { resolveKernelConfig, type KernelServerConfig } from '../jupyter/config';
+import { executeCell } from '../jupyter/client';
 
 // ─── path helpers ─────────────────────────────────────────────────────────────
 
@@ -658,6 +661,84 @@ async function canvasPinOutput(args: Record<string, unknown>): Promise<string> {
   }); // - withFileLock
 }
 
+// - kernel servers for the agent-run path: prefer the harness-injected env (JSON),
+// - else fall back to the same ~/.aix/xlmcp/.env resolution the host uses.
+function loadKernelServersFromEnv(): KernelServerConfig[] {
+  const raw = process.env.SKENA_JUPYTER_KERNELS;
+  if (raw) {
+    try { return JSON.parse(raw) as KernelServerConfig[]; } catch { /* - fall through to config */ }
+  }
+  return resolveKernelConfig(undefined, null);
+}
+
+async function canvasRunCell(args: Record<string, unknown>): Promise<string> {
+  const p = resolvePath(args.canvasPath as string);
+  return withFileLock(p, async () => {
+    const d = await readCanvas(p);
+
+    const cell = findNode(d, args.cellRef as string);
+    if (!cell || cell.type !== 'code') return `error: ${args.cellRef} is not a code node`;
+
+    // - explicit kernelRef, else the kernel node joined to this cell by an edge
+    const kernelNode = args.kernelRef
+      ? findNode(d, args.kernelRef as string)
+      : d.nodes.find(n => n.type === 'kernel' && d.edges.some(e =>
+          (e.fromNode === cell.id && e.toNode === n.id) || (e.toNode === cell.id && e.fromNode === n.id)));
+    if (!kernelNode || kernelNode.type !== 'kernel') return 'error: no kernel bound to this cell';
+
+    const servers = loadKernelServersFromEnv();
+    const server  = servers.find(s => s.name === kernelNode.server);
+    if (!server) return `error: unknown server ${kernelNode.server}`;
+    if (!kernelNode.kernelId) return 'error: kernel node has no live kernelId (open the canvas so Skena starts it)';
+
+    const ids = { msgId: crypto.randomUUID(), session: crypto.randomUUID(), date: new Date().toISOString() };
+    const out = await executeCell(server, kernelNode.kernelId, cell.code, ids);
+
+    // - collapse the collected output into a single cell-node payload
+    const rich = out.rich[out.rich.length - 1];
+    let format: 'markdown' | 'image' | 'html' = 'markdown';
+    let content = out.streamText ? '```\n' + out.streamText + '\n```' : '';
+    if (rich) {
+      if (rich.mime.startsWith('image/')) { format = 'image'; content = `data:${rich.mime};base64,${rich.data}`; }
+      else if (rich.mime === 'text/html') { format = 'html'; content = rich.data; }
+      else { content += (content ? '\n\n' : '') + rich.data; }
+    }
+    if (out.error) content += '\n\n```\n' + out.error + '\n```';
+
+    // - reuse the linked output node if it exists, else create + link one at the cell's right edge
+    const existing = cell.outputNodeId ? d.nodes.find(n => n.id === cell.outputNodeId) : undefined;
+    let outLabel: string;
+    if (existing && existing.type === 'cell') {
+      existing.format  = format;
+      existing.content = content;
+      outLabel = existing.nodeLabel ?? existing.id;
+    } else {
+      const outNode: CellNode = {
+        id:     uid(),
+        type:   'cell',
+        format, content,
+        x:      Math.round(cell.x + cell.width + 60),
+        y:      Math.round(cell.y),
+        width:  480,
+        height: 320,
+        createdBy: 'ai',
+      };
+      const labeled = assignLabel(outNode, d.nodes);
+      d.nodes.push(labeled);
+      d.edges.push({ id: `edge-out-${uid()}`, fromNode: cell.id, fromSide: 'right', toNode: labeled.id, toSide: 'left', toEnd: 'arrow' });
+      cell.outputNodeId = labeled.id;
+      outLabel = labeled.nodeLabel ?? labeled.id;
+    }
+
+    cell.lastStatus = out.status === 'error' ? 'error' : 'ok';
+    cell.lastRun    = Date.now();
+    await writeCanvas(p, d);
+
+    return `ran ${cell.nodeLabel ?? cell.id} on ${kernelNode.server} → ${outLabel}: ${out.status}` +
+      `${out.error ? ' — ' + out.error : ''}\n${out.streamText.slice(0, 500)}`;
+  }); // - withFileLock
+}
+
 // ─── tool definitions ─────────────────────────────────────────────────────────
 
 const TOOLS = [
@@ -805,6 +886,19 @@ const TOOLS = [
       required: ['canvasPath', 'content'],
     },
   },
+  {
+    name: 'canvas_run_cell',
+    description: 'Run a code cell node on a Jupyter kernel and write its output to a linked cell node. Resolves the kernel from kernelRef or the code node\'s bound-kernel edge.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        canvasPath: { type: 'string', description: 'absolute path to the .canvas file' },
+        cellRef:    { type: 'string', description: 'label or id of the code node to run' },
+        kernelRef:  { type: 'string', description: 'optional label or id of the kernel node; defaults to the bound one' },
+      },
+      required: ['canvasPath', 'cellRef'],
+    },
+  },
 ];
 
 // ─── MCP protocol ─────────────────────────────────────────────────────────────
@@ -865,6 +959,7 @@ async function dispatch(msg: JsonRpcMsg): Promise<void> {
         case 'canvas_remove_node': text = await canvasRemoveNode(args);  break;
         case 'canvas_add_edge':    text = await canvasAddEdge(args);     break;
         case 'canvas_pin_output':  text = await canvasPinOutput(args);   break;
+        case 'canvas_run_cell':    text = await canvasRunCell(args);     break;
         default: throw new Error(`Unknown tool: ${name}`);
       }
       ok(id, { content: [{ type: 'text', text }] });

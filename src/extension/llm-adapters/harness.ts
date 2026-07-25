@@ -23,6 +23,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { spawn, type ChildProcess } from 'child_process';
 import type { ILLMClient, LLMMessage, LLMTool, LLMCallbacks, LLMContext, LLMUsage } from '../llm-client';
+import { loadKernelServers } from '../jupyter/manager';
 
 const FALLBACK_BIN = path.join(os.homedir(), '.local', 'bin', 'claude');
 
@@ -332,7 +333,11 @@ export class HarnessAdapter implements ILLMClient {
 
   /** - write the MCP config: skena server + (when isolated) the user's own servers */
   private writeMcpConfig(workspaceDir: string, mcpJs: string, includeUserServers: boolean): string {
-    const servers: Record<string, unknown> = { skena: { type: 'stdio', command: 'node', args: [mcpJs] } };
+    // - pass the resolved Jupyter servers to the MCP process so canvas_run_cell can reach them
+    const kernels = loadKernelServers();
+    const servers: Record<string, unknown> = {
+      skena: { type: 'stdio', command: 'node', args: [mcpJs], env: { SKENA_JUPYTER_KERNELS: JSON.stringify(kernels) } },
+    };
     if (includeUserServers) {
       try {
         const j = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude.json'), 'utf8')) as { mcpServers?: Record<string, unknown> };
