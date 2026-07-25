@@ -345,7 +345,8 @@ export class HarnessAdapter implements ILLMClient {
       } catch { /* - no user servers to carry over */ }
     }
     const p = path.join(os.tmpdir(), `skena-mcp-${hashPath(workspaceDir)}.json`);
-    fs.writeFileSync(p, JSON.stringify({ mcpServers: servers }));
+    // - contains the Jupyter token in env; keep it owner-only readable
+    fs.writeFileSync(p, JSON.stringify({ mcpServers: servers }), { mode: 0o600 });
     return p;
   }
 
