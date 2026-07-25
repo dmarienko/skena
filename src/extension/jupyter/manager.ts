@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { resolveKernelConfig, type KernelServerConfig } from './config';
-import { listKernels, startKernel, executeCell, type LiveKernel } from './client';
+import { listKernels, startKernel, executeCell, restartKernel, shutdownKernel, type LiveKernel } from './client';
 import type { CollectedOutput } from './protocol';
 import type { KernelStatusEntry } from '../../shared/types';
 
@@ -63,6 +63,17 @@ export class KernelManager {
     if (kernelId) return kernelId;
     const k = await startKernel(server);
     return k.id;
+  }
+
+  async restart(server: KernelServerConfig, kernelId: string): Promise<void> {
+    await restartKernel(server, kernelId);
+    void this.poll();
+  }
+
+  async shutdown(server: KernelServerConfig, kernelId: string): Promise<void> {
+    await shutdownKernel(server, kernelId);
+    this.running.delete(kernelId);
+    void this.poll();
   }
 
   async run(

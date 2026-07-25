@@ -37,6 +37,24 @@ export async function startKernel(server: KernelServerConfig, name = 'python3'):
   return { id: k.id, name: k.name, state: k.execution_state ?? 'starting' };
 }
 
+// - POST /api/kernels/{id}/restart — same kernel id survives, namespace is wiped
+export async function restartKernel(server: KernelServerConfig, kernelId: string): Promise<void> {
+  const res = await fetch(`${restBase(server.hubUrl)}/api/kernels/${kernelId}/restart`, {
+    method: 'POST',
+    headers: { Authorization: `token ${server.token}` },
+  });
+  if (!res.ok) throw new Error(`POST /api/kernels/${kernelId}/restart ${res.status}`);
+}
+
+// - DELETE /api/kernels/{id} — shuts the kernel down (id becomes invalid)
+export async function shutdownKernel(server: KernelServerConfig, kernelId: string): Promise<void> {
+  const res = await fetch(`${restBase(server.hubUrl)}/api/kernels/${kernelId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `token ${server.token}` },
+  });
+  if (!res.ok && res.status !== 404) throw new Error(`DELETE /api/kernels/${kernelId} ${res.status}`);
+}
+
 // - open a WS, run one cell, resolve with the collected output. onDelta fires as replies stream.
 export async function executeCell(
   server:  KernelServerConfig,

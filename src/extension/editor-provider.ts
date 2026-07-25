@@ -412,8 +412,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         case 'showWarning':
           vscode.window.showWarningMessage(msg.text);
           break;
-        case 'runCell':   await this.handleRunCell(msg, manager, panel, document, canvasDir); break;
-        case 'addKernel': await this.handleAddKernel(manager, document, send); break;
+        case 'runCell':      await this.handleRunCell(msg, manager, panel, document, canvasDir); break;
+        case 'addKernel':    await this.handleAddKernel(manager, document, send); break;
+        case 'kernelAction': await this.handleKernelAction(msg, manager, document); break;
       }
     });
 
@@ -1180,6 +1181,36 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       state:        out.status === 'error' ? 'error' : 'ok',
       error:        out.error,
     });
+  }
+
+  /**
+   * Restart or shut down the kernel a kernel node points at (its right-click menu).
+   * Shutdown clears the node's kernelId so its LED goes grey and the next run starts
+   * a fresh kernel; restart keeps the same id (Jupyter wipes the namespace).
+   */
+  private async handleKernelAction(
+    msg:      { action: 'restart' | 'shutdown'; kernelNodeId: string },
+    manager:  KernelManager,
+    document: SkenaDocument,
+  ): Promise<void> {
+    const canvas = document.canvas;
+    const kernelNode = canvas.nodes.find(n => n.id === msg.kernelNodeId && n.type === 'kernel') as KernelNode | undefined;
+    if (!kernelNode) return;
+    const server = manager.serverByName(kernelNode.server);
+    if (!server || !kernelNode.kernelId) return;
+    try {
+      if (msg.action === 'restart') {
+        await manager.restart(server, kernelNode.kernelId);
+        void vscode.window.showInformationMessage(`Skena: restarted ${kernelNode.displayName ?? 'kernel'}.`);
+      } else {
+        await manager.shutdown(server, kernelNode.kernelId);
+        kernelNode.kernelId = undefined;
+        await writeCanvas(document.uri.fsPath, document.canvas);
+        void vscode.window.showInformationMessage(`Skena: shut down ${kernelNode.displayName ?? 'kernel'}.`);
+      }
+    } catch (e) {
+      void vscode.window.showErrorMessage(`Skena: kernel ${msg.action} failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   /**
