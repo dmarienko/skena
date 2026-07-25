@@ -357,7 +357,10 @@
         },
         "skena.markdownTheme": {
           "type": "string",
-          "enum": ["vscode", "factors"],
+          "enum": [
+            "vscode",
+            "factors"
+          ],
           "enumDescriptions": [
             "Adapt to the active VS Code color theme (default)",
             "Dark teal research-terminal theme (IBM Plex, syntax-colored code)"
@@ -389,6 +392,7 @@
     "@types/react": "^18.0.0",
     "@types/react-dom": "^18.0.0",
     "@types/vscode": "^1.85.0",
+    "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
     "@vscode/vsce": "^2.22.0",
@@ -419,6 +423,7 @@
     "remark-parse": "^11.0.0",
     "remark-rehype": "^11.0.0",
     "shiki": "^1.0.0",
-    "unified": "^11.0.0"
+    "unified": "^11.0.0",
+    "ws": "^8.21.1"
   }
 }

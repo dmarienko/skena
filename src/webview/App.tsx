@@ -241,6 +241,9 @@ export function App(): JSX.Element {
         case 'renderMarkdownResult':
           window.dispatchEvent(new CustomEvent('skena:renderMarkdownResult', { detail: { requestId: msg.requestId, html: msg.html } }));
           break;
+        case 'kernelStatus':
+          window.dispatchEvent(new CustomEvent('skena:kernelStatus', { detail: msg.kernels }));
+          break;
       }
     };
 

@@ -23,6 +23,7 @@ import { getVaults } from './settings';
 import { createLLMClient, CANVAS_TOOLS, ILLMClient } from './llm-client';
 import { buildSystemPrompt, buildStaticSystemPrompt, buildCanvasContext, nodeTitle, nodeContent } from './context-builder';
 import { assignLabel } from '../shared/nodeLabels';
+import { KernelManager } from './jupyter/manager';
 import {
   CanvasData,
   CanvasNode,
@@ -154,6 +155,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     // - send initial canvas data once webview signals ready
     const send = (msg: HostToWebview) => panel.webview.postMessage(msg);
 
+    // - one Jupyter kernel manager per panel; pushes status to the webview
+    const manager = new KernelManager(kernels => send({ type: 'kernelStatus', kernels }));
+
     // - handle messages from webview
     panel.webview.onDidReceiveMessage(async (msg: WebviewToHost) => {
       switch (msg.type) {
@@ -224,6 +228,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           } catch (e) {
             vscode.window.showErrorMessage(`Skena: failed to open canvas: ${e}`);
           }
+          // - webview is live — begin polling Jupyter kernel status
+          manager.startPolling();
           break;
         }
         case 'requestFile':  await this.handleRequestFile(msg, panel, document, resolver, canvasDir); break;
@@ -398,6 +404,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         case 'showWarning':
           vscode.window.showWarningMessage(msg.text);
           break;
+        case 'runCell':   await this.handleRunCell(msg, manager, panel, document, canvasDir); break;
+        case 'addKernel': await this.handleAddKernel(manager, canvasDir, send); break;
       }
     });
 
@@ -491,6 +499,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       if (e.affectsConfiguration('skena.vaults') || e.affectsConfiguration('skena.vaultDirectories')) {
         void getVaults().then(v => resolver.updateVaults(v));
       }
+      if (e.affectsConfiguration('skena.jupyter.kernels')) manager.reloadConfig();
     });
 
     panel.onDidDispose(() => {
@@ -499,6 +508,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       }
       // - kill this canvas's persistent harness process when its panel closes
       this._llmClient?.disposeSession?.(document.uri.fsPath);
+      manager.stopPolling();
       canvasWatcher.dispose();
       workspaceWatcher.dispose();
       saveDisposable.dispose();
@@ -1032,6 +1042,12 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       movedNodeIds: msg.nodes.map(n => n.id),
     });
   }
+
+  // ─── Jupyter kernel handlers ─────────────────────────────────────────────────
+
+  private async handleRunCell(_msg: any, _manager: KernelManager, _panel: vscode.WebviewPanel, _document: SkenaDocument, _canvasDir: string): Promise<void> { /* - implemented in Task 9 */ }
+
+  private async handleAddKernel(_manager: KernelManager, _canvasDir: string, _send: (m: HostToWebview) => void): Promise<void> { /* - implemented in Task 10 */ }
 
   // ─── Floating chat handlers ──────────────────────────────────────────────────
 
