@@ -12,7 +12,7 @@ import { CodeNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
 import { DEFAULT_NODE_BORDER_BY_TYPE } from '../palette';
-import { resolveBoundKernel } from '../kernelBinding';
+import { resolveBoundKernel } from '../../../shared/kernelBinding';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);

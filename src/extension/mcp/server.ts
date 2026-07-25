@@ -28,6 +28,7 @@ import * as crypto   from 'crypto';
 
 import { CanvasData, CanvasNode, CanvasEdge, CanvasNodeBase, CellNode } from '../../shared/types';
 import { assignLabel, ensureLabels } from '../../shared/nodeLabels';
+import { resolveBoundKernel } from '../../shared/kernelBinding';
 import { resolveKernelConfig, type KernelServerConfig } from '../jupyter/config';
 import { executeCell } from '../jupyter/client';
 
@@ -679,11 +680,14 @@ async function canvasRunCell(args: Record<string, unknown>): Promise<string> {
     const cell = findNode(d, args.cellRef as string);
     if (!cell || cell.type !== 'code') return `error: ${args.cellRef} is not a code node`;
 
-    // - explicit kernelRef, else the kernel node joined to this cell by an edge
-    const kernelNode = args.kernelRef
-      ? findNode(d, args.kernelRef as string)
-      : d.nodes.find(n => n.type === 'kernel' && d.edges.some(e =>
-          (e.fromNode === cell.id && e.toNode === n.id) || (e.toNode === cell.id && e.fromNode === n.id)));
+    // - explicit kernelRef, else the nearest kernel reachable through edges (BFS),
+    // - so a chain of cells (cell2 → cell1 → kernel) shares one kernel.
+    let kernelNode = args.kernelRef ? findNode(d, args.kernelRef as string) : undefined;
+    if (!kernelNode) {
+      const byId = new Map(d.nodes.map(n => [n.id, n]));
+      const kid = resolveBoundKernel(cell.id, d.edges, id => byId.get(id)?.type === 'kernel');
+      kernelNode = kid ? byId.get(kid) : undefined;
+    }
     if (!kernelNode || kernelNode.type !== 'kernel') return 'error: no kernel bound to this cell';
 
     const servers = loadKernelServersFromEnv();

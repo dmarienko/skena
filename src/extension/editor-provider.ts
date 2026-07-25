@@ -24,6 +24,7 @@ import { getVaults } from './settings';
 import { createLLMClient, CANVAS_TOOLS, ILLMClient } from './llm-client';
 import { buildSystemPrompt, buildStaticSystemPrompt, buildCanvasContext, nodeTitle, nodeContent } from './context-builder';
 import { assignLabel } from '../shared/nodeLabels';
+import { resolveBoundKernel } from '../shared/kernelBinding';
 import { KernelManager } from './jupyter/manager';
 import { listKernels, startKernel } from './jupyter/client';
 import type { CollectedOutput } from './jupyter/protocol';
@@ -1076,15 +1077,11 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     ) as CodeNode | undefined;
     if (!codeNode) return;
 
-    // - bound kernel: a kernel node adjacent via any edge (either direction)
-    const neighborIds = new Set<string>();
-    for (const e of canvas.edges) {
-      if (e.fromNode === codeNode.id) neighborIds.add(e.toNode);
-      if (e.toNode   === codeNode.id) neighborIds.add(e.fromNode);
-    }
-    const kernelNode = canvas.nodes.find(
-      n => n.type === 'kernel' && neighborIds.has(n.id),
-    ) as KernelNode | undefined;
+    // - bound kernel: the nearest kernel reachable through edges (BFS), so a chain
+    // - of cells (cell2 → cell1 → kernel) shares one kernel.
+    const nodeById = new Map(canvas.nodes.map(n => [n.id, n]));
+    const boundKernelNodeId = resolveBoundKernel(codeNode.id, canvas.edges, id => nodeById.get(id)?.type === 'kernel');
+    const kernelNode = boundKernelNodeId ? nodeById.get(boundKernelNodeId) as KernelNode | undefined : undefined;
     if (!kernelNode) {
       send({ type: 'runStatus', cellNodeId: codeNode.id, kernelNodeId: null, state: 'error', error: 'no kernel bound' });
       return;
