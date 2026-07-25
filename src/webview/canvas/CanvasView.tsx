@@ -46,6 +46,7 @@ import { LinkNodeComponent }  from './nodes/LinkNode';
 import { CellNodeComponent }  from './nodes/CellNode';
 import { ChatNodeComponent }  from './nodes/ChatNode';
 import { PortalNodeComponent } from './nodes/PortalNode';
+import { KernelNodeComponent } from './nodes/KernelNode';
 import { LabeledEdgeComponent } from './edges/LabeledEdge';
 import { HelperLines } from './HelperLines';
 import { CanvasSearch } from './CanvasSearch';
@@ -59,6 +60,7 @@ const NODE_TYPES: NodeTypes = {
   cell:   CellNodeComponent,
   chat:   ChatNodeComponent,
   portal: PortalNodeComponent,
+  kernel: KernelNodeComponent,
 };
 
 const EDGE_TYPES: EdgeTypes = {

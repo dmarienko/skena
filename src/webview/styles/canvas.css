@@ -102,3 +102,6 @@
   opacity: 1 !important;
   transform: scale(1.35);
 }
+
+@keyframes skena-kernel-blink { 0%, 100% { opacity: 1 } 50% { opacity: 0.25 } }
+.skena-kernel-busy { animation: skena-kernel-blink 0.9s ease-in-out infinite; }
