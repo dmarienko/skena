@@ -26,7 +26,7 @@ import { buildSystemPrompt, buildStaticSystemPrompt, buildCanvasContext, nodeTit
 import { assignLabel } from '../shared/nodeLabels';
 import { resolveBoundKernel } from '../shared/kernelBinding';
 import { KernelManager } from './jupyter/manager';
-import { listKernels, startKernel } from './jupyter/client';
+import { listKernels, startKernel, listKernelSpecs, listSessions } from './jupyter/client';
 import type { CollectedOutput } from './jupyter/protocol';
 import {
   CanvasData,
@@ -1189,7 +1189,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
    * a fresh kernel; restart keeps the same id (Jupyter wipes the namespace).
    */
   private async handleKernelAction(
-    msg:      { action: 'restart' | 'shutdown'; kernelNodeId: string },
+    msg:      { action: 'restart' | 'shutdown' | 'interrupt'; kernelNodeId: string },
     manager:  KernelManager,
     document: SkenaDocument,
   ): Promise<void> {
@@ -1198,15 +1198,19 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     if (!kernelNode) return;
     const server = manager.serverByName(kernelNode.server);
     if (!server || !kernelNode.kernelId) return;
+    const name = kernelNode.displayName ?? 'kernel';
     try {
       if (msg.action === 'restart') {
         await manager.restart(server, kernelNode.kernelId);
-        void vscode.window.showInformationMessage(`Skena: restarted ${kernelNode.displayName ?? 'kernel'}.`);
+        void vscode.window.showInformationMessage(`Skena: restarted ${name}.`);
+      } else if (msg.action === 'interrupt') {
+        await manager.interrupt(server, kernelNode.kernelId);
+        void vscode.window.showInformationMessage(`Skena: interrupted ${name}.`);
       } else {
         await manager.shutdown(server, kernelNode.kernelId);
         kernelNode.kernelId = undefined;
         await writeCanvas(document.uri.fsPath, document.canvas);
-        void vscode.window.showInformationMessage(`Skena: shut down ${kernelNode.displayName ?? 'kernel'}.`);
+        void vscode.window.showInformationMessage(`Skena: shut down ${name}.`);
       }
     } catch (e) {
       void vscode.window.showErrorMessage(`Skena: kernel ${msg.action} failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -1214,10 +1218,10 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
   }
 
   /**
-   * "Skena: Add Kernel" — QuickPick over configured Jupyter servers. Each server
-   * lists its live kernels (to attach an existing one) plus a "start new kernel"
-   * entry. The chosen kernel becomes a KernelNode delivered via addNodeResult;
-   * the webview assigns its colorIndex and pans the viewport to it.
+   * "Skena: Add Kernel" — QuickPick over configured Jupyter servers. Two groups:
+   * "Start new kernel" lists the server's kernel specs (the environments), and
+   * "Running kernels" lists live kernels (named by their session) to attach to.
+   * The chosen kernel becomes a KernelNode delivered via addNodeResult.
    */
   private async handleAddKernel(
     manager:  KernelManager,
@@ -1230,33 +1234,50 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       return;
     }
 
-    type Item = vscode.QuickPickItem & { server: string; kernelId?: string; start?: boolean };
+    type Item = vscode.QuickPickItem & { server?: string; kernelId?: string; specName?: string; display?: string; start?: boolean };
+    const sep = (label: string): Item => ({ label, kind: vscode.QuickPickItemKind.Separator });
     const items: Item[] = [];
     for (const s of servers) {
+      // - start-new: the kernel specs (environments) this server can launch
+      items.push(sep(`${s.name} — start new kernel`));
       try {
-        const kernels = await listKernels(s);
-        for (const k of kernels) items.push({
-          label:       `${s.name} · ${k.name}`,
-          description: `${k.state} · ${k.id.slice(0, 8)}`,
-          server:      s.name,
-          kernelId:    k.id,
+        for (const spec of await listKernelSpecs(s)) items.push({
+          label: `$(add) ${spec.displayName}`, description: 'new kernel',
+          server: s.name, specName: spec.name, display: spec.displayName, start: true,
         });
-      } catch { /* - unreachable server: still offer "start new" below */ }
-      items.push({ label: `${s.name} · + start new kernel`, server: s.name, start: true });
+      } catch { /* - specs unavailable on this server */ }
+      // - attach: live kernels, labelled by the notebook/session they belong to
+      try {
+        const [kernels, sessions] = await Promise.all([
+          listKernels(s),
+          listSessions(s).catch(() => new Map<string, string>()),
+        ]);
+        if (kernels.length) items.push(sep(`${s.name} — running kernels`));
+        for (const k of kernels) {
+          const where = sessions.get(k.id);
+          items.push({
+            label: `$(debug-disconnect) ${where || k.name}`,
+            description: `attach · ${k.state} · ${k.id.slice(0, 8)}`,
+            server: s.name, kernelId: k.id, display: k.name,
+          });
+        }
+      } catch { /* - server unreachable */ }
     }
 
-    const pick = await vscode.window.showQuickPick(items, { placeHolder: 'Add a kernel to the canvas' });
-    if (!pick) return;
+    const pick = await vscode.window.showQuickPick(items, {
+      placeHolder: 'Start a new kernel from a spec, or attach to a running one',
+      matchOnDescription: true,
+    });
+    if (!pick || (!pick.start && !pick.kernelId)) return;
 
     let kernelId    = pick.kernelId;
-    let displayName = 'python3';
+    let displayName = pick.display ?? 'kernel';
     if (pick.start) {
-      const server = manager.serverByName(pick.server);
+      const server = manager.serverByName(pick.server as string);
       if (!server) return;
       try {
-        const k = await startKernel(server);
-        kernelId    = k.id;
-        displayName = k.name;
+        const k = await startKernel(server, pick.specName);
+        kernelId = k.id;
       } catch (e) {
         void vscode.window.showErrorMessage(`Skena: failed to start kernel: ${e instanceof Error ? e.message : String(e)}`);
         return;
@@ -1273,6 +1294,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       y = last.y;
     }
 
+    if (!pick.server) return;
     const node: KernelNode = {
       id:          `kernel-${Date.now().toString(36)}`,
       type:        'kernel',

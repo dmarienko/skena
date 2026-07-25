@@ -1899,6 +1899,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     const handler = (e: Event) => {
       const { cellNodeId, kernelNodeId, state } =
         (e as CustomEvent<{ cellNodeId: string; kernelNodeId: string | null; state: 'running' | 'ok' | 'error' }>).detail;
+      // - keep the run cell as the focus target so the output-write reload re-selects IT
+      // - (not some other node picked by pickViewportNode) and doesn't jump focus away
+      lastFocusedNodeId.set(canvasPath, cellNodeId);
       setNodes(nds => nds.map(n =>
         n.id === cellNodeId ? { ...n, data: { ...n.data, lastStatus: state } } : n
       ));

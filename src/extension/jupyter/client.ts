@@ -37,6 +37,47 @@ export async function startKernel(server: KernelServerConfig, name = 'python3'):
   return { id: k.id, name: k.name, state: k.execution_state ?? 'starting' };
 }
 
+export interface KernelSpec {
+  name:        string;   // - the id to POST when starting (e.g. "python3", "xmetals")
+  displayName: string;   // - human label (e.g. "Python 3 (ipykernel)")
+}
+
+// - GET /api/kernelspecs — the kernel environments a NEW kernel can be started from
+export async function listKernelSpecs(server: KernelServerConfig): Promise<KernelSpec[]> {
+  const res = await fetch(`${restBase(server.hubUrl)}/api/kernelspecs`, {
+    headers: { Authorization: `token ${server.token}` },
+  });
+  if (!res.ok) throw new Error(`GET /api/kernelspecs ${res.status}`);
+  const body = (await res.json()) as { kernelspecs?: Record<string, { name?: string; spec?: { display_name?: string } }> };
+  return Object.entries(body.kernelspecs ?? {}).map(([name, v]) => ({
+    name: v.name ?? name,
+    displayName: v.spec?.display_name ?? name,
+  }));
+}
+
+// - GET /api/sessions — maps a live kernel id to the notebook/path it is attached to
+export async function listSessions(server: KernelServerConfig): Promise<Map<string, string>> {
+  const res = await fetch(`${restBase(server.hubUrl)}/api/sessions`, {
+    headers: { Authorization: `token ${server.token}` },
+  });
+  if (!res.ok) throw new Error(`GET /api/sessions ${res.status}`);
+  const arr = (await res.json()) as { path?: string; name?: string; kernel?: { id?: string } }[];
+  const byKernel = new Map<string, string>();
+  for (const s of arr) {
+    if (s.kernel?.id) byKernel.set(s.kernel.id, s.name || s.path || '');
+  }
+  return byKernel;
+}
+
+// - POST /api/kernels/{id}/interrupt — stop a long-running cell without losing state
+export async function interruptKernel(server: KernelServerConfig, kernelId: string): Promise<void> {
+  const res = await fetch(`${restBase(server.hubUrl)}/api/kernels/${kernelId}/interrupt`, {
+    method: 'POST',
+    headers: { Authorization: `token ${server.token}` },
+  });
+  if (!res.ok) throw new Error(`POST /api/kernels/${kernelId}/interrupt ${res.status}`);
+}
+
 // - POST /api/kernels/{id}/restart — same kernel id survives, namespace is wiped
 export async function restartKernel(server: KernelServerConfig, kernelId: string): Promise<void> {
   const res = await fetch(`${restBase(server.hubUrl)}/api/kernels/${kernelId}/restart`, {

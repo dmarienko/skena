@@ -25,7 +25,9 @@ function useKernelState(server: string, kernelId?: string): LedState {
   useEffect(() => {
     const onStatus = (e: Event) => {
       const kernels = (e as CustomEvent).detail as KernelStatusEntry[];
-      const hit = kernels.find(k => k.server === server && (kernelId ? k.kernelId === kernelId : true));
+      // - a node with no kernelId (never started, or just shut down) is dead — do NOT
+      // - fall back to matching some other live kernel on the same server (misleading green)
+      const hit = kernelId ? kernels.find(k => k.server === server && k.kernelId === kernelId) : undefined;
       setState(hit ? hit.state : 'dead');
     };
     window.addEventListener('skena:kernelStatus', onStatus);
@@ -67,8 +69,9 @@ function KernelNodeInner({ id, data }: NodeProps): JSX.Element {
     setMenu({ x: e.clientX, y: e.clientY });
   }, []);
 
-  const restart  = () => { vscodePostMessage({ type: 'kernelAction', action: 'restart',  kernelNodeId: id }); closeMenu(); };
-  const shutdown = () => { vscodePostMessage({ type: 'kernelAction', action: 'shutdown', kernelNodeId: id }); closeMenu(); };
+  const restart   = () => { vscodePostMessage({ type: 'kernelAction', action: 'restart',   kernelNodeId: id }); closeMenu(); };
+  const interrupt = () => { vscodePostMessage({ type: 'kernelAction', action: 'interrupt', kernelNodeId: id }); closeMenu(); };
+  const shutdown  = () => { vscodePostMessage({ type: 'kernelAction', action: 'shutdown',  kernelNodeId: id }); closeMenu(); };
   const addCodeCell = () => {
     const codeId = `code-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
     const newNode: CanvasNode = {
@@ -120,8 +123,9 @@ function KernelNodeInner({ id, data }: NodeProps): JSX.Element {
             boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
           }}
         >
-          <KernelMenuItem label="Restart kernel"  disabled={!node.kernelId} onClick={restart} />
-          <KernelMenuItem label="Shutdown kernel" disabled={!node.kernelId} onClick={shutdown} />
+          <KernelMenuItem label="Interrupt kernel" disabled={!node.kernelId} onClick={interrupt} />
+          <KernelMenuItem label="Restart kernel"   disabled={!node.kernelId} onClick={restart} />
+          <KernelMenuItem label="Shutdown kernel"  disabled={!node.kernelId} onClick={shutdown} />
           <div style={{ height: 1, background: 'var(--vscode-menu-separatorBackground, rgba(255,255,255,0.1))', margin: '4px 0' }} />
           <KernelMenuItem label="Add code cell" onClick={addCodeCell} />
         </div>,

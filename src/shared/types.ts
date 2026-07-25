@@ -353,7 +353,7 @@ export interface MsgChatModelInfo { type: 'chatModelInfo'; model: string; provid
 export interface MsgPickModel { type: 'pickModel'; }
 export interface MsgRunCell   { type: 'runCell'; cellNodeId: string; code: string; }
 export interface MsgAddKernel { type: 'addKernel'; }
-export interface MsgKernelAction { type: 'kernelAction'; action: 'restart' | 'shutdown'; kernelNodeId: string; }
+export interface MsgKernelAction { type: 'kernelAction'; action: 'restart' | 'shutdown' | 'interrupt'; kernelNodeId: string; }
 
 /** - host → webview: session compaction is running (true) or finished (false) */
 export interface MsgFloatingChatCompacting { type: 'floatingChatCompacting'; active: boolean; }
