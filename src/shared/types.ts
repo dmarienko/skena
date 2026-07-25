@@ -455,7 +455,12 @@ export type HostToWebview =
   | MsgMarksRestored
   | MsgVerifyPathResult
   | MsgKernelStatus
-  | MsgRunStatus;
+  | MsgRunStatus
+  | MsgAddKernelTrigger;
+
+// - host → webview: the "Skena: Add Kernel" command asks the webview to relay an
+// - addKernel message back to the host (where the QuickPick runs).
+export interface MsgAddKernelTrigger { type: 'addKernelTrigger'; }
 
 export interface KernelStatusEntry {
   server:    string;

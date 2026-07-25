@@ -116,12 +116,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       panel.webview.postMessage({ type: 'addTextNodeTrigger', direction: 'L' });
     }),
 
-    // - Add a Jupyter kernel node to the focused canvas; the panel routes the
-    // - 'addKernel' message into SkenaEditorProvider.handleAddKernel (QuickPick).
+    // - Add a Jupyter kernel node to the focused canvas. The webview relays this
+    // - trigger back as an 'addKernel' message → SkenaEditorProvider.handleAddKernel
+    // - (QuickPick). The bounce is needed because the QuickPick runs host-side but the
+    // - command only holds the panel here.
     vscode.commands.registerCommand('skena.addKernel', () => {
       const panel = SkenaEditorProvider.activePanel;
       if (!panel) { void vscode.window.showInformationMessage('Skena: open a canvas first.'); return; }
-      panel.webview.postMessage({ type: 'addKernel' });
+      panel.webview.postMessage({ type: 'addKernelTrigger' });
     })
   );
 

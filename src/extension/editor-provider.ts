@@ -1098,20 +1098,53 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
 
     send({ type: 'runStatus', cellNodeId: codeNode.id, kernelNodeId: kernelNode.id, state: 'running' });
 
-    const persist = () => writeCanvas(document.uri.fsPath, document.canvas);
-    const fail = async (error: string) => {
+    const fail = (error: string) =>
       send({ type: 'runStatus', cellNodeId: codeNode.id, kernelNodeId: kernelNode.id, state: 'error', error });
+
+    // - apply the run's mutations to the CURRENT document.canvas and persist. The run
+    // - awaits for seconds; a debounced saveCanvas can swap document._canvas meanwhile,
+    // - so we re-resolve nodes by id here instead of writing the object captured at entry.
+    const applyAndPersist = async (
+      status: 'ok' | 'error',
+      output: { format: 'markdown' | 'image' | 'html'; content: string } | null,
+    ) => {
+      const c  = document.canvas;
+      const cn = c.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code') as CodeNode | undefined;
+      if (!cn) return;                            // - cell deleted mid-run
+      cn.code       = msg.code;                   // - persist the code that actually ran (edits are debounced)
+      cn.lastStatus = status;
+      cn.lastRun    = Date.now();
+      const kn = c.nodes.find(n => n.id === kernelNode.id && n.type === 'kernel') as KernelNode | undefined;
+      if (kn && kernelId !== kn.kernelId) kn.kernelId = kernelId;   // - reuse this kernel next run
+      if (output) {
+        const existing = cn.outputNodeId
+          ? c.nodes.find(n => n.id === cn.outputNodeId && n.type === 'cell') as CellNode | undefined
+          : undefined;
+        if (existing) {
+          existing.format  = output.format;
+          existing.content = output.content;
+        } else {
+          const id = `ai-${Date.now().toString(36)}`;
+          const cellBase: CellNode = {
+            id, type: 'cell',
+            x: cn.x + cn.width + 60, y: cn.y, width: 480, height: 320,
+            format: output.format, content: output.content, createdBy: 'ai',
+          };
+          c.nodes.push(assignLabel(cellBase, c.nodes) as CanvasNode);
+          c.edges.push({ id: `e-${id}`, fromNode: cn.id, fromSide: 'right', toNode: id, toSide: 'left', toEnd: 'arrow' });
+          cn.outputNodeId = id;
+        }
+      }
+      await writeCanvas(document.uri.fsPath, c);
     };
 
     let kernelId: string;
     try {
       kernelId = await manager.ensureKernel(server, kernelNode.kernelId);
     } catch (e) {
-      await fail(`kernel start failed: ${e instanceof Error ? e.message : String(e)}`);
+      fail(`kernel start failed: ${e instanceof Error ? e.message : String(e)}`);
       return;
     }
-    // - remember a freshly-started kernel id so later runs reuse the same kernel
-    if (kernelId !== kernelNode.kernelId) kernelNode.kernelId = kernelId;
 
     const ids = { msgId: randomUUID(), session: randomUUID(), date: new Date().toISOString() };
 
@@ -1119,10 +1152,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     try {
       out = await manager.run(server, kernelId, msg.code, ids);
     } catch (e) {
-      codeNode.lastStatus = 'error';
-      codeNode.lastRun    = Date.now();
-      try { await persist(); } catch { /* non-fatal */ }
-      await fail(`execution failed: ${e instanceof Error ? e.message : String(e)}`);
+      try { await applyAndPersist('error', null); } catch { /* non-fatal */ }
+      fail(`execution failed: ${e instanceof Error ? e.message : String(e)}`);
       return;
     }
 
@@ -1139,43 +1170,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     }
     if (out.error) content += '\n\n```\n' + out.error + '\n```';
 
-    // - ensure the SINGLE output node: reuse the existing linked cell, else create
-    const existing = codeNode.outputNodeId
-      ? canvas.nodes.find(n => n.id === codeNode.outputNodeId && n.type === 'cell') as CellNode | undefined
-      : undefined;
-    if (existing) {
-      existing.format  = format;
-      existing.content = content;
-    } else {
-      const id = `ai-${Date.now().toString(36)}`;
-      const cellBase: CellNode = {
-        id,
-        type:      'cell',
-        x:         codeNode.x + codeNode.width + 60,
-        y:         codeNode.y,
-        width:     480,
-        height:    320,
-        format,
-        content,
-        createdBy: 'ai',
-      };
-      const labeled = assignLabel(cellBase, canvas.nodes) as CanvasNode;
-      canvas.nodes.push(labeled);
-      canvas.edges.push({
-        id:       `e-${id}`,
-        fromNode: codeNode.id,
-        fromSide: 'right',
-        toNode:   id,
-        toSide:   'left',
-        toEnd:    'arrow',
-      });
-      codeNode.outputNodeId = id;
-    }
-
-    codeNode.lastStatus = out.status === 'error' ? 'error' : 'ok';
-    codeNode.lastRun    = Date.now();
-
-    try { await persist(); } catch (e) { vscode.window.showErrorMessage(`Skena: failed to save run output: ${e}`); }
+    try { await applyAndPersist(out.status === 'error' ? 'error' : 'ok', { format, content }); }
+    catch (e) { vscode.window.showErrorMessage(`Skena: failed to save run output: ${e}`); }
 
     send({
       type:         'runStatus',

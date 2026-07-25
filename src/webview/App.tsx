@@ -177,6 +177,10 @@ export function App(): JSX.Element {
         case 'addTextNodeTrigger':
           window.dispatchEvent(new CustomEvent('skena:addTextNodeTrigger', { detail: { direction: msg.direction } }));
           break;
+        case 'addKernelTrigger':
+          // - relay back to the host, where the Add-Kernel QuickPick runs
+          postMessage({ type: 'addKernel' });
+          break;
         case 'subCanvasCreated':
           window.dispatchEvent(new CustomEvent('skena:subCanvasCreated', { detail: msg }));
           break;
