@@ -7,6 +7,7 @@
 import React, { useCallback, useState, useEffect, useRef, memo } from 'react';
 import { NodeProps, Handle, Position, NodeResizer, useStore } from '@xyflow/react';
 import Editor, { BeforeMount, OnMount } from '@monaco-editor/react';
+import { initVimMode } from 'monaco-vim';
 import { CodeNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
@@ -51,12 +52,16 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   useEffect(() => { runRef.current = run; }, [run]);
 
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
+  const vimStatusRef = useRef<HTMLDivElement | null>(null);
   const onEditorMount = useCallback<OnMount>((editorInstance, monacoInstance) => {
     editorRef.current = editorInstance;
     // - per-instance binding (safe); Shift+Enter runs the cell from any Monaco context.
     editorInstance.addCommand(monacoInstance.KeyMod.Shift | monacoInstance.KeyCode.Enter, () => {
       runRef.current();
     });
+    // - vim mode (same editor experience as text nodes); status bar shows the mode
+    initVimMode(editorInstance, vimStatusRef.current ?? undefined);
+    editorInstance.focus();
   }, []);
 
   // - a freshly-created code cell (autoEdit) fires skena:enterEdit → focus the editor so
@@ -136,9 +141,11 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
           <span style={{ opacity: 0.7 }}>{node.language ?? 'python'}</span>
           <span style={{ marginLeft: 'auto', color: status === 'error' ? '#e5484d' : borderColor }}>{glyph}</span>
         </div>
-        {/* - shield React Flow from pointer/keyboard events while typing (space=pan, del=delete, …) */}
+        {/* - nodrag/nowheel: let Monaco own pointer + wheel (React Flow otherwise pans/zooms
+            and never gives the editor focus); stopPropagation keeps RF hotkeys off while typing */}
         <div
-          style={{ flex: 1, minHeight: 0 }}
+          className="nodrag nowheel"
+          style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
           onMouseDown={e => e.stopPropagation()}
           onPointerDown={e => e.stopPropagation()}
           onKeyDown={e => e.stopPropagation()}
@@ -170,6 +177,8 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
               automaticLayout:      true,
             }}
           />
+          {/* - vim mode status bar */}
+          <div ref={vimStatusRef} className="skena-code-vim-status" style={{ fontSize: 10, opacity: 0.6, padding: '0 6px', fontFamily: 'var(--vscode-editor-font-family, monospace)' }} />
         </div>
       </div>
       <Handle type="source" position={Position.Top}    id="top"    style={HANDLE_STYLE} />

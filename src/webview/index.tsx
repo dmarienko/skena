@@ -16,6 +16,8 @@ import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 // - so without this import the 'markdown' language ID is unknown and Monaco
 // - treats all text as plain (no tokenisation → single colour).
 import 'monaco-editor/esm/vs/basic-languages/markdown/markdown.contribution.js';
+// - same reason: register the Python grammar so code cell nodes tokenise/colour.
+import 'monaco-editor/esm/vs/basic-languages/python/python.contribution.js';
 (self as unknown as Record<string, unknown>)['MonacoEnvironment'] = {
   // - return a stub Worker; Monaco falls back to synchronous mode for language
   // - features — syntax highlighting still works (runs in the main thread)

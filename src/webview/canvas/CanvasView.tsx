@@ -559,14 +559,19 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     const nodeEl = el?.closest<HTMLElement>('[data-id]');
     const targetNodeId = nodeEl?.dataset.id;
 
-    // - dropped on empty canvas → create a new text node there and connect to it
+    // - dropped on empty canvas → create a new node there and connect to it.
+    // - dragging from a kernel node makes a code cell (its natural target); else a text note.
     if (!targetNodeId) {
       const fromSide = (connectionState.fromHandle?.id ?? 'right') as NodeSide;
       const opposite: Record<NodeSide, NodeSide> = { left: 'right', right: 'left', top: 'bottom', bottom: 'top' };
-      const nw = 400, nh = 300;
+      const fromKernel = connectionState.fromNode.type === 'kernel';
+      const nw = fromKernel ? 360 : 400;
+      const nh = fromKernel ? 200 : 300;
       const p = screenToFlowPosition({ x: mouseEvent.clientX, y: mouseEvent.clientY });
-      const nodeId = `text-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-      const newNode: CanvasNode = { id: nodeId, type: 'text', text: '', x: Math.round(p.x), y: Math.round(p.y - nh / 2), width: nw, height: nh };
+      const nodeId = `${fromKernel ? 'code' : 'text'}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      const newNode: CanvasNode = fromKernel
+        ? { id: nodeId, type: 'code', code: '', language: 'python', x: Math.round(p.x), y: Math.round(p.y - nh / 2), width: nw, height: nh }
+        : { id: nodeId, type: 'text', text: '', x: Math.round(p.x), y: Math.round(p.y - nh / 2), width: nw, height: nh };
       const newEdge: CanvasEdge = {
         id: `${connectionState.fromNode.id}-${nodeId}-${Date.now()}`,
         fromNode: connectionState.fromNode.id, fromSide,
