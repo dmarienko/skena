@@ -61,7 +61,8 @@ A floating chat overlay embedded in the canvas itself, not in a side panel. It s
 
 - **Harness mode** is the flagship: one persistent Claude Code process per canvas, streaming responses, full agent tool use (file reads, shell, MCP), session **resume** when you reopen a canvas, and an isolated profile (`~/.skena/cc-profile`) that keeps your global hooks out of the token bill. Permission mode, allowed tools, and reachable directories are all configurable.
 - **Live tool feedback** — watch Claude Code work: tool calls (edits, shell, canvas ops) stream in as cards with running→done status, thinking blocks, and a live token/cost meter. The full timeline is saved with the canvas.
-- **Chat UX** — Monaco input with vim bindings, markdown + LaTeX rendering in responses, draggable/resizable panel with a draggable input/output splitter, per-canvas history persisted in a `.skena.json` sidecar, Reset (⟲) and Compact (⤵) controls.
+- **Per-canvas model** — click the chat title to pick the AI model for *this* canvas; the choice is saved in the `.canvas` file (portable), overriding the global `skena.ai.model`.
+- **Chat UX** — Monaco input with vim bindings, markdown + math (KaTeX + Typst) rendering in responses, draggable/resizable panel with a draggable input/output splitter, per-canvas history persisted in a `.skena.json` sidecar, Reset (⟲) and Compact (⤵) controls.
 
 | Key | Action |
 |---|---|
@@ -78,10 +79,18 @@ Press `gh` to toggle a glow layer over the canvas: nodes and edges light up by *
 Plotly figures render live in cell nodes — from notebook outputs (`go.Figure`), via the `Alt+P` pin, or by pasting `fig.to_json()` output onto the canvas. Pan, zoom, and hover work inside the node. (Jupyter `FigureWidget` outputs carry no offline figure data, so use `go.Figure` or paste the figure JSON.)
 
 ### Rich inline previews
-- **Markdown** (`.md`) — rendered with frontmatter header bar, status badges, scrollable content
+- **Markdown** (`.md`) — rendered with frontmatter header bar, status badges, scrollable content.
+  - **Math** — KaTeX (`$…$`, `$$…$$`) and **[Typst](https://typst.app)** (`%…%` inline, `%%…%%` block) compiled to SVG. `50%` and prose stay literal.
+  - **Links** — clickable; file links open in VS Code, with line anchors: `[go](./m0.py#L42)` opens at line 42.
 - **Jupyter Notebooks** (`.ipynb`) — code cells, markdown cells, chart outputs, base64 images
 - **Python / YAML** — syntax-highlighted code preview via [Shiki](https://shiki.style/)
+- **HTML** (`.html`) — rendered inside an isolated shadow root (its styles can't leak into the canvas)
 - **Images** — scaled to fit the node
+
+### Markdown theme
+`skena.markdownTheme` themes rendered markdown in nodes **and** chat:
+- `vscode` (default) — adapts to your active VS Code color theme.
+- `factors` — a dark research-terminal theme: teal headings, grid-lined tables, bundled **IBM Plex** fonts, and syntax-colored code blocks. `skena.markdownMaxWidth` caps line length for a readable column.
 
 ### Vim spatial navigation
 Navigate the canvas without touching the mouse:
@@ -178,12 +187,12 @@ Then press ``Alt+` `` on any canvas to open the chat.
   // Directories to scan in each vault
   "skena.vaultDirectories": ["alpha", "knowledge", "logs", "inbox"],
 
-  // Default node dimensions for newly created nodes
-  "skena.nodeWidth": 400,
-  "skena.nodeHeight": 250,
-
   // Auto-save debounce (ms)
   "skena.autoSaveDelay": 500,
+
+  // Rendered-markdown theme (nodes + chat)
+  "skena.markdownTheme": "vscode",         // vscode | factors
+  "skena.markdownMaxWidth": 0,             // max chars per line in md nodes (0 = unlimited; try ~88)
 
   // Show source cells alongside notebook outputs
   "skena.notebook": {
