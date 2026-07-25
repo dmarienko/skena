@@ -50,12 +50,24 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   const runRef = useRef(run);
   useEffect(() => { runRef.current = run; }, [run]);
 
+  const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const onEditorMount = useCallback<OnMount>((editorInstance, monacoInstance) => {
+    editorRef.current = editorInstance;
     // - per-instance binding (safe); Shift+Enter runs the cell from any Monaco context.
     editorInstance.addCommand(monacoInstance.KeyMod.Shift | monacoInstance.KeyCode.Enter, () => {
       runRef.current();
     });
   }, []);
+
+  // - a freshly-created code cell (autoEdit) fires skena:enterEdit → focus the editor so
+  // - the user can type immediately; other nodes ignore it.
+  useEffect(() => {
+    const onEnter = (e: Event) => {
+      if ((e as CustomEvent).detail?.id === id) editorRef.current?.focus();
+    };
+    window.addEventListener('skena:enterEdit', onEnter);
+    return () => window.removeEventListener('skena:enterEdit', onEnter);
+  }, [id]);
 
   const isDark = document.body.classList.contains('vscode-dark') ||
                  document.body.classList.contains('vscode-high-contrast');

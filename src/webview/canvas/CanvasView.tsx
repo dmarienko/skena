@@ -914,6 +914,19 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     }));
   }, []); // - no deps: reads ref, not state
 
+  const handleMenuAddCodeCell = useCallback(() => {
+    const { flowX, flowY } = contextMenuFlowPos.current;
+    const nodeId = `code-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const newNode: CanvasNode = {
+      id: nodeId, type: 'code', code: '', language: 'python',
+      x: Math.round(flowX - 180), y: Math.round(flowY - 100),
+      width: 360, height: 200,
+    };
+    window.dispatchEvent(new CustomEvent('skena:addNodeResult', {
+      detail: { type: 'addNodeResult', node: newNode, autoEdit: true } satisfies MsgAddNodeResult,
+    }));
+  }, []); // - no deps: reads ref, not state
+
   const handleMenuAddUrl = useCallback((url: string) => {
     const { flowX, flowY } = contextMenuFlowPos.current;
     const nodeId = `node-${Date.now()}`;
@@ -2344,6 +2357,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           hasClipboard={clipboard !== null}
           onClose={handleMenuClose}
           onAddText={handleMenuAddText}
+          onAddCodeCell={handleMenuAddCodeCell}
           onAddUrl={handleMenuAddUrl}
           onSearch={handleMenuSearch}
           onCopy={handleCopy}

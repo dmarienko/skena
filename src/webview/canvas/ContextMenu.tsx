@@ -25,6 +25,7 @@ interface Props {
   hasClipboard:  boolean;
   onClose:           () => void;
   onAddText:         () => void;
+  onAddCodeCell:     () => void;
   onAddUrl:          (url: string) => void;
   onSearch:          () => void;
   onCopy:            () => void;
@@ -76,7 +77,7 @@ function Divider(): JSX.Element {
 export function ContextMenu({
   screenX, screenY,
   selectedCount, hasClipboard,
-  onClose, onAddText, onAddUrl, onSearch, onCopy, onPaste, onMoveToSubCanvas,
+  onClose, onAddText, onAddCodeCell, onAddUrl, onSearch, onCopy, onPaste, onMoveToSubCanvas,
 }: Props): JSX.Element {
   const menuRef  = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -163,6 +164,7 @@ export function ContextMenu({
       onContextMenu={e => e.preventDefault()}
     >
       <MenuItem icon="edit"   label="Add text note"    onClick={() => { onAddText(); onClose(); }} />
+      <MenuItem icon="code"   label="Add code cell"    onClick={() => { onAddCodeCell(); onClose(); }} />
       {urlMode ? (
         <div style={{ padding: '4px 10px 6px', display: 'flex', flexDirection: 'column', gap: 4 }}>
           <div style={{ display: 'flex', gap: 4 }}>
