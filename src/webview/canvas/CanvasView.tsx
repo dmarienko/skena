@@ -1862,6 +1862,31 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     return () => window.removeEventListener('skena:nodeCodeEdit', handler);
   }, [setNodes, scheduleSave, pushHistory]);
 
+  // - transient run status from the host: drive the code node's status glyph and
+  // - animate the code↔kernel edge while running. This is UI-only — it must NOT
+  // - touch canvasRef or schedule a save (the persisted lastStatus arrives via the
+  // - soft reload after the host writes the run output to disk).
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { cellNodeId, kernelNodeId, state } =
+        (e as CustomEvent<{ cellNodeId: string; kernelNodeId: string | null; state: 'running' | 'ok' | 'error' }>).detail;
+      setNodes(nds => nds.map(n =>
+        n.id === cellNodeId ? { ...n, data: { ...n.data, lastStatus: state } } : n
+      ));
+      if (kernelNodeId) {
+        const running = state === 'running';
+        setEdges(eds => eds.map(ed =>
+          (ed.source === cellNodeId && ed.target === kernelNodeId) ||
+          (ed.source === kernelNodeId && ed.target === cellNodeId)
+            ? { ...ed, animated: running }
+            : ed
+        ));
+      }
+    };
+    window.addEventListener('skena:runStatus', handler);
+    return () => window.removeEventListener('skena:runStatus', handler);
+  }, [setNodes, setEdges]);
+
   // - receive add-node result from QuickPick (Ctrl+N / Shift+hjkl)
   useEffect(() => {
     const handler = (e: Event) => {

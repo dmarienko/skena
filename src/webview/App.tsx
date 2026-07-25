@@ -244,6 +244,9 @@ export function App(): JSX.Element {
         case 'kernelStatus':
           window.dispatchEvent(new CustomEvent('skena:kernelStatus', { detail: msg.kernels }));
           break;
+        case 'runStatus':
+          window.dispatchEvent(new CustomEvent('skena:runStatus', { detail: msg }));
+          break;
       }
     };
 

@@ -13,6 +13,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs/promises';
+import { randomUUID } from 'crypto';
 import { readCanvas, writeCanvas } from './canvas-io';
 import { FileResolver } from './file-resolver';
 import { VaultIndexer } from './vault-indexer';
@@ -24,6 +25,7 @@ import { createLLMClient, CANVAS_TOOLS, ILLMClient } from './llm-client';
 import { buildSystemPrompt, buildStaticSystemPrompt, buildCanvasContext, nodeTitle, nodeContent } from './context-builder';
 import { assignLabel } from '../shared/nodeLabels';
 import { KernelManager } from './jupyter/manager';
+import type { CollectedOutput } from './jupyter/protocol';
 import {
   CanvasData,
   CanvasNode,
@@ -32,6 +34,10 @@ import {
   TextNode,
   LinkNode,
   PortalNode,
+  CellNode,
+  CodeNode,
+  KernelNode,
+  MsgRunCell,
   HostToWebview,
   WebviewToHost,
   MsgRequestFile,
@@ -1045,7 +1051,139 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
 
   // ─── Jupyter kernel handlers ─────────────────────────────────────────────────
 
-  private async handleRunCell(_msg: any, _manager: KernelManager, _panel: vscode.WebviewPanel, _document: SkenaDocument, _canvasDir: string): Promise<void> { /* - implemented in Task 9 */ }
+  /**
+   * Execute a code node on its bound kernel, route the result into a single
+   * reused output cell node, and stream run status to the webview.
+   *
+   * Persistence follows the AI add-note path: mutate document.canvas in place,
+   * then writeCanvas (WITHOUT the isSelfSaving flag) so the file-watcher soft
+   * reload re-syncs the webview. Run status (spinner + animated edge) is pushed
+   * separately as transient UI via runStatus messages.
+   */
+  private async handleRunCell(
+    msg:       MsgRunCell,
+    manager:   KernelManager,
+    panel:     vscode.WebviewPanel,
+    document:  SkenaDocument,
+    _canvasDir: string,
+  ): Promise<void> {
+    const send   = (m: HostToWebview) => panel.webview.postMessage(m);
+    const canvas = document.canvas;
+
+    const codeNode = canvas.nodes.find(
+      n => n.id === msg.cellNodeId && n.type === 'code',
+    ) as CodeNode | undefined;
+    if (!codeNode) return;
+
+    // - bound kernel: a kernel node adjacent via any edge (either direction)
+    const neighborIds = new Set<string>();
+    for (const e of canvas.edges) {
+      if (e.fromNode === codeNode.id) neighborIds.add(e.toNode);
+      if (e.toNode   === codeNode.id) neighborIds.add(e.fromNode);
+    }
+    const kernelNode = canvas.nodes.find(
+      n => n.type === 'kernel' && neighborIds.has(n.id),
+    ) as KernelNode | undefined;
+    if (!kernelNode) {
+      send({ type: 'runStatus', cellNodeId: codeNode.id, kernelNodeId: null, state: 'error', error: 'no kernel bound' });
+      return;
+    }
+
+    const server = manager.serverByName(kernelNode.server);
+    if (!server) {
+      send({ type: 'runStatus', cellNodeId: codeNode.id, kernelNodeId: kernelNode.id, state: 'error', error: 'unknown server' });
+      return;
+    }
+
+    send({ type: 'runStatus', cellNodeId: codeNode.id, kernelNodeId: kernelNode.id, state: 'running' });
+
+    const persist = () => writeCanvas(document.uri.fsPath, document.canvas);
+    const fail = async (error: string) => {
+      send({ type: 'runStatus', cellNodeId: codeNode.id, kernelNodeId: kernelNode.id, state: 'error', error });
+    };
+
+    let kernelId: string;
+    try {
+      kernelId = await manager.ensureKernel(server, kernelNode.kernelId);
+    } catch (e) {
+      await fail(`kernel start failed: ${e instanceof Error ? e.message : String(e)}`);
+      return;
+    }
+    // - remember a freshly-started kernel id so later runs reuse the same kernel
+    if (kernelId !== kernelNode.kernelId) kernelNode.kernelId = kernelId;
+
+    const ids = { msgId: randomUUID(), session: randomUUID(), date: new Date().toISOString() };
+
+    let out: CollectedOutput;
+    try {
+      out = await manager.run(server, kernelId, msg.code, ids);
+    } catch (e) {
+      codeNode.lastStatus = 'error';
+      codeNode.lastRun    = Date.now();
+      try { await persist(); } catch { /* non-fatal */ }
+      await fail(`execution failed: ${e instanceof Error ? e.message : String(e)}`);
+      return;
+    }
+
+    // - build output content: stream text as a code block, then the last rich
+    // - mime (image → data URI, html → raw, json → fenced), plus any error trace
+    const rich = out.rich[out.rich.length - 1];
+    let format: 'markdown' | 'image' | 'html' = 'markdown';
+    let content = out.streamText ? '```\n' + out.streamText + '\n```' : '';
+    if (rich) {
+      if (rich.mime.startsWith('image/'))       { format = 'image'; content = `data:${rich.mime};base64,${rich.data}`; }
+      else if (rich.mime === 'text/html')       { format = 'html';  content = rich.data; }
+      else if (rich.mime === 'application/json') content += '\n\n```json\n' + rich.data + '\n```';
+      else                                       content += '\n\n' + rich.data;
+    }
+    if (out.error) content += '\n\n```\n' + out.error + '\n```';
+
+    // - ensure the SINGLE output node: reuse the existing linked cell, else create
+    const existing = codeNode.outputNodeId
+      ? canvas.nodes.find(n => n.id === codeNode.outputNodeId && n.type === 'cell') as CellNode | undefined
+      : undefined;
+    if (existing) {
+      existing.format  = format;
+      existing.content = content;
+    } else {
+      const id = `ai-${Date.now().toString(36)}`;
+      const cellBase: CellNode = {
+        id,
+        type:      'cell',
+        x:         codeNode.x + codeNode.width + 60,
+        y:         codeNode.y,
+        width:     480,
+        height:    320,
+        format,
+        content,
+        createdBy: 'ai',
+      };
+      const labeled = assignLabel(cellBase, canvas.nodes) as CanvasNode;
+      canvas.nodes.push(labeled);
+      canvas.edges.push({
+        id:       `e-${id}`,
+        fromNode: codeNode.id,
+        fromSide: 'right',
+        toNode:   id,
+        toSide:   'left',
+        toEnd:    'arrow',
+      });
+      codeNode.outputNodeId = id;
+    }
+
+    codeNode.lastStatus = out.status === 'error' ? 'error' : 'ok';
+    codeNode.lastRun    = Date.now();
+
+    try { await persist(); } catch (e) { vscode.window.showErrorMessage(`Skena: failed to save run output: ${e}`); }
+
+    send({
+      type:         'runStatus',
+      cellNodeId:   codeNode.id,
+      kernelNodeId: kernelNode.id,
+      state:        out.status === 'error' ? 'error' : 'ok',
+      error:        out.error,
+    });
+  }
 
   private async handleAddKernel(_manager: KernelManager, _canvasDir: string, _send: (m: HostToWebview) => void): Promise<void> { /* - implemented in Task 10 */ }
 
