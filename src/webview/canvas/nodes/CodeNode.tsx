@@ -7,6 +7,7 @@
 import React, { useCallback, useState, useEffect, useRef, memo } from 'react';
 import { NodeProps, Handle, Position, NodeResizer, useStore } from '@xyflow/react';
 import Editor, { BeforeMount, OnMount } from '@monaco-editor/react';
+import type { editor as MonacoEditor } from 'monaco-editor';
 import { initVimMode } from 'monaco-vim';
 import { CodeNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
@@ -55,6 +56,9 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
 
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const vimStatusRef = useRef<HTMLDivElement | null>(null);
+  // - cursor + scroll position, preserved across edit → preview → edit so re-entering
+  // - the cell lands where you left off instead of at line 1
+  const savedViewState = useRef<MonacoEditor.ICodeEditorViewState | null>(null);
   const onEditorMount = useCallback<OnMount>((editorInstance, monacoInstance) => {
     editorRef.current = editorInstance;
     // - per-instance binding (safe); Shift+Enter runs the cell from any Monaco context.
@@ -63,9 +67,15 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     });
     // - vim mode (same editor experience as text nodes); status bar shows the mode
     initVimMode(editorInstance, vimStatusRef.current ?? undefined);
+    if (savedViewState.current) editorInstance.restoreViewState(savedViewState.current);
     editorInstance.focus();
+
+    const leaveEdit = () => {
+      savedViewState.current = editorInstance.saveViewState();
+      setEditing(false);
+    };
     // - click / tab away from the editor → leave edit mode back to the preview
-    editorInstance.onDidBlurEditorText(() => setEditing(false));
+    editorInstance.onDidBlurEditorText(leaveEdit);
 
     // - Esc exits edit mode only from vim NORMAL mode (INSERT/VISUAL just return to normal).
     // - Track the mode from the status bar; MutationObserver runs as a microtask so inside
@@ -80,7 +90,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
       editorInstance.onDidDispose(() => obs.disconnect());
     }
     editorInstance.onKeyDown(e => {
-      if (e.browserEvent.key === 'Escape' && !vimIsEditing) setEditing(false);
+      if (e.browserEvent.key === 'Escape' && !vimIsEditing) leaveEdit();
     });
   }, []);
 
