@@ -32,6 +32,8 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 
+import { useHostMarkdown } from '../hooks/useHostMarkdown';
+import { useHighlightedHtml } from '../lib/codeHighlight';
 import { ChatItem, ChatMessage, ChatToolEvent, ChatTokenUsage } from '../../shared/types';
 import { useFloatingChat } from '../hooks/useFloatingChat';
 import { CHAT_USER_RGB, CHAT_ASSISTANT_RGB, CHAT_ERROR_RGB, CHAT_ACCENT_RGB } from './palette';
@@ -451,8 +453,9 @@ export function FloatingChat({
       if (!el) return;
       e.preventDefault();
       e.stopPropagation();
-      const vStep = el.clientHeight / 4;
-      const hStep = el.clientWidth  / 4;
+      // - ~3 lines per press: small enough to follow the content, not a quarter-page jump
+      const vStep = 60;
+      const hStep = 120;
       switch (e.key) {
         case 'J': el.scrollBy({ top:  vStep, behavior: 'smooth' }); break;
         case 'K': el.scrollBy({ top: -vStep, behavior: 'smooth' }); break;
@@ -462,6 +465,24 @@ export function FloatingChat({
     };
     window.addEventListener('keydown', handler, { capture: true });
     return () => window.removeEventListener('keydown', handler, { capture: true });
+  }, []);
+
+  // - finer mouse-wheel scroll in the chat output — the native step felt too big to follow.
+  // - Normalize line/page delta modes to px and take a smaller step. Non-passive so we can
+  // - preventDefault; ctrl+wheel is left alone (host zoom).
+  useEffect(() => {
+    const el = outputEl.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey) return;
+      const px = e.deltaMode === 1 ? e.deltaY * 18
+               : e.deltaMode === 2 ? e.deltaY * el.clientHeight
+               : e.deltaY;
+      el.scrollBy({ top: px * 0.5 });
+      e.preventDefault();
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
   }, []);
 
   // ─── pin output to the latest message ──────────────────────────────────
@@ -646,19 +667,21 @@ export function FloatingChat({
         }}
       >
         <span
-          title={provider ? `provider: ${provider}` : undefined}
+          title={`Click to change the model for this canvas${provider ? ` · provider: ${provider}` : ''}`}
+          onClick={() => (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage({ type: 'pickModel' })}
           style={{
             flex:         1,
             fontSize:     11,
-            fontWeight:   500,
-            color:        'var(--vscode-foreground)',
-            opacity:      0.7,
+            fontWeight:   600,
+            color:        '#4cc8a0',   // - teal; signals the title is clickable (model picker)
+            opacity:      0.9,
             whiteSpace:   'nowrap',
             overflow:     'hidden',
             textOverflow: 'ellipsis',
+            cursor:       'pointer',
           }}
         >
-          Agent: {model ? `${model} @ ${agentName}` : agentName}
+          Agent: {model ? `${model} @ ${agentName}` : agentName} ▾
         </span>
 
         {chat.thinking && (
@@ -894,6 +917,10 @@ const ChatBubble = memo(function ChatBubble({
   const isUser = msg.role === 'user';
   const accent = isUser ? `rgb(${CHAT_USER_RGB})` : `rgb(${CHAT_ASSISTANT_RGB})`;
 
+  // - completed messages with Typst (%..%) render host-side HTML; streaming + plain use ReactMarkdown
+  const hostHtml = useHostMarkdown(streaming ? '' : msg.content);
+  const shownHtml = useHighlightedHtml(hostHtml);
+
   // - full-width area (not a bubble): subtle background tint + left accent rule
   return (
     <div style={{
@@ -932,21 +959,25 @@ const ChatBubble = memo(function ChatBubble({
         userSelect:   'text',
         wordBreak:    'break-word',
       }}>
-        <ReactMarkdown
-          remarkPlugins={[remarkGfm, remarkMath]}
-          rehypePlugins={[[rehypeKatex, { output: 'mathml', throwOnError: false }]]}
-          components={{
-            p: ({ children }) => <p style={{ margin: '0 0 4px 0' }}>{children}</p>,
-            code: ({ children, className }) => {
-              const isBlock = className?.includes('language-');
-              return isBlock
-                ? <pre style={{ margin: '4px 0', padding: '4px 6px', background: 'rgba(0,0,0,0.3)', borderRadius: 3, overflow: 'auto' }}><code style={{ fontSize: 11 }}>{children}</code></pre>
-                : <code style={{ fontSize: 11, background: 'rgba(0,0,0,0.25)', padding: '0 3px', borderRadius: 2 }}>{children}</code>;
-            },
-          }}
-        >
-          {msg.content}
-        </ReactMarkdown>
+        {hostHtml !== null ? (
+          <div className="skena-markdown skena-chat-md" dangerouslySetInnerHTML={{ __html: shownHtml ?? hostHtml }} />
+        ) : (
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm, remarkMath]}
+            rehypePlugins={[[rehypeKatex, { output: 'mathml', throwOnError: false }]]}
+            components={{
+              p: ({ children }) => <p style={{ margin: '0 0 4px 0' }}>{children}</p>,
+              code: ({ children, className }) => {
+                const isBlock = className?.includes('language-');
+                return isBlock
+                  ? <pre style={{ margin: '4px 0', padding: '4px 6px', background: 'rgba(0,0,0,0.3)', borderRadius: 3, overflow: 'auto' }}><code style={{ fontSize: 11 }}>{children}</code></pre>
+                  : <code style={{ fontSize: 11, background: 'rgba(0,0,0,0.25)', padding: '0 3px', borderRadius: 2 }}>{children}</code>;
+              },
+            }}
+          >
+            {msg.content}
+          </ReactMarkdown>
+        )}
         {streaming && (
           <span style={{ display: 'inline-block', width: 6, height: 12, background: 'var(--vscode-foreground)', opacity: 0.5, marginLeft: 2, borderRadius: 1 }} />
         )}

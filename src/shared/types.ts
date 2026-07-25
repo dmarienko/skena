@@ -143,6 +143,11 @@ export interface CanvasData {
    * Persisted so the sequence survives canvas reopen.
    */
   creationCounter?: number;
+  /** - canvas-scoped skena metadata (portable in the .canvas file) */
+  metadata?: {
+    /** - AI model for this canvas's chat; overrides the global skena.ai.model */
+    aiModel?: string;
+  };
 }
 
 // ─── Activity heatmap types ────────────────────────────────────────────────────
@@ -316,9 +321,16 @@ export interface MsgPanelActivated { type: 'panelActivated'; }
 
 /** - host → webview: current AI model + provider (for the chat title) */
 export interface MsgChatModelInfo { type: 'chatModelInfo'; model: string; provider: string; }
+/** - webview → host: user clicked the chat title to change this canvas's model */
+export interface MsgPickModel { type: 'pickModel'; }
 
 /** - host → webview: session compaction is running (true) or finished (false) */
 export interface MsgFloatingChatCompacting { type: 'floatingChatCompacting'; active: boolean; }
+
+/** - webview → host: render arbitrary markdown text to HTML (Typst/KaTeX-aware) */
+export interface MsgRenderMarkdown { type: 'renderMarkdown'; requestId: string; text: string; }
+/** - host → webview: rendered HTML for a renderMarkdown request */
+export interface MsgRenderMarkdownResult { type: 'renderMarkdownResult'; requestId: string; html: string; }
 
 export interface MsgFloatingChatToolEvent { type: 'floatingChatToolEvent'; event: ChatToolEvent; }
 export interface MsgFloatingChatUsage     { type: 'floatingChatUsage'; usage: ChatTokenUsage; }
@@ -404,6 +416,7 @@ export type HostToWebview =
   | MsgPanelActivated
   | MsgChatModelInfo
   | MsgFloatingChatCompacting
+  | MsgRenderMarkdownResult
   | MsgFloatingChatDone
   | MsgFloatingChatError
   | MsgFloatingChatResetDone
@@ -607,7 +620,9 @@ export type WebviewToHost =
   | MsgFloatingChatCompact
   | MsgSaveMarks
   | MsgVerifyPath
-  | MsgShowWarning;
+  | MsgRenderMarkdown
+  | MsgShowWarning
+  | MsgPickModel;
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────
 
@@ -740,6 +755,10 @@ export interface MarkdownConfig {
   styles:               string[]; // - markdown.styles (external CSS URLs)
   /** - when false (default) notebook code cells show outputs only, source is hidden */
   notebookShowSource?:  boolean;  // - skena.notebook.showSourceCells
+  /** - rendered-markdown theme: 'vscode' adapts to the editor, 'factors' = dark teal terminal */
+  theme?:               'vscode' | 'factors';  // - skena.markdownTheme
+  /** - max line length (chars) for readable columns in md nodes; 0/undefined = unlimited */
+  maxWidth?:            number;                 // - skena.markdownMaxWidth
 }
 
 export interface MsgMarkdownConfig {

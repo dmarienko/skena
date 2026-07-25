@@ -7,26 +7,15 @@
 }
 
 /*
- * content-visibility: auto — instructs the browser to skip layout, paint, and
- * compositing for block elements that are outside the scroll container's visible
- * area. For a 10,000px-tall markdown document, only the ~300px visible portion
- * is ever rasterized into the node's GPU texture; the rest is skipped entirely.
- *
- * contain-intrinsic-size: auto 80px
- *   auto — after the first time an element is rendered, the browser remembers
- *          and reuses the actual measured height instead of the fallback.
- *   80px — cold-start fallback height (typical paragraph ≈ 40–80px at 12px).
- *          A larger value is safer than a small one: it overestimates scrollHeight
- *          so savedScrollTop is never clamped to 0 on the first load.
- *          (The previous 0 2em = 24px caused scrollTop clamping to 0.)
- *
- * Chromium respects the nearest overflow:auto container as the viewport for
- * content-visibility, making this effective for our .skena-scrollable nodes.
+ * NOTE: content-visibility:auto was removed here. Chromium keys its relevance off the
+ * viewport, so panning the canvas (nodes move across the viewport via transform) toggled
+ * every block's render state continuously — a storm of contentvisibilityautostatechange +
+ * re-layout/re-paint that made pan lag (confirmed by a performance trace: 772 toggle
+ * events in a ~3s pan). The node already has `contain: layout style paint`, which bounds
+ * layout/paint without the per-frame toggle. If a very large markdown doc ever needs
+ * off-screen skipping again, gate content-visibility to the idle state (disable it while
+ * a pan/zoom is in progress) rather than leaving it always-on.
  */
-.skena-markdown > * {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 80px;
-}
 .skena-markdown h1 { font-size: 15px; font-weight: 700; margin: 8px 0 4px; }
 .skena-markdown h2 { font-size: 13px; font-weight: 700; margin: 6px 0 3px; }
 .skena-markdown h3 { font-size: 12px; font-weight: 600; margin: 5px 0 2px; }
@@ -112,3 +101,86 @@
 .skena-loading { font-size: 11px; opacity: 0.4; padding: 8px; }
 .skena-error   { font-size: 11px; color: #fb464c; padding: 8px; }
 .skena-unknown { font-size: 11px; opacity: 0.4; padding: 8px; font-style: italic; }
+
+/* - Typst math SVGs from the host renderer */
+/* - width/height come from typst.ts as em (scales with font + true content height) */
+.typst-math.typst-inline { display: inline-block; vertical-align: -0.28em; }
+.typst-math.typst-block  { display: block; margin: 8px auto; max-width: 100%; }
+.typst-error { color: #F87171; font-size: 0.9em; font-family: monospace; }
+/* - Recolor Typst ink (#000 fill on glyphs, #000 stroke on fraction bars/rules) to the
+   - theme text color. Match by value so fill="none"/stroke="none" shapes are left alone.
+   - (Faux-bold via CSS is not possible here: glyphs render through <use> from <defs>, so
+   - external CSS can't reach them; weight must be set at compile time in typst.ts.) */
+.typst-math { color: var(--vscode-foreground); }
+.typst-math [fill="#000"], .typst-math [fill="#000000"], .typst-math [fill="black"] { fill: currentColor; }
+.typst-math [stroke="#000"], .typst-math [stroke="#000000"], .typst-math [stroke="black"] { stroke: currentColor; }
+/* - chat overlay isn't zoomed like canvas nodes, so math reads smaller there; scale it up
+   - (svg dims are in em → font-size on the svg rescales them). Nodes are unaffected. */
+.skena-chat-md .typst-math { font-size: 1.3em; }
+
+/* ============================================================================
+   skena.markdownTheme = "factors" — dark teal research-terminal theme.
+   Scoped to [data-md-theme="factors"] so the default (vscode-adaptive) is untouched.
+   Fonts (IBM Plex) are bundled in fonts-ibm-plex.css. Code coloring: host shiki.
+   ============================================================================ */
+:root[data-md-theme="factors"] .skena-markdown {
+  --f-bg: #0c1117; --f-elev: #0f161d; --f-grid: #17202a; --f-hover: #131d25;
+  --f-txt: #c7d1cc; --f-bright: #e8efeb; --f-dim: #7c8a84; --f-faint: #56635d;
+  --f-teal: #4cc8a0; --f-teal-deep: #2f8d6f; --f-amber: #d9a23f; --f-red: #e5707a;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --f-sans: "IBM Plex Sans", system-ui, sans-serif;
+  font-family: var(--f-sans); font-size: 13px; line-height: 1.65;
+  color: var(--f-txt); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+}
+:root[data-md-theme="factors"] .skena-markdown h1,
+:root[data-md-theme="factors"] .skena-markdown h2,
+:root[data-md-theme="factors"] .skena-markdown h3,
+:root[data-md-theme="factors"] .skena-markdown h4 { font-family: var(--f-sans); color: var(--f-bright); line-height: 1.25; }
+:root[data-md-theme="factors"] .skena-markdown h1 { font-size: 18px; font-weight: 700; margin: 10px 0 6px; padding-bottom: 5px; border-bottom: 1px solid var(--f-grid); }
+:root[data-md-theme="factors"] .skena-markdown h2 { font-size: 14px; font-weight: 600; color: var(--f-teal); text-transform: uppercase; letter-spacing: .12em; margin: 12px 0 4px; }
+:root[data-md-theme="factors"] .skena-markdown h3 { font-size: 13px; font-weight: 600; color: var(--f-bright); margin: 8px 0 3px; }
+:root[data-md-theme="factors"] .skena-markdown p { margin: 5px 0; }
+:root[data-md-theme="factors"] .skena-markdown strong { color: var(--f-bright); font-weight: 600; }
+:root[data-md-theme="factors"] .skena-markdown em { color: var(--f-amber); font-style: italic; }
+:root[data-md-theme="factors"] .skena-markdown ul,
+:root[data-md-theme="factors"] .skena-markdown ol { padding-left: 20px; margin: 5px 0; }
+:root[data-md-theme="factors"] .skena-markdown li { margin: 2px 0; }
+:root[data-md-theme="factors"] .skena-markdown li::marker { color: var(--f-teal-deep); }
+:root[data-md-theme="factors"] .skena-markdown a { color: var(--f-teal); text-decoration: none; border-bottom: 1px solid transparent; }
+:root[data-md-theme="factors"] .skena-markdown a:hover { border-bottom-color: var(--f-teal-deep); }
+:root[data-md-theme="factors"] .skena-markdown code { font-family: var(--f-mono); font-size: 11.5px; background: var(--f-elev); color: var(--f-amber); border: 1px solid var(--f-grid); border-radius: 3px; padding: 0 4px; }
+:root[data-md-theme="factors"] .skena-markdown pre { background: var(--f-elev); border: 1px solid var(--f-grid); border-radius: 5px; padding: 10px 12px; overflow: auto; font-size: 11.5px; }
+:root[data-md-theme="factors"] .skena-markdown pre code { background: none; border: none; padding: 0; color: var(--f-txt); }
+:root[data-md-theme="factors"] .skena-markdown blockquote { border-left: 3px solid var(--f-teal-deep); margin: 6px 0; padding: 2px 10px; color: var(--f-dim); background: rgba(76,200,160,.04); }
+:root[data-md-theme="factors"] .skena-markdown table { border-collapse: collapse; font-size: 12px; width: 100%; margin: 8px 0; }
+/* - visible slate gridlines (--f-grid #17202a was invisible on the #0c1117 node) */
+:root[data-md-theme="factors"] .skena-markdown th,
+:root[data-md-theme="factors"] .skena-markdown td { border: 1px solid #2b3b48; padding: 4px 9px; text-align: left; }
+:root[data-md-theme="factors"] .skena-markdown th { background: #0e151c; color: var(--f-dim); font-weight: 600; text-transform: uppercase; letter-spacing: .08em; font-size: 10.5px; border-bottom: 2px solid var(--f-teal-deep); }
+/* - force cell text to the theme text color: something (untraced) tints numeric cells
+   - chartreuse; !important + inherit on children guarantees readable grey. Links stay teal. */
+:root[data-md-theme="factors"] .skena-markdown td { color: var(--f-txt) !important; }
+:root[data-md-theme="factors"] .skena-markdown td * { color: inherit !important; }
+:root[data-md-theme="factors"] .skena-markdown td a { color: var(--f-teal) !important; }
+/* - zebra striping so dense data tables are readable */
+:root[data-md-theme="factors"] .skena-markdown tbody tr:nth-child(even) td { background: rgba(255,255,255,0.03); }
+:root[data-md-theme="factors"] .skena-markdown tbody tr:hover td { background: var(--f-hover); }
+:root[data-md-theme="factors"] .skena-markdown hr { border: none; border-top: 1px solid var(--f-grid); margin: 10px 0; }
+/* - factors theme: dark node card bg (overrides .skena-node's !important vscode bg).
+   - Applies to text + file nodes (the markdown-bearing ones). .skena-markdown is
+   - transparent so this shows through as the content background. */
+:root[data-md-theme="factors"] .skena-node--text,
+:root[data-md-theme="factors"] .skena-node--file {
+  background: #0c1117 !important;
+}
+
+/* - #3: under factors, code file nodes (shiki) sit directly on the node bg — no mismatched
+   - dark-plus slab. The factors shiki theme provides the token colors. */
+:root[data-md-theme="factors"] .skena-code .shiki,
+:root[data-md-theme="factors"] .skena-code .shiki * { background: transparent !important; }
+
+/* - #2: readable line length in markdown nodes. Width driven by skena.markdownMaxWidth
+   - (chars); App sets --skena-md-maxw (or 'none'). Tables/pre/images opt out so wide
+   - content still uses the full node width. */
+.skena-markdown { max-width: var(--skena-md-maxw, none); }
+.skena-markdown table, .skena-markdown pre, .skena-markdown img { max-width: 100%; }

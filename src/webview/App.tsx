@@ -16,6 +16,7 @@ import { FloatingChat } from './canvas/FloatingChat';
 import { useCanvasData } from './hooks/useCanvasData';
 import { HostToWebview, MarkdownConfig, ChatToolEvent, ChatTokenUsage } from '../shared/types';
 import { MarkdownConfigContext, DEFAULT_MARKDOWN_CONFIG } from './context/MarkdownConfigContext';
+import { warmCodeHighlighter } from './lib/codeHighlight';
 
 type VsCodeApi = { postMessage: (msg: unknown) => void };
 
@@ -98,6 +99,25 @@ export function App(): JSX.Element {
     size?:      { w: number; h: number };
   }>());
 
+  // ─── markdown link clicks (host-rendered HTML) ─────────────────────────
+  // - host-rendered markdown (Typst/code text nodes, .md file nodes, chat) is injected as
+  // - raw HTML, so its <a> links have no React handler. Delegate at the document (bubble
+  // - phase): if a MarkdownRenderer link already handled it, defaultPrevented is set → skip.
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0) return;
+      const a = (e.target as HTMLElement | null)?.closest?.('a[href]');
+      if (!a || !a.closest('.skena-markdown')) return;
+      const href = a.getAttribute('href');   // - raw href, not the browser-resolved URL
+      if (!href) return;
+      e.preventDefault();
+      (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']
+        ?.postMessage({ type: 'openFile', uri: href });
+    };
+    document.addEventListener('click', onClick);
+    return () => document.removeEventListener('click', onClick);
+  }, []);
+
   // ─── host message handler ─────────────────────────────────────────────
 
   useEffect(() => {
@@ -116,6 +136,16 @@ export function App(): JSX.Element {
           break;
         case 'markdownConfig': {
           setMdConfig(msg.config);
+          // - stamp the theme on the root so scoped CSS ([data-md-theme=…]) applies everywhere
+          document.documentElement.dataset.mdTheme = msg.config.theme ?? 'vscode';
+          // - readable-column width for markdown nodes (0/undefined = unlimited)
+          document.documentElement.style.setProperty(
+            '--skena-md-maxw', msg.config.maxWidth ? `${msg.config.maxWidth}ch` : 'none',
+          );
+          // - nodes mount before this arrives; nudge the code highlighter to (re)run
+          window.dispatchEvent(new CustomEvent('skena:mdTheme', { detail: msg.config.theme ?? 'vscode' }));
+          // - warm shiki on idle so its WASM init doesn't hitch the first pan/interaction
+          if (msg.config.theme === 'factors') warmCodeHighlighter();
           const urls = msg.config.styles.filter(s => s.startsWith('http'));
           syncMarkdownStyleLinks(urls);
           styleUrlsRef.current = urls;
@@ -207,6 +237,9 @@ export function App(): JSX.Element {
           break;
         case 'floatingChatCompacting':
           window.dispatchEvent(new CustomEvent('skena:compacting', { detail: msg.active }));
+          break;
+        case 'renderMarkdownResult':
+          window.dispatchEvent(new CustomEvent('skena:renderMarkdownResult', { detail: { requestId: msg.requestId, html: msg.html } }));
           break;
       }
     };

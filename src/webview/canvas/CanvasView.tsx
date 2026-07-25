@@ -303,7 +303,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   // - OS clipboard text captured at last yy; discriminates internal vs content paste (no clipboard timestamps exist)
   const yySnapshotRef      = useRef<string | null>(null);
   const awaitingYYSnapshot = useRef(false);
-  const [heatmapVisible, setHeatmapVisible] = useState(true);
+  // - heatmap glow off by default (toggle with `gh`); the drop-shadow was distracting
+  const [heatmapVisible, setHeatmapVisible] = useState(false);
   const lastGPressRef = useRef<number>(0);
   const toggleHeatmap = useCallback(() => setHeatmapVisible(v => !v), []);
 
@@ -518,6 +519,12 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     pushHistory();
   }, [pushHistory]);
 
+  const rfInstance = useReactFlow();
+  const { screenToFlowPosition } = rfInstance;
+  // - keep a ref so the stable navigation useEffect can call setCenter / getViewport
+  const rfRef = useRef(rfInstance);
+  useEffect(() => { rfRef.current = rfInstance; });
+
   const onConnect = useCallback((connection: Connection) => {
     pushHistory();
     const newEdge: CanvasEdge = {
@@ -547,7 +554,28 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     const el = document.elementFromPoint(mouseEvent.clientX, mouseEvent.clientY);
     const nodeEl = el?.closest<HTMLElement>('[data-id]');
     const targetNodeId = nodeEl?.dataset.id;
-    if (!targetNodeId || targetNodeId === connectionState.fromNode.id) return;
+
+    // - dropped on empty canvas → create a new text node there and connect to it
+    if (!targetNodeId) {
+      const fromSide = (connectionState.fromHandle?.id ?? 'right') as NodeSide;
+      const opposite: Record<NodeSide, NodeSide> = { left: 'right', right: 'left', top: 'bottom', bottom: 'top' };
+      const nw = 400, nh = 300;
+      const p = screenToFlowPosition({ x: mouseEvent.clientX, y: mouseEvent.clientY });
+      const nodeId = `text-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      const newNode: CanvasNode = { id: nodeId, type: 'text', text: '', x: Math.round(p.x), y: Math.round(p.y - nh / 2), width: nw, height: nh };
+      const newEdge: CanvasEdge = {
+        id: `${connectionState.fromNode.id}-${nodeId}-${Date.now()}`,
+        fromNode: connectionState.fromNode.id, fromSide,
+        toNode: nodeId, toSide: opposite[fromSide], toEnd: 'arrow',
+      };
+      pushHistory();
+      window.dispatchEvent(new CustomEvent('skena:addNodeResult', {
+        detail: { type: 'addNodeResult', node: newNode, edge: newEdge, autoEdit: true } satisfies MsgAddNodeResult,
+      }));
+      return;
+    }
+
+    if (targetNodeId === connectionState.fromNode.id) return;
 
     // - infer nearest side from drop point relative to node bounding box
     const rect = nodeEl!.getBoundingClientRect();
@@ -575,7 +603,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     };
     canvasRef.current = updated;
     scheduleSave();
-  }, [setEdges, scheduleSave, pushHistory]);
+  }, [setEdges, scheduleSave, pushHistory, screenToFlowPosition]);
 
   const onNodesDelete = useCallback((deleted: Node[]) => {
     pushHistory();
@@ -665,12 +693,6 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   }, [setEdges, scheduleSave, pushHistory]);
 
   // ─── file drop from VS Code Explorer ────────────────────────────────────────
-
-  const rfInstance = useReactFlow();
-  const { screenToFlowPosition } = rfInstance;
-  // - keep a ref so the stable navigation useEffect can call setCenter / getViewport
-  const rfRef = useRef(rfInstance);
-  useEffect(() => { rfRef.current = rfInstance; });
 
   const onDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -2197,7 +2219,13 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         defaultViewport={canvas.viewport ?? { x: 0, y: 0, zoom: 1 }}
         fitView={!canvas.viewport}
         // - save viewport to canvas JSON whenever the user stops panning/zooming
+        onMoveStart={() => {
+          // - promote nodes to GPU layers only while panning/zooming (see canvas.css);
+          // - at rest they render crisp at the real scale instead of a scaled cached texture
+          document.documentElement.setAttribute('data-skena-interacting', '1');
+        }}
         onMoveEnd={(_e, viewport) => {
+          document.documentElement.removeAttribute('data-skena-interacting');
           canvasRef.current = { ...canvasRef.current, viewport };
           scheduleSave();
         }}

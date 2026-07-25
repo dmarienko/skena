@@ -2,7 +2,7 @@
   "name": "skena",
   "displayName": "Skena",
   "description": "Visual research canvas for VS Code — renders JSON Canvas files as interactive node graphs with rich content previews, a canvas-aware AI companion (Claude Code, Anthropic, or any OpenAI-compatible backend), and a markdown knowledge vault.",
-  "version": "0.6.21",
+  "version": "0.7.8",
   "publisher": "DmitryMarienko",
   "license": "MIT",
   "repository": {
@@ -297,8 +297,8 @@
         },
         "skena.ai.harnessMaxTurns": {
           "type": "number",
-          "default": 16,
-          "description": "Max agent turns per message for the harness provider (bounds tool-use loops).",
+          "default": 40,
+          "description": "Max agent turns per message for the harness provider. On hitting it the reply auto-continues a few times before asking you.",
           "scope": "window"
         },
         "skena.ai.harnessAddDirs": {
@@ -354,6 +354,23 @@
           },
           "description": "Canvas color palette (matches Obsidian color codes 1-6)",
           "scope": "window"
+        },
+        "skena.markdownTheme": {
+          "type": "string",
+          "enum": ["vscode", "factors"],
+          "enumDescriptions": [
+            "Adapt to the active VS Code color theme (default)",
+            "Dark teal research-terminal theme (IBM Plex, syntax-colored code)"
+          ],
+          "default": "vscode",
+          "description": "Theme for rendered markdown in nodes and chat.",
+          "scope": "window"
+        },
+        "skena.markdownMaxWidth": {
+          "type": "number",
+          "default": 0,
+          "description": "Max line length (in characters) for rendered markdown nodes — widening a node past this keeps a readable text column instead of reflowing full width. 0 = unlimited. Try ~88.",
+          "scope": "window"
         }
       }
     }
@@ -361,11 +378,13 @@
   "scripts": {
     "dev": "node esbuild.config.mjs --watch",
     "build": "node esbuild.config.mjs",
-    "package": "node esbuild.config.mjs && vsce package --no-dependencies",
+    "package": "node esbuild.config.mjs && vsce package",
     "lint": "eslint src --ext ts,tsx",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@fontsource/ibm-plex-mono": "^5.2.7",
+    "@fontsource/ibm-plex-sans": "^5.2.8",
     "@types/node": "^20.0.0",
     "@types/react": "^18.0.0",
     "@types/react-dom": "^18.0.0",
@@ -380,6 +399,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.97.0",
     "@monaco-editor/react": "^4.7.0",
+    "@myriaddreamin/typst-ts-node-compiler": "^0.7.0",
     "@vscode/codicons": "^0.0.45",
     "@xyflow/react": "^12.0.0",
     "chokidar": "^3.5.3",

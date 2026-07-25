@@ -27,6 +27,7 @@ export async function readCanvas(fsPath: string): Promise<CanvasData> {
     edges:           parsed.edges           ?? [],
     viewport:        parsed.viewport,
     creationCounter: parsed.creationCounter,
+    metadata:        parsed.metadata,
   };
 }
 

@@ -34,6 +34,8 @@ import { initVimMode, VimMode } from 'monaco-vim';
 import { TextNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { MarkdownRenderer } from '../../renderers/MarkdownRenderer';
+import { useHighlightedHtml } from '../../lib/codeHighlight';
+import { useHostMarkdown } from '../../hooks/useHostMarkdown';
 import { ScrollableContent } from '../../components/ScrollableContent';
 import { useHeatmap } from '../../context/HeatmapContext';
 import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
@@ -221,6 +223,8 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
   const bw = useZoomInvariantBorderWidth(1.5);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(node.text);
+  const hostHtml = useHostMarkdown(draft);
+  const shownHtml = useHighlightedHtml(hostHtml);
 
   // - re-sync the view buffer when node.text changes from OUTSIDE this component
   // - (external MCP write / disk reload → soft re-sync updates the data.text prop, but
@@ -563,7 +567,7 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
     <NodeLabelBadge label={node.nodeLabel} createdBy={(node as any).createdBy} />
     <div
       ref={wrapperRef}
-      className="skena-node"
+      className="skena-node skena-node--text"
       style={{
         border:        `${bw}px solid ${borderColor}`,
         height:        '100%',
@@ -657,7 +661,9 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
       ) : (
         // - baseUri="." so relative image paths (./img.png) resolve against canvas dir
         <ScrollableContent ref={scrollableRef} scrollKey={id} style={{ padding: '6px 8px 6px 12px' }}>
-          <MarkdownRenderer content={draft} baseUri="." />
+          {hostHtml !== null
+            ? <div className="skena-markdown" dangerouslySetInnerHTML={{ __html: shownHtml ?? hostHtml }} />
+            : <MarkdownRenderer content={draft} baseUri="." />}
         </ScrollableContent>
       )}
     </div>

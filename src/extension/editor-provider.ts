@@ -175,7 +175,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             send({ type: 'vaultIndex', entries: this.indexer.all() });
             // - current AI model/provider for the chat title
             const aiCfg0 = vscode.workspace.getConfiguration('skena.ai');
-            send({ type: 'chatModelInfo', model: aiCfg0.get<string>('model') ?? '', provider: aiCfg0.get<string>('provider') ?? '' });
+            send({ type: 'chatModelInfo', model: document.canvas.metadata?.aiModel || aiCfg0.get<string>('model') || '', provider: aiCfg0.get<string>('provider') ?? '' });
             // - restore chat state from workspaceState (survives panel close + rename)
             const historyKey = `skena.chatHistory.${document.uri.toString()}`;
             const uiKey      = `skena.chatUI.${document.uri.toString()}`;
@@ -208,6 +208,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             const mdPreview = vscode.workspace.getConfiguration('markdown.preview');
             const md        = vscode.workspace.getConfiguration('markdown');
             const nbCfg     = vscode.workspace.getConfiguration('skena').get<{ showSourceCells?: boolean }>('notebook') ?? {};
+            const mdTheme   = vscode.workspace.getConfiguration('skena').get<'vscode' | 'factors'>('markdownTheme') ?? 'vscode';
+            const mdMaxW    = vscode.workspace.getConfiguration('skena').get<number>('markdownMaxWidth') ?? 0;
             send({
               type: 'markdownConfig',
               config: {
@@ -215,6 +217,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
                 fontSize:           mdPreview.get<number>('fontSize'),
                 styles:             md.get<string[]>('styles') ?? [],
                 notebookShowSource: nbCfg.showSourceCells ?? false,
+                theme:              mdTheme,
+                maxWidth:           mdMaxW,
               },
             });
           } catch (e) {
@@ -238,6 +242,31 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         case 'chatMessage':          await this.handleChatMessage(msg, panel); break;
         case 'floatingChatSend':  await this.handleFloatingChatSend(msg, panel, document, canvasDir, resolver); break;
         case 'floatingChatAbort': this._llmClient?.abort(); break;
+        case 'pickModel': {
+          const aiCfg = vscode.workspace.getConfiguration('skena.ai');
+          const cur   = document.canvas.metadata?.aiModel || aiCfg.get<string>('model') || '';
+          const MODELS = ['claude-opus-4-5', 'claude-sonnet-4-5', 'claude-haiku-4-5', 'opusplan'];
+          const items: vscode.QuickPickItem[] = [
+            ...MODELS.map(m => ({ label: m, description: m === cur ? '● current' : undefined })),
+            { label: 'Custom…', description: 'type a model id' },
+            { label: 'Use global default', description: `skena.ai.model = ${aiCfg.get<string>('model') ?? ''}` },
+          ];
+          const pick = await vscode.window.showQuickPick(items, { title: 'AI model for this canvas', placeHolder: cur ? `current: ${cur}` : 'select a model' });
+          if (!pick) break;
+          let chosen: string | undefined = pick.label;
+          if (pick.label === 'Custom…') {
+            chosen = (await vscode.window.showInputBox({ title: 'Model id', value: cur, prompt: 'e.g. claude-sonnet-4-5' }))?.trim();
+            if (!chosen) break;
+          } else if (pick.label === 'Use global default') {
+            chosen = undefined;   // - clear the per-canvas override
+          }
+          // - persist in the .canvas file (portable), respawn so the new model takes effect
+          document.canvas.metadata = { ...(document.canvas.metadata ?? {}), aiModel: chosen };
+          await writeCanvas(document.uri.fsPath, document.canvas);
+          this._llmClient?.resetSession?.(document.uri.fsPath);
+          send({ type: 'chatModelInfo', model: chosen || aiCfg.get<string>('model') || '', provider: aiCfg.get<string>('provider') ?? '' });
+          break;
+        }
         case 'floatingChatPersistHistory': {
           // - persist full history incl. the latest assistant reply (survives close/reopen)
           const historyKey = `skena.chatHistory.${document.uri.toString()}`;
@@ -313,6 +342,16 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           break;
         }
         case 'dropFiles':            this.handleDropFiles(msg.uris, msg.position, canvasDir, resolver, send, msg.connectTo); break;
+        case 'renderMarkdown': {
+          try {
+            const html = await renderMarkdownToHtml(msg.text);
+            send({ type: 'renderMarkdownResult', requestId: msg.requestId, html });
+          } catch {
+            // - never reject: return an error span; webview falls back to its own render
+            send({ type: 'renderMarkdownResult', requestId: msg.requestId, html: `<span class="typst-error">render failed</span>` });
+          }
+          break;
+        }
         case 'addNodeRequest': await this.handleAddNodeRequest(msg, canvasDir, resolver, send); break;
         case 'moveToSubCanvas': await this.handleMoveToSubCanvas(msg, canvasDir, send); break;
         // - clipboard relay: webview sandbox blocks navigator.clipboard; route through host
@@ -445,7 +484,12 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         this._llmClient = null;   // - force re-creation on next chat
         // - refresh the chat title's model/provider live on settings change
         const aiCfg = vscode.workspace.getConfiguration('skena.ai');
-        send({ type: 'chatModelInfo', model: aiCfg.get<string>('model') ?? '', provider: aiCfg.get<string>('provider') ?? '' });
+        send({ type: 'chatModelInfo', model: document.canvas.metadata?.aiModel || aiCfg.get<string>('model') || '', provider: aiCfg.get<string>('provider') ?? '' });
+      }
+      // - keep this canvas's file resolver current when vaults change, so vault:// nodes
+      // - added after a vault is configured resolve without reopening the canvas
+      if (e.affectsConfiguration('skena.vaults') || e.affectsConfiguration('skena.vaultDirectories')) {
+        void getVaults().then(v => resolver.updateVaults(v));
       }
     });
 
@@ -630,8 +674,20 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       return;
     }
 
-    const resolved = resolver.resolve(msg.uri, canvasDir);
+    // - optional GitHub-style line fragment: file.py#L37 or file.py#37 → open at that line
+    let target = msg.uri;
+    let line: number | undefined;
+    const frag = target.match(/#L?(\d+)$/);
+    if (frag) { line = parseInt(frag[1], 10); target = target.slice(0, frag.index); }
+
+    const resolved = resolver.resolve(target, canvasDir);
     if (!resolved || resolved.isNotion) return;
+
+    // - clean, actionable message for a broken link instead of VS Code's raw error dump
+    if (!resolver.exists(resolved.fsPath)) {
+      vscode.window.showWarningMessage(`Skena: linked file not found — ${target}`);
+      return;
+    }
 
     const fsUri = vscode.Uri.file(resolved.fsPath);
     const ext   = path.extname(resolved.fsPath).toLowerCase();
@@ -661,7 +717,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       } else {
         // - .md and all other text files → open in text editor (edit mode)
         const doc = await vscode.workspace.openTextDocument(resolved.fsPath);
-        await vscode.window.showTextDocument(doc, { viewColumn, preview: !msg.modal });
+        // - if a #L<n> line was given, place the cursor there and reveal it
+        const selection = line ? new vscode.Range(line - 1, 0, line - 1, 0) : undefined;
+        await vscode.window.showTextDocument(doc, { viewColumn, preview: !msg.modal, selection });
       }
     } catch (e) {
       vscode.window.showErrorMessage(`Skena: cannot open file: ${e}`);
@@ -1089,6 +1147,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       workspaceDir,
       sessionId,
       restoreSession,
+      model:        document.canvas.metadata?.aiModel,
     });
   }
 
@@ -1182,7 +1241,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     // - (e.g. cdn.jsdelivr.net CSS that may also reference external fonts)
     const csp = [
       `default-src 'none'`,
-      `script-src ${webview.cspSource} 'unsafe-inline'`,
+      // - wasm-unsafe-eval: shiki's oniguruma syntax-highlighter is WebAssembly; without
+      // - this the WASM compile is CSP-blocked (breaks code highlighting in nodes + CodeRenderer)
+      `script-src ${webview.cspSource} 'unsafe-inline' 'wasm-unsafe-eval'`,
       `style-src ${webview.cspSource} 'unsafe-inline' https:`,
       `img-src ${webview.cspSource} data: blob: https:`,
       `font-src ${webview.cspSource} data: https:`,

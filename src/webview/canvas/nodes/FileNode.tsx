@@ -34,6 +34,7 @@ import { NotebookRenderer } from '../../renderers/NotebookRenderer';
 import { CodeRenderer } from '../../renderers/CodeRenderer';
 import { ImageRenderer } from '../../renderers/ImageRenderer';
 import { HtmlShadow } from '../../renderers/HtmlShadow';
+import { useHighlightedHtml } from '../../lib/codeHighlight';
 import { useHeatmap } from '../../context/HeatmapContext';
 import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
 import { DEFAULT_NODE_BORDER_BY_TYPE } from '../palette';
@@ -62,11 +63,12 @@ interface ContentProps {
 const MemoContent = memo(function FileNodeContent({
   fileType, content, resourceUri, zoom, baseUri, file, truncated, totalSize, html, sourceNodeId,
 }: ContentProps): JSX.Element {
+  const mdHtml = useHighlightedHtml(html);
   return (
     <>
       {fileType === 'markdown' && html && (
         // - pre-rendered by extension host (Node.js) — zero cost in the UI thread
-        <div className="skena-markdown" dangerouslySetInnerHTML={{ __html: html }} />
+        <div className="skena-markdown" dangerouslySetInnerHTML={{ __html: mdHtml ?? html }} />
       )}
       {fileType === 'markdown' && !html && <MarkdownRenderer content={content} baseUri={baseUri} />}
       {fileType === 'notebook' && <NotebookRenderer parsedJson={content} zoom={zoom} sourceNodeId={sourceNodeId} />}
