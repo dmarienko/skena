@@ -113,6 +113,10 @@
       {
         "command": "skena.addTextNodeRight",
         "title": "Skena: Add Text Node Right"
+      },
+      {
+        "command": "skena.addKernel",
+        "title": "Skena: Add Kernel"
       }
     ],
     "keybindings": [
@@ -374,6 +378,25 @@
           "default": 0,
           "description": "Max line length (in characters) for rendered markdown nodes — widening a node past this keeps a readable text column instead of reflowing full width. 0 = unlimited. Try ~88.",
           "scope": "window"
+        },
+        "skena.jupyter.kernels": {
+          "type": "array",
+          "default": [],
+          "description": "Jupyter servers for kernel nodes. Each item: {name, hubUrl, token}. When empty, falls back to ~/.aix/xlmcp/.env.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "hubUrl": {
+                "type": "string"
+              },
+              "token": {
+                "type": "string"
+              }
+            }
+          }
         }
       }
     }

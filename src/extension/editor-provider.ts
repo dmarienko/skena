@@ -25,6 +25,7 @@ import { createLLMClient, CANVAS_TOOLS, ILLMClient } from './llm-client';
 import { buildSystemPrompt, buildStaticSystemPrompt, buildCanvasContext, nodeTitle, nodeContent } from './context-builder';
 import { assignLabel } from '../shared/nodeLabels';
 import { KernelManager } from './jupyter/manager';
+import { listKernels, startKernel } from './jupyter/client';
 import type { CollectedOutput } from './jupyter/protocol';
 import {
   CanvasData,
@@ -411,7 +412,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           vscode.window.showWarningMessage(msg.text);
           break;
         case 'runCell':   await this.handleRunCell(msg, manager, panel, document, canvasDir); break;
-        case 'addKernel': await this.handleAddKernel(manager, canvasDir, send); break;
+        case 'addKernel': await this.handleAddKernel(manager, document, send); break;
       }
     });
 
@@ -1185,7 +1186,76 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     });
   }
 
-  private async handleAddKernel(_manager: KernelManager, _canvasDir: string, _send: (m: HostToWebview) => void): Promise<void> { /* - implemented in Task 10 */ }
+  /**
+   * "Skena: Add Kernel" — QuickPick over configured Jupyter servers. Each server
+   * lists its live kernels (to attach an existing one) plus a "start new kernel"
+   * entry. The chosen kernel becomes a KernelNode delivered via addNodeResult;
+   * the webview assigns its colorIndex and pans the viewport to it.
+   */
+  private async handleAddKernel(
+    manager:  KernelManager,
+    document: SkenaDocument,
+    send:     (m: HostToWebview) => void,
+  ): Promise<void> {
+    const servers = manager.allServers();
+    if (!servers.length) {
+      void vscode.window.showWarningMessage('Skena: no Jupyter kernels configured (skena.jupyter.kernels or ~/.aix/xlmcp/.env).');
+      return;
+    }
+
+    type Item = vscode.QuickPickItem & { server: string; kernelId?: string; start?: boolean };
+    const items: Item[] = [];
+    for (const s of servers) {
+      try {
+        const kernels = await listKernels(s);
+        for (const k of kernels) items.push({
+          label:       `${s.name} · ${k.name}`,
+          description: `${k.state} · ${k.id.slice(0, 8)}`,
+          server:      s.name,
+          kernelId:    k.id,
+        });
+      } catch { /* - unreachable server: still offer "start new" below */ }
+      items.push({ label: `${s.name} · + start new kernel`, server: s.name, start: true });
+    }
+
+    const pick = await vscode.window.showQuickPick(items, { placeHolder: 'Add a kernel to the canvas' });
+    if (!pick) return;
+
+    let kernelId    = pick.kernelId;
+    let displayName = 'python3';
+    if (pick.start) {
+      const server = manager.serverByName(pick.server);
+      if (!server) return;
+      try {
+        const k = await startKernel(server);
+        kernelId    = k.id;
+        displayName = k.name;
+      } catch (e) {
+        void vscode.window.showErrorMessage(`Skena: failed to start kernel: ${e instanceof Error ? e.message : String(e)}`);
+        return;
+      }
+    }
+
+    // - place near the last node so the widget doesn't land on the world origin;
+    //   the webview pans the viewport to it after insertion (colorIndex assigned there).
+    const nodes = document.canvas.nodes;
+    let x = 200, y = 200;
+    if (nodes.length) {
+      const last = nodes[nodes.length - 1];
+      x = last.x + last.width + 60;
+      y = last.y;
+    }
+
+    const node: KernelNode = {
+      id:          `kernel-${Date.now().toString(36)}`,
+      type:        'kernel',
+      server:      pick.server,
+      kernelId,
+      displayName,
+      x, y, width: 140, height: 160,
+    };
+    send({ type: 'addNodeResult', node, autoEdit: false });
+  }
 
   // ─── Floating chat handlers ──────────────────────────────────────────────────
 

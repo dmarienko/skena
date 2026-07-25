@@ -114,6 +114,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const panel = SkenaEditorProvider.activePanel;
       if (!panel) return;
       panel.webview.postMessage({ type: 'addTextNodeTrigger', direction: 'L' });
+    }),
+
+    // - Add a Jupyter kernel node to the focused canvas; the panel routes the
+    // - 'addKernel' message into SkenaEditorProvider.handleAddKernel (QuickPick).
+    vscode.commands.registerCommand('skena.addKernel', () => {
+      const panel = SkenaEditorProvider.activePanel;
+      if (!panel) { void vscode.window.showInformationMessage('Skena: open a canvas first.'); return; }
+      panel.webview.postMessage({ type: 'addKernel' });
     })
   );
 

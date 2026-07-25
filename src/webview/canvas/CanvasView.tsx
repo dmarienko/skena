@@ -38,7 +38,7 @@ import { ensureLabels, assignLabel } from './nodeLabels';
 import { ZoomLevelProvider } from '../context/ZoomLevelContext';
 import { HeatmapProvider } from '../context/HeatmapContext';
 
-import { DEFAULT_EDGE_COLOR } from './palette';
+import { DEFAULT_EDGE_COLOR, nextKernelColorIndex } from './palette';
 import { FileNodeComponent }  from './nodes/FileNode';
 import { TextNodeComponent }  from './nodes/TextNode';
 import { GroupNodeComponent } from './nodes/GroupNode';
@@ -1893,8 +1893,16 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       pushHistory();
       const { node: rawNode, edge: ce, autoEdit } = (e as CustomEvent<MsgAddNodeResult>).detail;
 
+      // - kernel nodes get a palette color by creation order — count here so the
+      //   index is correct against the live node set before this one is added
+      let seed = rawNode;
+      if (rawNode.type === 'kernel' && rawNode.colorIndex === undefined) {
+        const kernelCount = canvasRef.current.nodes.filter(n => n.type === 'kernel').length;
+        seed = { ...rawNode, colorIndex: nextKernelColorIndex(kernelCount) };
+      }
+
       // - assign a reference label (N1, M3 …) if the node doesn't have one yet
-      const cn = assignLabel(rawNode, canvasRef.current.nodes);
+      const cn = assignLabel(seed, canvasRef.current.nodes);
 
       // - stamp creation index and increment canvas-level counter
       const nextIdx = (canvasRef.current.creationCounter ?? 0) + 1;
