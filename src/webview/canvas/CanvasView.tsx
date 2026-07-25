@@ -47,6 +47,7 @@ import { CellNodeComponent }  from './nodes/CellNode';
 import { ChatNodeComponent }  from './nodes/ChatNode';
 import { PortalNodeComponent } from './nodes/PortalNode';
 import { KernelNodeComponent } from './nodes/KernelNode';
+import { CodeNodeComponent }   from './nodes/CodeNode';
 import { LabeledEdgeComponent } from './edges/LabeledEdge';
 import { HelperLines } from './HelperLines';
 import { CanvasSearch } from './CanvasSearch';
@@ -61,6 +62,7 @@ const NODE_TYPES: NodeTypes = {
   chat:   ChatNodeComponent,
   portal: PortalNodeComponent,
   kernel: KernelNodeComponent,
+  code:   CodeNodeComponent,
 };
 
 const EDGE_TYPES: EdgeTypes = {
@@ -1833,6 +1835,31 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     };
     window.addEventListener('skena:nodeTextEdit', handler);
     return () => window.removeEventListener('skena:nodeTextEdit', handler);
+  }, [setNodes, scheduleSave, pushHistory]);
+
+  // - listen for code edits committed by CodeNodeComponent's Monaco editor
+  useEffect(() => {
+    const handler = (e: Event) => {
+      pushHistory();
+      const { id, code } = (e as CustomEvent<{ id: string; code: string }>).detail;
+      const original = canvasRef.current.nodes.find(n => n.id === id);
+      if (!original || original.type !== 'code') return;
+      // - stamp editIndex from the shared creationCounter pool (see nodeTextEdit)
+      const nextIdx = (canvasRef.current.creationCounter ?? 0) + 1;
+      canvasRef.current = { ...canvasRef.current, creationCounter: nextIdx };
+      const updatedNode = { ...original, code, editIndex: nextIdx };
+      const updated: CanvasData = {
+        ...canvasRef.current,
+        nodes: canvasRef.current.nodes.map(n => n.id === id ? updatedNode : n),
+      };
+      canvasRef.current = updated;
+      setNodes(nds => nds.map(n =>
+        n.id === id ? { ...n, data: { ...n.data, code, editIndex: nextIdx } } : n
+      ));
+      scheduleSave();
+    };
+    window.addEventListener('skena:nodeCodeEdit', handler);
+    return () => window.removeEventListener('skena:nodeCodeEdit', handler);
   }, [setNodes, scheduleSave, pushHistory]);
 
   // - receive add-node result from QuickPick (Ctrl+N / Shift+hjkl)
