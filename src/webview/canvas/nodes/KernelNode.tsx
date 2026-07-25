@@ -6,6 +6,7 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState, memo } from 'react';
+import { createPortal } from 'react-dom';
 import { NodeProps, Handle, Position } from '@xyflow/react';
 import { KernelNode } from '../../../shared/types';
 import type { KernelStatusEntry, CanvasNode, CanvasEdge, MsgAddNodeResult } from '../../../shared/types';
@@ -48,10 +49,14 @@ function KernelNodeInner({ id, data }: NodeProps): JSX.Element {
   const title = `${node.displayName ?? 'kernel'} :: ${node.kernelId ? node.kernelId.slice(0, 10) : '—'}`;
 
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
   useEffect(() => {
     if (!menu) return;
-    const onDown = () => setMenu(null);
+    // - close on an outside mousedown only; clicks inside the menu must reach their onClick
+    const onDown = (e: MouseEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenu(null);
+    };
     window.addEventListener('mousedown', onDown, { capture: true });
     return () => window.removeEventListener('mousedown', onDown, { capture: true });
   }, [menu]);
@@ -100,8 +105,11 @@ function KernelNodeInner({ id, data }: NodeProps): JSX.Element {
           />
         </div>
       </div>
-      {menu && (
+      {menu && createPortal(
+        /* - portal to body: React Flow's viewport transform would otherwise make
+           position:fixed relative to the zoomed pane, offsetting the menu from the cursor */
         <div
+          ref={menuRef}
           className="nodrag"
           style={{
             position: 'fixed', left: menu.x, top: menu.y, zIndex: 1000,
@@ -111,13 +119,13 @@ function KernelNodeInner({ id, data }: NodeProps): JSX.Element {
             borderRadius: 6, padding: '4px 0', minWidth: 160, fontSize: 12,
             boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
           }}
-          onMouseDown={e => e.stopPropagation()}
         >
           <KernelMenuItem label="Restart kernel"  disabled={!node.kernelId} onClick={restart} />
           <KernelMenuItem label="Shutdown kernel" disabled={!node.kernelId} onClick={shutdown} />
           <div style={{ height: 1, background: 'var(--vscode-menu-separatorBackground, rgba(255,255,255,0.1))', margin: '4px 0' }} />
           <KernelMenuItem label="Add code cell" onClick={addCodeCell} />
-        </div>
+        </div>,
+        document.body,
       )}
       <Handle type="source" position={Position.Bottom} id="bottom" style={HANDLE_STYLE} />
       <Handle type="source" position={Position.Top}    id="top"    style={HANDLE_STYLE} />

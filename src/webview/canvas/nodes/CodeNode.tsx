@@ -66,6 +66,22 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     editorInstance.focus();
     // - click / tab away from the editor → leave edit mode back to the preview
     editorInstance.onDidBlurEditorText(() => setEditing(false));
+
+    // - Esc exits edit mode only from vim NORMAL mode (INSERT/VISUAL just return to normal).
+    // - Track the mode from the status bar; MutationObserver runs as a microtask so inside
+    // - onKeyDown `vimIsEditing` still holds the pre-key state (same trick as TextNode).
+    let vimIsEditing = false;
+    if (vimStatusRef.current) {
+      const obs = new MutationObserver(() => {
+        const t = vimStatusRef.current?.textContent ?? '';
+        vimIsEditing = t.includes('INSERT') || t.includes('VISUAL') || t.includes('REPLACE');
+      });
+      obs.observe(vimStatusRef.current, { childList: true, subtree: true, characterData: true });
+      editorInstance.onDidDispose(() => obs.disconnect());
+    }
+    editorInstance.onKeyDown(e => {
+      if (e.browserEvent.key === 'Escape' && !vimIsEditing) setEditing(false);
+    });
   }, []);
 
   // - a freshly-created code cell (autoEdit) or Enter-on-selected fires skena:enterEdit → edit mode
@@ -198,7 +214,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
         ) : (
           /* - read-only highlighted preview; double-click (or Enter when selected) to edit */
           <div
-            className="nowheel"
+            className="nowheel skena-code-cell-preview"
             style={{ flex: 1, minHeight: 0, overflow: 'auto', cursor: 'text' }}
             onDoubleClick={() => setEditing(true)}
             title="Double-click to edit"

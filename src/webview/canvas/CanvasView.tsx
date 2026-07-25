@@ -437,7 +437,16 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       const stored  = lastFocusedNodeId.get(canvasPath);
       const exists  = stored && nodesRef.current.some(n => n.id === stored);
       const focusId = exists ? stored : pickViewportNode();
-      if (focusId) focusNodeById(focusId);
+      if (focusId) {
+        if (canvas.viewport) {
+          // - viewport already restored above; just reselect WITHOUT recentering, so an
+          // - external reload (e.g. a cell-run output write) doesn't pan the canvas / steal focus
+          setNodes(nds => nds.map(n => ({ ...n, selected: n.id === focusId })));
+          window.dispatchEvent(new CustomEvent('skena:focusNode', { detail: { id: focusId } }));
+        } else {
+          focusNodeById(focusId);
+        }
+      }
     }, 80);
     return () => clearTimeout(t);
   // - focusNodeById / pickViewportNode are stable useCallbacks; declared below

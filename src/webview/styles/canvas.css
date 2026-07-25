@@ -105,3 +105,17 @@
 
 @keyframes skena-kernel-blink { 0%, 100% { opacity: 1 } 50% { opacity: 0.25 } }
 .skena-kernel-busy { animation: skena-kernel-blink 0.9s ease-in-out infinite; }
+
+/* - code cell preview: left margin + line-number gutter on shiki output */
+.skena-code-cell-preview .skena-code { padding: 4px 6px 4px 0; }
+.skena-code-cell-preview .shiki code { counter-reset: skena-ln; }
+.skena-code-cell-preview .shiki .line { counter-increment: skena-ln; }
+.skena-code-cell-preview .shiki .line::before {
+  content: counter(skena-ln);
+  display: inline-block;
+  width: 2.2em;
+  margin-right: 1em;
+  text-align: right;
+  opacity: 0.35;
+  user-select: none;
+}
