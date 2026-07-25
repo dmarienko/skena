@@ -14,7 +14,7 @@ export type NodeSide = 'top' | 'right' | 'bottom' | 'left';
 export type StandardNodeType = 'file' | 'text' | 'group' | 'link';
 
 /** Skena extension node types (Obsidian ignores unknown types gracefully) */
-export type SkenaNodeType = 'cell' | 'chat' | 'portal';
+export type SkenaNodeType = 'cell' | 'chat' | 'portal' | 'kernel' | 'code';
 
 export type NodeType = StandardNodeType | SkenaNodeType;
 
@@ -106,6 +106,32 @@ export interface PortalNode extends CanvasNodeBase {
   label?: string;
 }
 
+/** Live Jupyter kernel — circular status widget; drag its ring to bind a code cell */
+export interface KernelNode extends CanvasNodeBase {
+  type: 'kernel';
+  /** - matches a skena.jupyter.kernels[].name (the server it lives on) */
+  server: string;
+  /** - live Jupyter kernel id once started/bound; absent = not yet connected */
+  kernelId?: string;
+  /** - e.g. "python3"; shown in the title */
+  displayName?: string;
+  /** - index into KERNEL_PALETTE, assigned at creation */
+  colorIndex?: number;
+}
+
+/** Editable code cell — runs on a bound kernel node, output goes to a linked cell node */
+export interface CodeNode extends CanvasNodeBase {
+  type: 'code';
+  code: string;
+  /** - default 'python' */
+  language?: string;
+  /** - id of the linked output CellNode, once the first run created it */
+  outputNodeId?: string;
+  /** - ms timestamp of last execution start */
+  lastRun?: number;
+  lastStatus?: 'ok' | 'error' | 'running';
+}
+
 export type CanvasNode =
   | FileNode
   | TextNode
@@ -113,7 +139,9 @@ export type CanvasNode =
   | LinkNode
   | CellNode
   | ChatNode
-  | PortalNode;
+  | PortalNode
+  | KernelNode
+  | CodeNode;
 
 export interface CanvasEdge {
   id: string;
@@ -323,6 +351,8 @@ export interface MsgPanelActivated { type: 'panelActivated'; }
 export interface MsgChatModelInfo { type: 'chatModelInfo'; model: string; provider: string; }
 /** - webview → host: user clicked the chat title to change this canvas's model */
 export interface MsgPickModel { type: 'pickModel'; }
+export interface MsgRunCell   { type: 'runCell'; cellNodeId: string; code: string; }
+export interface MsgAddKernel { type: 'addKernel'; }
 
 /** - host → webview: session compaction is running (true) or finished (false) */
 export interface MsgFloatingChatCompacting { type: 'floatingChatCompacting'; active: boolean; }
@@ -423,7 +453,24 @@ export type HostToWebview =
   | MsgFloatingChatNodeAdded
   | MsgFloatingChatHistoryRestored
   | MsgMarksRestored
-  | MsgVerifyPathResult;
+  | MsgVerifyPathResult
+  | MsgKernelStatus
+  | MsgRunStatus;
+
+export interface KernelStatusEntry {
+  server:    string;
+  kernelId:  string;
+  state:     'idle' | 'busy' | 'dead' | 'error';
+  connections?: number;
+}
+export interface MsgKernelStatus { type: 'kernelStatus'; kernels: KernelStatusEntry[]; }
+export interface MsgRunStatus {
+  type:         'runStatus';
+  cellNodeId:   string;
+  kernelNodeId: string | null;
+  state:        'running' | 'ok' | 'error';
+  error?:       string;
+}
 
 // - Webview → Host messages
 
@@ -622,7 +669,9 @@ export type WebviewToHost =
   | MsgVerifyPath
   | MsgRenderMarkdown
   | MsgShowWarning
-  | MsgPickModel;
+  | MsgPickModel
+  | MsgRunCell
+  | MsgAddKernel;
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────
 
