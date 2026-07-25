@@ -23,6 +23,8 @@ export const DEFAULT_NODE_BORDER_BY_TYPE = {
   chat:   '#a882ff',                 // - chat node — AI chat / agent terminal
   portal: '#53dfdd',                 // - portal node — link to another .canvas
   group:  'rgba(255,255,255,0.12)',  // - group node — dashed background container
+  code:   '#9ece6a',                 // - code node — editable code cell (Jupyter)
+  kernel: '#4cc8a0',                 // - kernel node — live Jupyter kernel widget
 } as const;
 
 // ─── connection edges (links between nodes) ─────────────────────────────────────
@@ -57,3 +59,22 @@ export const HEATMAP_PALETTE = [
   '250,204,21',    // - yellow
 ] as const;
 export const HEATMAP_GRAY = '140,140,140';   // - isolated (unconnected) nodes
+
+// - per-kernel accent colors, cycled by creation order (kernel node circles + its edges)
+export const KERNEL_PALETTE: string[] = [
+  '#4cc8a0',   // - teal
+  '#d9a23f',   // - amber
+  '#7aa2f7',   // - blue
+  '#e5707a',   // - red
+  '#bb9af7',   // - violet
+  '#9ece6a',   // - green
+];
+
+export function kernelColor(colorIndex: number): string {
+  const n = KERNEL_PALETTE.length;
+  return KERNEL_PALETTE[((colorIndex % n) + n) % n];
+}
+
+export function nextKernelColorIndex(existingKernelCount: number): number {
+  return existingKernelCount % KERNEL_PALETTE.length;
+}
