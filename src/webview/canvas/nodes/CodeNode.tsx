@@ -114,9 +114,9 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     if (!selected || editing) return;
     const onKey = (e: KeyboardEvent) => {
       const runCombo =
-        (e.altKey && ['r', 'R', 'j', 'J'].includes(e.key)) ||
-        ((e.ctrlKey || e.metaKey) && e.key === 'Enter') ||
-        (e.shiftKey && e.key === 'Enter');
+        (e.altKey && !e.shiftKey && !e.ctrlKey && !e.metaKey && ['r', 'R', 'j', 'J'].includes(e.key)) ||
+        ((e.ctrlKey || e.metaKey) && !e.altKey && e.key === 'Enter') ||
+        (e.shiftKey && !e.altKey && e.key === 'Enter');
       if (runCombo) { e.preventDefault(); e.stopPropagation(); runRef.current(); return; }
       if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); setEditing(true); }
     };

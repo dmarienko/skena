@@ -134,3 +134,17 @@
 /* - the orange inner rectangle is VS Code's focus border; neutralise the variable
    - within code cells so no focus-bordered element (editor container, scrollable) shows it */
 .skena-node--code { --vscode-focusBorder: transparent; }
+
+/* - prev-1 (aggressive): remove any outline/box-shadow on focused elements inside a code
+   - cell, plus the Monaco container itself, wherever the orange inner rectangle comes from */
+.skena-node--code *:focus,
+.skena-node--code *:focus-visible,
+.skena-node--code *:focus-within,
+.skena-node--code .monaco-editor,
+.skena-node--code .monaco-editor.focused,
+.skena-node--code .monaco-editor .overflow-guard,
+.skena-node--code .monaco-editor .monaco-scrollable-element {
+  outline: 0 !important;
+  box-shadow: none !important;
+  border-color: transparent !important;
+}
