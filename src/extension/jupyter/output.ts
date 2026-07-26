@@ -6,6 +6,54 @@ function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+// - basic + bright ANSI foreground palette (dark-terminal-ish); enough for tracebacks / colorama
+const ANSI_FG: Record<number, string> = {
+  30: '#5c6370', 31: '#e06c75', 32: '#98c379', 33: '#d19a66', 34: '#61afef', 35: '#c678dd', 36: '#56b6c2', 37: '#dcdfe4',
+  90: '#7f848e', 91: '#ff7a85', 92: '#b5e890', 93: '#e5c07b', 94: '#7fb6ff', 95: '#e29bef', 96: '#68d9e6', 97: '#ffffff',
+};
+
+// - convert ANSI SGR colour/bold sequences to <span>-wrapped, HTML-escaped text. Unknown
+// - codes (extended 256/truecolor, backgrounds) are ignored, not rendered as garbage.
+export function ansiToHtml(input: string): string {
+  let html = '';
+  let color: string | null = null;
+  let bold = false;
+  const openSpan = (): string => {
+    const st: string[] = [];
+    if (color) st.push(`color:${color}`);
+    if (bold) st.push('font-weight:bold');
+    return st.length ? `<span style="${st.join(';')}">` : '';
+  };
+  const emit = (text: string) => {
+    if (!text) return;
+    const s = openSpan();
+    html += s ? s + esc(text) + '</span>' : esc(text);
+  };
+  const apply = (codes: number[]) => {
+    for (let k = 0; k < codes.length; k++) {
+      const c = codes[k];
+      if (c === 38 || c === 48) {                       // - extended colour: skip its params
+        if (codes[k + 1] === 5) k += 2; else if (codes[k + 1] === 2) k += 4; else k = codes.length;
+      } else if (c === 0) { color = null; bold = false; }
+      else if (c === 1) bold = true;
+      else if (c === 22) bold = false;
+      else if (c === 39) color = null;
+      else if (ANSI_FG[c] !== undefined) color = ANSI_FG[c];
+    }
+  };
+  // eslint-disable-next-line no-control-regex
+  const re = /\u001b\[([0-9;]*)m/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(input)) !== null) {
+    emit(input.slice(last, m.index));
+    apply(m[1] === '' ? [0] : m[1].split(';').map(Number));
+    last = re.lastIndex;
+  }
+  emit(input.slice(last));
+  return html;
+}
+
 /**
  * Turn a run's collected outputs into a single cell-node payload. A Jupyter cell can emit
  * several outputs (multiple plots, prints + a table); the cell node has one format, so when
@@ -24,15 +72,9 @@ export function renderOutput(out: CollectedOutput): { format: OutputFormat; cont
   if (lone && rich[0].mime.startsWith('image/')) {
     return { format: 'image', content: `data:${rich[0].mime};base64,${rich[0].data}` };
   }
-  // - text only (no rich) → markdown code block(s)
-  if (rich.length === 0) {
-    let md = out.streamText ? '```\n' + out.streamText + '\n```' : '';
-    if (out.error) md += (md ? '\n\n' : '') + '```\n' + out.error + '\n```';
-    return { format: 'markdown', content: md };
-  }
-  // - multiple / mixed outputs → stack them (in order) as one HTML block
+  // - everything else (text-only, mixed, multiple) → HTML in order, ANSI colours preserved
   const parts: string[] = [];
-  if (out.streamText) parts.push(`<pre class="skena-out-stream">${esc(out.streamText)}</pre>`);
+  if (out.streamText) parts.push(`<pre class="skena-out-stream">${ansiToHtml(out.streamText)}</pre>`);
   for (const r of rich) {
     if (r.mime.startsWith('image/')) {
       parts.push(`<img src="data:${r.mime};base64,${r.data}" style="max-width:100%;display:block;margin:6px 0" />`);
@@ -41,9 +83,9 @@ export function renderOutput(out: CollectedOutput): { format: OutputFormat; cont
     } else if (r.mime === 'application/vnd.plotly.v1+json') {
       parts.push('<pre class="skena-out-note">[plotly figure — one interactive figure per cell run renders inline; multiple are listed only]</pre>');
     } else {
-      parts.push(`<pre>${esc(r.data)}</pre>`);
+      parts.push(`<pre>${ansiToHtml(r.data)}</pre>`);
     }
   }
-  if (out.error) parts.push(`<pre class="skena-out-error">${esc(out.error)}</pre>`);
+  if (out.error) parts.push(`<pre class="skena-out-error">${ansiToHtml(out.error)}</pre>`);
   return { format: 'html', content: parts.join('\n') };
 }

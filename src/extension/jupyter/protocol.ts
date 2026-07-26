@@ -136,8 +136,11 @@ export function parseReply(raw: unknown): ParsedReply {
       return { parentMsgId, kind: 'result', data: content.data ?? {} };
     case 'display_data':
       return { parentMsgId, kind: 'display', data: content.data ?? {} };
-    case 'error':
-      return { parentMsgId, kind: 'error', error: `${content.ename}: ${content.evalue}` };
+    case 'error': {
+      // - the traceback array is the RICH, ANSI-coloured formatting; prefer it
+      const tb = Array.isArray(content.traceback) ? (content.traceback as string[]).join('\n') : '';
+      return { parentMsgId, kind: 'error', error: tb || `${content.ename}: ${content.evalue}` };
+    }
     case 'status':
       return { parentMsgId, kind: 'status', executionState: content.execution_state };
     default:
