@@ -94,6 +94,13 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     bindRun(monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.Enter);
     bindRun(monacoInstance.KeyMod.Alt     | monacoInstance.KeyCode.KeyR);
     bindRun(monacoInstance.KeyMod.Alt     | monacoInstance.KeyCode.KeyJ);
+
+    // - Ctrl+J / Ctrl+K navigate the completion dropdown (like ↓/↑); gated so they only
+    // - fire while the suggest widget is open and don't interfere with typing otherwise.
+    editorInstance.addCommand(monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyJ,
+      () => editorInstance.trigger('kb', 'selectNextSuggestion', {}), 'suggestWidgetVisible');
+    editorInstance.addCommand(monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyK,
+      () => editorInstance.trigger('kb', 'selectPrevSuggestion', {}), 'suggestWidgetVisible');
     // - vim mode (same editor experience as text nodes); status bar shows the mode
     initVimMode(editorInstance, vimStatusRef.current ?? undefined);
     if (savedViewState.current) editorInstance.restoreViewState(savedViewState.current);

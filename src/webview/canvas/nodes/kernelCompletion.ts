@@ -36,6 +36,20 @@ function requestComplete(cellId: string, code: string, cursorPos: number): Promi
   });
 }
 
+const PY_KEYWORDS = [
+  'def', 'class', 'return', 'if', 'elif', 'else', 'for', 'while', 'break', 'continue',
+  'import', 'from', 'as', 'with', 'try', 'except', 'finally', 'raise', 'yield', 'lambda',
+  'pass', 'global', 'nonlocal', 'assert', 'del', 'in', 'is', 'not', 'and', 'or',
+  'None', 'True', 'False', 'async', 'await', 'match', 'case',
+];
+const PY_BUILTINS = [
+  'print', 'len', 'range', 'list', 'dict', 'set', 'tuple', 'str', 'int', 'float', 'bool',
+  'enumerate', 'zip', 'map', 'filter', 'sum', 'min', 'max', 'sorted', 'reversed', 'open',
+  'type', 'isinstance', 'issubclass', 'super', 'property', 'staticmethod', 'classmethod',
+  'abs', 'round', 'any', 'all', 'input', 'format', 'repr', 'hasattr', 'getattr', 'setattr',
+  'id', 'vars', 'dir', 'help', 'iter', 'next', 'bytes', 'frozenset', 'complex', 'divmod',
+];
+
 export function ensureKernelCompletion(monaco: typeof Monaco): void {
   if (registered) return;
   registered = true;
@@ -44,6 +58,20 @@ export function ensureKernelCompletion(monaco: typeof Monaco): void {
     const d = (e as CustomEvent<MsgCompleteResult>).detail;
     const r = pending.get(d.reqId);
     if (r) { pending.delete(d.reqId); r(d); }
+  });
+
+  // - static keywords + builtins so def/print/if/… complete even with no kernel bound
+  monaco.languages.registerCompletionItemProvider('python', {
+    provideCompletionItems: (model, position) => {
+      const w = model.getWordUntilPosition(position);
+      const range: Monaco.IRange = {
+        startLineNumber: position.lineNumber, startColumn: w.startColumn,
+        endLineNumber:   position.lineNumber, endColumn:   w.endColumn,
+      };
+      const kw = PY_KEYWORDS.map(k => ({ label: k, kind: monaco.languages.CompletionItemKind.Keyword,  insertText: k, range }));
+      const bi = PY_BUILTINS.map(b => ({ label: b, kind: monaco.languages.CompletionItemKind.Function, insertText: b, range }));
+      return { suggestions: [...kw, ...bi] };
+    },
   });
 
   monaco.languages.registerCompletionItemProvider('python', {
