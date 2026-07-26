@@ -197,6 +197,8 @@ function nodeSnippet(node: CanvasNode): string {
     case 'link':    return node.url;
     case 'group':   return node.label ? `"${node.label}"` : '(unnamed group)';
     case 'cell':    return `${node.format} (${node.content.length} chars)`;
+    case 'code':    return truncate((node.code ?? '').replace(/\n/g, ' '), 80) || '(empty code cell)';
+    case 'kernel':  return `kernel: ${node.displayName ?? node.server}${node.kernelId ? ' (live)' : ''}`;
     case 'chat':    return `${node.agent}: ${node.title}`;
     case 'portal':  return `→ ${node.canvas}`;
     default:        return '(unknown)';
@@ -381,6 +383,8 @@ async function canvasRead(args: Record<string, unknown>): Promise<string> {
     case 'link':   content = `URL: ${n.url}`; break;
     case 'group':  content = `Label: ${n.label ?? '(none)'}`; break;
     case 'cell':   content = `Format: ${n.format}\n\n${n.content}`; break;
+    case 'code':   content = `Language: ${n.language ?? 'python'}  Status: ${n.lastStatus ?? 'never run'}\n\n${n.code ?? ''}`; break;
+    case 'kernel': content = `Kernel: ${n.displayName ?? 'kernel'}  Server: ${n.server}  ${n.kernelId ? `Live id: ${n.kernelId}` : '(not started)'}`; break;
     case 'chat':   content = `Agent: ${n.agent}  Model: ${n.model ?? 'default'}\nTitle: ${n.title}`; break;
     case 'portal': content = `Sub-canvas: ${n.canvas}`; break;
   }
@@ -411,6 +415,7 @@ async function canvasSearch(args: Record<string, unknown>): Promise<string> {
       n.type === 'link'   ? n.url      : '',
       n.type === 'group'  ? (n.label ?? '') : '',
       n.type === 'cell'   ? n.content  : '',
+      n.type === 'code'   ? (n.code ?? '') : '',
       n.type === 'chat'   ? n.title    : '',
       n.type === 'portal' ? n.canvas   : '',
       d.edges.filter(e => e.fromNode === n.id || e.toNode === n.id).map(e => e.label ?? '').join(' '),
@@ -503,6 +508,9 @@ async function canvasAddNode(args: Record<string, unknown>): Promise<string> {
     case 'cell':
       newNode = { ...base, type: 'cell', format: (args.format as 'html' | 'markdown' | 'image' | undefined) ?? 'markdown', content: (args.content as string | undefined) ?? '' } as CanvasNode;
       break;
+    case 'code':
+      newNode = { ...base, type: 'code', code: (args.content as string | undefined) ?? '', language: 'python' } as CanvasNode;
+      break;
     case 'file': {
       // - normalize absolute paths to canvas-relative (vault:// URIs are kept as-is)
       const rawFile = (args.file as string | undefined) ?? '';
@@ -541,6 +549,7 @@ async function canvasUpdateNode(args: Record<string, unknown>): Promise<string> 
   if (args.content !== undefined) {
     if (n.type === 'text') (updated as typeof n & { text: string }).text = args.content as string;
     if (n.type === 'cell') (updated as typeof n & { content: string }).content = args.content as string;
+    if (n.type === 'code') (updated as typeof n & { code: string }).code = args.content as string;
   }
   if (args.tags  !== undefined) updated.tags  = args.tags  as string[];
   if (args.color !== undefined) updated.color = args.color as CanvasNodeBase['color'];
@@ -817,8 +826,8 @@ const TOOLS = [
       type: 'object',
       properties: {
         canvasPath: { type: 'string', description: 'Path to the .canvas file' },
-        type:       { type: 'string', description: 'Node type: text (default), cell, file, link, portal' },
-        content:    { type: 'string', description: 'Text content for text/cell nodes' },
+        type:       { type: 'string', description: 'Node type: text (default), code, cell, file, link, portal' },
+        content:    { type: 'string', description: 'Text content for text/cell nodes, or the code for a code node' },
         format:     { type: 'string', description: 'Cell format: markdown (default), html, image' },
         file:       { type: 'string', description: 'File path for file nodes (vault:// URI or absolute path)' },
         url:        { type: 'string', description: 'URL for link nodes' },
