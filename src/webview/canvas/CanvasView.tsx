@@ -1108,6 +1108,24 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       edges: canvasRef.current.edges.filter(e => !deletedIds.has(e.fromNode) && !deletedIds.has(e.toNode)),
     };
     canvasRef.current = updated;
+
+    // - #2: deleting a code cell's OUTPUT node → focus its code node (same as onNodesDelete),
+    // - clearing the code node's outputNodeId so a re-run creates a fresh output.
+    const ownerCode = nodesRef.current.find(n =>
+      n.type === 'code' && !deletedIds.has(n.id) &&
+      deletedIds.has((n.data as { outputNodeId?: string } | undefined)?.outputNodeId ?? ''));
+    if (ownerCode) {
+      const id = ownerCode.id;
+      canvasRef.current = {
+        ...canvasRef.current,
+        nodes: canvasRef.current.nodes.map(n => n.id === id ? { ...n, outputNodeId: undefined } as CanvasNode : n),
+      };
+      setNodes(nds => nds.filter(n => !deletedIds.has(n.id)).map(n => n.id === id ? { ...n, data: { ...n.data, outputNodeId: undefined } } : n));
+      setEdges(eds => eds.filter(e => !deletedIds.has(e.source) && !deletedIds.has(e.target)));
+      scheduleSave();
+      requestAnimationFrame(() => focusNodeById(id));
+      return;
+    }
     setNodes(nds => nds.filter(n => !deletedIds.has(n.id)));
     setEdges(eds => eds.filter(e => !deletedIds.has(e.source) && !deletedIds.has(e.target)));
     scheduleSave();
