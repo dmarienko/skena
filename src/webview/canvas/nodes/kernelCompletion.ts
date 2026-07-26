@@ -30,6 +30,27 @@ function stripAnsi(s: string): string {
   return s.replace(/\u001b\[[0-9;]*m/g, '');
 }
 
+// - pull the (possibly multi-line) signature out of IPython inspect text and flatten it
+// - to one line. The block runs from the "Signature:" header to the next section header
+// - (Docstring:/Type:/File:...) which sit at column 0; wrapped param lines are indented.
+function extractSignature(text: string): string | null {
+  const lines = stripAnsi(text).split('\n');
+  let started = false;
+  const parts: string[] = [];
+  for (const line of lines) {
+    if (!started) {
+      const m = line.match(/^(?:Init |Call )?[Ss]ignature:\s*(.*)$/);
+      if (m) { started = true; if (m[1].trim()) parts.push(m[1].trim()); }
+      continue;
+    }
+    if (/^[A-Z][A-Za-z ]*:/.test(line)) break;   // - next section header -> signature ended
+    parts.push(line.trim());
+  }
+  if (!started) return null;
+  const sig = parts.join(' ').replace(/\s+/g, ' ').trim();
+  return sig || null;
+}
+
 function requestComplete(cellId: string, code: string, cursorPos: number): Promise<MsgCompleteResult> {
   return new Promise(resolve => {
     const reqId = `cmpl-${++reqCounter}`;
@@ -114,9 +135,9 @@ export function ensureKernelCompletion(monaco: typeof Monaco): void {
       }
       if (i < 0) return null;
       const res = await requestInspect(activeCellId, code, i - 1);   // - inspect the callee name
-      const sig = stripAnsi(res.text).match(/^(?:Init |Call )?[Ss]ignature:\s*(.+)$/m);
-      if (!res.found || !sig) return null;
-      return { value: { signatures: [{ label: sig[1], parameters: [] }], activeSignature: 0, activeParameter: 0 }, dispose: () => { /* noop */ } };
+      const sig = res.found ? extractSignature(res.text) : null;
+      if (!sig) return null;
+      return { value: { signatures: [{ label: sig, parameters: [] }], activeSignature: 0, activeParameter: 0 }, dispose: () => { /* noop */ } };
     },
   });
 
