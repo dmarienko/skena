@@ -8,7 +8,7 @@
  */
 
 import type * as Monaco from 'monaco-editor/esm/vs/editor/editor.api';
-import type { MsgCompleteResult } from '../../../shared/types';
+import type { MsgCompleteResult, MsgInspectResult } from '../../../shared/types';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -18,9 +18,16 @@ let registered = false;
 let activeCellId: string | null = null;
 let reqCounter = 0;
 const pending = new Map<string, (r: MsgCompleteResult) => void>();
+const pendingInspect = new Map<string, (r: MsgInspectResult) => void>();
 
 export function setActiveCodeCell(id: string | null): void {
   activeCellId = id;
+}
+
+// - strip ANSI colour codes IPython embeds in inspect text
+function stripAnsi(s: string): string {
+  // eslint-disable-next-line no-control-regex
+  return s.replace(/\u001b\[[0-9;]*m/g, '');
 }
 
 function requestComplete(cellId: string, code: string, cursorPos: number): Promise<MsgCompleteResult> {
@@ -32,6 +39,18 @@ function requestComplete(cellId: string, code: string, cursorPos: number): Promi
     setTimeout(() => {
       const r = pending.get(reqId);
       if (r) { pending.delete(reqId); r({ type: 'completeResult', reqId, matches: [], cursorStart: cursorPos, cursorEnd: cursorPos }); }
+    }, 4000);
+  });
+}
+
+function requestInspect(cellId: string, code: string, cursorPos: number): Promise<MsgInspectResult> {
+  return new Promise(resolve => {
+    const reqId = `insp-${++reqCounter}`;
+    pendingInspect.set(reqId, resolve);
+    vscodePostMessage({ type: 'inspect', reqId, cellNodeId: cellId, code, cursorPos });
+    setTimeout(() => {
+      const r = pendingInspect.get(reqId);
+      if (r) { pendingInspect.delete(reqId); r({ type: 'inspectResult', reqId, found: false, text: '' }); }
     }, 4000);
   });
 }
@@ -58,6 +77,47 @@ export function ensureKernelCompletion(monaco: typeof Monaco): void {
     const d = (e as CustomEvent<MsgCompleteResult>).detail;
     const r = pending.get(d.reqId);
     if (r) { pending.delete(d.reqId); r(d); }
+  });
+  window.addEventListener('skena:inspectResult', (e: Event) => {
+    const d = (e as CustomEvent<MsgInspectResult>).detail;
+    const r = pendingInspect.get(d.reqId);
+    if (r) { pendingInspect.delete(d.reqId); r(d); }
+  });
+
+  // - hover: kernel introspection (docstring + signature) for the symbol under the cursor
+  monaco.languages.registerHoverProvider('python', {
+    provideHover: async (model, position) => {
+      if (!activeCellId) return null;
+      const res = await requestInspect(activeCellId, model.getValue(), model.getOffsetAt(position));
+      const text = stripAnsi(res.text).trim();
+      if (!res.found || !text) return null;
+      const w = model.getWordAtPosition(position);
+      const range = w ? { startLineNumber: position.lineNumber, startColumn: w.startColumn, endLineNumber: position.lineNumber, endColumn: w.endColumn } : undefined;
+      return { range, contents: [{ value: '```text\n' + text + '\n```' }] };
+    },
+  });
+
+  // - signature help: introspect the function name just before the open paren
+  monaco.languages.registerSignatureHelpProvider('python', {
+    signatureHelpTriggerCharacters: ['(', ','],
+    signatureHelpRetriggerCharacters: [','],
+    provideSignatureHelp: async (model, position) => {
+      if (!activeCellId) return null;
+      const code = model.getValue();
+      const offset = model.getOffsetAt(position);
+      // - walk back over the current arg list to the opening '(' of this call
+      let depth = 0, i = offset - 1;
+      for (; i >= 0; i--) {
+        const ch = code[i];
+        if (ch === ')') depth++;
+        else if (ch === '(') { if (depth === 0) break; depth--; }
+      }
+      if (i < 0) return null;
+      const res = await requestInspect(activeCellId, code, i - 1);   // - inspect the callee name
+      const sig = stripAnsi(res.text).match(/^(?:Init |Call )?[Ss]ignature:\s*(.+)$/m);
+      if (!res.found || !sig) return null;
+      return { value: { signatures: [{ label: sig[1], parameters: [] }], activeSignature: 0, activeParameter: 0 }, dispose: () => { /* noop */ } };
+    },
   });
 
   // - static keywords + builtins so def/print/if/… complete even with no kernel bound

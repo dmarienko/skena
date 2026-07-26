@@ -421,6 +421,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           break;
         }
         case 'complete': await this.handleComplete(msg, manager, document, send); break;
+        case 'inspect':  await this.handleInspect(msg, manager, document, send); break;
       }
     });
 
@@ -1230,6 +1231,34 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       const ids = { msgId: randomUUID(), session: randomUUID(), date: new Date().toISOString() };
       const r = await manager.complete(server, kernelNode.kernelId, msg.code, msg.cursorPos, ids);
       send({ type: 'completeResult', reqId: msg.reqId, matches: r.matches, cursorStart: r.cursorStart, cursorEnd: r.cursorEnd });
+    } catch {
+      empty();
+    }
+  }
+
+  /**
+   * Kernel introspection (hover / signature help). Resolves the cell's bound kernel and
+   * asks it to inspect the live code at the cursor; returns the text/plain doc (or empty).
+   */
+  private async handleInspect(
+    msg:      { reqId: string; cellNodeId: string; code: string; cursorPos: number },
+    manager:  KernelManager,
+    document: SkenaDocument,
+    send:     (m: HostToWebview) => void,
+  ): Promise<void> {
+    const empty = () => send({ type: 'inspectResult', reqId: msg.reqId, found: false, text: '' });
+    const canvas = document.canvas;
+    const codeNode = canvas.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code');
+    if (!codeNode) return empty();
+    const nodeById = new Map(canvas.nodes.map(n => [n.id, n]));
+    const kid = resolveBoundKernel(codeNode.id, canvas.edges, id => nodeById.get(id)?.type === 'kernel');
+    const kernelNode = kid ? nodeById.get(kid) as KernelNode | undefined : undefined;
+    const server = kernelNode ? manager.serverByName(kernelNode.server) : undefined;
+    if (!kernelNode?.kernelId || !server) return empty();
+    try {
+      const ids = { msgId: randomUUID(), session: randomUUID(), date: new Date().toISOString() };
+      const r = await manager.inspect(server, kernelNode.kernelId, msg.code, msg.cursorPos, ids);
+      send({ type: 'inspectResult', reqId: msg.reqId, found: r.found, text: r.text });
     } catch {
       empty();
     }

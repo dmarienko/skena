@@ -1,5 +1,5 @@
 import WebSocket from 'ws';
-import { buildExecuteRequest, collectOutputs, buildCompleteRequest, parseCompleteReply, type CollectedOutput, type CompleteResult } from './protocol';
+import { buildExecuteRequest, collectOutputs, buildCompleteRequest, parseCompleteReply, buildInspectRequest, parseInspectReply, type CollectedOutput, type CompleteResult, type InspectResult } from './protocol';
 import type { KernelServerConfig } from './config';
 
 export interface LiveKernel {
@@ -116,6 +116,34 @@ export async function completeCode(
     ws.on('message', raw => {
       try {
         const r = parseCompleteReply(JSON.parse(raw.toString()), ids.msgId);
+        if (r) finish(r);
+      } catch { /* - ignore non-JSON frames */ }
+    });
+    ws.on('error', () => finish(empty));
+    ws.on('close', () => finish(empty));
+  });
+}
+
+// - open a WS, request introspection at a cursor, resolve with the text/plain result
+export async function inspectCode(
+  server:   KernelServerConfig,
+  kernelId: string,
+  code:     string,
+  cursorPos: number,
+  ids:      { msgId: string; session: string; date: string },
+): Promise<InspectResult> {
+  const url = `${wsBase(server.hubUrl)}/api/kernels/${kernelId}/channels?token=${encodeURIComponent(server.token)}`;
+  const ws = new WebSocket(url, { headers: { Authorization: `token ${server.token}` } });
+  const empty: InspectResult = { found: false, text: '' };
+
+  return new Promise<InspectResult>(resolve => {
+    let done = false;
+    const finish = (r: InspectResult) => { if (done) return; done = true; clearTimeout(timer); try { ws.close(); } catch { /* noop */ } resolve(r); };
+    const timer = setTimeout(() => finish(empty), 4000);
+    ws.on('open', () => ws.send(JSON.stringify(buildInspectRequest(code, cursorPos, ids))));
+    ws.on('message', raw => {
+      try {
+        const r = parseInspectReply(JSON.parse(raw.toString()), ids.msgId);
         if (r) finish(r);
       } catch { /* - ignore non-JSON frames */ }
     });

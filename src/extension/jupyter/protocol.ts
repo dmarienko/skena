@@ -92,6 +92,38 @@ export function parseCompleteReply(raw: unknown, ourMsgId: string): CompleteResu
   };
 }
 
+export interface InspectResult {
+  found: boolean;
+  text:  string;   // - the text/plain inspection (signature + docstring), ANSI kept
+}
+
+// - Jupyter v5.3 inspect_request (Shift+Tab introspection at a cursor)
+export function buildInspectRequest(code: string, cursorPos: number, ids: ExecuteIds, detailLevel = 0) {
+  return {
+    header: {
+      msg_id:   ids.msgId,
+      session:  ids.session,
+      username: 'skena',
+      msg_type: 'inspect_request',
+      version:  '5.3',
+      date:     ids.date,
+    },
+    parent_header: {},
+    metadata:      {},
+    content:       { code, cursor_pos: cursorPos, detail_level: detailLevel },
+    channel:       'shell',
+  };
+}
+
+export function parseInspectReply(raw: unknown, ourMsgId: string): InspectResult | null {
+  const m = raw as Record<string, any>;
+  if (m?.parent_header?.msg_id !== ourMsgId) return null;
+  if (m?.header?.msg_type !== 'inspect_reply') return null;
+  const c = (m.content ?? {}) as Record<string, any>;
+  const text = (c.data && typeof c.data['text/plain'] === 'string') ? c.data['text/plain'] as string : '';
+  return { found: !!c.found, text };
+}
+
 export function parseReply(raw: unknown): ParsedReply {
   const m = raw as Record<string, any>;
   const parentMsgId = m?.parent_header?.msg_id ?? null;

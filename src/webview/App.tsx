@@ -187,6 +187,9 @@ export function App(): JSX.Element {
         case 'completeResult':
           window.dispatchEvent(new CustomEvent('skena:completeResult', { detail: msg }));
           break;
+        case 'inspectResult':
+          window.dispatchEvent(new CustomEvent('skena:inspectResult', { detail: msg }));
+          break;
         case 'subCanvasCreated':
           window.dispatchEvent(new CustomEvent('skena:subCanvasCreated', { detail: msg }));
           break;

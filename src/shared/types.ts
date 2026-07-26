@@ -358,6 +358,8 @@ export interface MsgKernelAction { type: 'kernelAction'; action: 'restart' | 'sh
 export interface MsgConfirmDelete { type: 'confirmDelete'; nodeIds: string[]; reason: string; }
 // - webview asks the host for kernel tab-completion at a cursor (Ctrl+Space in a code cell)
 export interface MsgComplete { type: 'complete'; reqId: string; cellNodeId: string; code: string; cursorPos: number; }
+// - webview asks the host for kernel introspection at a cursor (hover / signature help)
+export interface MsgInspect { type: 'inspect'; reqId: string; cellNodeId: string; code: string; cursorPos: number; }
 
 /** - host → webview: session compaction is running (true) or finished (false) */
 export interface MsgFloatingChatCompacting { type: 'floatingChatCompacting'; active: boolean; }
@@ -464,7 +466,8 @@ export type HostToWebview =
   | MsgRunOutput
   | MsgAddKernelTrigger
   | MsgDoDelete
-  | MsgCompleteResult;
+  | MsgCompleteResult
+  | MsgInspectResult;
 
 // - host → webview: the "Skena: Add Kernel" command asks the webview to relay an
 // - addKernel message back to the host (where the QuickPick runs).
@@ -473,6 +476,8 @@ export interface MsgAddKernelTrigger { type: 'addKernelTrigger'; }
 export interface MsgDoDelete { type: 'doDelete'; confirmed: boolean; }
 // - host → webview: kernel tab-completion matches for a pending complete request
 export interface MsgCompleteResult { type: 'completeResult'; reqId: string; matches: string[]; cursorStart: number; cursorEnd: number; }
+// - host → webview: kernel introspection text for a pending inspect request
+export interface MsgInspectResult { type: 'inspectResult'; reqId: string; found: boolean; text: string; }
 
 export interface KernelStatusEntry {
   server:    string;
@@ -703,7 +708,8 @@ export type WebviewToHost =
   | MsgAddKernel
   | MsgKernelAction
   | MsgConfirmDelete
-  | MsgComplete;
+  | MsgComplete
+  | MsgInspect;
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────
 
