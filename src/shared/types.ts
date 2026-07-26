@@ -466,8 +466,8 @@ export type HostToWebview =
 // - host → webview: the "Skena: Add Kernel" command asks the webview to relay an
 // - addKernel message back to the host (where the QuickPick runs).
 export interface MsgAddKernelTrigger { type: 'addKernelTrigger'; }
-// - host → webview: the user confirmed a destructive delete; proceed with the stashed set
-export interface MsgDoDelete { type: 'doDelete'; }
+// - host → webview: result of a confirmDelete modal (proceed only when confirmed)
+export interface MsgDoDelete { type: 'doDelete'; confirmed: boolean; }
 
 export interface KernelStatusEntry {
   server:    string;

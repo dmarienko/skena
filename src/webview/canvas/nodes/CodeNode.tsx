@@ -107,14 +107,21 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     return () => window.removeEventListener('skena:enterEdit', onEnter);
   }, [id]);
 
-  // - Enter while the node is selected (and not already editing) → edit mode
+  // - while the node is selected (preview mode): Enter → edit; the run combos run in
+  // - place. Capture phase so Alt+J/R beat the spatial-nav handler. (In edit mode the
+  // - Monaco addCommands above handle the same combos.)
   useEffect(() => {
     if (!selected || editing) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) { e.preventDefault(); setEditing(true); }
+      const runCombo =
+        (e.altKey && ['r', 'R', 'j', 'J'].includes(e.key)) ||
+        ((e.ctrlKey || e.metaKey) && e.key === 'Enter') ||
+        (e.shiftKey && e.key === 'Enter');
+      if (runCombo) { e.preventDefault(); e.stopPropagation(); runRef.current(); return; }
+      if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); setEditing(true); }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, { capture: true });
+    return () => window.removeEventListener('keydown', onKey, { capture: true });
   }, [selected, editing]);
 
   const isDark = document.body.classList.contains('vscode-dark') ||

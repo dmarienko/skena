@@ -417,7 +417,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         case 'kernelAction': await this.handleKernelAction(msg, manager, document); break;
         case 'confirmDelete': {
           const yes = await vscode.window.showWarningMessage(msg.reason, { modal: true }, 'Delete');
-          if (yes === 'Delete') send({ type: 'doDelete' });
+          send({ type: 'doDelete', confirmed: yes === 'Delete' });
           break;
         }
       }
@@ -1137,7 +1137,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           const id = `ai-${Date.now().toString(36)}`;
           const cellBase: CellNode = {
             id, type: 'cell',
-            x: cn.x + cn.width + 60, y: cn.y, width: 480, height: 320,
+            x: cn.x + cn.width + 140, y: cn.y, width: 480, height: 320,
             format: output.format, content: output.content, createdBy: 'ai',
           };
           outputNode = assignLabel(cellBase, c.nodes) as CellNode;

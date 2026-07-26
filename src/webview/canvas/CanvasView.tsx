@@ -130,6 +130,19 @@ function toFlowEdge(ce: CanvasEdge): Edge {
   };
 }
 
+// - a code node's "input" is an edge FROM a code or kernel node INTO it (toNode === code).
+function isBindingSourceType(t?: string): boolean {
+  return t === 'code' || t === 'kernel';
+}
+
+// - a kernel edge is only allowed to a code cell or a .py file node
+function kernelCanConnect(n: { type?: string; data?: unknown } | undefined): boolean {
+  if (!n) return false;
+  if (n.type === 'code') return true;
+  if (n.type === 'file') return (((n.data as { file?: string } | undefined)?.file) ?? '').toLowerCase().endsWith('.py');
+  return false;
+}
+
 // - React Flow node → updated canvas node (position/size changed)
 function patchCanvasNode(original: CanvasNode, rfNode: Node): CanvasNode {
   return {
@@ -538,6 +551,17 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const rfRef = useRef(rfInstance);
   useEffect(() => { rfRef.current = rfInstance; });
 
+  // - #4: a kernel may only connect to a code cell or a .py file node (block the drag)
+  const isValidConnection = useCallback((c: Connection | Edge) => {
+    if (c.source === c.target) return false;
+    const nodes = rfRef.current.getNodes();
+    const s = nodes.find(n => n.id === c.source);
+    const t = nodes.find(n => n.id === c.target);
+    if (s?.type === 'kernel' && !kernelCanConnect(t)) return false;
+    if (t?.type === 'kernel' && !kernelCanConnect(s)) return false;
+    return true;
+  }, []);
+
   const onConnect = useCallback((connection: Connection) => {
     pushHistory();
     const newEdge: CanvasEdge = {
@@ -548,12 +572,22 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       toSide:   (connection.targetHandle ?? undefined) as CanvasEdge['toSide'],
       toEnd:    'arrow',
     };
-    setEdges(eds => addEdge(toFlowEdge(newEdge), eds));
-    const updated: CanvasData = {
+    // - #3: a code node has at most ONE input (edge from a code/kernel into it). Adding a
+    // - new one drops the previous input edge(s) — but keeps the chain (outgoing edges stay).
+    const typeOf = (id: string) => rfRef.current.getNodes().find(n => n.id === id)?.type;
+    let staleIds = new Set<string>();
+    if (typeOf(newEdge.toNode) === 'code' && isBindingSourceType(typeOf(newEdge.fromNode))) {
+      staleIds = new Set(
+        canvasRef.current.edges
+          .filter(e => e.toNode === newEdge.toNode && isBindingSourceType(typeOf(e.fromNode)))
+          .map(e => e.id),
+      );
+    }
+    setEdges(eds => addEdge(toFlowEdge(newEdge), eds.filter(e => !staleIds.has(e.id))));
+    canvasRef.current = {
       ...canvasRef.current,
-      edges: [...canvasRef.current.edges, newEdge],
+      edges: [...canvasRef.current.edges.filter(e => !staleIds.has(e.id)), newEdge],
     };
-    canvasRef.current = updated;
     scheduleSave();
   }, [setEdges, scheduleSave, pushHistory]);
 
@@ -597,6 +631,13 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
     if (targetNodeId === connectionState.fromNode.id) return;
 
+    // - #4: block a kernel connecting to anything but a code cell or .py file (either direction)
+    const allNodes = rfRef.current.getNodes();
+    const srcNode  = allNodes.find(n => n.id === connectionState.fromNode!.id);
+    const tgtNode  = allNodes.find(n => n.id === targetNodeId);
+    if (srcNode?.type === 'kernel' && !kernelCanConnect(tgtNode)) return;
+    if (tgtNode?.type === 'kernel' && !kernelCanConnect(srcNode)) return;
+
     // - infer nearest side from drop point relative to node bounding box
     const rect = nodeEl!.getBoundingClientRect();
     const dx = mouseEvent.clientX - (rect.left + rect.width  / 2);
@@ -615,13 +656,22 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       toSide,
       toEnd:    'arrow',
     };
+    // - #3: single input for a code target — drop the previous code/kernel → this-code edge
+    const typeOf = (id: string) => allNodes.find(n => n.id === id)?.type;
+    let staleIds = new Set<string>();
+    if (typeOf(newEdge.toNode) === 'code' && isBindingSourceType(typeOf(newEdge.fromNode))) {
+      staleIds = new Set(
+        canvasRef.current.edges
+          .filter(e => e.toNode === newEdge.toNode && isBindingSourceType(typeOf(e.fromNode)))
+          .map(e => e.id),
+      );
+    }
     pushHistory();
-    setEdges(eds => addEdge(toFlowEdge(newEdge), eds));
-    const updated: CanvasData = {
+    setEdges(eds => addEdge(toFlowEdge(newEdge), eds.filter(e => !staleIds.has(e.id))));
+    canvasRef.current = {
       ...canvasRef.current,
-      edges: [...canvasRef.current.edges, newEdge],
+      edges: [...canvasRef.current.edges.filter(e => !staleIds.has(e.id)), newEdge],
     };
-    canvasRef.current = updated;
     scheduleSave();
   }, [setEdges, scheduleSave, pushHistory, screenToFlowPosition]);
 
@@ -636,6 +686,23 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       edges: canvasRef.current.edges.filter(e => !deletedIds.has(e.fromNode) && !deletedIds.has(e.toNode)),
     };
     canvasRef.current = updated;
+
+    // - #2: deleting a code cell's OUTPUT node → focus its code node (not the nearest node),
+    // - and clear the code node's outputNodeId so a re-run creates a fresh output.
+    const ownerCode = nodesRef.current.find(n =>
+      n.type === 'code' && !deletedIds.has(n.id) &&
+      deletedIds.has((n.data as { outputNodeId?: string } | undefined)?.outputNodeId ?? ''));
+    if (ownerCode) {
+      const id = ownerCode.id;
+      canvasRef.current = {
+        ...canvasRef.current,
+        nodes: canvasRef.current.nodes.map(n => n.id === id ? { ...n, outputNodeId: undefined } as CanvasNode : n),
+      };
+      setNodes(nds => nds.map(n => n.id === id ? { ...n, data: { ...n.data, outputNodeId: undefined } } : n));
+      scheduleSave();
+      requestAnimationFrame(() => focusNodeById(id));
+      return;
+    }
     scheduleSave();
 
     // - auto-focus nearest surviving node so spatial navigation resumes immediately
@@ -1060,37 +1127,60 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     if (bestId) { const id = bestId; requestAnimationFrame(() => focusNodeById(id)); }
   }, [setNodes, setEdges, pushHistory, scheduleSave, focusNodeById]);
 
-  // - deletion set awaiting the host's confirm-delete modal (active kernel guard)
-  const pendingDeleteRef = useRef<Node[] | null>(null);
-  const deleteSelectedNodes = useCallback(() => {
-    const toDelete = nodesRef.current.filter(n => n.selected && n.type !== 'group');
-    if (toDelete.length === 0) return;
-    // - deleting a kernel node that still points at a live kernel → confirm via host modal
-    const active = toDelete.filter(n => n.type === 'kernel' && (n.data as { kernelId?: string } | undefined)?.kernelId);
-    if (active.length) {
-      pendingDeleteRef.current = toDelete;
-      vscodePostMessage({
-        type:   'confirmDelete',
-        nodeIds: toDelete.map(n => n.id),
-        reason: active.length > 1
-          ? `Delete ${active.length} active kernel nodes? Their kernels keep running on the server.`
-          : 'Delete this active kernel node? The kernel keeps running on the server.',
-      });
-      return;
-    }
-    performDelete(toDelete);
-  }, [performDelete]);
-
-  // - host confirmed the destructive delete → run the stashed deletion
+  // - confirm a destructive delete via a host modal; resolves when doDelete arrives
+  const confirmResolveRef = useRef<((v: boolean) => void) | null>(null);
+  const confirmDeleteViaHost = useCallback((nodeIds: string[], reason: string) => new Promise<boolean>(resolve => {
+    confirmResolveRef.current?.(false);   // - abandon any prior pending confirm
+    confirmResolveRef.current = resolve;
+    vscodePostMessage({ type: 'confirmDelete', nodeIds, reason });
+  }), []);
   useEffect(() => {
-    const onDo = () => {
-      const pending = pendingDeleteRef.current;
-      pendingDeleteRef.current = null;
-      if (pending) performDelete(pending);
+    const onDo = (e: Event) => {
+      const confirmed = (e as CustomEvent<{ confirmed: boolean }>).detail?.confirmed ?? false;
+      const r = confirmResolveRef.current;
+      confirmResolveRef.current = null;
+      r?.(confirmed);
     };
     window.addEventListener('skena:doDelete', onDo);
     return () => window.removeEventListener('skena:doDelete', onDo);
-  }, [performDelete]);
+  }, []);
+
+  const activeKernelReason = (nodes: Node[]): string | null => {
+    const active = nodes.filter(n => n.type === 'kernel' && (n.data as { kernelId?: string } | undefined)?.kernelId);
+    if (!active.length) return null;
+    return active.length > 1
+      ? `Delete ${active.length} active kernel nodes? Their kernels keep running on the server.`
+      : 'Delete this active kernel node? The kernel keeps running on the server.';
+  };
+
+  const deleteSelectedNodes = useCallback(async () => {
+    const toDelete = nodesRef.current.filter(n => n.selected && n.type !== 'group');
+    if (toDelete.length === 0) return;
+    const reason = activeKernelReason(toDelete);
+    if (reason && !(await confirmDeleteViaHost(toDelete.map(n => n.id), reason))) return;
+    performDelete(toDelete);
+  }, [performDelete, confirmDeleteViaHost]);
+
+  // - React Flow's native delete (Delete key) routes through here. Protect the code→output
+  // - edge (#1) and confirm active-kernel deletion (prev round). Return false to cancel,
+  // - or a filtered {nodes, edges} to delete a subset.
+  const onBeforeDelete = useCallback(async ({ nodes: dn, edges: de }: { nodes: Node[]; edges: Edge[] }) => {
+    const all = rfRef.current.getNodes();
+    const delNodeIds = new Set(dn.map(n => n.id));
+    // - code→output edges (both directions) whose endpoints both survive → protected
+    const outputPairs = new Set<string>();
+    for (const n of all) {
+      const oid = (n.data as { outputNodeId?: string } | undefined)?.outputNodeId;
+      if (n.type === 'code' && oid) { outputPairs.add(`${n.id}|${oid}`); outputPairs.add(`${oid}|${n.id}`); }
+    }
+    const allowedEdges = de.filter(e => {
+      if (!outputPairs.has(`${e.source}|${e.target}`)) return true;
+      return delNodeIds.has(e.source) || delNodeIds.has(e.target);  // - allow if an endpoint is going too
+    });
+    const reason = activeKernelReason(dn);
+    if (reason && !(await confirmDeleteViaHost(dn.map(n => n.id), reason))) return false;
+    return allowedEdges.length === de.length ? true : { nodes: dn, edges: allowedEdges };
+  }, [confirmDeleteViaHost]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -2390,6 +2480,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         onNodeDragStart={onNodeDragStart}
         onConnect={onConnect}
         onConnectEnd={onConnectEnd}
+        isValidConnection={isValidConnection}
+        onBeforeDelete={onBeforeDelete}
         onNodesDelete={onNodesDelete}
         onEdgesDelete={onEdgesDelete}
         onNodeDoubleClick={onNodeDoubleClick}

@@ -130,3 +130,7 @@
   outline: none !important;
   box-shadow: none !important;
 }
+
+/* - the orange inner rectangle is VS Code's focus border; neutralise the variable
+   - within code cells so no focus-bordered element (editor container, scrollable) shows it */
+.skena-node--code { --vscode-focusBorder: transparent; }

@@ -182,7 +182,7 @@ export function App(): JSX.Element {
           postMessage({ type: 'addKernel' });
           break;
         case 'doDelete':
-          window.dispatchEvent(new CustomEvent('skena:doDelete'));
+          window.dispatchEvent(new CustomEvent('skena:doDelete', { detail: { confirmed: msg.confirmed } }));
           break;
         case 'subCanvasCreated':
           window.dispatchEvent(new CustomEvent('skena:subCanvasCreated', { detail: msg }));

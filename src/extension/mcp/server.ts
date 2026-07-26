@@ -724,7 +724,7 @@ async function canvasRunCell(args: Record<string, unknown>): Promise<string> {
           id:     uid(),
           type:   'cell',
           format, content,
-          x:      Math.round(cell.x + cell.width + 60),
+          x:      Math.round(cell.x + cell.width + 140),
           y:      Math.round(cell.y),
           width:  480,
           height: 320,
