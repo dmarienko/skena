@@ -261,6 +261,9 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
                 renderLineHighlight:  'none',
                 scrollbar:            { verticalScrollbarSize: 4, horizontalScrollbarSize: 4 },
                 automaticLayout:      true,
+                // - render suggest / hover / signature popups at the document root so the
+                // - node's overflow:hidden doesn't clip them (they can exceed the node width)
+                fixedOverflowWidgets: true,
               }}
             />
             {/* - vim mode status bar */}
