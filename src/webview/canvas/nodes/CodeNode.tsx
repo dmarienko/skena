@@ -61,10 +61,14 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   const savedViewState = useRef<MonacoEditor.ICodeEditorViewState | null>(null);
   const onEditorMount = useCallback<OnMount>((editorInstance, monacoInstance) => {
     editorRef.current = editorInstance;
-    // - per-instance binding (safe); Shift+Enter runs the cell from any Monaco context.
-    editorInstance.addCommand(monacoInstance.KeyMod.Shift | monacoInstance.KeyCode.Enter, () => {
-      runRef.current();
-    });
+    // - run bindings (per-instance, safe): fire from ANY vim mode and do NOT change it,
+    // - so you can type in insert mode, run, and keep typing. Shift+Enter / Ctrl+Enter /
+    // - Alt+R / Alt+J all run the cell.
+    const bindRun = (keybinding: number) => editorInstance.addCommand(keybinding, () => runRef.current());
+    bindRun(monacoInstance.KeyMod.Shift   | monacoInstance.KeyCode.Enter);
+    bindRun(monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.Enter);
+    bindRun(monacoInstance.KeyMod.Alt     | monacoInstance.KeyCode.KeyR);
+    bindRun(monacoInstance.KeyMod.Alt     | monacoInstance.KeyCode.KeyJ);
     // - vim mode (same editor experience as text nodes); status bar shows the mode
     initVimMode(editorInstance, vimStatusRef.current ?? undefined);
     if (savedViewState.current) editorInstance.restoreViewState(savedViewState.current);

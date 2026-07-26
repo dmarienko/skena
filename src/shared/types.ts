@@ -354,6 +354,8 @@ export interface MsgPickModel { type: 'pickModel'; }
 export interface MsgRunCell   { type: 'runCell'; cellNodeId: string; code: string; }
 export interface MsgAddKernel { type: 'addKernel'; }
 export interface MsgKernelAction { type: 'kernelAction'; action: 'restart' | 'shutdown' | 'interrupt'; kernelNodeId: string; }
+// - webview asks the host to confirm a destructive delete (e.g. an active kernel node)
+export interface MsgConfirmDelete { type: 'confirmDelete'; nodeIds: string[]; reason: string; }
 
 /** - host → webview: session compaction is running (true) or finished (false) */
 export interface MsgFloatingChatCompacting { type: 'floatingChatCompacting'; active: boolean; }
@@ -458,11 +460,14 @@ export type HostToWebview =
   | MsgKernelStatus
   | MsgRunStatus
   | MsgRunOutput
-  | MsgAddKernelTrigger;
+  | MsgAddKernelTrigger
+  | MsgDoDelete;
 
 // - host → webview: the "Skena: Add Kernel" command asks the webview to relay an
 // - addKernel message back to the host (where the QuickPick runs).
 export interface MsgAddKernelTrigger { type: 'addKernelTrigger'; }
+// - host → webview: the user confirmed a destructive delete; proceed with the stashed set
+export interface MsgDoDelete { type: 'doDelete'; }
 
 export interface KernelStatusEntry {
   server:    string;
@@ -691,7 +696,8 @@ export type WebviewToHost =
   | MsgPickModel
   | MsgRunCell
   | MsgAddKernel
-  | MsgKernelAction;
+  | MsgKernelAction
+  | MsgConfirmDelete;
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────
 

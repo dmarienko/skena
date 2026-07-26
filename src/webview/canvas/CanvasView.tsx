@@ -1028,8 +1028,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
   // - delete all currently selected (non-group) nodes and their connected edges.
   // - mirrors onNodesDelete logic but triggered imperatively (e.g. dd shortcut).
-  const deleteSelectedNodes = useCallback(() => {
-    const toDelete = nodesRef.current.filter(n => n.selected && n.type !== 'group');
+  const performDelete = useCallback((toDelete: Node[]) => {
     if (toDelete.length === 0) return;
 
     pushHistory();
@@ -1060,6 +1059,38 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     }
     if (bestId) { const id = bestId; requestAnimationFrame(() => focusNodeById(id)); }
   }, [setNodes, setEdges, pushHistory, scheduleSave, focusNodeById]);
+
+  // - deletion set awaiting the host's confirm-delete modal (active kernel guard)
+  const pendingDeleteRef = useRef<Node[] | null>(null);
+  const deleteSelectedNodes = useCallback(() => {
+    const toDelete = nodesRef.current.filter(n => n.selected && n.type !== 'group');
+    if (toDelete.length === 0) return;
+    // - deleting a kernel node that still points at a live kernel → confirm via host modal
+    const active = toDelete.filter(n => n.type === 'kernel' && (n.data as { kernelId?: string } | undefined)?.kernelId);
+    if (active.length) {
+      pendingDeleteRef.current = toDelete;
+      vscodePostMessage({
+        type:   'confirmDelete',
+        nodeIds: toDelete.map(n => n.id),
+        reason: active.length > 1
+          ? `Delete ${active.length} active kernel nodes? Their kernels keep running on the server.`
+          : 'Delete this active kernel node? The kernel keeps running on the server.',
+      });
+      return;
+    }
+    performDelete(toDelete);
+  }, [performDelete]);
+
+  // - host confirmed the destructive delete → run the stashed deletion
+  useEffect(() => {
+    const onDo = () => {
+      const pending = pendingDeleteRef.current;
+      pendingDeleteRef.current = null;
+      if (pending) performDelete(pending);
+    };
+    window.addEventListener('skena:doDelete', onDo);
+    return () => window.removeEventListener('skena:doDelete', onDo);
+  }, [performDelete]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();

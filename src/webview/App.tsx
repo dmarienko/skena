@@ -181,6 +181,9 @@ export function App(): JSX.Element {
           // - relay back to the host, where the Add-Kernel QuickPick runs
           postMessage({ type: 'addKernel' });
           break;
+        case 'doDelete':
+          window.dispatchEvent(new CustomEvent('skena:doDelete'));
+          break;
         case 'subCanvasCreated':
           window.dispatchEvent(new CustomEvent('skena:subCanvasCreated', { detail: msg }));
           break;

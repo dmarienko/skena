@@ -415,6 +415,11 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         case 'runCell':      await this.handleRunCell(msg, manager, panel, document, v => { isSelfSaving = v; }, s => { lastWrittenJson = s; }); break;
         case 'addKernel':    await this.handleAddKernel(manager, document, send); break;
         case 'kernelAction': await this.handleKernelAction(msg, manager, document); break;
+        case 'confirmDelete': {
+          const yes = await vscode.window.showWarningMessage(msg.reason, { modal: true }, 'Delete');
+          if (yes === 'Delete') send({ type: 'doDelete' });
+          break;
+        }
       }
     });
 

@@ -119,3 +119,14 @@
   opacity: 0.35;
   user-select: none;
 }
+
+/* - kill the focus outline/ring VS Code draws inside code-cell editors (the orange
+   - inner rectangle that appeared on focus/Esc); the node's own selection ring suffices */
+.skena-node--code .monaco-editor,
+.skena-node--code .monaco-editor .overflow-guard,
+.skena-node--code .monaco-editor .monaco-scrollable-element,
+.skena-node--code .monaco-editor textarea,
+.skena-node--code .monaco-editor textarea:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
