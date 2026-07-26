@@ -21,6 +21,22 @@ function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
 }
 
+// - Monaco overflow widgets (suggest/hover/signature) render with position:fixed. React
+// - Flow's viewport transform would make "fixed" relative to the zoomed pane, hiding them
+// - off-screen — so anchor them to a body-level container that has no transformed ancestor.
+function overflowWidgetsRoot(): HTMLElement {
+  let el = document.getElementById('skena-monaco-overflow');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'skena-monaco-overflow';
+    el.className = 'monaco-editor';   // - Monaco styles its widgets under this class
+    el.style.position = 'absolute';
+    el.style.zIndex = '2000';
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
 function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as CodeNode & { accentColor?: string };
   const bw = useZoomInvariantBorderWidth(1.5);
@@ -261,9 +277,11 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
                 renderLineHighlight:  'none',
                 scrollbar:            { verticalScrollbarSize: 4, horizontalScrollbarSize: 4 },
                 automaticLayout:      true,
-                // - render suggest / hover / signature popups at the document root so the
-                // - node's overflow:hidden doesn't clip them (they can exceed the node width)
-                fixedOverflowWidgets: true,
+                // - render suggest / hover / signature popups at a body-level node so the
+                // - node's overflow:hidden doesn't clip them and React Flow's viewport
+                // - transform doesn't push the position:fixed widgets off-screen
+                fixedOverflowWidgets:  true,
+                overflowWidgetsDomNode: overflowWidgetsRoot(),
               }}
             />
             {/* - vim mode status bar */}
