@@ -165,6 +165,10 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   useEffect(() => {
     if (!selected || editing) return;
     const onKey = (e: KeyboardEvent) => {
+      // - don't hijack keys while the user is typing somewhere else (chat input, search,
+      // - another Monaco) — this node can stay React-Flow-"selected" in the background
+      const ae = document.activeElement as HTMLElement | null;
+      if (ae && (ae.tagName === 'TEXTAREA' || ae.tagName === 'INPUT' || ae.isContentEditable)) return;
       const runCombo =
         (e.altKey && !e.shiftKey && !e.ctrlKey && !e.metaKey && ['r', 'R', 'j', 'J'].includes(e.key)) ||
         ((e.ctrlKey || e.metaKey) && !e.altKey && e.key === 'Enter') ||
