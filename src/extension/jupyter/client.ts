@@ -1,5 +1,5 @@
 import WebSocket from 'ws';
-import { buildExecuteRequest, collectOutputs, type CollectedOutput } from './protocol';
+import { buildExecuteRequest, collectOutputs, buildCompleteRequest, parseCompleteReply, type CollectedOutput, type CompleteResult } from './protocol';
 import type { KernelServerConfig } from './config';
 
 export interface LiveKernel {
@@ -94,6 +94,34 @@ export async function shutdownKernel(server: KernelServerConfig, kernelId: strin
     headers: { Authorization: `token ${server.token}` },
   });
   if (!res.ok && res.status !== 404) throw new Error(`DELETE /api/kernels/${kernelId} ${res.status}`);
+}
+
+// - open a WS, request tab-completion at a cursor, resolve with the matches
+export async function completeCode(
+  server:   KernelServerConfig,
+  kernelId: string,
+  code:     string,
+  cursorPos: number,
+  ids:      { msgId: string; session: string; date: string },
+): Promise<CompleteResult> {
+  const url = `${wsBase(server.hubUrl)}/api/kernels/${kernelId}/channels?token=${encodeURIComponent(server.token)}`;
+  const ws = new WebSocket(url, { headers: { Authorization: `token ${server.token}` } });
+  const empty: CompleteResult = { matches: [], cursorStart: cursorPos, cursorEnd: cursorPos };
+
+  return new Promise<CompleteResult>(resolve => {
+    let done = false;
+    const finish = (r: CompleteResult) => { if (done) return; done = true; clearTimeout(timer); try { ws.close(); } catch { /* noop */ } resolve(r); };
+    const timer = setTimeout(() => finish(empty), 4000);
+    ws.on('open', () => ws.send(JSON.stringify(buildCompleteRequest(code, cursorPos, ids))));
+    ws.on('message', raw => {
+      try {
+        const r = parseCompleteReply(JSON.parse(raw.toString()), ids.msgId);
+        if (r) finish(r);
+      } catch { /* - ignore non-JSON frames */ }
+    });
+    ws.on('error', () => finish(empty));
+    ws.on('close', () => finish(empty));
+  });
 }
 
 // - open a WS, run one cell, resolve with the collected output. onDelta fires as replies stream.

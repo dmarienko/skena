@@ -55,6 +55,43 @@ export function buildExecuteRequest(code: string, ids: ExecuteIds): ExecuteReque
   };
 }
 
+export interface CompleteResult {
+  matches:     string[];
+  cursorStart: number;
+  cursorEnd:   number;
+}
+
+// - Jupyter v5.3 complete_request on the shell channel (tab-completion at a cursor)
+export function buildCompleteRequest(code: string, cursorPos: number, ids: ExecuteIds) {
+  return {
+    header: {
+      msg_id:   ids.msgId,
+      session:  ids.session,
+      username: 'skena',
+      msg_type: 'complete_request',
+      version:  '5.3',
+      date:     ids.date,
+    },
+    parent_header: {},
+    metadata:      {},
+    content:       { code, cursor_pos: cursorPos },
+    channel:       'shell',
+  };
+}
+
+// - returns the completion result from a complete_reply for `ourMsgId`, else null
+export function parseCompleteReply(raw: unknown, ourMsgId: string): CompleteResult | null {
+  const m = raw as Record<string, any>;
+  if (m?.parent_header?.msg_id !== ourMsgId) return null;
+  if (m?.header?.msg_type !== 'complete_reply') return null;
+  const c = (m.content ?? {}) as Record<string, any>;
+  return {
+    matches:     Array.isArray(c.matches) ? c.matches as string[] : [],
+    cursorStart: typeof c.cursor_start === 'number' ? c.cursor_start : 0,
+    cursorEnd:   typeof c.cursor_end === 'number' ? c.cursor_end : 0,
+  };
+}
+
 export function parseReply(raw: unknown): ParsedReply {
   const m = raw as Record<string, any>;
   const parentMsgId = m?.parent_header?.msg_id ?? null;

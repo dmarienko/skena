@@ -420,6 +420,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           send({ type: 'doDelete', confirmed: yes === 'Delete' });
           break;
         }
+        case 'complete': await this.handleComplete(msg, manager, document, send); break;
       }
     });
 
@@ -1204,6 +1205,34 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
 
     // - stop the running-edge animation (runStatus drives it)
     send({ type: 'runStatus', cellNodeId: codeNode.id, kernelNodeId: kernelNode.id, state: status, error: out.error });
+  }
+
+  /**
+   * Kernel tab-completion (Ctrl+Space in a code cell). Resolves the cell's bound kernel
+   * and asks it to complete the LIVE editor code at the cursor; returns matches (or empty).
+   */
+  private async handleComplete(
+    msg:      { reqId: string; cellNodeId: string; code: string; cursorPos: number },
+    manager:  KernelManager,
+    document: SkenaDocument,
+    send:     (m: HostToWebview) => void,
+  ): Promise<void> {
+    const empty = () => send({ type: 'completeResult', reqId: msg.reqId, matches: [], cursorStart: msg.cursorPos, cursorEnd: msg.cursorPos });
+    const canvas = document.canvas;
+    const codeNode = canvas.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code');
+    if (!codeNode) return empty();
+    const nodeById = new Map(canvas.nodes.map(n => [n.id, n]));
+    const kid = resolveBoundKernel(codeNode.id, canvas.edges, id => nodeById.get(id)?.type === 'kernel');
+    const kernelNode = kid ? nodeById.get(kid) as KernelNode | undefined : undefined;
+    const server = kernelNode ? manager.serverByName(kernelNode.server) : undefined;
+    if (!kernelNode?.kernelId || !server) return empty();
+    try {
+      const ids = { msgId: randomUUID(), session: randomUUID(), date: new Date().toISOString() };
+      const r = await manager.complete(server, kernelNode.kernelId, msg.code, msg.cursorPos, ids);
+      send({ type: 'completeResult', reqId: msg.reqId, matches: r.matches, cursorStart: r.cursorStart, cursorEnd: r.cursorEnd });
+    } catch {
+      empty();
+    }
   }
 
   /**

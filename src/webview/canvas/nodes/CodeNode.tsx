@@ -15,6 +15,7 @@ import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './n
 import { DEFAULT_NODE_BORDER_BY_TYPE } from '../palette';
 import { resolveBoundKernel } from '../../../shared/kernelBinding';
 import { CodeRenderer } from '../../renderers/CodeRenderer';
+import { ensureKernelCompletion, setActiveCodeCell } from './kernelCompletion';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -59,8 +60,32 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   // - cursor + scroll position, preserved across edit → preview → edit so re-entering
   // - the cell lands where you left off instead of at line 1
   const savedViewState = useRef<MonacoEditor.ICodeEditorViewState | null>(null);
+  const magicDecoRef = useRef<string[]>([]);
   const onEditorMount = useCallback<OnMount>((editorInstance, monacoInstance) => {
     editorRef.current = editorInstance;
+    // - the focused cell is the completion target (provider is global per Monaco)
+    editorInstance.onDidFocusEditorText(() => setActiveCodeCell(id));
+
+    // - colour IPython magic / shell lines (%, %%, !) distinctly — they aren't valid
+    // - Python so the python grammar mis-tokenises them; decorate the magic token.
+    const refreshMagic = () => {
+      const model = editorInstance.getModel();
+      if (!model) return;
+      const decos: MonacoEditor.IModelDeltaDecoration[] = [];
+      for (let ln = 1; ln <= model.getLineCount(); ln++) {
+        const m = model.getLineContent(ln).match(/^(\s*)(%{1,2}\s*[A-Za-z_]\w*|!)/);
+        if (m) {
+          const from = m[1].length + 1;
+          decos.push({
+            range: new monacoInstance.Range(ln, from, ln, from + m[2].length),
+            options: { inlineClassName: 'skena-magic' },
+          });
+        }
+      }
+      magicDecoRef.current = editorInstance.deltaDecorations(magicDecoRef.current, decos);
+    };
+    editorInstance.onDidChangeModelContent(refreshMagic);
+    refreshMagic();
     // - run bindings (per-instance, safe): fire from ANY vim mode and do NOT change it,
     // - so you can type in insert mode, run, and keep typing. Shift+Enter / Ctrl+Enter /
     // - Alt+R / Alt+J all run the cell.
@@ -131,6 +156,8 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   // - TextNode's registration (defineTheme is global by name; keeping it byte-for-byte
   // - identical means re-registration here never clobbers TextNode's colours).
   const beforeMount = useCallback<BeforeMount>((monacoInstance) => {
+    // - register the kernel-backed completion provider once (idempotent)
+    ensureKernelCompletion(monacoInstance);
     const style = getComputedStyle(document.body);
     const bg    = style.getPropertyValue('--vscode-editor-background').trim();
     const dark  = isDark;

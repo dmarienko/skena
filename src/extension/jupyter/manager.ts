@@ -3,8 +3,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { resolveKernelConfig, type KernelServerConfig } from './config';
-import { listKernels, startKernel, executeCell, restartKernel, shutdownKernel, interruptKernel, type LiveKernel } from './client';
-import type { CollectedOutput } from './protocol';
+import { listKernels, startKernel, executeCell, completeCode, restartKernel, shutdownKernel, interruptKernel, type LiveKernel } from './client';
+import type { CollectedOutput, CompleteResult } from './protocol';
 import type { KernelStatusEntry } from '../../shared/types';
 
 // - reads skena.jupyter.kernels, falling back to ~/.aix/xlmcp/.env
@@ -78,6 +78,16 @@ export class KernelManager {
 
   async interrupt(server: KernelServerConfig, kernelId: string): Promise<void> {
     await interruptKernel(server, kernelId);
+  }
+
+  async complete(
+    server: KernelServerConfig,
+    kernelId: string,
+    code: string,
+    cursorPos: number,
+    ids: { msgId: string; session: string; date: string },
+  ): Promise<CompleteResult> {
+    return completeCode(server, kernelId, code, cursorPos, ids);
   }
 
   async run(

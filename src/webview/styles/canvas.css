@@ -158,3 +158,6 @@
 /* - code-cell preview: let the node background show through (match the editor look) */
 .skena-code-cell-preview .shiki,
 .skena-code-cell-preview .shiki code { background: transparent !important; }
+
+/* - IPython magic / shell (% %% !) tokens in code cells, colored like a directive */
+.skena-magic { color: #c586c0 !important; font-style: italic; }

@@ -184,6 +184,9 @@ export function App(): JSX.Element {
         case 'doDelete':
           window.dispatchEvent(new CustomEvent('skena:doDelete', { detail: { confirmed: msg.confirmed } }));
           break;
+        case 'completeResult':
+          window.dispatchEvent(new CustomEvent('skena:completeResult', { detail: msg }));
+          break;
         case 'subCanvasCreated':
           window.dispatchEvent(new CustomEvent('skena:subCanvasCreated', { detail: msg }));
           break;
