@@ -51,6 +51,29 @@ function extractSignature(text: string): string | null {
   return sig || null;
 }
 
+// - IPython inspect section headers (column 0). Used to bound the docstring block so a
+// - docstring's own "Returns:"/"Examples:" lines don't prematurely end it.
+const INSPECT_SECTION = /^(?:Init |Class |Call )?(?:Signature|Docstring|File|Type|String form|Length|Subclasses|Source|Namespace|Base Class):/;
+
+// - extract the docstring block (multi-line, formatting preserved) from inspect text
+function extractDocstring(text: string): string | null {
+  const lines = stripAnsi(text).split('\n');
+  let started = false;
+  const parts: string[] = [];
+  for (const line of lines) {
+    if (!started) {
+      const m = line.match(/^(?:Init |Class )?[Dd]ocstring:\s?(.*)$/);
+      if (m) { started = true; if (m[1].trim()) parts.push(m[1]); }
+      continue;
+    }
+    if (INSPECT_SECTION.test(line)) break;
+    parts.push(line);
+  }
+  if (!started) return null;
+  const body = parts.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  return body || null;
+}
+
 function requestComplete(cellId: string, code: string, cursorPos: number): Promise<MsgCompleteResult> {
   return new Promise(resolve => {
     const reqId = `cmpl-${++reqCounter}`;
@@ -110,11 +133,17 @@ export function ensureKernelCompletion(monaco: typeof Monaco): void {
     provideHover: async (model, position) => {
       if (!activeCellId) return null;
       const res = await requestInspect(activeCellId, model.getValue(), model.getOffsetAt(position));
-      const text = stripAnsi(res.text).trim();
-      if (!res.found || !text) return null;
+      if (!res.found) return null;
+      const sig = extractSignature(res.text);
+      const doc = extractDocstring(res.text);
+      if (!sig && !doc) return null;
+      // - signature as a syntax-highlighted python block, docstring as prose below a rule
+      const md: string[] = [];
+      if (sig) md.push('```python\n' + sig + '\n```');
+      if (doc) md.push((sig ? '---\n' : '') + doc);
       const w = model.getWordAtPosition(position);
       const range = w ? { startLineNumber: position.lineNumber, startColumn: w.startColumn, endLineNumber: position.lineNumber, endColumn: w.endColumn } : undefined;
-      return { range, contents: [{ value: '```text\n' + text + '\n```' }] };
+      return { range, contents: [{ value: md.join('\n\n') }] };
     },
   });
 
@@ -137,7 +166,16 @@ export function ensureKernelCompletion(monaco: typeof Monaco): void {
       const res = await requestInspect(activeCellId, code, i - 1);   // - inspect the callee name
       const sig = res.found ? extractSignature(res.text) : null;
       if (!sig) return null;
-      return { value: { signatures: [{ label: sig, parameters: [] }], activeSignature: 0, activeParameter: 0 }, dispose: () => { /* noop */ } };
+      // - include the docstring (first chunk) under the signature
+      const full = extractDocstring(res.text);
+      const doc = full && full.length > 800 ? full.slice(0, 800) + '…' : full;
+      return {
+        value: {
+          signatures: [{ label: sig, documentation: doc ? { value: doc } : undefined, parameters: [] }],
+          activeSignature: 0, activeParameter: 0,
+        },
+        dispose: () => { /* noop */ },
+      };
     },
   });
 
