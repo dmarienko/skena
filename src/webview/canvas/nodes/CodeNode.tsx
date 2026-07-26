@@ -10,6 +10,7 @@ import Editor, { BeforeMount, OnMount } from '@monaco-editor/react';
 import type { editor as MonacoEditor } from 'monaco-editor';
 import { initVimMode } from 'monaco-vim';
 import { CodeNode } from '../../../shared/types';
+import type { CanvasNode, CanvasEdge, MsgAddNodeResult } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
 import { DEFAULT_NODE_BORDER_BY_TYPE } from '../palette';
@@ -44,6 +45,9 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   const borderColor = node.accentColor ?? DEFAULT_NODE_BORDER_BY_TYPE.code;
   const [code, setCode] = useState(node.code ?? '');
   const [editing, setEditing] = useState(false);
+  // - always-current node geometry for the `o` shortcut (closures would otherwise go stale)
+  const geomRef = useRef({ x: node.x, y: node.y, width: node.width, height: node.height });
+  geomRef.current = { x: node.x, y: node.y, width: node.width, height: node.height };
 
   // - re-sync from an external write (MCP / disk reload) — React Flow keeps this
   // - instance by id, so a changed data.code prop would otherwise leave `code` stale.
@@ -166,7 +170,26 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
         ((e.ctrlKey || e.metaKey) && !e.altKey && e.key === 'Enter') ||
         (e.shiftKey && !e.altKey && e.key === 'Enter');
       if (runCombo) { e.preventDefault(); e.stopPropagation(); runRef.current(); return; }
-      if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); setEditing(true); }
+      if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); setEditing(true); return; }
+      // - vim `o`: open a new code cell below, chained to this one (inherits the kernel via
+      // - the edge), same width; focus + edit it immediately
+      if (e.key === 'o' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault(); e.stopPropagation();
+        const g = geomRef.current;
+        const newId = `code-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+        const newNode: CanvasNode = {
+          id: newId, type: 'code', code: '', language: 'python',
+          x: Math.round(g.x), y: Math.round(g.y + g.height + 40),
+          width: g.width, height: g.height,
+        };
+        const newEdge: CanvasEdge = {
+          id: `${id}-${newId}-${Date.now()}`,
+          fromNode: id, fromSide: 'bottom', toNode: newId, toSide: 'top', toEnd: 'arrow',
+        };
+        window.dispatchEvent(new CustomEvent('skena:addNodeResult', {
+          detail: { type: 'addNodeResult', node: newNode, edge: newEdge, autoEdit: true } satisfies MsgAddNodeResult,
+        }));
+      }
     };
     window.addEventListener('keydown', onKey, { capture: true });
     return () => window.removeEventListener('keydown', onKey, { capture: true });
