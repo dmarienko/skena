@@ -457,6 +457,7 @@ export type HostToWebview =
   | MsgVerifyPathResult
   | MsgKernelStatus
   | MsgRunStatus
+  | MsgRunOutput
   | MsgAddKernelTrigger;
 
 // - host → webview: the "Skena: Add Kernel" command asks the webview to relay an
@@ -470,6 +471,18 @@ export interface KernelStatusEntry {
   connections?: number;
 }
 export interface MsgKernelStatus { type: 'kernelStatus'; kernels: KernelStatusEntry[]; }
+// - host → webview: apply a cell run's output WITHOUT a full canvas reload (which would
+// - re-sync every node → focus jump + position shift). The host already persisted to disk
+// - with self-save suppression; the webview mirrors this into its own state.
+export interface MsgRunOutput {
+  type:         'runOutput';
+  codeNodeId:   string;
+  lastStatus:   'ok' | 'error';
+  kernelNodeId: string;
+  kernelId?:    string;
+  outputNode?:  CellNode;    // - present when the run produced output (upsert by id)
+  edge?:        CanvasEdge;  // - present only when the output node was newly created
+}
 export interface MsgRunStatus {
   type:         'runStatus';
   cellNodeId:   string;

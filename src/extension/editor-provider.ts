@@ -412,7 +412,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         case 'showWarning':
           vscode.window.showWarningMessage(msg.text);
           break;
-        case 'runCell':      await this.handleRunCell(msg, manager, panel, document, canvasDir); break;
+        case 'runCell':      await this.handleRunCell(msg, manager, panel, document, v => { isSelfSaving = v; }, s => { lastWrittenJson = s; }); break;
         case 'addKernel':    await this.handleAddKernel(manager, document, send); break;
         case 'kernelAction': await this.handleKernelAction(msg, manager, document); break;
       }
@@ -1064,11 +1064,12 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
    * separately as transient UI via runStatus messages.
    */
   private async handleRunCell(
-    msg:       MsgRunCell,
-    manager:   KernelManager,
-    panel:     vscode.WebviewPanel,
-    document:  SkenaDocument,
-    _canvasDir: string,
+    msg:            MsgRunCell,
+    manager:        KernelManager,
+    panel:          vscode.WebviewPanel,
+    document:       SkenaDocument,
+    setSelfSaving:  (v: boolean) => void,
+    setLastWritten: (s: string) => void,
   ): Promise<void> {
     const send   = (m: HostToWebview) => panel.webview.postMessage(m);
     const canvas = document.canvas;
@@ -1099,21 +1100,26 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const fail = (error: string) =>
       send({ type: 'runStatus', cellNodeId: codeNode.id, kernelNodeId: kernelNode.id, state: 'error', error });
 
-    // - apply the run's mutations to the CURRENT document.canvas and persist. The run
-    // - awaits for seconds; a debounced saveCanvas can swap document._canvas meanwhile,
-    // - so we re-resolve nodes by id here instead of writing the object captured at entry.
+    // - apply the run's mutations to the CURRENT document.canvas, persist WITHOUT triggering
+    // - the watcher reload (self-save suppression, like handleSaveCanvas), and return the
+    // - output node/edge so the caller can push a TARGETED runOutput update to the webview.
+    // - This avoids a full canvas reload (which re-syncs every node → focus jump + shift).
+    // - The run awaits for seconds; a debounced saveCanvas can swap document._canvas
+    // - meanwhile, so we re-resolve nodes by id here rather than writing a captured object.
     const applyAndPersist = async (
       status: 'ok' | 'error',
       output: { format: 'markdown' | 'image' | 'html' | 'plotly'; content: string } | null,
-    ) => {
+    ): Promise<{ outputNode?: CellNode; edge?: CanvasEdge }> => {
       const c  = document.canvas;
       const cn = c.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code') as CodeNode | undefined;
-      if (!cn) return;                            // - cell deleted mid-run
+      if (!cn) return {};                         // - cell deleted mid-run
       cn.code       = msg.code;                   // - persist the code that actually ran (edits are debounced)
       cn.lastStatus = status;
       cn.lastRun    = Date.now();
       const kn = c.nodes.find(n => n.id === kernelNode.id && n.type === 'kernel') as KernelNode | undefined;
       if (kn && kernelId !== kn.kernelId) kn.kernelId = kernelId;   // - reuse this kernel next run
+      let outputNode: CellNode | undefined;
+      let edge:       CanvasEdge | undefined;
       if (output) {
         const existing = cn.outputNodeId
           ? c.nodes.find(n => n.id === cn.outputNodeId && n.type === 'cell') as CellNode | undefined
@@ -1121,6 +1127,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         if (existing) {
           existing.format  = output.format;
           existing.content = output.content;
+          outputNode = existing;
         } else {
           const id = `ai-${Date.now().toString(36)}`;
           const cellBase: CellNode = {
@@ -1128,12 +1135,19 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             x: cn.x + cn.width + 60, y: cn.y, width: 480, height: 320,
             format: output.format, content: output.content, createdBy: 'ai',
           };
-          c.nodes.push(assignLabel(cellBase, c.nodes) as CanvasNode);
-          c.edges.push({ id: `e-${id}`, fromNode: cn.id, fromSide: 'right', toNode: id, toSide: 'left', toEnd: 'arrow' });
+          outputNode = assignLabel(cellBase, c.nodes) as CellNode;
+          c.nodes.push(outputNode);
+          edge = { id: `e-${id}`, fromNode: cn.id, fromSide: 'right', toNode: id, toSide: 'left', toEnd: 'arrow' };
+          c.edges.push(edge);
           cn.outputNodeId = id;
         }
       }
+      setSelfSaving(true);
+      const json = JSON.stringify(c, null, 2);
+      setLastWritten(json);
       await writeCanvas(document.uri.fsPath, c);
+      setTimeout(() => setSelfSaving(false), 400);
+      return { outputNode, edge };
     };
 
     let kernelId: string;
@@ -1150,7 +1164,10 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     try {
       out = await manager.run(server, kernelId, msg.code, ids);
     } catch (e) {
-      try { await applyAndPersist('error', null); } catch { /* non-fatal */ }
+      try {
+        await applyAndPersist('error', null);
+        send({ type: 'runOutput', codeNodeId: codeNode.id, lastStatus: 'error', kernelNodeId: kernelNode.id, kernelId });
+      } catch { /* non-fatal */ }
       fail(`execution failed: ${e instanceof Error ? e.message : String(e)}`);
       return;
     }
@@ -1171,16 +1188,17 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
 
     // - only write an output node when the run actually produced something
     const hasOutput = !!rich || out.streamText.length > 0 || !!out.error;
-    try { await applyAndPersist(out.status === 'error' ? 'error' : 'ok', hasOutput ? { format, content } : null); }
-    catch (e) { vscode.window.showErrorMessage(`Skena: failed to save run output: ${e}`); }
+    const status: 'ok' | 'error' = out.status === 'error' ? 'error' : 'ok';
+    try {
+      const { outputNode, edge } = await applyAndPersist(status, hasOutput ? { format, content } : null);
+      // - targeted update: webview mirrors the output node without a full reload
+      send({ type: 'runOutput', codeNodeId: codeNode.id, lastStatus: status, kernelNodeId: kernelNode.id, kernelId, outputNode, edge });
+    } catch (e) {
+      vscode.window.showErrorMessage(`Skena: failed to save run output: ${e}`);
+    }
 
-    send({
-      type:         'runStatus',
-      cellNodeId:   codeNode.id,
-      kernelNodeId: kernelNode.id,
-      state:        out.status === 'error' ? 'error' : 'ok',
-      error:        out.error,
-    });
+    // - stop the running-edge animation (runStatus drives it)
+    send({ type: 'runStatus', cellNodeId: codeNode.id, kernelNodeId: kernelNode.id, state: status, error: out.error });
   }
 
   /**

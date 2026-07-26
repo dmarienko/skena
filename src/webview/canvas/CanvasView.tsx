@@ -30,7 +30,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
-import { CanvasData, CanvasNode, CanvasEdge, MsgAddNodeResult, MsgSubCanvasCreated, MsgVerifyPathResult, NodeSide, CanvasMark, ViewportSnapshot } from '../../shared/types';
+import { CanvasData, CanvasNode, CanvasEdge, MsgAddNodeResult, MsgRunOutput, MsgSubCanvasCreated, MsgVerifyPathResult, NodeSide, CanvasMark, ViewportSnapshot } from '../../shared/types';
 import { classifyClipboard } from './paste-classify';
 import { ContextMenu } from './ContextMenu';
 import { CANVAS_COLORS } from '../../shared/constants';
@@ -1940,6 +1940,42 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     };
     window.addEventListener('skena:runStatus', handler);
     return () => window.removeEventListener('skena:runStatus', handler);
+  }, [setNodes, setEdges]);
+
+  // - apply a run's output WITHOUT a full canvas reload: upsert the output cell node,
+  // - update the code node's status + the kernel's id, in place. The host already wrote
+  // - to disk (self-save suppressed), so we mirror into canvasRef too — otherwise a later
+  // - webview save would drop the host-written output node.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const d = (e as CustomEvent<MsgRunOutput>).detail;
+      const out = d.outputNode;
+      setNodes(nds => {
+        let next = nds.map(n => {
+          if (n.id === d.codeNodeId) return { ...n, data: { ...n.data, lastStatus: d.lastStatus, ...(out ? { outputNodeId: out.id } : {}) } };
+          if (d.kernelId && n.id === d.kernelNodeId) return { ...n, data: { ...n.data, kernelId: d.kernelId } };
+          if (out && n.id === out.id) return { ...n, data: { ...n.data, format: out.format, content: out.content } };
+          return n;
+        });
+        if (out && !nds.some(n => n.id === out.id)) next = [...next, { ...toFlowNode(out), selected: false }];
+        return next;
+      });
+      if (d.edge) setEdges(eds => eds.some(x => x.id === d.edge!.id) ? eds : [...eds, toFlowEdge(d.edge!)]);
+      const cr = canvasRef.current;
+      if (cr) {
+        let nodes = cr.nodes.map(n => {
+          if (n.id === d.codeNodeId) return { ...n, lastStatus: d.lastStatus, ...(out ? { outputNodeId: out.id } : {}) } as CanvasNode;
+          if (d.kernelId && n.id === d.kernelNodeId) return { ...n, kernelId: d.kernelId } as CanvasNode;
+          if (out && n.id === out.id) return { ...n, format: out.format, content: out.content } as CanvasNode;
+          return n;
+        });
+        if (out && !cr.nodes.some(n => n.id === out.id)) nodes = [...nodes, out];
+        const edges = d.edge && !cr.edges.some(x => x.id === d.edge!.id) ? [...cr.edges, d.edge] : cr.edges;
+        canvasRef.current = { ...cr, nodes, edges };
+      }
+    };
+    window.addEventListener('skena:runOutput', handler);
+    return () => window.removeEventListener('skena:runOutput', handler);
   }, [setNodes, setEdges]);
 
   // - receive add-node result from QuickPick (Ctrl+N / Shift+hjkl)
