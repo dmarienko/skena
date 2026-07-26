@@ -179,8 +179,8 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
         const newId = `code-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
         const newNode: CanvasNode = {
           id: newId, type: 'code', code: '', language: 'python',
-          x: Math.round(g.x), y: Math.round(g.y + g.height + 400),
-          width: g.width, height: g.height,
+          x: Math.round(g.x), y: Math.round(g.y + g.height + 350),
+          width: g.width, height: 200,
         };
         const newEdge: CanvasEdge = {
           id: `${id}-${newId}-${Date.now()}`,
