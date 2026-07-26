@@ -31,6 +31,7 @@ import { assignLabel, ensureLabels } from '../../shared/nodeLabels';
 import { resolveBoundKernel } from '../../shared/kernelBinding';
 import { resolveKernelConfig, type KernelServerConfig } from '../jupyter/config';
 import { executeCell } from '../jupyter/client';
+import { renderOutput } from '../jupyter/output';
 
 // ─── path helpers ─────────────────────────────────────────────────────────────
 
@@ -707,19 +708,9 @@ async function canvasRunCell(args: Record<string, unknown>): Promise<string> {
     const ids = { msgId: crypto.randomUUID(), session: crypto.randomUUID(), date: new Date().toISOString() };
     const out = await executeCell(server, kernelNode.kernelId, cell.code, ids);
 
-    // - collapse the collected output into a single cell-node payload
-    const rich = out.rich[out.rich.length - 1];
-    let format: 'markdown' | 'image' | 'html' | 'plotly' = 'markdown';
-    let content = out.streamText ? '```\n' + out.streamText + '\n```' : '';
-    if (rich) {
-      if (rich.mime === 'application/vnd.plotly.v1+json') { format = 'plotly'; content = rich.data; }
-      else if (rich.mime.startsWith('image/'))            { format = 'image';  content = `data:${rich.mime};base64,${rich.data}`; }
-      else if (rich.mime === 'text/html')                 { format = 'html';   content = rich.data; }
-      else                                                 { content += (content ? '\n\n' : '') + rich.data; }
-    }
-    if (out.error) content += '\n\n```\n' + out.error + '\n```';
-
-    const hasOutput = !!rich || out.streamText.length > 0 || !!out.error;
+    // - collapse ALL outputs (stream + every rich mime) into one cell-node payload
+    const { format, content } = renderOutput(out);
+    const hasOutput = out.rich.length > 0 || out.streamText.length > 0 || !!out.error;
     let outLabel = '(no output)';
     if (hasOutput) {
       // - reuse the linked output node if it exists, else create + link one at the cell's right edge

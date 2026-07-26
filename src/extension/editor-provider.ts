@@ -28,6 +28,7 @@ import { resolveBoundKernel } from '../shared/kernelBinding';
 import { KernelManager } from './jupyter/manager';
 import { listKernels, startKernel, listKernelSpecs, listSessions } from './jupyter/client';
 import type { CollectedOutput } from './jupyter/protocol';
+import { renderOutput } from './jupyter/output';
 import {
   CanvasData,
   CanvasNode,
@@ -1179,22 +1180,11 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       return;
     }
 
-    // - build output content: stream text as a code block, then the last rich
-    // - mime (image → data URI, html → raw, json → fenced), plus any error trace
-    const rich = out.rich[out.rich.length - 1];
-    let format: 'markdown' | 'image' | 'html' | 'plotly' = 'markdown';
-    let content = out.streamText ? '```\n' + out.streamText + '\n```' : '';
-    if (rich) {
-      if (rich.mime === 'application/vnd.plotly.v1+json') { format = 'plotly'; content = rich.data; }
-      else if (rich.mime.startsWith('image/'))            { format = 'image';  content = `data:${rich.mime};base64,${rich.data}`; }
-      else if (rich.mime === 'text/html')                 { format = 'html';   content = rich.data; }
-      else if (rich.mime === 'application/json')          content += '\n\n```json\n' + rich.data + '\n```';
-      else                                                content += '\n\n' + rich.data;
-    }
-    if (out.error) content += '\n\n```\n' + out.error + '\n```';
+    // - collapse ALL outputs (stream + every rich mime, in order) into one cell payload
+    const { format, content } = renderOutput(out);
 
     // - only write an output node when the run actually produced something
-    const hasOutput = !!rich || out.streamText.length > 0 || !!out.error;
+    const hasOutput = out.rich.length > 0 || out.streamText.length > 0 || !!out.error;
     const status: 'ok' | 'error' = out.status === 'error' ? 'error' : 'ok';
     try {
       const { outputNode, edge } = await applyAndPersist(status, hasOutput ? { format, content } : null);

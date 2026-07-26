@@ -161,3 +161,10 @@
 
 /* - IPython magic / shell (% %% !) tokens in code cells, colored like a directive */
 .skena-magic { color: #c586c0 !important; font-style: italic; }
+
+/* - stacked cell-run outputs (multiple images/prints/tables in one output node) */
+.skena-cell-html .skena-out-stream,
+.skena-cell-html pre { font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; white-space: pre-wrap; margin: 2px 0; }
+.skena-cell-html .skena-out-error { color: #e5707a; }
+.skena-cell-html .skena-out-note  { opacity: 0.6; font-style: italic; }
+.skena-cell-html img { max-width: 100%; }

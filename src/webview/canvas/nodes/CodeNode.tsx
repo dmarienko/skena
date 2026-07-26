@@ -16,6 +16,7 @@ import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './n
 import { DEFAULT_NODE_BORDER_BY_TYPE } from '../palette';
 import { resolveBoundKernel } from '../../../shared/kernelBinding';
 import { CodeRenderer } from '../../renderers/CodeRenderer';
+import { ScrollableContent } from '../../components/ScrollableContent';
 import { ensureKernelCompletion, setActiveCodeCell } from './kernelCompletion';
 
 function vscodePostMessage(msg: unknown) {
@@ -319,17 +320,15 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
             <div ref={vimStatusRef} className="skena-code-vim-status" style={{ fontSize: 10, opacity: 0.6, padding: '0 6px', fontFamily: 'var(--vscode-editor-font-family, monospace)' }} />
           </div>
         ) : (
-          /* - read-only highlighted preview; double-click (or Enter when selected) to edit */
-          <div
-            className="nowheel skena-code-cell-preview"
-            style={{ flex: 1, minHeight: 0, overflow: 'auto', cursor: 'text' }}
-            onDoubleClick={() => setEditing(true)}
-            title="Double-click to edit"
-          >
-            {code.trim()
-              ? <CodeRenderer content={code} language={node.language ?? 'python'} />
-              : <div style={{ padding: 8, opacity: 0.5, fontSize: 12, fontStyle: 'italic' }}>empty — double-click to edit</div>}
-          </div>
+          /* - read-only highlighted preview; ScrollableContent gives the wheel-guard so it
+             - actually scrolls (a bare nowheel div doesn't). Double-click (or Enter) to edit. */
+          <ScrollableContent scrollKey={`${id}-code`} className="skena-code-cell-preview" style={{ padding: '4px 0', cursor: 'text' }}>
+            <div onDoubleClick={() => setEditing(true)} title="Double-click to edit">
+              {code.trim()
+                ? <CodeRenderer content={code} language={node.language ?? 'python'} />
+                : <div style={{ padding: 8, opacity: 0.5, fontSize: 12, fontStyle: 'italic' }}>empty — double-click to edit</div>}
+            </div>
+          </ScrollableContent>
         )}
       </div>
       <Handle type="source" position={Position.Top}    id="top"    style={HANDLE_STYLE} />
