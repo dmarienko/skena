@@ -16,6 +16,10 @@ import { useEffect, useState } from 'react';
 export const FACTORS_THEME = {
   name: 'factors',
   type: 'dark' as const,
+  // - shiki derives the <pre> bg/fg from these top-level fields; without them it falls
+  // - back to a red error colour (#ff161d / #ff0000). Keep in sync with colors[] below.
+  bg: '#0f161d',
+  fg: '#c7d1cc',
   colors: { 'editor.background': '#0f161d', 'editor.foreground': '#c7d1cc' },
   tokenColors: [
     { scope: ['comment', 'punctuation.definition.comment'], settings: { foreground: '#56635d', fontStyle: 'italic' } },

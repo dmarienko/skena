@@ -148,3 +148,13 @@
   box-shadow: none !important;
   border-color: transparent !important;
 }
+
+/* - the orange rectangle: shiki emits <pre tabindex="0"> which shows the browser's
+   - default focus outline. Kill it on the code-cell preview. */
+.skena-code-cell-preview pre,
+.skena-code-cell-preview pre:focus,
+.skena-code-cell-preview pre:focus-visible { outline: none !important; }
+
+/* - code-cell preview: let the node background show through (match the editor look) */
+.skena-code-cell-preview .shiki,
+.skena-code-cell-preview .shiki code { background: transparent !important; }
