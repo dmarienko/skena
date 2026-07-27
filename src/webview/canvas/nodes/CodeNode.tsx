@@ -250,8 +250,29 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
         { token: 'comment',         foreground: dark ? '6a9955' : '008000', fontStyle: 'italic' },
         { token: 'string',          foreground: dark ? 'ce9178' : 'a31515'                      },
       ],
+      // - VS Code doesn't inject editor colours as CSS vars into webviews, so bake the palette
+      // - here. Not dynamic — edit these to retune the code cell editor look.
       colors: {
-        'editor.background': bg || (dark ? '#1e1e1e' : '#ffffff'),
+        'editor.background':                        bg || (dark ? '#1e1e1e' : '#ffffff'),
+        'editorCursor.foreground':                  '#f01010',
+        'editor.lineHighlightBackground':           '#199ce809',
+        'editor.lineHighlightBorder':               '#199ce805',
+        'editor.selectionBackground':               '#212a66f0',
+        'editor.selectionHighlightBackground':      '#ff402030',
+        'editor.inactiveSelectionBackground':       '#29328080',
+        'editor.wordHighlightBackground':           '#60020247',
+        'editor.wordHighlightStrongBackground':     '#ffffff18',
+        'editor.wordHighlightBorder':               '#f67e2220',
+        'editor.wordHighlightStrongBorder':         '#c4854f50',
+        'editorLineNumber.activeForeground':        '#90c0a0',
+        'editorLineNumber.foreground':              '#90be065c',
+        'editorWidget.border':                      '#000000',
+        'editorBracketPairGuide.activeBackground1': '#00e7495e',
+        'editorBracketPairGuide.activeBackground2': '#fac9285e',
+        'editorBracketPairGuide.activeBackground3': '#057aff5e',
+        'editorBracketPairGuide.activeBackground4': '#c122e95e',
+        'editorBracketPairGuide.activeBackground5': '#f513845e',
+        'editorBracketPairGuide.activeBackground6': '#19f9d85e',
       },
     });
   }, [isDark]);
