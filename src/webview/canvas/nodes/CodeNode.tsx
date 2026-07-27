@@ -320,7 +320,8 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
               }}
               options={{
                 minimap:              { enabled: false },
-                lineNumbers:          'off',
+                lineNumbers:          'on',
+                lineNumbersMinChars:  2,
                 fontFamily:           'var(--vscode-editor-font-family, monospace)',
                 fontSize:             12,
                 scrollBeyondLastLine: false,
