@@ -116,12 +116,16 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     bindRun(monacoInstance.KeyMod.Alt     | monacoInstance.KeyCode.KeyR);
     bindRun(monacoInstance.KeyMod.Alt     | monacoInstance.KeyCode.KeyJ);
 
-    // - Ctrl+J / Ctrl+K navigate the completion dropdown (like ↓/↑); gated so they only
-    // - fire while the suggest widget is open and don't interfere with typing otherwise.
-    editorInstance.addCommand(monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyJ,
-      () => editorInstance.trigger('kb', 'selectNextSuggestion', {}), 'suggestWidgetVisible');
-    editorInstance.addCommand(monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyK,
-      () => editorInstance.trigger('kb', 'selectPrevSuggestion', {}), 'suggestWidgetVisible');
+    // - Ctrl+J / Ctrl+K navigate the completion dropdown (like ↓/↑) — via onKeyDown, NOT
+    // - addCommand: registering Ctrl+K globally breaks Monaco's Ctrl+K-prefixed chords
+    // - (Ctrl+K Ctrl+C/U = comment/uncomment). Only act while the suggest widget is open;
+    // - otherwise the keys fall through to Monaco's normal handling.
+    editorInstance.onKeyDown(e => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+      if (!document.querySelector('.suggest-widget.visible')) return;
+      if (e.keyCode === monacoInstance.KeyCode.KeyJ) { e.preventDefault(); e.stopPropagation(); editorInstance.trigger('kb', 'selectNextSuggestion', {}); }
+      else if (e.keyCode === monacoInstance.KeyCode.KeyK) { e.preventDefault(); e.stopPropagation(); editorInstance.trigger('kb', 'selectPrevSuggestion', {}); }
+    });
     // - vim mode (same editor experience as text nodes); status bar shows the mode
     initVimMode(editorInstance, vimStatusRef.current ?? undefined);
     if (savedViewState.current) editorInstance.restoreViewState(savedViewState.current);
