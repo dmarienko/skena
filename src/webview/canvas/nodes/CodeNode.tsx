@@ -92,6 +92,16 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   const magicDecoRef = useRef<string[]>([]);
   const onEditorMount = useCallback<OnMount>((editorInstance, monacoInstance) => {
     editorRef.current = editorInstance;
+    // - pin the shiki preview's line-number gutter to Monaco's REAL gutter width so the code
+    // - start x is pixel-identical across preview<->edit (no 2-3px shift). contentLeft is the
+    // - measured px from the editor's left to the first code glyph (line-numbers + decorations).
+    // - Font + minChars are the same for every code cell, so this constant is set globally.
+    const syncGutter = () => {
+      const cl = editorInstance.getLayoutInfo().contentLeft;
+      document.documentElement.style.setProperty('--skena-code-gutter', `${cl}px`);
+    };
+    syncGutter();
+    editorInstance.onDidLayoutChange(syncGutter);
     // - the focused cell is the completion target (provider is global per Monaco); also refresh
     // - the clipboard cache from the host so vim `p` / Ctrl+V paste the current system clipboard
     editorInstance.onDidFocusEditorText(() => {

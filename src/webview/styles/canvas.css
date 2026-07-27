@@ -116,9 +116,12 @@
 .skena-code-cell-preview .shiki .line::before {
   content: counter(skena-ln);
   display: inline-block;
-  width: 3ch;
-  padding-left: 2px;
-  margin-right: 6px;
+  /* - width == Monaco getLayoutInfo().contentLeft (set on mount as --skena-code-gutter):
+     - digits right-align inside, the 6px padding == Monaco's lineDecorationsWidth, so the
+     - code glyph starts at exactly the same x as the editor. Fallback ~= 12px font gutter. */
+  width: var(--skena-code-gutter, 33px);
+  padding-right: 6px;
+  box-sizing: border-box;
   text-align: right;
   opacity: 0.35;
   user-select: none;
