@@ -696,6 +696,18 @@ export function FloatingChat({
           </span>
         )}
 
+        {!collapsed && (chat.thinking || !!chat.streaming) && (
+          <button
+            // - soft abort: stops forwarding the current turn to the UI so you can type again;
+            // - the CC process finishes it in the background (session preserved).
+            onClick={() => postMessage({ type: 'floatingChatAbort' })}
+            title="Stop — interrupt the current reply"
+            style={{ ...titleBtnStyle, color: '#e5484d', opacity: 0.9 }}
+          >
+            ■
+          </button>
+        )}
+
         {!collapsed && (
           <>
             <button
