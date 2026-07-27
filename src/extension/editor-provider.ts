@@ -260,10 +260,18 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         case 'pickModel': {
           const aiCfg = vscode.workspace.getConfiguration('skena.ai');
           const cur   = document.canvas.metadata?.aiModel || aiCfg.get<string>('model') || '';
-          const MODELS = ['claude-opus-4-5', 'claude-sonnet-4-5', 'claude-haiku-4-5', 'opusplan'];
+          // - aliases the `claude` CLI resolves to the latest of each family (see `claude --help`
+          // - `--model`), so this list never rots as new model versions ship. Custom… pins an exact id.
+          const MODELS: Array<[string, string]> = [
+            ['opus',   'latest Opus'],
+            ['sonnet', 'latest Sonnet'],
+            ['haiku',  'latest Haiku'],
+            ['fable',  'latest Fable'],
+            ['opusplan', 'Opus to plan, Sonnet to execute'],
+          ];
           const items: vscode.QuickPickItem[] = [
-            ...MODELS.map(m => ({ label: m, description: m === cur ? '● current' : undefined })),
-            { label: 'Custom…', description: 'type a model id' },
+            ...MODELS.map(([m, d]) => ({ label: m, description: m === cur ? `${d} · ● current` : d })),
+            { label: 'Custom…', description: 'type an exact model id, e.g. claude-opus-4-5' },
             { label: 'Use global default', description: `skena.ai.model = ${aiCfg.get<string>('model') ?? ''}` },
           ];
           const pick = await vscode.window.showQuickPick(items, { title: 'AI model for this canvas', placeHolder: cur ? `current: ${cur}` : 'select a model' });
