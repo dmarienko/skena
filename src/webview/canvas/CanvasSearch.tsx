@@ -125,6 +125,7 @@ export function CanvasSearch({ nodes, onFocus, onClose }: Props): JSX.Element {
 
   return (
     <div
+      className="skena-canvas-search"
       style={{
         position:     'absolute',
         top:          10,
