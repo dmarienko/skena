@@ -228,34 +228,44 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   const isDark = document.body.classList.contains('vscode-dark') ||
                  document.body.classList.contains('vscode-high-contrast');
 
-  // - define the VS Code-synced theme before the editor is created, identical to
-  // - TextNode's registration (defineTheme is global by name; keeping it byte-for-byte
-  // - identical means re-registration here never clobbers TextNode's colours).
+  // - `skena-code` theme (separate from TextNode's `skena-editor` so neither clobbers the
+  // - other). Editor colours are pulled from the injected VS Code vars, so the user's
+  // - workbench.colorCustomizations (cursor, selection, line numbers, bracket guides…) apply.
   const beforeMount = useCallback<BeforeMount>((monacoInstance) => {
     // - register the kernel-backed completion provider once (idempotent)
     ensureKernelCompletion(monacoInstance);
     const style = getComputedStyle(document.body);
-    const bg    = style.getPropertyValue('--vscode-editor-background').trim();
-    const dark  = isDark;
+    const v    = (name: string) => style.getPropertyValue(name).trim();
+    const bg   = v('--vscode-editor-background');
+    const dark = isDark;
 
-    monacoInstance.editor.defineTheme('skena-editor', {
+    // - map Monaco editor colour ids ← --vscode-* vars (skip any the theme doesn't define)
+    const colors: Record<string, string> = { 'editor.background': bg || (dark ? '#1e1e1e' : '#ffffff') };
+    const use = (id: string, cssVar: string) => { const c = v(cssVar); if (c) colors[id] = c; };
+    use('editorCursor.foreground',                 '--vscode-editorCursor-foreground');
+    use('editor.lineHighlightBackground',          '--vscode-editor-lineHighlightBackground');
+    use('editor.lineHighlightBorder',              '--vscode-editor-lineHighlightBorder');
+    use('editor.selectionBackground',              '--vscode-editor-selectionBackground');
+    use('editor.selectionHighlightBackground',     '--vscode-editor-selectionHighlightBackground');
+    use('editor.inactiveSelectionBackground',      '--vscode-editor-inactiveSelectionBackground');
+    use('editor.wordHighlightBackground',          '--vscode-editor-wordHighlightBackground');
+    use('editor.wordHighlightStrongBackground',    '--vscode-editor-wordHighlightStrongBackground');
+    use('editor.wordHighlightBorder',              '--vscode-editor-wordHighlightBorder');
+    use('editor.wordHighlightStrongBorder',        '--vscode-editor-wordHighlightStrongBorder');
+    use('editorLineNumber.activeForeground',       '--vscode-editorLineNumber-activeForeground');
+    use('editorLineNumber.foreground',             '--vscode-editorLineNumber-foreground');
+    use('editorWidget.border',                     '--vscode-editorWidget-border');
+    for (let i = 1; i <= 6; i++) use(`editorBracketPairGuide.activeBackground${i}`, `--vscode-editorBracketPairGuide-activeBackground${i}`);
+
+    monacoInstance.editor.defineTheme('skena-code', {
       base:    dark ? 'vs-dark' : 'vs',
       inherit: true,
       rules: [
         { token: 'keyword',         foreground: dark ? '569cd6' : '0070c1'                      },
-        { token: 'strong',          foreground: dark ? 'dcdcaa' : '795e26', fontStyle: 'bold'   },
-        { token: 'emphasis',        foreground: dark ? 'ce9178' : 'a31515', fontStyle: 'italic' },
-        { token: 'variable',        foreground: dark ? 'd7ba7d' : '795e26'                      },
-        { token: 'variable.source', foreground: dark ? 'd7ba7d' : '795e26'                      },
-        { token: 'string.link',     foreground: dark ? '4ec9b0' : '267f99'                      },
         { token: 'comment',         foreground: dark ? '6a9955' : '008000', fontStyle: 'italic' },
         { token: 'string',          foreground: dark ? 'ce9178' : 'a31515'                      },
       ],
-      colors: {
-        'editor.background':               bg || (dark ? '#1e1e1e' : '#ffffff'),
-        'editor.lineHighlightBackground':  '#00000000',
-        'editor.lineHighlightBorderColor': '#00000000',
-      },
+      colors,
     });
   }, [isDark]);
 
@@ -309,7 +319,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
               height="100%"
               defaultLanguage="python"
               language="python"
-              theme="skena-editor"
+              theme="skena-code"
               beforeMount={beforeMount}
               onMount={onEditorMount}
               value={code}
