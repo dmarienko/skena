@@ -1108,6 +1108,22 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const fail = (error: string) =>
       send({ type: 'runStatus', cellNodeId: codeNode.id, kernelNodeId: kernelNode.id, state: 'error', error });
 
+    // - persist a 'running' marker to disk (self-save suppressed, no reload) so reopening the
+    // - canvas — or the kernel finishing after this panel closed — shows the cell in-progress
+    // - instead of its previous status. The end-of-run write overwrites it with ok/error.
+    try {
+      const c = document.canvas;
+      const cn = c.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code') as CodeNode | undefined;
+      if (cn) {
+        cn.code = msg.code;
+        cn.lastStatus = 'running';
+        setSelfSaving(true);
+        setLastWritten(JSON.stringify(c, null, 2));
+        await writeCanvas(document.uri.fsPath, c);
+        setTimeout(() => setSelfSaving(false), 400);
+      }
+    } catch { /* - best-effort marker */ }
+
     // - apply the run's mutations to the CURRENT document.canvas, persist WITHOUT triggering
     // - the watcher reload (self-save suppression, like handleSaveCanvas), and return the
     // - output node/edge so the caller can push a TARGETED runOutput update to the webview.
