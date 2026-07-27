@@ -1079,7 +1079,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     setSelfSaving:  (v: boolean) => void,
     setLastWritten: (s: string) => void,
   ): Promise<void> {
-    const send   = (m: HostToWebview) => panel.webview.postMessage(m);
+    // - the run can outlive its panel (user closes the canvas mid-run); posting to a
+    // - disposed webview throws, so swallow it — the output is still persisted to disk.
+    const send   = (m: HostToWebview) => { try { panel.webview.postMessage(m); } catch { /* panel disposed */ } };
     const canvas = document.canvas;
 
     const codeNode = canvas.nodes.find(

@@ -143,6 +143,42 @@ function kernelCanConnect(n: { type?: string; data?: unknown } | undefined): boo
   return false;
 }
 
+// - edge ids on the path from every RUNNING code cell (lastStatus 'running') to its kernel.
+// - Derived from node state (not transient messages) so it survives a canvas reopen.
+function runningPathEdgeIds(nodes: Node[], edges: Edge[]): Set<string> {
+  const result = new Set<string>();
+  const dataOf = (n: Node | undefined) => n?.data as { lastStatus?: string; type?: string } | undefined;
+  const running = nodes.filter(n => dataOf(n)?.lastStatus === 'running').map(n => n.id);
+  if (!running.length) return result;
+  const byId = new Map(nodes.map(n => [n.id, n]));
+  const isKernel = (id: string) => dataOf(byId.get(id))?.type === 'kernel' || byId.get(id)?.type === 'kernel';
+  const adj = new Map<string, { edgeId: string; other: string }[]>();
+  const link = (a: string, edgeId: string, b: string) => { const l = adj.get(a) ?? []; l.push({ edgeId, other: b }); adj.set(a, l); };
+  for (const ed of edges) { link(ed.source, ed.id, ed.target); link(ed.target, ed.id, ed.source); }
+  for (const start of running) {
+    const prevEdge = new Map<string, string>();
+    const prevNode = new Map<string, string>();
+    const seen = new Set<string>([start]);
+    const queue = [start];
+    let found: string | null = null;
+    while (queue.length && !found) {
+      const cur = queue.shift() as string;
+      for (const { edgeId, other } of adj.get(cur) ?? []) {
+        if (seen.has(other)) continue;
+        seen.add(other); prevEdge.set(other, edgeId); prevNode.set(other, cur);
+        if (isKernel(other)) { found = other; break; }
+        queue.push(other);
+      }
+    }
+    if (found) {
+      for (let n: string = found; n !== start && prevEdge.has(n); n = prevNode.get(n) as string) {
+        result.add(prevEdge.get(n) as string);
+      }
+    }
+  }
+  return result;
+}
+
 // - React Flow node → updated canvas node (position/size changed)
 function patchCanvasNode(original: CanvasNode, rfNode: Node): CanvasNode {
   return {
@@ -2036,50 +2072,34 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   // - soft reload after the host writes the run output to disk).
   useEffect(() => {
     const handler = (e: Event) => {
-      const { cellNodeId, kernelNodeId, state } =
+      const { cellNodeId, state } =
         (e as CustomEvent<{ cellNodeId: string; kernelNodeId: string | null; state: 'running' | 'ok' | 'error' }>).detail;
       // - keep the run cell as the focus target so the output-write reload re-selects IT
-      // - (not some other node picked by pickViewportNode) and doesn't jump focus away
       lastFocusedNodeId.set(canvasPath, cellNodeId);
+      // - just set the cell's status; the running border + edge animation are DERIVED from
+      // - lastStatus (below), so they also light up correctly on a canvas reopen.
       setNodes(nds => nds.map(n =>
         n.id === cellNodeId ? { ...n, data: { ...n.data, lastStatus: state } } : n
       ));
-      setEdges(eds => {
-        // - not running → clear every run animation (only run status uses `animated`)
-        if (state !== 'running' || !kernelNodeId) {
-          return eds.some(ed => ed.animated) ? eds.map(ed => ed.animated ? { ...ed, animated: false } : ed) : eds;
-        }
-        // - running → animate the edge path cell → … → kernel (BFS), so a chained cell
-        // - lights its whole route, not just a (non-existent) direct cell↔kernel edge
-        const adj = new Map<string, { edgeId: string; other: string }[]>();
-        const link = (a: string, edgeId: string, b: string) => {
-          const list = adj.get(a) ?? []; list.push({ edgeId, other: b }); adj.set(a, list);
-        };
-        for (const ed of eds) { link(ed.source, ed.id, ed.target); link(ed.target, ed.id, ed.source); }
-        const prevEdge = new Map<string, string>();
-        const prevNode = new Map<string, string>();
-        const seen = new Set<string>([cellNodeId]);
-        const queue = [cellNodeId];
-        let found = false;
-        while (queue.length && !found) {
-          const cur = queue.shift() as string;
-          for (const { edgeId, other } of adj.get(cur) ?? []) {
-            if (seen.has(other)) continue;
-            seen.add(other); prevEdge.set(other, edgeId); prevNode.set(other, cur);
-            if (other === kernelNodeId) { found = true; break; }
-            queue.push(other);
-          }
-        }
-        const pathEdgeIds = new Set<string>();
-        for (let n = kernelNodeId; found && n !== cellNodeId && prevEdge.has(n); n = prevNode.get(n) as string) {
-          pathEdgeIds.add(prevEdge.get(n) as string);
-        }
-        return eds.map(ed => pathEdgeIds.has(ed.id) ? { ...ed, animated: true } : ed);
-      });
     };
     window.addEventListener('skena:runStatus', handler);
     return () => window.removeEventListener('skena:runStatus', handler);
-  }, [setNodes, setEdges]);
+  }, [setNodes]);
+
+  // - animate the edges from each running cell to its kernel, derived from lastStatus so it
+  // - survives reopen. Cheap when nothing runs (early-return + same-ref no-op).
+  useEffect(() => {
+    const want = runningPathEdgeIds(nodes, edges);
+    setEdges(eds => {
+      let changed = false;
+      const next = eds.map(ed => {
+        const a = want.has(ed.id);
+        if (!!ed.animated !== a) { changed = true; return { ...ed, animated: a }; }
+        return ed;
+      });
+      return changed ? next : eds;
+    });
+  }, [nodes, edges, setEdges]);
 
   // - apply a run's output WITHOUT a full canvas reload: upsert the output cell node,
   // - update the code node's status + the kernel's id, in place. The host already wrote

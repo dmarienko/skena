@@ -245,7 +245,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     <>
       <NodeLabelBadge label={node.nodeLabel} createdBy={(node as { createdBy?: string }).createdBy} />
       <div
-        className="skena-node skena-node--code"
+        className={`skena-node skena-node--code${node.lastStatus === 'running' ? ' skena-node--running' : ''}`}
         style={{
           border:        `${bw}px solid ${borderColor}`,
           height:        '100%',
