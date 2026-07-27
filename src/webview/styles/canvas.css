@@ -204,3 +204,14 @@
 :root[data-md-theme="factors"] .skena-canvas-search input::placeholder { color: #6b7d76 !important; }
 :root[data-md-theme="factors"] .skena-canvas-search svg { stroke: #c7d1cc !important; }
 :root[data-md-theme="factors"] .skena-canvas-search button { color: #c7d1cc !important; }
+
+/* - vim `/` search & `:` command input in the code cell status bar: monaco-vim renders a bare
+   - <input> with no styling → browser-default white. Blend it into the editor theme. */
+.skena-code-vim-status input {
+  background: transparent !important;
+  color: var(--vscode-input-foreground, var(--vscode-foreground, inherit)) !important;
+  border: none !important;
+  outline: none !important;
+  font-family: var(--vscode-editor-font-family, monospace) !important;
+  font-size: inherit !important;
+}
