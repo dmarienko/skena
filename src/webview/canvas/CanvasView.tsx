@@ -1353,10 +1353,20 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     };
 
     const handler = (e: KeyboardEvent) => {
-      // - Ctrl+F or /: open canvas search bar (intercept before input / Monaco checks)
+      // - typing target: while focused in Monaco / an input, the editor owns its keys
+      const active = document.activeElement;
+      const inField =
+        active instanceof HTMLInputElement ||
+        active instanceof HTMLTextAreaElement ||
+        !!active?.closest('.monaco-editor');
+
+      // - Ctrl+F or /: open canvas search bar. But NOT while editing — an editor needs its
+      // - own `/` (vim search) and Ctrl+F (find), else `/` blurs the cell and exits edit mode.
       if (
-        ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === 'f') ||
-        (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === '/')
+        !inField && (
+          ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === 'f') ||
+          (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === '/')
+        )
       ) {
         e.preventDefault();
         setSearchOpen(true);
@@ -1364,12 +1374,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       }
 
       // - don't intercept while user is typing in Monaco, an input, or textarea
-      const active = document.activeElement;
-      if (
-        active instanceof HTMLInputElement ||
-        active instanceof HTMLTextAreaElement ||
-        active?.closest('.monaco-editor')
-      ) return;
+      if (inField) return;
 
       // ── vim marks: consume second key of m{x} / `{x} sequence ──────────────
       if (pendingMarkRef.current !== null) {
