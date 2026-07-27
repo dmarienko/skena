@@ -678,10 +678,14 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
   ): Promise<void> {
     try {
       setSelfSaving(true);
-      const json = JSON.stringify(msg.canvas, null, 2);
+      // - the webview snapshot is nodes/edges only; it does NOT own canvas metadata (aiModel is
+      // - set host-side via pickModel). Keep the host's metadata authoritative, else this
+      // - auto-save clobbers metadata.aiModel back to null and the per-canvas model is lost on reopen.
+      const canvasToWrite = { ...msg.canvas, metadata: document.canvas.metadata };
+      const json = JSON.stringify(canvasToWrite, null, 2);
       setLastWrittenJson(json);
-      await writeCanvas(document.uri.fsPath, msg.canvas);
-      document.updateFromDisk(msg.canvas);
+      await writeCanvas(document.uri.fsPath, canvasToWrite);
+      document.updateFromDisk(canvasToWrite);
     } catch (e) {
       vscode.window.showErrorMessage(`Skena: failed to save canvas: ${e}`);
     } finally {
