@@ -361,6 +361,8 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
                 renderLineHighlight:  'all',  // - show the theme's line-highlight bg/border
                 scrollbar:            { verticalScrollbarSize: 4, horizontalScrollbarSize: 4 },
                 automaticLayout:      true,
+                padding:              { top: 0, bottom: 0 },   // - align top edge with the preview
+                lineDecorationsWidth: 6,
                 // - render suggest / hover / signature popups at a body-level node so the
                 // - node's overflow:hidden doesn't clip them and React Flow's viewport
                 // - transform doesn't push the position:fixed widgets off-screen
@@ -374,7 +376,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
         ) : (
           /* - read-only highlighted preview; ScrollableContent gives the wheel-guard so it
              - actually scrolls (a bare nowheel div doesn't). Double-click (or Enter) to edit. */
-          <ScrollableContent scrollKey={`${id}-code`} className="skena-code-cell-preview" style={{ padding: '4px 0', cursor: 'text' }}>
+          <ScrollableContent scrollKey={`${id}-code`} className="skena-code-cell-preview" style={{ padding: 0, cursor: 'text' }}>
             <div onDoubleClick={() => setEditing(true)} title="Double-click to edit">
               {code.trim()
                 ? <CodeRenderer content={code} language={node.language ?? 'python'} />
