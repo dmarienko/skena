@@ -145,8 +145,15 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
       savedViewState.current = editorInstance.saveViewState();
       setEditing(false);
     };
-    // - click / tab away from the editor → leave edit mode back to the preview
-    editorInstance.onDidBlurEditorText(leaveEdit);
+    // - click / tab away from the editor → leave edit mode back to the preview. BUT a blur
+    // - into the vim command/search prompt (`/`, `?`, `:` — monaco-vim renders it into our
+    // - status bar) is still "editing"; defer so activeElement is the new target, and stay.
+    editorInstance.onDidBlurEditorText(() => {
+      setTimeout(() => {
+        if (vimStatusRef.current && vimStatusRef.current.contains(document.activeElement)) return;
+        leaveEdit();
+      }, 0);
+    });
 
     // - Esc exits edit mode only from vim NORMAL mode (INSERT/VISUAL just return to normal).
     // - Track the mode from the status bar; MutationObserver runs as a microtask so inside
