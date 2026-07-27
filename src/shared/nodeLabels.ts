@@ -10,6 +10,8 @@
  *   I  — image files
  *   L  — link / URL nodes
  *   C  — cell output nodes
+ *   K  — Jupyter kernel nodes
+ *   E  — code cells (editable, run on a kernel)
  *   A  — AI chat / agent nodes
  *   R  — portal references to other canvases
  *   G  — group containers
@@ -28,6 +30,8 @@ export function nodeLabelPrefix(node: CanvasNode): string {
     case 'link':   return 'L';
     case 'group':  return 'G';
     case 'cell':   return 'C';
+    case 'kernel': return 'K';
+    case 'code':   return 'E';
     case 'chat':   return 'A';
     case 'portal': return 'R';
     case 'file': {
