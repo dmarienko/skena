@@ -174,12 +174,16 @@
    - text; --skena-out-fg = the default text colour (ANSI-coloured tokens from jupyter/output.ts
    - override the fg per span). Change the two values here; scoped to output cells only. */
 .skena-node--cell {
-  --skena-out-bg: var(--vscode-editorWidget-background);
-  --skena-out-fg: var(--vscode-foreground);
+  --skena-out-bg: var(--vscode-editor-background);
+  /* --skena-out-fg: var(--vscode-foreground); */
+  --skena-out-fg: #15a0a0;
 }
 /* - two classes beat .skena-node's single-class !important, so this override wins */
 .skena-node--cell.skena-node { background: var(--skena-out-bg) !important; }
-.skena-cell-html { color: var(--skena-out-fg); }
+/* - target the text elements directly (don't rely on colour inheriting through the wrappers) */
+.skena-cell-html,
+.skena-cell-html pre,
+.skena-cell-html .skena-out-stream { color: var(--skena-out-fg) !important; }
 
 .skena-cell-html .skena-out-stream,
 .skena-cell-html pre { font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; white-space: pre-wrap; margin: 2px 0; }
