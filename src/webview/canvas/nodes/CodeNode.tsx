@@ -142,14 +142,21 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     editorInstance.focus();
 
     const leaveEdit = () => {
-      savedViewState.current = editorInstance.saveViewState();
+      // - save cursor+scroll only while the editor is still alive; a disposed editor's
+      // - saveViewState() returns null and would wipe the saved position (reset to line 1)
+      if (editorInstance.getModel()) {
+        const vs = editorInstance.saveViewState();
+        if (vs) savedViewState.current = vs;
+      }
       setEditing(false);
     };
     // - click / tab away from the editor → leave edit mode back to the preview. BUT a blur
     // - into the vim command/search prompt (`/`, `?`, `:` — monaco-vim renders it into our
     // - status bar) is still "editing"; defer so activeElement is the new target, and stay.
+    // - Skip entirely if the editor was already disposed (e.g. Esc-exit already ran leaveEdit).
     editorInstance.onDidBlurEditorText(() => {
       setTimeout(() => {
+        if (!editorInstance.getModel()) return;
         if (vimStatusRef.current && vimStatusRef.current.contains(document.activeElement)) return;
         leaveEdit();
       }, 0);
@@ -228,34 +235,12 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   const isDark = document.body.classList.contains('vscode-dark') ||
                  document.body.classList.contains('vscode-high-contrast');
 
-  // - `skena-code` theme (separate from TextNode's `skena-editor` so neither clobbers the
-  // - other). Editor colours are pulled from the injected VS Code vars, so the user's
-  // - workbench.colorCustomizations (cursor, selection, line numbers, bracket guides…) apply.
   const beforeMount = useCallback<BeforeMount>((monacoInstance) => {
     // - register the kernel-backed completion provider once (idempotent)
     ensureKernelCompletion(monacoInstance);
     const style = getComputedStyle(document.body);
-    const v    = (name: string) => style.getPropertyValue(name).trim();
-    const bg   = v('--vscode-editor-background');
-    const dark = isDark;
-
-    // - map Monaco editor colour ids ← --vscode-* vars (skip any the theme doesn't define)
-    const colors: Record<string, string> = { 'editor.background': bg || (dark ? '#1e1e1e' : '#ffffff') };
-    const use = (id: string, cssVar: string) => { const c = v(cssVar); if (c) colors[id] = c; };
-    use('editorCursor.foreground',                 '--vscode-editorCursor-foreground');
-    use('editor.lineHighlightBackground',          '--vscode-editor-lineHighlightBackground');
-    use('editor.lineHighlightBorder',              '--vscode-editor-lineHighlightBorder');
-    use('editor.selectionBackground',              '--vscode-editor-selectionBackground');
-    use('editor.selectionHighlightBackground',     '--vscode-editor-selectionHighlightBackground');
-    use('editor.inactiveSelectionBackground',      '--vscode-editor-inactiveSelectionBackground');
-    use('editor.wordHighlightBackground',          '--vscode-editor-wordHighlightBackground');
-    use('editor.wordHighlightStrongBackground',    '--vscode-editor-wordHighlightStrongBackground');
-    use('editor.wordHighlightBorder',              '--vscode-editor-wordHighlightBorder');
-    use('editor.wordHighlightStrongBorder',        '--vscode-editor-wordHighlightStrongBorder');
-    use('editorLineNumber.activeForeground',       '--vscode-editorLineNumber-activeForeground');
-    use('editorLineNumber.foreground',             '--vscode-editorLineNumber-foreground');
-    use('editorWidget.border',                     '--vscode-editorWidget-border');
-    for (let i = 1; i <= 6; i++) use(`editorBracketPairGuide.activeBackground${i}`, `--vscode-editorBracketPairGuide-activeBackground${i}`);
+    const bg    = style.getPropertyValue('--vscode-editor-background').trim();
+    const dark  = isDark;
 
     monacoInstance.editor.defineTheme('skena-code', {
       base:    dark ? 'vs-dark' : 'vs',
@@ -265,7 +250,9 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
         { token: 'comment',         foreground: dark ? '6a9955' : '008000', fontStyle: 'italic' },
         { token: 'string',          foreground: dark ? 'ce9178' : 'a31515'                      },
       ],
-      colors,
+      colors: {
+        'editor.background': bg || (dark ? '#1e1e1e' : '#ffffff'),
+      },
     });
   }, [isDark]);
 
