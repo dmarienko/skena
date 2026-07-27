@@ -2091,6 +2091,27 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     return () => window.removeEventListener('skena:runStatus', handler);
   }, [setNodes]);
 
+  // - vim `o` on a code cell → create a chained code cell below at a NON-overlapping spot
+  // - (findFreePosition pushes down past any node already there), same width, edit-ready.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { sourceId } = (e as CustomEvent<{ sourceId: string }>).detail;
+      const src = nodesRef.current.find(n => n.id === sourceId);
+      if (!src) return;
+      const nw = Number(src.style?.width ?? 360);
+      const sh = Number(src.style?.height ?? 200);
+      const { x, y } = findFreePosition(nodesRef.current, src.position.x, src.position.y + sh + 40, nw, 200, 0, 1);
+      const newId = `code-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      const newNode: CanvasNode = { id: newId, type: 'code', code: '', language: 'python', x, y, width: nw, height: 200 };
+      const newEdge: CanvasEdge = { id: `${sourceId}-${newId}-${Date.now()}`, fromNode: sourceId, fromSide: 'bottom', toNode: newId, toSide: 'top', toEnd: 'arrow' };
+      window.dispatchEvent(new CustomEvent('skena:addNodeResult', {
+        detail: { type: 'addNodeResult', node: newNode, edge: newEdge, autoEdit: true } satisfies MsgAddNodeResult,
+      }));
+    };
+    window.addEventListener('skena:addCodeBelow', handler);
+    return () => window.removeEventListener('skena:addCodeBelow', handler);
+  }, []);
+
   // - animate the edges from each running cell to its kernel, derived from lastStatus so it
   // - survives reopen. Cheap when nothing runs (early-return + same-ref no-op).
   useEffect(() => {

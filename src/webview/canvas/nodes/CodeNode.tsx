@@ -10,7 +10,6 @@ import Editor, { BeforeMount, OnMount } from '@monaco-editor/react';
 import type { editor as MonacoEditor } from 'monaco-editor';
 import { initVimMode } from 'monaco-vim';
 import { CodeNode } from '../../../shared/types';
-import type { CanvasNode, CanvasEdge, MsgAddNodeResult } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
 import { DEFAULT_NODE_BORDER_BY_TYPE } from '../palette';
@@ -53,11 +52,11 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     const cs = getComputedStyle(document.body);
     const family = cs.getPropertyValue('--vscode-editor-font-family').trim() || 'monospace';
     const size   = parseInt(cs.getPropertyValue('--vscode-editor-font-size'), 10) || 12;
-    return { family, size };
+    // - explicit px line height (Monaco rounds a <8 multiplier to px; shiki uses the raw
+    // - value → a size mismatch). Use the SAME px for both so preview<->edit don't grow.
+    const lineHeight = Math.round(size * 1.3);
+    return { family, size, lineHeight };
   }, []);
-  // - always-current node geometry for the `o` shortcut (closures would otherwise go stale)
-  const geomRef = useRef({ x: node.x, y: node.y, width: node.width, height: node.height });
-  geomRef.current = { x: node.x, y: node.y, width: node.width, height: node.height };
 
   // - re-sync from an external write (MCP / disk reload) — React Flow keeps this
   // - instance by id, so a changed data.code prop would otherwise leave `code` stale.
@@ -216,24 +215,11 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
         (e.shiftKey && !e.altKey && e.key === 'Enter');
       if (runCombo) { e.preventDefault(); e.stopPropagation(); runRef.current(); return; }
       if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); setEditing(true); return; }
-      // - vim `o`: open a new code cell below, chained to this one (inherits the kernel via
-      // - the edge), same width; focus + edit it immediately
+      // - vim `o`: open a new code cell below, chained to this one. CanvasView computes a
+      // - non-overlapping position (it has the full node list) and creates node + edge.
       if (e.key === 'o' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault(); e.stopPropagation();
-        const g = geomRef.current;
-        const newId = `code-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-        const newNode: CanvasNode = {
-          id: newId, type: 'code', code: '', language: 'python',
-          x: Math.round(g.x), y: Math.round(g.y + g.height + 350),
-          width: g.width, height: 200,
-        };
-        const newEdge: CanvasEdge = {
-          id: `${id}-${newId}-${Date.now()}`,
-          fromNode: id, fromSide: 'bottom', toNode: newId, toSide: 'top', toEnd: 'arrow',
-        };
-        window.dispatchEvent(new CustomEvent('skena:addNodeResult', {
-          detail: { type: 'addNodeResult', node: newNode, edge: newEdge, autoEdit: true } satisfies MsgAddNodeResult,
-        }));
+        window.dispatchEvent(new CustomEvent('skena:addCodeBelow', { detail: { sourceId: id } }));
       }
     };
     window.addEventListener('keydown', onKey, { capture: true });
@@ -301,6 +287,8 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
           borderRadius:  6,
           overflow:      'hidden',
           background:    'var(--vscode-editorWidget-background)',
+          // - shared line height for the shiki preview (matches the Monaco editor exactly)
+          ['--skena-code-lh' as string]: `${editorFont.lineHeight}px`,
           ...selectedStyle,
         }}
       >
@@ -350,7 +338,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
                 lineNumbersMinChars:  3,
                 fontFamily:           editorFont.family,
                 fontSize:             editorFont.size,
-                lineHeight:           1.3,   // - < 8 → multiplier of fontSize (matches VS Code editor.lineHeight)
+                lineHeight:           editorFont.lineHeight,   // - explicit px so it matches the shiki preview exactly
                 autoIndent:           'full',  // - keep indentation + indent after `:` on Enter
                 tabSize:              4,
                 insertSpaces:         true,
