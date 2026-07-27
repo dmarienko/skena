@@ -4,7 +4,7 @@
  * Run is disabled until the cell is connected to a kernel node (see kernelBinding).
  */
 
-import React, { useCallback, useState, useEffect, useRef, memo } from 'react';
+import React, { useCallback, useState, useEffect, useRef, useMemo, memo } from 'react';
 import { NodeProps, Handle, Position, NodeResizer, useStore } from '@xyflow/react';
 import Editor, { BeforeMount, OnMount } from '@monaco-editor/react';
 import type { editor as MonacoEditor } from 'monaco-editor';
@@ -47,6 +47,14 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   const borderColor = node.accentColor ?? DEFAULT_NODE_BORDER_BY_TYPE.code;
   const [code, setCode] = useState(node.code ?? '');
   const [editing, setEditing] = useState(false);
+  // - use the VS Code editor font (family + size) so the Monaco editor matches the shiki
+  // - preview. These vars ARE injected into webviews (unlike the editor colour vars).
+  const editorFont = useMemo(() => {
+    const cs = getComputedStyle(document.body);
+    const family = cs.getPropertyValue('--vscode-editor-font-family').trim() || 'monospace';
+    const size   = parseInt(cs.getPropertyValue('--vscode-editor-font-size'), 10) || 12;
+    return { family, size };
+  }, []);
   // - always-current node geometry for the `o` shortcut (closures would otherwise go stale)
   const geomRef = useRef({ x: node.x, y: node.y, width: node.width, height: node.height });
   geomRef.current = { x: node.x, y: node.y, width: node.width, height: node.height };
@@ -340,13 +348,17 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
                 minimap:              { enabled: false },
                 lineNumbers:          'relative',
                 lineNumbersMinChars:  3,
-                fontFamily:           'var(--vscode-editor-font-family, monospace)',
-                fontSize:             12,
+                fontFamily:           editorFont.family,
+                fontSize:             editorFont.size,
+                lineHeight:           1.3,   // - < 8 → multiplier of fontSize (matches VS Code editor.lineHeight)
+                autoIndent:           'full',  // - keep indentation + indent after `:` on Enter
+                tabSize:              4,
+                insertSpaces:         true,
                 scrollBeyondLastLine: false,
                 folding:              false,
                 glyphMargin:          false,
                 overviewRulerLanes:   0,
-                renderLineHighlight:  'none',
+                renderLineHighlight:  'all',  // - show the theme's line-highlight bg/border
                 scrollbar:            { verticalScrollbarSize: 4, horizontalScrollbarSize: 4 },
                 automaticLayout:      true,
                 // - render suggest / hover / signature popups at a body-level node so the
