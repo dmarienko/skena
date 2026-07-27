@@ -27,7 +27,7 @@ export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
     <>
     <NodeLabelBadge label={node.nodeLabel} createdBy={(node as any).createdBy} />
     <div
-      className="skena-node"
+      className="skena-node skena-node--cell"
       style={{
         border:        `${bw}px solid ${borderColor}`,
         height:        '100%',

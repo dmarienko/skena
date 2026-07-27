@@ -170,6 +170,17 @@
 .skena-magic { color: #c586c0 !important; font-style: italic; }
 
 /* - stacked cell-run outputs (multiple images/prints/tables in one output node) */
+/* - OUTPUT-CELL COLOURS — the two knobs to play with. --skena-out-bg = the card behind the printed
+   - text; --skena-out-fg = the default text colour (ANSI-coloured tokens from jupyter/output.ts
+   - override the fg per span). Change the two values here; scoped to output cells only. */
+.skena-node--cell {
+  --skena-out-bg: var(--vscode-editorWidget-background);
+  --skena-out-fg: var(--vscode-foreground);
+}
+/* - two classes beat .skena-node's single-class !important, so this override wins */
+.skena-node--cell.skena-node { background: var(--skena-out-bg) !important; }
+.skena-cell-html { color: var(--skena-out-fg); }
+
 .skena-cell-html .skena-out-stream,
 .skena-cell-html pre { font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; white-space: pre-wrap; margin: 2px 0; }
 .skena-cell-html .skena-out-error { color: #e5707a; }
