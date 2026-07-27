@@ -17,6 +17,7 @@ import { DEFAULT_NODE_BORDER_BY_TYPE } from '../palette';
 import { resolveBoundKernel } from '../../../shared/kernelBinding';
 import { CodeRenderer } from '../../renderers/CodeRenderer';
 import { ScrollableContent } from '../../components/ScrollableContent';
+import { applyVimClipboard, patchVimNewlineAndIndent } from './TextNode';
 import { ensureKernelCompletion, setActiveCodeCell } from './kernelCompletion';
 
 function vscodePostMessage(msg: unknown) {
@@ -84,8 +85,12 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   const magicDecoRef = useRef<string[]>([]);
   const onEditorMount = useCallback<OnMount>((editorInstance, monacoInstance) => {
     editorRef.current = editorInstance;
-    // - the focused cell is the completion target (provider is global per Monaco)
-    editorInstance.onDidFocusEditorText(() => setActiveCodeCell(id));
+    // - the focused cell is the completion target (provider is global per Monaco); also refresh
+    // - the clipboard cache from the host so vim `p` / Ctrl+V paste the current system clipboard
+    editorInstance.onDidFocusEditorText(() => {
+      setActiveCodeCell(id);
+      vscodePostMessage({ type: 'requestClipboardRead' });
+    });
 
     // - colour IPython magic / shell lines (%, %%, !) distinctly — they aren't valid
     // - Python so the python grammar mis-tokenises them; decorate the magic token.
@@ -128,6 +133,11 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     });
     // - vim mode (same editor experience as text nodes); status bar shows the mode
     initVimMode(editorInstance, vimStatusRef.current ?? undefined);
+    // - wire vim y/p to the host clipboard relay (webview sandbox blocks navigator.clipboard);
+    // - MUST run after initVimMode (which can recreate the register controller). Also patch
+    // - vim o/O newline. Both operate on monaco-vim's global singleton.
+    applyVimClipboard();
+    patchVimNewlineAndIndent();
     if (savedViewState.current) editorInstance.restoreViewState(savedViewState.current);
     editorInstance.focus();
 

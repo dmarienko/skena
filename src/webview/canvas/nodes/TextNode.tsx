@@ -159,7 +159,7 @@ const sysReg: VimRegisterLike = {
  * re-exports cm_adapter), so VimMode.commands is the static commands table.
  * Patching it once here is global and persists across editor mounts.
  */
-function patchVimNewlineAndIndent(): void {
+export function patchVimNewlineAndIndent(): void {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const CM = VimMode as any;
   if (!CM?.commands) return;
@@ -184,7 +184,7 @@ function patchVimNewlineAndIndent(): void {
  * MUST be called after initVimMode() — the Vim singleton is not available until then.
  * Safe to call on every editor mount (handles re-registration and re-replacement).
  */
-function applyVimClipboard(): void {
+export function applyVimClipboard(): void {
   const Vim = getVimSingleton();
   if (!Vim) return;
 
