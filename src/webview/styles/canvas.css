@@ -192,11 +192,15 @@
   to { background-position: 12px 0, -12px 100%, 0 -12px, 100% 12px; }
 }
 
-/* - canvas search bar follows the factors dark aesthetic (else it uses VS Code theme vars,
-   - which go white on a light VS Code theme against the dark factors canvas) */
-:root[data-md-theme="factors"] .skena-canvas-search {
+/* - canvas search bar: force the dark skena aesthetic (its VS Code theme vars go white on a
+   - light VS Code theme, clashing with the dark canvas). Cover input text, placeholder + icons
+   - too, else those stay VS-Code-themed (dark text → invisible on the dark bar). */
+.skena-canvas-search {
   background: #0f161d !important;
   border-color: #2b3b48 !important;
   color: #c7d1cc !important;
 }
-:root[data-md-theme="factors"] .skena-canvas-search input { color: #c7d1cc !important; }
+.skena-canvas-search input { color: #c7d1cc !important; }
+.skena-canvas-search input::placeholder { color: #6b7d76 !important; }
+.skena-canvas-search svg { stroke: #c7d1cc !important; }
+.skena-canvas-search button { color: #c7d1cc !important; }
