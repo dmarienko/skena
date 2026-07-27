@@ -236,14 +236,31 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     const bg    = style.getPropertyValue('--vscode-editor-background').trim();
     const dark  = isDark;
 
+    // - match the shiki preview: when the factors markdown theme is active, colour the editor
+    // - tokens with the same factors palette (teal keywords / amber strings / …) so preview
+    // - and edit look like the same theme. Otherwise a VS-Code-Dark+-ish default.
+    const factors = document.documentElement.dataset.mdTheme === 'factors';
+    const rules = factors
+      ? [
+          { token: 'comment',    foreground: '56635d', fontStyle: 'italic' },
+          { token: 'keyword',    foreground: '4cc8a0' },
+          { token: 'string',     foreground: 'd9a23f' },
+          { token: 'number',     foreground: 'e5707a' },
+          { token: 'type',       foreground: '4cc8a0' },
+          { token: 'identifier', foreground: 'c7d1cc' },
+          { token: 'operator',   foreground: '7c8a84' },
+          { token: 'delimiter',  foreground: '7c8a84' },
+        ]
+      : [
+          { token: 'keyword',    foreground: dark ? '569cd6' : '0070c1'                      },
+          { token: 'comment',    foreground: dark ? '6a9955' : '008000', fontStyle: 'italic' },
+          { token: 'string',     foreground: dark ? 'ce9178' : 'a31515'                      },
+        ];
+
     monacoInstance.editor.defineTheme('skena-code', {
       base:    dark ? 'vs-dark' : 'vs',
       inherit: true,
-      rules: [
-        { token: 'keyword',         foreground: dark ? '569cd6' : '0070c1'                      },
-        { token: 'comment',         foreground: dark ? '6a9955' : '008000', fontStyle: 'italic' },
-        { token: 'string',          foreground: dark ? 'ce9178' : 'a31515'                      },
-      ],
+      rules,
       // - VS Code doesn't inject editor colours as CSS vars into webviews, so bake the palette
       // - here. Not dynamic — edit these to retune the code cell editor look.
       colors: {
