@@ -38,7 +38,7 @@ import { ensureLabels, assignLabel } from './nodeLabels';
 import { ZoomLevelProvider } from '../context/ZoomLevelContext';
 import { HeatmapProvider } from '../context/HeatmapContext';
 
-import { DEFAULT_EDGE_COLOR, nextKernelColorIndex } from './palette';
+import { DEFAULT_EDGE_COLOR, DEFAULT_NODE_BORDER_BY_TYPE, nextKernelColorIndex } from './palette';
 import { FileNodeComponent }  from './nodes/FileNode';
 import { TextNodeComponent }  from './nodes/TextNode';
 import { GroupNodeComponent } from './nodes/GroupNode';
@@ -2116,12 +2116,30 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   // - survives reopen. Cheap when nothing runs (early-return + same-ref no-op).
   useEffect(() => {
     const want = runningPathEdgeIds(nodes, edges);
+    // - an edge touching a code node takes that code node's border colour (its accent override,
+    // - else the code default) so kernel<->cell<->output links read as one group with the cells.
+    const typeById   = new Map(nodes.map(n => [n.id, n.type as string | undefined]));
+    const accentById = new Map(nodes.map(n => [n.id, (n.data as { accentColor?: string } | undefined)?.accentColor]));
+    const codeStroke = (ed: Edge): string | undefined => {
+      const codeId = typeById.get(ed.source) === 'code' ? ed.source
+                   : typeById.get(ed.target) === 'code' ? ed.target
+                   : undefined;
+      return codeId ? (accentById.get(codeId) ?? DEFAULT_NODE_BORDER_BY_TYPE.code) : undefined;
+    };
     setEdges(eds => {
       let changed = false;
       const next = eds.map(ed => {
-        const a = want.has(ed.id);
-        if (!!ed.animated !== a) { changed = true; return { ...ed, animated: a }; }
-        return ed;
+        const a         = want.has(ed.id);
+        const stroke    = codeStroke(ed);
+        const curStroke = (ed.style as { stroke?: string } | undefined)?.stroke;
+        const needStroke = stroke !== undefined && curStroke !== stroke;
+        if (!!ed.animated === a && !needStroke) return ed;
+        changed = true;
+        const style = needStroke ? { ...ed.style, stroke } : ed.style;
+        const markerEnd = needStroke && ed.markerEnd && typeof ed.markerEnd === 'object'
+          ? { ...ed.markerEnd, color: stroke }
+          : ed.markerEnd;
+        return { ...ed, animated: a, style, markerEnd };
       });
       return changed ? next : eds;
     });
