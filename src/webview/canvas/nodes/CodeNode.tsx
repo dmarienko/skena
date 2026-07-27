@@ -365,6 +365,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
                 lineNumbersMinChars:  3,
                 fontFamily:           editorFont.family,
                 fontSize:             editorFont.size,
+                fontLigatures:        true,   // - Monaco defaults OFF; enable so ligature/Nerd-Font glyphs match the preview
                 lineHeight:           editorFont.lineHeight,   // - explicit px so it matches the shiki preview exactly
                 autoIndent:           'full',  // - keep indentation + indent after `:` on Enter
                 tabSize:              4,
