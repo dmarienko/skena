@@ -191,6 +191,12 @@
 .skena-cell-html .skena-out-note  { opacity: 0.6; font-style: italic; }
 .skena-cell-html img { max-width: 100%; }
 
+/* - ipywidgets subset (tqdm.notebook etc.) rendered as a static HTML snapshot per run frame */
+.skena-cell-html .skena-w-progress { position: relative; height: 12px; min-width: 120px; flex: 1; border-radius: 6px; background: var(--vscode-editorWidget-border, #333); overflow: hidden; }
+.skena-cell-html .skena-w-progress-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 6px; transition: width 0.1s linear; }
+.skena-cell-html .skena-w-label { font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; white-space: nowrap; }
+.skena-cell-html .skena-w-unsupported { opacity: 0.6; font-style: italic; font-size: 11px; }
+
 /* - running code cell: marching-ants border matching the animated run edge */
 .skena-node--running { position: relative; }
 .skena-node--running::after {

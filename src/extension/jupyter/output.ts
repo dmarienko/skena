@@ -1,5 +1,6 @@
 import type { CollectedOutput } from './protocol';
 import { renderStream } from './protocol';
+import { renderWidget } from './widgets';
 
 export type OutputFormat = 'markdown' | 'image' | 'html' | 'plotly';
 
@@ -83,6 +84,11 @@ export function renderOutput(out: CollectedOutput): { format: OutputFormat; cont
       parts.push(`<div>${r.data}</div>`);
     } else if (r.mime === 'application/vnd.plotly.v1+json') {
       parts.push('<pre class="skena-out-note">[plotly figure — one interactive figure per cell run renders inline; multiple are listed only]</pre>');
+    } else if (r.mime === 'application/vnd.jupyter.widget-view+json') {
+      let modelId = '';
+      try { modelId = String((JSON.parse(r.data) as { model_id?: string }).model_id ?? ''); } catch { /* ignore */ }
+      const html = modelId ? renderWidget(modelId, out.widgets) : '';
+      parts.push(html || '<pre class="skena-out-note">[widget]</pre>');
     } else {
       parts.push(`<pre>${ansiToHtml(r.data)}</pre>`);
     }
