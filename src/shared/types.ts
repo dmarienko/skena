@@ -492,7 +492,7 @@ export interface MsgKernelStatus { type: 'kernelStatus'; kernels: KernelStatusEn
 export interface MsgRunOutput {
   type:         'runOutput';
   codeNodeId:   string;
-  lastStatus:   'ok' | 'error';
+  lastStatus:   'ok' | 'error' | 'running';   // - 'running' = a mid-run live delta (UI-only, not persisted)
   kernelNodeId: string;
   kernelId?:    string;
   outputNode?:  CellNode;    // - present when the run produced output (upsert by id)

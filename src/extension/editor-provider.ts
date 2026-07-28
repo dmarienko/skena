@@ -1147,6 +1147,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const applyAndPersist = async (
       status: 'ok' | 'error',
       output: { format: 'markdown' | 'image' | 'html' | 'plotly'; content: string } | null,
+      presetId?: string,
     ): Promise<{ outputNode?: CellNode; edge?: CanvasEdge }> => {
       const c  = document.canvas;
       const cn = c.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code') as CodeNode | undefined;
@@ -1167,7 +1168,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           existing.content = output.content;
           outputNode = existing;
         } else {
-          const id = `ai-${Date.now().toString(36)}`;
+          const id = presetId ?? `ai-${Date.now().toString(36)}`;
           const cellBase: CellNode = {
             id, type: 'cell',
             x: cn.x + cn.width + 140, y: cn.y, width: 480, height: 320,
@@ -1198,10 +1199,41 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
 
     const ids = { msgId: randomUUID(), session: randomUUID(), date: new Date().toISOString() };
 
+    // - live output: stream partial results to the webview (UI-only, no disk write) so tqdm bars
+    // - and long prints animate. The output node id is generated once here and reused by the final
+    // - applyAndPersist so the persisted node matches what the webview already shows.
+    let liveOutputId: string | undefined;
+    let latest: CollectedOutput | null = null;
+    let deltaTimer: ReturnType<typeof setTimeout> | null = null;
+    const flushDelta = () => {
+      deltaTimer = null;
+      if (!latest) return;
+      const hasOut = latest.rich.length > 0 || latest.streamText.length > 0 || Object.keys(latest.widgets).length > 0;
+      if (!hasOut) return;
+      const cn = document.canvas.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code') as CodeNode | undefined;
+      if (!cn) return;
+      if (!liveOutputId) liveOutputId = `ai-${Date.now().toString(36)}`;
+      const { format, content } = renderOutput(latest);
+      const outputNode: CellNode = {
+        id: liveOutputId, type: 'cell',
+        x: cn.x + cn.width + 140, y: cn.y, width: 480, height: 320,
+        format, content, createdBy: 'ai',
+      };
+      const edge: CanvasEdge = { id: `e-${liveOutputId}`, fromNode: cn.id, fromSide: 'right', toNode: liveOutputId, toSide: 'left', toEnd: 'arrow' };
+      try {
+        send({ type: 'runOutput', codeNodeId: codeNode.id, lastStatus: 'running', kernelNodeId: kernelNode.id, kernelId, outputNode, edge });
+      } catch { /* - webview disposed mid-run; disk write at completion still happens */ }
+    };
+    const onDelta = (partial: CollectedOutput) => {
+      latest = partial;
+      if (!deltaTimer) deltaTimer = setTimeout(flushDelta, 120);   // - coalesce high-frequency frames
+    };
+
     let out: CollectedOutput;
     try {
-      out = await manager.run(server, kernelId, msg.code, ids);
+      out = await manager.run(server, kernelId, msg.code, ids, onDelta);
     } catch (e) {
+      if (deltaTimer) { clearTimeout(deltaTimer); deltaTimer = null; }
       try {
         await applyAndPersist('error', null);
         send({ type: 'runOutput', codeNodeId: codeNode.id, lastStatus: 'error', kernelNodeId: kernelNode.id, kernelId });
@@ -1209,6 +1241,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       fail(`execution failed: ${e instanceof Error ? e.message : String(e)}`);
       return;
     }
+    if (deltaTimer) { clearTimeout(deltaTimer); deltaTimer = null; }
 
     // - collapse ALL outputs (stream + every rich mime, in order) into one cell payload
     const { format, content } = renderOutput(out);
@@ -1217,7 +1250,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const hasOutput = out.rich.length > 0 || out.streamText.length > 0 || !!out.error;
     const status: 'ok' | 'error' = out.status === 'error' ? 'error' : 'ok';
     try {
-      const { outputNode, edge } = await applyAndPersist(status, hasOutput ? { format, content } : null);
+      const { outputNode, edge } = await applyAndPersist(status, hasOutput ? { format, content } : null, liveOutputId);
       // - targeted update: webview mirrors the output node without a full reload
       send({ type: 'runOutput', codeNodeId: codeNode.id, lastStatus: status, kernelNodeId: kernelNode.id, kernelId, outputNode, edge });
     } catch (e) {
