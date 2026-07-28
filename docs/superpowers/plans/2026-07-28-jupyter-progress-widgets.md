@@ -291,7 +291,7 @@ git commit -m "feat(jupyter): parse comm_open/comm_msg/comm_close ipywidgets fra
 - Modify: `src/extension/jupyter/protocol.ts` (`CollectedOutput`, `RICH_MIMES`, `collectOutputs`)
 - Test: `test/jupyter-widget-registry.mjs`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `test/jupyter-widget-registry.mjs`:
 ```js
@@ -336,12 +336,12 @@ test('widget-view mime is captured as rich output', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test, verify it fails**
+- [x] **Step 2: Run the test, verify it fails**
 
 Run: `npx esbuild src/extension/jupyter/protocol.ts --bundle --format=esm --outfile=test/.build/jupyter-widget-registry.mjs && node --test test/jupyter-widget-registry.mjs`
 Expected: FAIL — `out.widgets` undefined; widget-view mime not preferred.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `src/extension/jupyter/protocol.ts`:
 
@@ -401,12 +401,12 @@ export function collectOutputs(replies: unknown[], ourMsgId: string): CollectedO
 }
 ```
 
-- [ ] **Step 4: Run the test, verify it passes**
+- [x] **Step 4: Run the test, verify it passes**
 
 Run: `npx esbuild src/extension/jupyter/protocol.ts --bundle --format=esm --outfile=test/.build/jupyter-widget-registry.mjs && node --test test/jupyter-widget-registry.mjs`
 Expected: PASS (3 tests). Also re-run Task 2's test — `renderOutput` now needs `widgets` on its input; the Task 2 test already passes `widgets: {}`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/extension/jupyter/protocol.ts
