@@ -12,7 +12,7 @@ export interface ExecuteRequest {
   channel:       'shell';
 }
 
-export type ReplyKind = 'stream' | 'result' | 'display' | 'error' | 'status' | 'other';
+export type ReplyKind = 'stream' | 'result' | 'display' | 'error' | 'status' | 'comm' | 'other';
 
 export interface ParsedReply {
   parentMsgId:    string | null;
@@ -21,6 +21,7 @@ export interface ParsedReply {
   data?:          Record<string, unknown>;
   executionState?: string;
   error?:         string;
+  comm?:          { id: string; sub: 'open' | 'msg' | 'close'; modelName?: string; state?: Record<string, unknown> };
 }
 
 export interface CollectedOutput {
@@ -143,6 +144,18 @@ export function parseReply(raw: unknown): ParsedReply {
     }
     case 'status':
       return { parentMsgId, kind: 'status', executionState: content.execution_state };
+    case 'comm_open': {
+      const d = (content.data ?? {}) as Record<string, any>;
+      const state = (d.state ?? {}) as Record<string, unknown>;
+      return { parentMsgId, kind: 'comm', comm: { id: content.comm_id, sub: 'open', modelName: state._model_name as string | undefined, state } };
+    }
+    case 'comm_msg': {
+      const d = (content.data ?? {}) as Record<string, any>;
+      const state = (d.method === 'update' && d.state) ? d.state as Record<string, unknown> : {};
+      return { parentMsgId, kind: 'comm', comm: { id: content.comm_id, sub: 'msg', state } };
+    }
+    case 'comm_close':
+      return { parentMsgId, kind: 'comm', comm: { id: content.comm_id, sub: 'close' } };
     default:
       return { parentMsgId, kind: 'other' };
   }
