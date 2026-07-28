@@ -705,6 +705,12 @@ async function canvasRunCell(args: Record<string, unknown>): Promise<string> {
     if (!server) return `error: unknown server ${kernelNode.server}`;
     if (!kernelNode.kernelId) return 'error: kernel node has no live kernelId (open the canvas so Skena starts it)';
 
+    // - mark the cell running BEFORE the (blocking) execute + persist it, so the host's file-watcher
+    // - soft-reloads and shows the running stripe (the marching-ants border + run edge are DERIVED
+    // - from lastStatus). Without this an agent run showed no progress until it finished.
+    cell.lastStatus = 'running';
+    await writeCanvas(p, d);
+
     const ids = { msgId: crypto.randomUUID(), session: crypto.randomUUID(), date: new Date().toISOString() };
     const out = await executeCell(server, kernelNode.kernelId, cell.code, ids);
 
