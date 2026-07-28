@@ -163,6 +163,43 @@ function pickRich(data: Record<string, unknown>): { mime: string; data: string }
   return null;
 }
 
+// - overwrite `line` starting at `col` with `s`, padding with spaces if col is past the end
+function overwriteAt(line: string, col: number, s: string): string {
+  const padded = col > line.length ? line + ' '.repeat(col - line.length) : line;
+  return padded.slice(0, col) + s + padded.slice(col + s.length);
+}
+
+// - collapse terminal control in stream text to what a terminal would display: \r rewinds to
+// - column 0 (overwrite), \n commits a line, ESC[nA / ESC[nB move the cursor up/down. tqdm's
+// - console bar redraws with \r each update; without this every frame is appended.
+// - SGR colour escapes (ESC[…m) are left in place for the later ansiToHtml pass and, being
+// - zero-width, are treated as occupying columns — fine for the default monochrome bar; a
+// - `colour=`d bar can misalign slightly (known limitation).
+export function renderStream(text: string): string {
+  const lines: string[] = [''];
+  let row = 0;
+  let col = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '\x1b' && text[i + 1] === '[') {
+      let j = i + 2;
+      let num = '';
+      while (j < text.length && text[j] >= '0' && text[j] <= '9') { num += text[j]; j++; }
+      const cmd = text[j];
+      const n = parseInt(num || '1', 10);
+      if (cmd === 'A') { row = Math.max(0, row - n); col = 0; i = j; continue; }
+      if (cmd === 'B') { row += n; while (lines.length <= row) lines.push(''); col = 0; i = j; continue; }
+      // - any other CSI (colour, etc.): copy verbatim, advance the cursor by its length
+      const seq = text.slice(i, j + 1);
+      lines[row] = overwriteAt(lines[row], col, seq); col += seq.length; i = j; continue;
+    }
+    if (ch === '\r') { col = 0; continue; }
+    if (ch === '\n') { row++; col = 0; while (lines.length <= row) lines.push(''); continue; }
+    lines[row] = overwriteAt(lines[row], col, ch); col++;
+  }
+  return lines.join('\n');
+}
+
 export function collectOutputs(replies: unknown[], ourMsgId: string): CollectedOutput {
   let streamText = '';
   const rich: { mime: string; data: string }[] = [];
