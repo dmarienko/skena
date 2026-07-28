@@ -2157,19 +2157,22 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         let next = nds.map(n => {
           if (n.id === d.codeNodeId) return { ...n, data: { ...n.data, lastStatus: d.lastStatus, ...(out ? { outputNodeId: out.id } : {}) } };
           if (d.kernelId && n.id === d.kernelNodeId) return { ...n, data: { ...n.data, kernelId: d.kernelId } };
-          if (out && n.id === out.id) return { ...n, data: { ...n.data, format: out.format, content: out.content } };
+          if (out && n.id === out.id) return { ...n, data: { ...n.data, format: out.format, content: out.content, ...(out.nodeLabel ? { nodeLabel: out.nodeLabel } : {}) } };
           return n;
         });
         if (out && !nds.some(n => n.id === out.id)) next = [...next, { ...toFlowNode(out), selected: false }];
         return next;
       });
       if (d.edge) setEdges(eds => eds.some(x => x.id === d.edge!.id) ? eds : [...eds, toFlowEdge(d.edge!)]);
-      const cr = canvasRef.current;
+      // - the canvasRef mirror is what a later scheduleSave() serialises to disk. Only reconcile it on
+      // - a terminal status; 'running' deltas are UI-only (the host persists once at completion), so a
+      // - concurrent save can't leak a mid-run partial to disk.
+      const cr = d.lastStatus === 'running' ? null : canvasRef.current;
       if (cr) {
         let nodes = cr.nodes.map(n => {
           if (n.id === d.codeNodeId) return { ...n, lastStatus: d.lastStatus, ...(out ? { outputNodeId: out.id } : {}) } as CanvasNode;
           if (d.kernelId && n.id === d.kernelNodeId) return { ...n, kernelId: d.kernelId } as CanvasNode;
-          if (out && n.id === out.id) return { ...n, format: out.format, content: out.content } as CanvasNode;
+          if (out && n.id === out.id) return { ...n, format: out.format, content: out.content, ...(out.nodeLabel ? { nodeLabel: out.nodeLabel } : {}) } as CanvasNode;
           return n;
         });
         if (out && !cr.nodes.some(n => n.id === out.id)) nodes = [...nodes, out];
