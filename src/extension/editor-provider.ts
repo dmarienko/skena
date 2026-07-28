@@ -1205,9 +1205,13 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     let liveOutputId: string | undefined;
     let latest: CollectedOutput | null = null;
     let deltaTimer: ReturnType<typeof setTimeout> | null = null;
+    // - once the run reports its final status, no delta may fire again. clearTimeout can't cancel
+    // - a 120ms timer that has ALREADY fired (its callback is queued); such a stray flush could
+    // - otherwise send a 'running' after the final 'ok' and leave the cell stuck showing running.
+    let finished = false;
     const flushDelta = () => {
       deltaTimer = null;
-      if (!latest) return;
+      if (finished || !latest) return;
       const hasOut = latest.rich.length > 0 || latest.streamText.length > 0 || Object.keys(latest.widgets).length > 0;
       if (!hasOut) return;
       const cn = document.canvas.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code') as CodeNode | undefined;
@@ -1235,6 +1239,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     try {
       out = await manager.run(server, kernelId, msg.code, ids, onDelta);
     } catch (e) {
+      finished = true;
       if (deltaTimer) { clearTimeout(deltaTimer); deltaTimer = null; }
       try {
         await applyAndPersist('error', null);
@@ -1243,6 +1248,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       fail(`execution failed: ${e instanceof Error ? e.message : String(e)}`);
       return;
     }
+    finished = true;
     if (deltaTimer) { clearTimeout(deltaTimer); deltaTimer = null; }
 
     // - collapse ALL outputs (stream + every rich mime, in order) into one cell payload
