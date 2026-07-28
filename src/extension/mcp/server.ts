@@ -794,6 +794,19 @@ async function canvasRunCell(args: Record<string, unknown>): Promise<string> {
     cell.lastRun    = Date.now();
     await writeCanvas(p, d);
 
+    // - deterministic final frame: update the node + clear the running stripe via the relay directly,
+    // - so the result doesn't depend on the (racy) soft-reload of the disk write above landing/winning.
+    if (ipc) {
+      const message = hasOutput
+        ? { type: 'runOutput', codeNodeId: cell.id, lastStatus: cell.lastStatus, kernelNodeId: kernel.id, kernelId, outputNode: { id: outId, type: 'cell', format, content, ...outGeom, createdBy: 'ai' }, edge: outEdge }
+        : { type: 'runOutput', codeNodeId: cell.id, lastStatus: cell.lastStatus, kernelNodeId: kernel.id, kernelId };
+      void fetch(`http://127.0.0.1:${ipc.port}/delta`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-skena-token': ipc.token },
+        body: JSON.stringify({ canvasPath: p, message }),
+      }).catch(() => { /* - best-effort */ });
+    }
+
     return `ran ${cell.nodeLabel ?? cell.id} on ${kernelNode.server} → ${outLabel}: ${out.status}` +
       `${out.error ? ' — ' + out.error : ''}\n${out.streamText.slice(0, 500)}`;
   }); // - withFileLock

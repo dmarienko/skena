@@ -489,9 +489,14 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       if (focusId) {
         if (canvas.viewport) {
           // - viewport already restored above; just reselect WITHOUT recentering, so an
-          // - external reload (e.g. a cell-run output write) doesn't pan the canvas / steal focus
-          setNodes(nds => nds.map(n => ({ ...n, selected: n.id === focusId })));
-          window.dispatchEvent(new CustomEvent('skena:focusNode', { detail: { id: focusId } }));
+          // - external reload (e.g. a cell-run output write) doesn't pan the canvas / steal focus.
+          // - Skip entirely when the target is ALREADY the selected node — otherwise every
+          // - output-write reload re-selects + re-focuses it and the ring visibly blinks.
+          const already = nodesRef.current.find(n => n.id === focusId)?.selected === true;
+          if (!already) {
+            setNodes(nds => nds.map(n => ({ ...n, selected: n.id === focusId })));
+            window.dispatchEvent(new CustomEvent('skena:focusNode', { detail: { id: focusId } }));
+          }
         } else {
           focusNodeById(focusId);
         }

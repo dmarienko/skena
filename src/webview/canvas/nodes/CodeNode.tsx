@@ -16,7 +16,7 @@ import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './n
 import { DEFAULT_NODE_BORDER_BY_TYPE } from '../palette';
 import { resolveBoundKernel } from '../../../shared/kernelBinding';
 import { CodeRenderer } from '../../renderers/CodeRenderer';
-import { ScrollableContent } from '../../components/ScrollableContent';
+import { ScrollableContent, setScrollPosition } from '../../components/ScrollableContent';
 import { applyVimClipboard, patchVimNewlineAndIndent } from './TextNode';
 import { ensureKernelCompletion, setActiveCodeCell } from './kernelCompletion';
 
@@ -192,6 +192,9 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
       if (editorInstance.getModel()) {
         const vs = editorInstance.saveViewState();
         if (vs) savedViewState.current = vs;
+        // - hand the editor's scroll offset to the preview so it keeps the same visible frame
+        // - (shiki preview shares the editor font + line-height, so scrollTop maps 1:1)
+        setScrollPosition(`${id}-code`, editorInstance.getScrollTop());
       }
       setEditing(false);
     };

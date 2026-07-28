@@ -62,6 +62,13 @@ interface ScrollableContentProps {
 // - module-level scroll cache — survives component remounts within a session
 const scrollPositions = new Map<string, number>();
 
+// - seed a scroll position for a key so the NEXT mount of that ScrollableContent restores to it.
+// - used to hand the Monaco editor's scroll offset to the shiki preview on edit→preview (same
+// - font + line-height, so the pixel offset maps 1:1 and the preview keeps the visible frame).
+export function setScrollPosition(key: string, top: number): void {
+  scrollPositions.set(key, top);
+}
+
 // ─── localStorage persistence ─────────────────────────────────────────────────
 
 const LS_KEY = 'skena:scrollPositions';
