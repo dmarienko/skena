@@ -24,12 +24,15 @@ export interface ParsedReply {
   comm?:          { id: string; sub: 'open' | 'msg' | 'close'; modelName?: string; state?: Record<string, unknown> };
 }
 
+export interface WidgetModel { modelName: string; state: Record<string, unknown> }
+
 export interface CollectedOutput {
   streamText: string;
   rich:       { mime: string; data: string }[];
   status:     'ok' | 'error' | 'running';
   error?:     string;
   done:       boolean;
+  widgets:    Record<string, WidgetModel>;
 }
 
 export function buildExecuteRequest(code: string, ids: ExecuteIds): ExecuteRequest {
@@ -164,7 +167,7 @@ export function parseReply(raw: unknown): ParsedReply {
 // - preference order when picking a single rich mime from a data bundle.
 // - plotly first: it also emits a text/html fallback whose <script> can't run in the
 // - sandboxed webview, so route the figure JSON to the plotly renderer instead.
-const RICH_MIMES = ['application/vnd.plotly.v1+json', 'image/png', 'image/jpeg', 'text/html', 'application/json', 'text/plain'];
+const RICH_MIMES = ['application/vnd.plotly.v1+json', 'application/vnd.jupyter.widget-view+json', 'image/png', 'image/jpeg', 'text/html', 'application/json', 'text/plain'];
 
 function pickRich(data: Record<string, unknown>): { mime: string; data: string } | null {
   for (const mime of RICH_MIMES) {
@@ -216,12 +219,21 @@ export function renderStream(text: string): string {
 export function collectOutputs(replies: unknown[], ourMsgId: string): CollectedOutput {
   let streamText = '';
   const rich: { mime: string; data: string }[] = [];
+  const widgets: Record<string, WidgetModel> = {};
   let status: 'ok' | 'error' | 'running' = 'running';
   let error: string | undefined;
   let done = false;
 
   for (const raw of replies) {
     const p = parseReply(raw);
+    // - comm frames drive widgets; accept regardless of parent (single WS, single run — some
+    // - widget libs don't stamp the execute parent on updates, and filtering would drop the bar)
+    if (p.kind === 'comm' && p.comm) {
+      const w = p.comm;
+      if (w.sub === 'open') widgets[w.id] = { modelName: String(w.modelName ?? ''), state: { ...(w.state ?? {}) } };
+      else if (w.sub === 'msg' && widgets[w.id]) Object.assign(widgets[w.id].state, w.state ?? {});
+      continue;
+    }
     if (p.parentMsgId !== ourMsgId) continue;
     if (p.kind === 'stream' && p.text) streamText += p.text;
     else if ((p.kind === 'result' || p.kind === 'display') && p.data) {
@@ -235,5 +247,5 @@ export function collectOutputs(replies: unknown[], ourMsgId: string): CollectedO
       if (status !== 'error') status = 'ok';
     }
   }
-  return { streamText, rich, status, error, done };
+  return { streamText, rich, status, error, done, widgets };
 }
