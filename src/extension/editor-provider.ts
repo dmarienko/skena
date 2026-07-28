@@ -41,6 +41,7 @@ import {
   CodeNode,
   KernelNode,
   MsgRunCell,
+  MsgInterruptCell,
   HostToWebview,
   WebviewToHost,
   MsgRequestFile,
@@ -424,6 +425,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         case 'runCell':      await this.handleRunCell(msg, manager, panel, document, v => { isSelfSaving = v; }, s => { lastWrittenJson = s; }); break;
         case 'addKernel':    await this.handleAddKernel(manager, document, send); break;
         case 'kernelAction': await this.handleKernelAction(msg, manager, document); break;
+        case 'interruptCell': await this.handleInterruptCell(msg, manager, document); break;
         case 'confirmDelete': {
           const yes = await vscode.window.showWarningMessage(msg.reason, { modal: true }, 'Delete');
           send({ type: 'doDelete', confirmed: yes === 'Delete' });
@@ -1356,6 +1358,37 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       }
     } catch (e) {
       void vscode.window.showErrorMessage(`Skena: kernel ${msg.action} failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  // - interrupt (SIGINT) the kernel running a specific code cell. Resolves the cell's bound kernel
+  // - the same way a run does (BFS through edges), so a chained cell interrupts the shared kernel.
+  private async handleInterruptCell(
+    msg:      MsgInterruptCell,
+    manager:  KernelManager,
+    document: SkenaDocument,
+  ): Promise<void> {
+    const canvas = document.canvas;
+    const cell = canvas.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code') as CodeNode | undefined;
+    if (!cell) return;
+    const nodeById = new Map(canvas.nodes.map(n => [n.id, n]));
+    const kernelNodeId = resolveBoundKernel(cell.id, canvas.edges, id => nodeById.get(id)?.type === 'kernel');
+    const kernelNode = kernelNodeId ? nodeById.get(kernelNodeId) as KernelNode | undefined : undefined;
+    const server = kernelNode ? manager.serverByName(kernelNode.server) : undefined;
+    if (!kernelNode || !kernelNode.kernelId || !server) {
+      void vscode.window.showWarningMessage('Skena: no running kernel bound to this cell.');
+      return;
+    }
+    if (msg.confirm) {
+      const choice = await vscode.window.showWarningMessage(
+        'Interrupt this cell’s execution?', { modal: true }, 'Interrupt',
+      );
+      if (choice !== 'Interrupt') return;
+    }
+    try {
+      await manager.interrupt(server, kernelNode.kernelId);
+    } catch (e) {
+      void vscode.window.showErrorMessage(`Skena: interrupt failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 

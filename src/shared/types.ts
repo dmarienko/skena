@@ -354,6 +354,8 @@ export interface MsgPickModel { type: 'pickModel'; }
 export interface MsgRunCell   { type: 'runCell'; cellNodeId: string; code: string; }
 export interface MsgAddKernel { type: 'addKernel'; }
 export interface MsgKernelAction { type: 'kernelAction'; action: 'restart' | 'shutdown' | 'interrupt'; kernelNodeId: string; }
+// - interrupt (SIGINT) the kernel running THIS code cell; confirm asks the host for a modal first
+export interface MsgInterruptCell { type: 'interruptCell'; cellNodeId: string; confirm?: boolean; }
 // - webview asks the host to confirm a destructive delete (e.g. an active kernel node)
 export interface MsgConfirmDelete { type: 'confirmDelete'; nodeIds: string[]; reason: string; }
 // - webview asks the host for kernel tab-completion at a cursor (Ctrl+Space in a code cell)
@@ -705,6 +707,7 @@ export type WebviewToHost =
   | MsgShowWarning
   | MsgPickModel
   | MsgRunCell
+  | MsgInterruptCell
   | MsgAddKernel
   | MsgKernelAction
   | MsgConfirmDelete

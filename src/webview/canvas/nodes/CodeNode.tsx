@@ -5,6 +5,7 @@
  */
 
 import React, { useCallback, useState, useEffect, useRef, useMemo, memo } from 'react';
+import { createPortal } from 'react-dom';
 import { NodeProps, Handle, Position, NodeResizer, useStore } from '@xyflow/react';
 import Editor, { BeforeMount, OnMount } from '@monaco-editor/react';
 import type { editor as MonacoEditor } from 'monaco-editor';
@@ -83,6 +84,33 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   // - kept fresh with the latest `run` (which closes over bound/code).
   const runRef = useRef(run);
   useEffect(() => { runRef.current = run; }, [run]);
+
+  const isRunning = node.lastStatus === 'running';
+  const isRunningRef = useRef(isRunning);
+  useEffect(() => { isRunningRef.current = isRunning; }, [isRunning]);
+  // - interrupt (SIGINT) the kernel running this cell; the host resolves the bound kernel.
+  // - `confirm` asks the host for a modal first (used by the Ctrl+C hotkey, which is easy to mishit).
+  const interrupt = useCallback((confirm: boolean) => {
+    vscodePostMessage({ type: 'interruptCell', cellNodeId: id, confirm });
+  }, [id]);
+  const interruptRef = useRef(interrupt);
+  useEffect(() => { interruptRef.current = interrupt; }, [interrupt]);
+
+  // - right-click menu (portal'd to body so React Flow's viewport transform doesn't offset it)
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
+  useEffect(() => {
+    if (!menu) return;
+    const onDown = (e: MouseEvent) => { if (!menuRef.current?.contains(e.target as Node)) setMenu(null); };
+    window.addEventListener('mousedown', onDown, { capture: true });
+    return () => window.removeEventListener('mousedown', onDown, { capture: true });
+  }, [menu]);
+  const onContextMenu = useCallback((e: React.MouseEvent) => {
+    if (editing) return;   // - in edit mode let Monaco show its own context menu
+    e.preventDefault(); e.stopPropagation();
+    setMenu({ x: e.clientX, y: e.clientY });
+  }, [editing]);
 
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const vimStatusRef = useRef<HTMLDivElement | null>(null);
@@ -219,6 +247,13 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
         !!el.closest?.('textarea, input, [contenteditable="true"], .monaco-editor')
       );
       if (inField(e.target as HTMLElement | null) || inField(document.activeElement as HTMLElement | null)) return;
+      // - Ctrl/Cmd+C interrupts a RUNNING cell (host shows a confirm — it's easy to mishit). Only
+      // - fires when this cell is running; otherwise it falls through (no node-copy binding here).
+      if (isRunningRef.current && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.key === 'c' || e.key === 'C')) {
+        e.preventDefault(); e.stopPropagation();
+        interruptRef.current(true);
+        return;
+      }
       const runCombo =
         (e.altKey && !e.shiftKey && !e.ctrlKey && !e.metaKey && ['r', 'R', 'j', 'J'].includes(e.key)) ||
         ((e.ctrlKey || e.metaKey) && !e.altKey && e.key === 'Enter') ||
@@ -306,6 +341,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
       <NodeLabelBadge label={node.nodeLabel} createdBy={(node as { createdBy?: string }).createdBy} />
       <div
         className={`skena-node skena-node--code${node.lastStatus === 'running' ? ' skena-node--running' : ''}`}
+        onContextMenu={onContextMenu}
         style={{
           border:        `${bw}px solid ${borderColor}`,
           height:        '100%',
@@ -333,6 +369,13 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
             title={bound ? 'Run on bound kernel (Shift+Enter)' : 'Connect this cell to a kernel node to run'}
             style={{ cursor: bound ? 'pointer' : 'not-allowed', background: 'transparent', border: 'none', color: bound ? borderColor : '#6b7280', fontSize: 13, padding: 0 }}
           >▶</button>
+          {isRunning && (
+            <button
+              onClick={e => { e.stopPropagation(); interrupt(false); }}
+              title="Interrupt execution (Ctrl+C)"
+              style={{ cursor: 'pointer', background: 'transparent', border: 'none', color: '#e5484d', fontSize: 12, padding: 0, lineHeight: 1 }}
+            >■</button>
+          )}
           <span style={{ opacity: 0.7 }}>{node.language ?? 'python'}</span>
           <span title={status ?? ''} style={{ marginLeft: 'auto', color: status === 'error' ? '#e5484d' : borderColor, fontSize: 14 }}>{glyph}</span>
         </div>
@@ -401,6 +444,34 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
           </ScrollableContent>
         )}
       </div>
+      {menu && createPortal(
+        <div
+          ref={menuRef}
+          className="nodrag"
+          style={{
+            position: 'fixed', left: menu.x, top: menu.y, zIndex: 1000,
+            background: 'var(--vscode-menu-background, #252526)',
+            color: 'var(--vscode-menu-foreground, #ccc)',
+            border: '1px solid var(--vscode-menu-border, rgba(255,255,255,0.15))',
+            borderRadius: 6, padding: '4px 0', minWidth: 160, fontSize: 12,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+          }}
+        >
+          <button
+            disabled={!isRunning}
+            onClick={() => { interrupt(false); closeMenu(); }}
+            style={{
+              display: 'block', width: '100%', textAlign: 'left', padding: '4px 12px',
+              background: 'transparent', border: 'none', fontSize: 12,
+              cursor: isRunning ? 'pointer' : 'default',
+              color: isRunning ? 'inherit' : 'var(--vscode-disabledForeground, #777)',
+            }}
+            onMouseEnter={e => { if (isRunning) (e.currentTarget as HTMLElement).style.background = 'var(--vscode-menu-selectionBackground, #094771)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+          >Interrupt execution</button>
+        </div>,
+        document.body,
+      )}
       <Handle type="source" position={Position.Top}    id="top"    style={HANDLE_STYLE} />
       <Handle type="source" position={Position.Right}  id="right"  style={HANDLE_STYLE} />
       <Handle type="source" position={Position.Bottom} id="bottom" style={HANDLE_STYLE} />
