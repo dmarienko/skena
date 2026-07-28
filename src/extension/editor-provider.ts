@@ -104,6 +104,10 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
    */
   static activePanel: vscode.WebviewPanel | null = null;
 
+  // - canvasPath (document.uri.fsPath) → its open panel, so the run-ipc relay can forward an
+  // - out-of-process agent run's live output to the right webview.
+  static panelsByPath = new Map<string, vscode.WebviewPanel>();
+
   /** - lazily-created LLM client; null until first chat request */
   private _llmClient: ILLMClient | null = null;
 
@@ -504,6 +508,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
 
     // - track the most-recently-focused canvas panel for the skena.addNode command
     SkenaEditorProvider.activePanel = panel;
+    // - register this panel by canvas path so the run-ipc relay can find it for agent-run streaming
+    SkenaEditorProvider.panelsByPath.set(document.uri.fsPath, panel);
     panel.onDidChangeViewState(({ webviewPanel }) => {
       if (webviewPanel.active) {
         SkenaEditorProvider.activePanel = webviewPanel;
@@ -532,6 +538,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     panel.onDidDispose(() => {
       if (SkenaEditorProvider.activePanel === panel) {
         SkenaEditorProvider.activePanel = null;
+      }
+      if (SkenaEditorProvider.panelsByPath.get(document.uri.fsPath) === panel) {
+        SkenaEditorProvider.panelsByPath.delete(document.uri.fsPath);
       }
       // - kill this canvas's persistent harness process when its panel closes
       this._llmClient?.disposeSession?.(document.uri.fsPath);

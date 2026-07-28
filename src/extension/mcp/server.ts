@@ -32,6 +32,17 @@ import { resolveBoundKernel } from '../../shared/kernelBinding';
 import { resolveKernelConfig, type KernelServerConfig } from '../jupyter/config';
 import { executeCell } from '../jupyter/client';
 import { renderOutput } from '../jupyter/output';
+import type { CollectedOutput } from '../jupyter/protocol';
+
+// - "port:token" from the host (SKENA_RUN_IPC) → the 127.0.0.1 relay for live agent-run output
+function parseRunIpc(raw: string | undefined): { port: number; token: string } | null {
+  if (!raw) return null;
+  const i = raw.lastIndexOf(':');
+  if (i <= 0) return null;
+  const port = Number(raw.slice(0, i));
+  const token = raw.slice(i + 1);
+  return port && token ? { port, token } : null;
+}
 
 // ─── path helpers ─────────────────────────────────────────────────────────────
 
@@ -711,35 +722,60 @@ async function canvasRunCell(args: Record<string, unknown>): Promise<string> {
     cell.lastStatus = 'running';
     await writeCanvas(p, d);
 
+    // - fix the output node id up front so the live-stream frames and the final persisted node share
+    // - it (no duplicate); reuse this cell's existing output node on a re-run.
+    const kernel   = kernelNode;
+    const kernelId = kernelNode.kernelId;   // - narrowed to string by the guard above
+    const outId    = cell.outputNodeId ?? uid();
+    const outGeom = { x: Math.round(cell.x + cell.width + 140), y: Math.round(cell.y), width: 480, height: 320 };
+    const outEdge = { id: `edge-out-${outId}`, fromNode: cell.id, fromSide: 'right' as const, toNode: outId, toSide: 'left' as const, toEnd: 'arrow' as const };
+
+    // - stream live output to the host webview via the run-ipc relay (best-effort, throttled). Absent
+    // - SKENA_RUN_IPC (e.g. headless) → no streaming, output still lands via the final write below.
+    const ipc = parseRunIpc(process.env.SKENA_RUN_IPC);
+    let lastPost = 0;
+    const postFrame = (partial: CollectedOutput) => {
+      if (!ipc) return;
+      if (partial.rich.length === 0 && partial.streamText.length === 0 && Object.keys(partial.widgets).length === 0) return;
+      const { format, content } = renderOutput(partial);
+      const message = {
+        type: 'runOutput', codeNodeId: cell.id, lastStatus: 'running',
+        kernelNodeId: kernel.id, kernelId,
+        outputNode: { id: outId, type: 'cell', format, content, ...outGeom, createdBy: 'ai' },
+        edge: outEdge,
+      };
+      void fetch(`http://127.0.0.1:${ipc.port}/delta`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-skena-token': ipc.token },
+        body: JSON.stringify({ canvasPath: p, message }),
+      }).catch(() => { /* - relay is best-effort */ });
+    };
+    const onDelta = (partial: CollectedOutput) => {
+      const now = Date.now();
+      if (now - lastPost >= 350) { lastPost = now; postFrame(partial); }   // - coalesce fast frames
+    };
+
     const ids = { msgId: crypto.randomUUID(), session: crypto.randomUUID(), date: new Date().toISOString() };
-    const out = await executeCell(server, kernelNode.kernelId, cell.code, ids);
+    const out = await executeCell(server, kernelId, cell.code, ids, onDelta);
 
     // - collapse ALL outputs (stream + every rich mime) into one cell-node payload
     const { format, content } = renderOutput(out);
     const hasOutput = out.rich.length > 0 || out.streamText.length > 0 || !!out.error;
     let outLabel = '(no output)';
     if (hasOutput) {
-      // - reuse the linked output node if it exists, else create + link one at the cell's right edge
-      const existing = cell.outputNodeId ? d.nodes.find(n => n.id === cell.outputNodeId) : undefined;
-      if (existing && existing.type === 'cell') {
+      // - persist to the SAME node id the live frames streamed to (outId), so a re-run updates in
+      // - place and a first run's streamed node reconciles with the persisted one (no duplicate)
+      const existing = d.nodes.find(n => n.id === outId && n.type === 'cell') as CellNode | undefined;
+      if (existing) {
         existing.format  = format;
         existing.content = content;
         outLabel = existing.nodeLabel ?? existing.id;
       } else {
-        const outNode: CellNode = {
-          id:     uid(),
-          type:   'cell',
-          format, content,
-          x:      Math.round(cell.x + cell.width + 140),
-          y:      Math.round(cell.y),
-          width:  480,
-          height: 320,
-          createdBy: 'ai',
-        };
+        const outNode: CellNode = { id: outId, type: 'cell', format, content, ...outGeom, createdBy: 'ai' };
         const labeled = assignLabel(outNode, d.nodes);
         d.nodes.push(labeled);
-        d.edges.push({ id: `edge-out-${uid()}`, fromNode: cell.id, fromSide: 'right', toNode: labeled.id, toSide: 'left', toEnd: 'arrow' });
-        cell.outputNodeId = labeled.id;
+        d.edges.push(outEdge);
+        cell.outputNodeId = outId;
         outLabel = labeled.nodeLabel ?? labeled.id;
       }
     }

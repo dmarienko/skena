@@ -14,6 +14,7 @@ import { SkenaEditorProvider } from './editor-provider';
 import { VaultIndexer } from './vault-indexer';
 import { FileWatcher } from './file-watcher';
 import { getVaults } from './settings';
+import { runIpc } from './run-ipc';
 
 let indexer: VaultIndexer | undefined;
 let watcher: FileWatcher | undefined;
@@ -25,6 +26,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // - shared indexer instance — all editor panels share one index
   indexer = new VaultIndexer(context);
   watcher = new FileWatcher(indexer);
+
+  // - relay for out-of-process agent-run live output → the right canvas webview
+  runIpc.start(p => SkenaEditorProvider.panelsByPath.get(p));
+  context.subscriptions.push({ dispose: () => runIpc.dispose() });
 
   // - register the custom editor for *.canvas files
   editorProvider = new SkenaEditorProvider(context, indexer, watcher);

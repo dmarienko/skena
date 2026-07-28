@@ -24,6 +24,7 @@ import * as path from 'path';
 import { spawn, type ChildProcess } from 'child_process';
 import type { ILLMClient, LLMMessage, LLMTool, LLMCallbacks, LLMContext, LLMUsage } from '../llm-client';
 import { loadKernelServers } from '../jupyter/manager';
+import { runIpc } from '../run-ipc';
 
 const FALLBACK_BIN = path.join(os.homedir(), '.local', 'bin', 'claude');
 
@@ -333,10 +334,14 @@ export class HarnessAdapter implements ILLMClient {
 
   /** - write the MCP config: skena server + (when isolated) the user's own servers */
   private writeMcpConfig(workspaceDir: string, mcpJs: string, includeUserServers: boolean): string {
-    // - pass the resolved Jupyter servers to the MCP process so canvas_run_cell can reach them
+    // - pass the resolved Jupyter servers to the MCP process so canvas_run_cell can reach them,
+    // - plus the run-ipc endpoint so an agent run streams live output back to the webview
     const kernels = loadKernelServers();
+    const skenaEnv: Record<string, string> = { SKENA_JUPYTER_KERNELS: JSON.stringify(kernels) };
+    const ipc = runIpc.endpointEnv();
+    if (ipc) skenaEnv.SKENA_RUN_IPC = ipc;
     const servers: Record<string, unknown> = {
-      skena: { type: 'stdio', command: 'node', args: [mcpJs], env: { SKENA_JUPYTER_KERNELS: JSON.stringify(kernels) } },
+      skena: { type: 'stdio', command: 'node', args: [mcpJs], env: skenaEnv },
     };
     if (includeUserServers) {
       try {
