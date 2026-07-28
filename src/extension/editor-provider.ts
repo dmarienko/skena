@@ -1212,7 +1212,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       if (!hasOut) return;
       const cn = document.canvas.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code') as CodeNode | undefined;
       if (!cn) return;
-      if (!liveOutputId) liveOutputId = `ai-${Date.now().toString(36)}`;
+      // - reuse this cell's existing output node on a re-run so the live node updates it in place
+      // - (a fresh id would duplicate the persisted output cell); only mint a new id on first run
+      if (!liveOutputId) liveOutputId = cn.outputNodeId ?? `ai-${Date.now().toString(36)}`;
       const { format, content } = renderOutput(latest);
       const outputNode: CellNode = {
         id: liveOutputId, type: 'cell',
