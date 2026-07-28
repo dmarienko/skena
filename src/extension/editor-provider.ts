@@ -1253,8 +1253,14 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       finished = true;
       if (deltaTimer) { clearTimeout(deltaTimer); deltaTimer = null; }
       try {
-        await applyAndPersist('error', null);
-        send({ type: 'runOutput', codeNodeId: codeNode.id, lastStatus: 'error', kernelNodeId: kernelNode.id, kernelId });
+        // - if partial output was streamed before the failure, persist it (status error) under the
+        // - same id so the live node reconciles to disk instead of being orphaned in the webview.
+        const snap = latest as CollectedOutput | null;   // - CFA narrows the closure-assigned `latest` to null; widen it
+        const streamed = snap && (snap.rich.length > 0 || snap.streamText.length > 0 || Object.keys(snap.widgets).length > 0)
+          ? renderOutput(snap)
+          : null;
+        const { outputNode, edge } = await applyAndPersist('error', streamed, liveOutputId);
+        send({ type: 'runOutput', codeNodeId: codeNode.id, lastStatus: 'error', kernelNodeId: kernelNode.id, kernelId, outputNode, edge });
       } catch { /* non-fatal */ }
       fail(`execution failed: ${e instanceof Error ? e.message : String(e)}`);
       return;

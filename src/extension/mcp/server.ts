@@ -756,7 +756,17 @@ async function canvasRunCell(args: Record<string, unknown>): Promise<string> {
     };
 
     const ids = { msgId: crypto.randomUUID(), session: crypto.randomUUID(), date: new Date().toISOString() };
-    const out = await executeCell(server, kernelId, cell.code, ids, onDelta);
+    let out: CollectedOutput;
+    try {
+      out = await executeCell(server, kernelId, cell.code, ids, onDelta);
+    } catch (e) {
+      // - transport/kernel failure: persist error status so the cell isn't left stuck 'running' on
+      // - disk (the start-of-run write set it running). The soft-reload then clears the running stripe.
+      cell.lastStatus = 'error';
+      cell.lastRun    = Date.now();
+      await writeCanvas(p, d);
+      return `error: cell execution failed: ${e instanceof Error ? e.message : String(e)}`;
+    }
 
     // - collapse ALL outputs (stream + every rich mime) into one cell-node payload
     const { format, content } = renderOutput(out);
