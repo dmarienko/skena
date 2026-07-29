@@ -472,12 +472,14 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     // - coalesce rapid external writes into a single reload to avoid double redraw
     let reloadTimer: ReturnType<typeof setTimeout> | null = null;
     canvasWatcher.onDidChange(async () => {
-      if (isSelfSaving) {
-        try {
-          const raw = await fs.readFile(document.uri.fsPath, 'utf-8');
-          if (raw === lastWrittenJson) return; // - our own echo, skip
-        } catch { return; }
-      }
+      // - skip our own echo by CONTENT, not the isSelfSaving timer. A large-canvas / slow-FS write
+      // - can fire its watcher event AFTER the 400ms flag reverted; that used to slip through as an
+      // - "external" change and trigger a reload whose (stale) snapshot dropped a just-created
+      // - run-output node. Comparing disk to the last bytes we wrote catches late echoes too.
+      try {
+        const raw = await fs.readFile(document.uri.fsPath, 'utf-8');
+        if (raw === lastWrittenJson) return;   // - our own write (current, or a late-firing earlier one)
+      } catch { return; }
       if (reloadTimer) clearTimeout(reloadTimer);
       reloadTimer = setTimeout(() => { reloadTimer = null; void reloadFromDisk(); }, 200);
     });
