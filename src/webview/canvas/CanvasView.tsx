@@ -99,6 +99,23 @@ function toFlowNode(cn: CanvasNode): Node {
   };
 }
 
+// - reconcile a freshly-loaded node array against the current one so an output-write reload doesn't
+// - re-render (flicker) the whole canvas. An UNCHANGED node returns its EXACT previous object — React
+// - Flow memoizes node wrappers by reference, so an identical ref means zero re-render. Only genuinely
+// - changed nodes get a new object (data ref reused when only the position moved). Selection preserved.
+function reconcileFlowNodes(prev: Node[], next: Node[]): Node[] {
+  const prevById = new Map(prev.map(n => [n.id, n]));
+  return next.map(nn => {
+    const pn = prevById.get(nn.id);
+    if (!pn) return nn;   // - new node
+    const dataSame = JSON.stringify(pn.data) === JSON.stringify(nn.data);
+    const posSame  = pn.position.x === nn.position.x && pn.position.y === nn.position.y
+      && pn.width === nn.width && pn.height === nn.height;
+    if (dataSame && posSame) return pn;   // - fully unchanged → exact ref → RF skips the re-render
+    return { ...nn, selected: pn.selected, data: dataSame ? pn.data : nn.data };
+  });
+}
+
 
 // - timestamp label for pin edges: yy-mm-dd hh:mm
 function nowLabel(): string {
@@ -468,7 +485,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     // - letting a stale timer fire would overwrite an MCP write with old state.
     if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
     const labeled = ensureLabels(canvas.nodes);
-    setNodes(labeled.map(toFlowNode));
+    // - reconcile (not replace) so unchanged nodes keep their exact object ref → no flicker re-render
+    setNodes(prev => reconcileFlowNodes(prev, labeled.map(toFlowNode)));
     setEdges(canvas.edges.map(toFlowEdge));
     canvasRef.current = { ...canvas, nodes: labeled };
 
