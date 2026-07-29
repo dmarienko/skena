@@ -2182,9 +2182,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         let next = nds.map(n => {
           if (n.id === d.codeNodeId) return { ...n, data: { ...n.data, lastStatus: d.lastStatus, ...(out ? { outputNodeId: out.id } : {}) } };
           if (d.kernelId && n.id === d.kernelNodeId) return { ...n, data: { ...n.data, kernelId: d.kernelId } };
-          // - also apply the host's position so an EXISTING output node (re-run) re-centers instead
-          //   of keeping its old top-aligned spot; new nodes get it via toFlowNode below
-          if (out && n.id === out.id) return { ...n, position: { x: out.x, y: out.y }, data: { ...n.data, format: out.format, content: out.content, ...(out.nodeLabel ? { nodeLabel: out.nodeLabel } : {}) } };
+          // - update content only, NEVER position: an output node being live-updated must stay where
+          //   the user dragged it (new nodes are centered on create via toFlowNode below)
+          if (out && n.id === out.id) return { ...n, data: { ...n.data, format: out.format, content: out.content, ...(out.nodeLabel ? { nodeLabel: out.nodeLabel } : {}) } };
           return n;
         });
         if (out && !nds.some(n => n.id === out.id)) next = [...next, { ...toFlowNode(out), selected: false }];

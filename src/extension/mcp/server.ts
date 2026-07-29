@@ -842,10 +842,9 @@ async function runCellCore(
     // - persist to the SAME node id the live frames streamed to (outId), so a re-run updates in place
     const existing = d.nodes.find(n => n.id === outId && n.type === 'cell') as CellNode | undefined;
     if (existing) {
+      // - content only; keep the node where it is (the user may have dragged it — don't snap it)
       existing.format  = format;
       existing.content = content;
-      existing.x = outGeom.x;   // - re-center (migrates output cells placed top-aligned before centering)
-      existing.y = Math.round(cell.y + (cell.height - existing.height) / 2);
       outLabel = existing.nodeLabel ?? existing.id;
     } else {
       const outNode: CellNode = { id: outId, type: 'cell', format, content, ...outGeom, createdBy: 'ai' };
