@@ -1244,7 +1244,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       const { format, content } = renderOutput(latest);
       const outputNode: CellNode = {
         id: liveOutputId, type: 'cell',
-        x: cn.x + cn.width + 140, y: cn.y, width: 480, height: 320,
+        x: cn.x + cn.width + 140, y: Math.round(cn.y + (cn.height - 320) / 2), width: 480, height: 320,
         format, content, createdBy: 'ai',
       };
       const edge: CanvasEdge = { id: `e-${liveOutputId}`, fromNode: cn.id, fromSide: 'right', toNode: liveOutputId, toSide: 'left', toEnd: 'arrow' };
