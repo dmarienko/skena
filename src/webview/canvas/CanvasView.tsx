@@ -2124,7 +2124,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       if (!src) return;
       const nw = Number(src.style?.width ?? 360);
       const sh = Number(src.style?.height ?? 200);
-      const { x, y } = findFreePosition(nodesRef.current, src.position.x, src.position.y + sh + 40, nw, 200, 0, 1);
+      // - gap below the source's bottom (~matches a comfortable hand-placed spacing, cf. E4→E5)
+      const { x, y } = findFreePosition(nodesRef.current, src.position.x, src.position.y + sh + 180, nw, 200, 0, 1);
       const newId = `code-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
       const newNode: CanvasNode = { id: newId, type: 'code', code: '', language: 'python', x, y, width: nw, height: 200 };
       const newEdge: CanvasEdge = { id: `${sourceId}-${newId}-${Date.now()}`, fromNode: sourceId, fromSide: 'bottom', toNode: newId, toSide: 'top', toEnd: 'arrow' };
