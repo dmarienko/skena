@@ -195,11 +195,36 @@ async function writeCanvas(fsPath: string, data: CanvasData): Promise<void> {
   await fs.writeFile(fsPath, JSON.stringify(data, null, 2), 'utf-8');
 }
 
+// - read a canvas, or return an empty one if the file doesn't exist yet (create-on-first-write)
+async function readCanvasOrEmpty(fsPath: string): Promise<CanvasData> {
+  try {
+    return await readCanvas(fsPath);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { nodes: [], edges: [] };
+    throw e;
+  }
+}
+
 // ─── node helpers ─────────────────────────────────────────────────────────────
 
 function findNode(data: CanvasData, ref: string): CanvasNode | undefined {
   // - match by nodeLabel first, then by id
   return data.nodes.find(n => n.nodeLabel === ref) ?? data.nodes.find(n => n.id === ref);
+}
+
+// - resolve an edge by id string, or by { from, to } node refs (labels/ids); either endpoint optional
+function findEdge(data: CanvasData, ref: unknown): CanvasEdge | undefined {
+  if (typeof ref === 'string') return data.edges.find(e => e.id === ref);
+  if (ref && typeof ref === 'object') {
+    const r = ref as { from?: string; to?: string };
+    const fromId = r.from ? findNode(data, r.from)?.id : undefined;
+    const toId   = r.to   ? findNode(data, r.to)?.id   : undefined;
+    if (fromId === undefined && toId === undefined) return undefined;
+    return data.edges.find(e =>
+      (fromId === undefined || e.fromNode === fromId) &&
+      (toId   === undefined || e.toNode   === toId));
+  }
+  return undefined;
 }
 
 function nodeSnippet(node: CanvasNode): string {
@@ -490,7 +515,7 @@ async function canvasFollow(args: Record<string, unknown>): Promise<string> {
 async function canvasAddNode(args: Record<string, unknown>): Promise<string> {
   const p = resolvePath(args.canvasPath as string);
   return withFileLock(p, async () => {
-  const d    = await readCanvas(p);
+  const d    = await readCanvasOrEmpty(p);   // - create-on-first-add: empty canvas if the file is new
   const type = (args.type as string | undefined) ?? 'text';
   const dims = defaultDims(type);
   const w    = (args.width  as number | undefined) ?? dims.w;
@@ -566,6 +591,11 @@ async function canvasUpdateNode(args: Record<string, unknown>): Promise<string> 
   if (args.tags  !== undefined) updated.tags  = args.tags  as string[];
   if (args.color !== undefined) updated.color = args.color as CanvasNodeBase['color'];
   if (args.label !== undefined) updated.nodeLabel = args.label as string;
+  // - move / resize (absolute coords, partial — only supplied fields change)
+  if (args.x      !== undefined) updated.x      = args.x      as number;
+  if (args.y      !== undefined) updated.y      = args.y      as number;
+  if (args.width  !== undefined) updated.width  = args.width  as number;
+  if (args.height !== undefined) updated.height = args.height as number;
 
   d.nodes[idx] = updated;
   await writeCanvas(p, d);
@@ -616,6 +646,66 @@ async function canvasAddEdge(args: Record<string, unknown>): Promise<string> {
   d.edges.push(edge);
   await writeCanvas(p, d);
   return `Connected ${fn.nodeLabel ?? fn.id} → ${tn.nodeLabel ?? tn.id}  (edge id: ${edge.id})`;
+  }); // - withFileLock
+}
+
+async function canvasUpdateEdge(args: Record<string, unknown>): Promise<string> {
+  const p = resolvePath(args.canvasPath as string);
+  return withFileLock(p, async () => {
+    const d = await readCanvas(p);
+    const e = findEdge(d, args.ref);
+    if (!e) return `Edge not found: ${JSON.stringify(args.ref)}`;
+    if (args.label    !== undefined) e.label    = args.label as string;
+    if (args.color    !== undefined) e.color    = args.color as CanvasEdge['color'];
+    if (args.fromSide !== undefined) e.fromSide = args.fromSide as CanvasEdge['fromSide'];
+    if (args.toSide   !== undefined) e.toSide   = args.toSide as CanvasEdge['toSide'];
+    await writeCanvas(p, d);
+    return `Updated edge ${e.id}`;
+  }); // - withFileLock
+}
+
+async function canvasRemoveEdge(args: Record<string, unknown>): Promise<string> {
+  const p = resolvePath(args.canvasPath as string);
+  return withFileLock(p, async () => {
+    const d = await readCanvas(p);
+    const e = findEdge(d, args.ref);
+    if (!e) return `Edge not found: ${JSON.stringify(args.ref)}`;
+    d.edges = d.edges.filter(x => x.id !== e.id);
+    await writeCanvas(p, d);
+    return `Removed edge ${e.id}`;
+  }); // - withFileLock
+}
+
+// - batch move/resize: one file write for many nodes (partial, absolute coords per item)
+async function canvasLayout(args: Record<string, unknown>): Promise<string> {
+  const p = resolvePath(args.canvasPath as string);
+  return withFileLock(p, async () => {
+    const d     = await readCanvas(p);
+    const items = Array.isArray(args.nodes) ? args.nodes as Array<Record<string, unknown>> : [];
+    const done: string[] = [];
+    const missing: string[] = [];
+    for (const it of items) {
+      const n = findNode(d, it.ref as string);
+      if (!n) { missing.push(String(it.ref)); continue; }
+      if (it.x      !== undefined) n.x      = it.x      as number;
+      if (it.y      !== undefined) n.y      = it.y      as number;
+      if (it.width  !== undefined) n.width  = it.width  as number;
+      if (it.height !== undefined) n.height = it.height as number;
+      done.push(n.nodeLabel ?? n.id);
+    }
+    await writeCanvas(p, d);
+    return `Laid out ${done.length} node(s): ${done.join(', ')}` +
+      (missing.length ? ` — not found: ${missing.join(', ')}` : '');
+  }); // - withFileLock
+}
+
+async function canvasCreate(args: Record<string, unknown>): Promise<string> {
+  const p = resolvePath(args.canvasPath as string);
+  return withFileLock(p, async () => {
+    try { await fs.access(p); return `Canvas already exists: ${p}`; } catch { /* - create it */ }
+    await fs.mkdir(path.dirname(p), { recursive: true });
+    await writeCanvas(p, { nodes: [], edges: [] });
+    return `Created empty canvas: ${p}`;
   }); // - withFileLock
 }
 
@@ -923,7 +1013,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_update_node',
-    description: 'Update the content, tags, or color of an existing canvas node.',
+    description: 'Update an existing node: content, tags, color, label, and/or move/resize it. Partial — only supplied fields change. Move/resize uses absolute canvas coordinates.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -933,6 +1023,71 @@ const TOOLS = [
         tags:       { type: 'array',  items: { type: 'string' }, description: 'Replace tags list' },
         color:      { type: 'string', description: 'New accent color (1-6)' },
         label:      { type: 'string', description: 'Override the node label (e.g. rename N5 to N1)' },
+        x:          { type: 'number', description: 'Move: absolute x (left)' },
+        y:          { type: 'number', description: 'Move: absolute y (top)' },
+        width:      { type: 'number', description: 'Resize: width' },
+        height:     { type: 'number', description: 'Resize: height' },
+      },
+      required: ['canvasPath', 'ref'],
+    },
+  },
+  {
+    name: 'canvas_create',
+    description: 'Create a new empty .canvas file (with parent directories). No-op if it already exists.',
+    inputSchema: {
+      type: 'object',
+      properties: { canvasPath: { type: 'string', description: 'Path to the .canvas file to create' } },
+      required: ['canvasPath'],
+    },
+  },
+  {
+    name: 'canvas_layout',
+    description: 'Batch move/resize many nodes in one file write. Each item: { ref, x?, y?, width?, height? } (partial, absolute coordinates).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        canvasPath: { type: 'string', description: 'Path to the .canvas file' },
+        nodes: {
+          type: 'array',
+          description: 'Nodes to position',
+          items: {
+            type: 'object',
+            properties: {
+              ref:    { type: 'string', description: 'Node label or ID' },
+              x:      { type: 'number' }, y: { type: 'number' },
+              width:  { type: 'number' }, height: { type: 'number' },
+            },
+            required: ['ref'],
+          },
+        },
+      },
+      required: ['canvasPath', 'nodes'],
+    },
+  },
+  {
+    name: 'canvas_update_edge',
+    description: 'Update an existing edge: label, color, and/or handle sides. Partial. ref is an edge id, or { from, to } node labels/ids (either optional).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        canvasPath: { type: 'string', description: 'Path to the .canvas file' },
+        ref:        { oneOf: [{ type: 'string' }, { type: 'object', properties: { from: { type: 'string' }, to: { type: 'string' } } }], description: 'Edge id, or { from, to } node refs' },
+        label:      { type: 'string', description: 'New edge label' },
+        color:      { type: 'string', description: 'Edge color (1-6)' },
+        fromSide:   { type: 'string', description: 'Source handle: top, right, bottom, left' },
+        toSide:     { type: 'string', description: 'Target handle: top, left, bottom, right' },
+      },
+      required: ['canvasPath', 'ref'],
+    },
+  },
+  {
+    name: 'canvas_remove_edge',
+    description: 'Delete an edge. ref is an edge id, or { from, to } node labels/ids (either optional).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        canvasPath: { type: 'string', description: 'Path to the .canvas file' },
+        ref:        { oneOf: [{ type: 'string' }, { type: 'object', properties: { from: { type: 'string' }, to: { type: 'string' } } }], description: 'Edge id, or { from, to } node refs' },
       },
       required: ['canvasPath', 'ref'],
     },
@@ -1054,6 +1209,10 @@ async function dispatch(msg: JsonRpcMsg): Promise<void> {
         case 'canvas_update_node': text = await canvasUpdateNode(args);  break;
         case 'canvas_remove_node': text = await canvasRemoveNode(args);  break;
         case 'canvas_add_edge':    text = await canvasAddEdge(args);     break;
+        case 'canvas_update_edge': text = await canvasUpdateEdge(args);  break;
+        case 'canvas_remove_edge': text = await canvasRemoveEdge(args);  break;
+        case 'canvas_layout':      text = await canvasLayout(args);      break;
+        case 'canvas_create':      text = await canvasCreate(args);      break;
         case 'canvas_pin_output':  text = await canvasPinOutput(args);   break;
         case 'canvas_run_cell':    text = await canvasRunCell(args);     break;
         default: throw new Error(`Unknown tool: ${name}`);
