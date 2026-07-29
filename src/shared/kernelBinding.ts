@@ -26,3 +26,51 @@ export function resolveBoundKernel(
   }
   return null;
 }
+
+// - ordered list of upstream code-cell ids feeding `targetId` (ancestors first, target excluded).
+// - Edges are undirected here (users draw them either way), so "upstream" = closer to the bound
+// - kernel: distance from the kernel gives the run order (E1=1, E2=2, E3=3 → run E1,E2,E3). Only
+// - cells on a path from the target toward the kernel are included (sibling branches are ignored).
+export function resolveUpstreamChain(
+  targetId:   string,
+  edges:      EdgeLike[],
+  isKernel:   (id: string) => boolean,
+  isCodeCell: (id: string) => boolean,
+): string[] {
+  const kernelId = resolveBoundKernel(targetId, edges, isKernel);
+  if (kernelId === null) return [];
+
+  // - BFS distance from the kernel through the whole graph (undirected)
+  const dist = new Map<string, number>([[kernelId, 0]]);
+  const q: string[] = [kernelId];
+  while (q.length) {
+    const cur = q.shift() as string;
+    const d   = dist.get(cur) ?? 0;
+    for (const e of edges) {
+      const nb = e.fromNode === cur ? e.toNode : e.toNode === cur ? e.fromNode : null;
+      if (nb === null || dist.has(nb)) continue;
+      dist.set(nb, d + 1);
+      q.push(nb);
+    }
+  }
+
+  // - walk from the target toward the kernel via strictly-decreasing distance, collecting code cells
+  const ancestors = new Set<string>();
+  const walk: string[] = [targetId];
+  const walked = new Set<string>([targetId]);
+  while (walk.length) {
+    const cur = walk.shift() as string;
+    const d   = dist.get(cur);
+    if (d === undefined) continue;
+    for (const e of edges) {
+      const nb = e.fromNode === cur ? e.toNode : e.toNode === cur ? e.fromNode : null;
+      if (nb === null || walked.has(nb)) continue;
+      const nd = dist.get(nb);
+      if (nd === undefined || nd >= d) continue;   // - only move CLOSER to the kernel
+      walked.add(nb);
+      if (isCodeCell(nb)) { ancestors.add(nb); walk.push(nb); }   // - kernel (nd=0) is not a cell → stops here
+    }
+  }
+
+  return [...ancestors].sort((a, b) => (dist.get(a) ?? 0) - (dist.get(b) ?? 0));
+}

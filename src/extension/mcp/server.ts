@@ -26,9 +26,9 @@ import * as os       from 'os';
 import * as readline from 'readline';
 import * as crypto   from 'crypto';
 
-import { CanvasData, CanvasNode, CanvasEdge, CanvasNodeBase, CellNode } from '../../shared/types';
+import { CanvasData, CanvasNode, CanvasEdge, CanvasNodeBase, CellNode, CodeNode } from '../../shared/types';
 import { assignLabel, ensureLabels } from '../../shared/nodeLabels';
-import { resolveBoundKernel } from '../../shared/kernelBinding';
+import { resolveBoundKernel, resolveUpstreamChain } from '../../shared/kernelBinding';
 import { resolveKernelConfig, type KernelServerConfig } from '../jupyter/config';
 import { executeCell } from '../jupyter/client';
 import { renderOutput } from '../jupyter/output';
@@ -693,6 +693,97 @@ function loadKernelServersFromEnv(): KernelServerConfig[] {
   return resolveKernelConfig(undefined, null);
 }
 
+// - run ONE code cell on its kernel: mark running (stripe via soft-reload), stream live output to
+// - the host webview via the relay, persist the output cell + status. Mutates `d`; writes the canvas.
+async function runCellCore(
+  d:      CanvasData,
+  cell:   CodeNode,
+  kernel: CanvasNode,
+  kernelId: string,
+  server: KernelServerConfig,
+  p:      string,
+  ipc:    { port: number; token: string } | null,
+): Promise<{ status: 'ok' | 'error'; outLabel: string; streamText: string; error?: string }> {
+  cell.lastStatus = 'running';
+  await writeCanvas(p, d);
+
+  const outId   = cell.outputNodeId ?? uid();
+  const outGeom = { x: Math.round(cell.x + cell.width + 140), y: Math.round(cell.y), width: 480, height: 320 };
+  const outEdge = { id: `edge-out-${outId}`, fromNode: cell.id, fromSide: 'right' as const, toNode: outId, toSide: 'left' as const, toEnd: 'arrow' as const };
+
+  let lastPost = 0;
+  const postFrame = (partial: CollectedOutput) => {
+    if (!ipc) return;
+    if (partial.rich.length === 0 && partial.streamText.length === 0 && Object.keys(partial.widgets).length === 0) return;
+    const { format, content } = renderOutput(partial);
+    const message = {
+      type: 'runOutput', codeNodeId: cell.id, lastStatus: 'running',
+      kernelNodeId: kernel.id, kernelId,
+      outputNode: { id: outId, type: 'cell', format, content, ...outGeom, createdBy: 'ai' },
+      edge: outEdge,
+    };
+    void fetch(`http://127.0.0.1:${ipc.port}/delta`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-skena-token': ipc.token },
+      body: JSON.stringify({ canvasPath: p, message }),
+    }).catch(() => { /* - relay is best-effort */ });
+  };
+  const onDelta = (partial: CollectedOutput) => {
+    const now = Date.now();
+    if (now - lastPost >= 350) { lastPost = now; postFrame(partial); }   // - coalesce fast frames
+  };
+
+  const ids = { msgId: crypto.randomUUID(), session: crypto.randomUUID(), date: new Date().toISOString() };
+  let out: CollectedOutput;
+  try {
+    out = await executeCell(server, kernelId, cell.code, ids, onDelta);
+  } catch (e) {
+    // - transport/kernel failure: persist error status so the cell isn't left stuck 'running' on disk
+    cell.lastStatus = 'error';
+    cell.lastRun    = Date.now();
+    await writeCanvas(p, d);
+    return { status: 'error', outLabel: '(error)', streamText: '', error: e instanceof Error ? e.message : String(e) };
+  }
+
+  const { format, content } = renderOutput(out);
+  const hasOutput = out.rich.length > 0 || out.streamText.length > 0 || !!out.error;
+  let outLabel = '(no output)';
+  if (hasOutput) {
+    // - persist to the SAME node id the live frames streamed to (outId), so a re-run updates in place
+    const existing = d.nodes.find(n => n.id === outId && n.type === 'cell') as CellNode | undefined;
+    if (existing) {
+      existing.format  = format;
+      existing.content = content;
+      outLabel = existing.nodeLabel ?? existing.id;
+    } else {
+      const outNode: CellNode = { id: outId, type: 'cell', format, content, ...outGeom, createdBy: 'ai' };
+      const labeled = assignLabel(outNode, d.nodes);
+      d.nodes.push(labeled);
+      d.edges.push(outEdge);
+      cell.outputNodeId = outId;
+      outLabel = labeled.nodeLabel ?? labeled.id;
+    }
+  }
+
+  cell.lastStatus = out.status === 'error' ? 'error' : 'ok';
+  cell.lastRun    = Date.now();
+  await writeCanvas(p, d);
+
+  // - deterministic final frame so the result doesn't depend on the (racy) soft-reload winning
+  if (ipc) {
+    const message = hasOutput
+      ? { type: 'runOutput', codeNodeId: cell.id, lastStatus: cell.lastStatus, kernelNodeId: kernel.id, kernelId, outputNode: { id: outId, type: 'cell', format, content, ...outGeom, createdBy: 'ai' }, edge: outEdge }
+      : { type: 'runOutput', codeNodeId: cell.id, lastStatus: cell.lastStatus, kernelNodeId: kernel.id, kernelId };
+    void fetch(`http://127.0.0.1:${ipc.port}/delta`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-skena-token': ipc.token },
+      body: JSON.stringify({ canvasPath: p, message }),
+    }).catch(() => { /* - best-effort */ });
+  }
+
+  return { status: cell.lastStatus, outLabel, streamText: out.streamText, error: out.error };
+}
+
 async function canvasRunCell(args: Record<string, unknown>): Promise<string> {
   const p = resolvePath(args.canvasPath as string);
   return withFileLock(p, async () => {
@@ -716,99 +807,29 @@ async function canvasRunCell(args: Record<string, unknown>): Promise<string> {
     if (!server) return `error: unknown server ${kernelNode.server}`;
     if (!kernelNode.kernelId) return 'error: kernel node has no live kernelId (open the canvas so Skena starts it)';
 
-    // - mark the cell running BEFORE the (blocking) execute + persist it, so the host's file-watcher
-    // - soft-reloads and shows the running stripe (the marching-ants border + run edge are DERIVED
-    // - from lastStatus). Without this an agent run showed no progress until it finished.
-    cell.lastStatus = 'running';
-    await writeCanvas(p, d);
-
-    // - fix the output node id up front so the live-stream frames and the final persisted node share
-    // - it (no duplicate); reuse this cell's existing output node on a re-run.
-    const kernel   = kernelNode;
     const kernelId = kernelNode.kernelId;   // - narrowed to string by the guard above
-    const outId    = cell.outputNodeId ?? uid();
-    const outGeom = { x: Math.round(cell.x + cell.width + 140), y: Math.round(cell.y), width: 480, height: 320 };
-    const outEdge = { id: `edge-out-${outId}`, fromNode: cell.id, fromSide: 'right' as const, toNode: outId, toSide: 'left' as const, toEnd: 'arrow' as const };
-
-    // - stream live output to the host webview via the run-ipc relay (best-effort, throttled). Absent
-    // - SKENA_RUN_IPC (e.g. headless) → no streaming, output still lands via the final write below.
     const ipc = parseRunIpc(process.env.SKENA_RUN_IPC);
-    let lastPost = 0;
-    const postFrame = (partial: CollectedOutput) => {
-      if (!ipc) return;
-      if (partial.rich.length === 0 && partial.streamText.length === 0 && Object.keys(partial.widgets).length === 0) return;
-      const { format, content } = renderOutput(partial);
-      const message = {
-        type: 'runOutput', codeNodeId: cell.id, lastStatus: 'running',
-        kernelNodeId: kernel.id, kernelId,
-        outputNode: { id: outId, type: 'cell', format, content, ...outGeom, createdBy: 'ai' },
-        edge: outEdge,
-      };
-      void fetch(`http://127.0.0.1:${ipc.port}/delta`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-skena-token': ipc.token },
-        body: JSON.stringify({ canvasPath: p, message }),
-      }).catch(() => { /* - relay is best-effort */ });
-    };
-    const onDelta = (partial: CollectedOutput) => {
-      const now = Date.now();
-      if (now - lastPost >= 350) { lastPost = now; postFrame(partial); }   // - coalesce fast frames
-    };
 
-    const ids = { msgId: crypto.randomUUID(), session: crypto.randomUUID(), date: new Date().toISOString() };
-    let out: CollectedOutput;
-    try {
-      out = await executeCell(server, kernelId, cell.code, ids, onDelta);
-    } catch (e) {
-      // - transport/kernel failure: persist error status so the cell isn't left stuck 'running' on
-      // - disk (the start-of-run write set it running). The soft-reload then clears the running stripe.
-      cell.lastStatus = 'error';
-      cell.lastRun    = Date.now();
-      await writeCanvas(p, d);
-      return `error: cell execution failed: ${e instanceof Error ? e.message : String(e)}`;
-    }
-
-    // - collapse ALL outputs (stream + every rich mime) into one cell-node payload
-    const { format, content } = renderOutput(out);
-    const hasOutput = out.rich.length > 0 || out.streamText.length > 0 || !!out.error;
-    let outLabel = '(no output)';
-    if (hasOutput) {
-      // - persist to the SAME node id the live frames streamed to (outId), so a re-run updates in
-      // - place and a first run's streamed node reconciles with the persisted one (no duplicate)
-      const existing = d.nodes.find(n => n.id === outId && n.type === 'cell') as CellNode | undefined;
-      if (existing) {
-        existing.format  = format;
-        existing.content = content;
-        outLabel = existing.nodeLabel ?? existing.id;
-      } else {
-        const outNode: CellNode = { id: outId, type: 'cell', format, content, ...outGeom, createdBy: 'ai' };
-        const labeled = assignLabel(outNode, d.nodes);
-        d.nodes.push(labeled);
-        d.edges.push(outEdge);
-        cell.outputNodeId = outId;
-        outLabel = labeled.nodeLabel ?? labeled.id;
+    // - run-with-upstream: run each upstream cell (closer to the kernel) whose flag is clear, in
+    // - dependency order, then the requested cell. Already-run ('ok') cells are skipped; a failed
+    // - upstream cell aborts the chain.
+    const typeOf   = (id: string) => d.nodes.find(n => n.id === id)?.type;
+    const upstream = resolveUpstreamChain(cell.id, d.edges, id => typeOf(id) === 'kernel', id => typeOf(id) === 'code');
+    const ran: string[] = [];
+    for (const upId of upstream) {
+      const up = d.nodes.find(n => n.id === upId && n.type === 'code') as CodeNode | undefined;
+      if (!up || up.lastStatus === 'ok') continue;   // - already run (and unchanged) → skip
+      const r = await runCellCore(d, up, kernelNode, kernelId, server, p, ipc);
+      ran.push(`${up.nodeLabel ?? up.id}:${r.status}`);
+      if (r.status === 'error') {
+        return `error: upstream ${up.nodeLabel ?? up.id} failed — ${r.error ?? ''} (ran ${ran.join(', ')})`;
       }
     }
 
-    cell.lastStatus = out.status === 'error' ? 'error' : 'ok';
-    cell.lastRun    = Date.now();
-    await writeCanvas(p, d);
-
-    // - deterministic final frame: update the node + clear the running stripe via the relay directly,
-    // - so the result doesn't depend on the (racy) soft-reload of the disk write above landing/winning.
-    if (ipc) {
-      const message = hasOutput
-        ? { type: 'runOutput', codeNodeId: cell.id, lastStatus: cell.lastStatus, kernelNodeId: kernel.id, kernelId, outputNode: { id: outId, type: 'cell', format, content, ...outGeom, createdBy: 'ai' }, edge: outEdge }
-        : { type: 'runOutput', codeNodeId: cell.id, lastStatus: cell.lastStatus, kernelNodeId: kernel.id, kernelId };
-      void fetch(`http://127.0.0.1:${ipc.port}/delta`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-skena-token': ipc.token },
-        body: JSON.stringify({ canvasPath: p, message }),
-      }).catch(() => { /* - best-effort */ });
-    }
-
-    return `ran ${cell.nodeLabel ?? cell.id} on ${kernelNode.server} → ${outLabel}: ${out.status}` +
-      `${out.error ? ' — ' + out.error : ''}\n${out.streamText.slice(0, 500)}`;
+    const res    = await runCellCore(d, cell, kernelNode, kernelId, server, p, ipc);
+    const prefix = ran.length ? `(upstream ${ran.join(', ')}) ` : '';
+    return `${prefix}ran ${cell.nodeLabel ?? cell.id} on ${kernelNode.server} → ${res.outLabel}: ${res.status}` +
+      `${res.error ? ' — ' + res.error : ''}\n${res.streamText.slice(0, 500)}`;
   }); // - withFileLock
 }
 

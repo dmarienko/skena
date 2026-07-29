@@ -24,7 +24,7 @@ import { getVaults } from './settings';
 import { createLLMClient, CANVAS_TOOLS, ILLMClient } from './llm-client';
 import { buildSystemPrompt, buildStaticSystemPrompt, buildCanvasContext, nodeTitle, nodeContent } from './context-builder';
 import { assignLabel } from '../shared/nodeLabels';
-import { resolveBoundKernel } from '../shared/kernelBinding';
+import { resolveBoundKernel, resolveUpstreamChain } from '../shared/kernelBinding';
 import { KernelManager } from './jupyter/manager';
 import { listKernels, startKernel, listKernelSpecs, listSessions } from './jupyter/client';
 import type { CollectedOutput } from './jupyter/protocol';
@@ -1094,14 +1094,14 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
    * reload re-syncs the webview. Run status (spinner + animated edge) is pushed
    * separately as transient UI via runStatus messages.
    */
-  private async handleRunCell(
+  private async runOneCell(
     msg:            MsgRunCell,
     manager:        KernelManager,
     panel:          vscode.WebviewPanel,
     document:       SkenaDocument,
     setSelfSaving:  (v: boolean) => void,
     setLastWritten: (s: string) => void,
-  ): Promise<void> {
+  ): Promise<'ok' | 'error'> {
     // - the run can outlive its panel (user closes the canvas mid-run); posting to a
     // - disposed webview throws, so swallow it — the output is still persisted to disk.
     const send   = (m: HostToWebview) => { try { panel.webview.postMessage(m); } catch { /* panel disposed */ } };
@@ -1110,7 +1110,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const codeNode = canvas.nodes.find(
       n => n.id === msg.cellNodeId && n.type === 'code',
     ) as CodeNode | undefined;
-    if (!codeNode) return;
+    if (!codeNode) return 'error';
 
     // - bound kernel: the nearest kernel reachable through edges (BFS), so a chain
     // - of cells (cell2 → cell1 → kernel) shares one kernel.
@@ -1119,13 +1119,13 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const kernelNode = boundKernelNodeId ? nodeById.get(boundKernelNodeId) as KernelNode | undefined : undefined;
     if (!kernelNode) {
       send({ type: 'runStatus', cellNodeId: codeNode.id, kernelNodeId: null, state: 'error', error: 'no kernel bound' });
-      return;
+      return 'error';
     }
 
     const server = manager.serverByName(kernelNode.server);
     if (!server) {
       send({ type: 'runStatus', cellNodeId: codeNode.id, kernelNodeId: kernelNode.id, state: 'error', error: 'unknown server' });
-      return;
+      return 'error';
     }
 
     send({ type: 'runStatus', cellNodeId: codeNode.id, kernelNodeId: kernelNode.id, state: 'running' });
@@ -1205,7 +1205,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       kernelId = await manager.ensureKernel(server, kernelNode.kernelId);
     } catch (e) {
       fail(`kernel start failed: ${e instanceof Error ? e.message : String(e)}`);
-      return;
+      return 'error';
     }
 
     const ids = { msgId: randomUUID(), session: randomUUID(), date: new Date().toISOString() };
@@ -1263,7 +1263,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         send({ type: 'runOutput', codeNodeId: codeNode.id, lastStatus: 'error', kernelNodeId: kernelNode.id, kernelId, outputNode, edge });
       } catch { /* non-fatal */ }
       fail(`execution failed: ${e instanceof Error ? e.message : String(e)}`);
-      return;
+      return 'error';
     }
     finished = true;
     if (deltaTimer) { clearTimeout(deltaTimer); deltaTimer = null; }
@@ -1284,6 +1284,43 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
 
     // - stop the running-edge animation (runStatus drives it)
     send({ type: 'runStatus', cellNodeId: codeNode.id, kernelNodeId: kernelNode.id, state: status, error: out.error });
+    return status;
+  }
+
+  /**
+   * Run a cell WITH its upstream: before running the requested cell, run each upstream cell
+   * (closer to the kernel) whose run-flag is clear (never run / errored / edited-since), in
+   * dependency order. Already-run (lastStatus 'ok') cells are skipped. Stops the chain if any
+   * upstream cell errors. Reuses runOneCell verbatim per cell (all its live-output/race logic).
+   */
+  private async handleRunCell(
+    msg:            MsgRunCell,
+    manager:        KernelManager,
+    panel:          vscode.WebviewPanel,
+    document:       SkenaDocument,
+    setSelfSaving:  (v: boolean) => void,
+    setLastWritten: (s: string) => void,
+  ): Promise<void> {
+    const canvas   = document.canvas;
+    const typeOf   = (id: string) => canvas.nodes.find(n => n.id === id)?.type;
+    const upstream = resolveUpstreamChain(
+      msg.cellNodeId,
+      canvas.edges,
+      id => typeOf(id) === 'kernel',
+      id => typeOf(id) === 'code',
+    );
+    // - run upstream cells that need it (clear flag), in order; stop if one errors
+    for (const upId of upstream) {
+      const up = canvas.nodes.find(n => n.id === upId && n.type === 'code') as CodeNode | undefined;
+      if (!up || up.lastStatus === 'ok') continue;   // - already run (and unchanged) → skip
+      const st = await this.runOneCell(
+        { type: 'runCell', cellNodeId: up.id, code: up.code ?? '' },
+        manager, panel, document, setSelfSaving, setLastWritten,
+      );
+      if (st === 'error') return;   // - a failed upstream cell aborts the chain (don't run downstream)
+    }
+    // - finally run the requested cell (always) with the code the user is running
+    await this.runOneCell(msg, manager, panel, document, setSelfSaving, setLastWritten);
   }
 
   /**

@@ -2061,14 +2061,15 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       // - stamp editIndex from the shared creationCounter pool (see nodeTextEdit)
       const nextIdx = (canvasRef.current.creationCounter ?? 0) + 1;
       canvasRef.current = { ...canvasRef.current, creationCounter: nextIdx };
-      const updatedNode = { ...original, code, editIndex: nextIdx };
+      // - clear the run-flag on edit: an edited cell is "stale" so run-with-upstream re-runs it
+      const updatedNode = { ...original, code, editIndex: nextIdx, lastStatus: undefined };
       const updated: CanvasData = {
         ...canvasRef.current,
         nodes: canvasRef.current.nodes.map(n => n.id === id ? updatedNode : n),
       };
       canvasRef.current = updated;
       setNodes(nds => nds.map(n =>
-        n.id === id ? { ...n, data: { ...n.data, code, editIndex: nextIdx } } : n
+        n.id === id ? { ...n, data: { ...n.data, code, editIndex: nextIdx, lastStatus: undefined } } : n
       ));
       scheduleSave();
     };
