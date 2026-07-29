@@ -845,6 +845,8 @@ async function runCellCore(
       // - content only; keep the node where it is (the user may have dragged it — don't snap it)
       existing.format  = format;
       existing.content = content;
+      // - ensure the connecting edge exists (a stale reload may have dropped it)
+      if (!d.edges.some(e => e.id === outEdge.id)) d.edges.push(outEdge);
       outLabel = existing.nodeLabel ?? existing.id;
     } else {
       const outNode: CellNode = { id: outId, type: 'cell', format, content, ...outGeom, createdBy: 'ai' };

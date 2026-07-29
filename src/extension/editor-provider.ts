@@ -1202,6 +1202,14 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           existing.format  = output.format;
           existing.content = output.content;
           outputNode = existing;
+          // - ensure the connecting edge exists (a stale reload may have dropped it) and RETURN it so
+          //   the completion runOutput reconnects the output node
+          const edgeId = `e-${existing.id}`;
+          edge = c.edges.find(e => e.id === edgeId);
+          if (!edge) {
+            edge = { id: edgeId, fromNode: cn.id, fromSide: 'right', toNode: existing.id, toSide: 'left', toEnd: 'arrow' };
+            c.edges.push(edge);
+          }
         } else {
           const id = presetId ?? `ai-${Date.now().toString(36)}`;
           const cellBase: CellNode = {

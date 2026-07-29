@@ -495,8 +495,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         .filter((oid): oid is string => !!oid),
     );
     const keepNodes = nodesRef.current.filter(n => referenced.has(n.id) && !diskIds.has(n.id));
-    const keepIds   = new Set(keepNodes.map(n => n.id));
-    const keepEdges = edgesRef.current.filter(e => keepIds.has(e.target) && !canvas.edges.some(x => x.id === e.id));
+    // - keep the edge to ANY referenced output the disk snapshot is missing the edge for — covers the
+    //   "node present but link dropped" case, not just a fully-missing output node
+    const keepEdges = edgesRef.current.filter(e => referenced.has(e.target) && !canvas.edges.some(x => x.id === e.id));
     const keepAsCanvas = keepNodes.map(n => {
       const { accentColor: _drop, ...rest } = n.data as Record<string, unknown>;
       return { ...rest, x: n.position.x, y: n.position.y } as unknown as CanvasNode;
