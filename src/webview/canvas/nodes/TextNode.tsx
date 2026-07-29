@@ -168,14 +168,22 @@ export function patchVimNewlineAndIndent(): void {
     const editor = cm.editor as MonacoEditor.IStandaloneCodeEditor;
     const pos = editor.getPosition();
     if (!pos) return;
-    // - insert a literal newline at the current (EOL) cursor position
+    // - autoindent: carry the current line's leading whitespace onto the new line (vim `o`/`O`),
+    //   plus one extra step after a Python block opener (`:`) so `def f():`→o lands indented
+    const model = editor.getModel();
+    const line  = model ? model.getLineContent(pos.lineNumber) : '';
+    const base  = (line.match(/^[ \t]*/) ?? [''])[0];
+    const extra = /:\s*(#.*)?$/.test(line) ? '    ' : '';
+    const indent = base + extra;
     editor.executeEdits('vim-o', [{
       range: {
         startLineNumber: pos.lineNumber, startColumn: pos.column,
         endLineNumber:   pos.lineNumber, endColumn:   pos.column,
       },
-      text: '\n',
+      text: '\n' + indent,
     }]);
+    // - place the cursor after the inserted indent on the new line
+    editor.setPosition({ lineNumber: pos.lineNumber + 1, column: indent.length + 1 });
   };
 }
 

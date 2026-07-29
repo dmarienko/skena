@@ -1185,6 +1185,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         if (existing) {
           existing.format  = output.format;
           existing.content = output.content;
+          // - re-center on the code node (migrates output cells placed top-aligned before centering)
+          existing.x = cn.x + cn.width + 140;
+          existing.y = Math.round(cn.y + (cn.height - existing.height) / 2);
           outputNode = existing;
         } else {
           const id = presetId ?? `ai-${Date.now().toString(36)}`;

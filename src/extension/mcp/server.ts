@@ -754,6 +754,8 @@ async function runCellCore(
     if (existing) {
       existing.format  = format;
       existing.content = content;
+      existing.x = outGeom.x;   // - re-center (migrates output cells placed top-aligned before centering)
+      existing.y = Math.round(cell.y + (cell.height - existing.height) / 2);
       outLabel = existing.nodeLabel ?? existing.id;
     } else {
       const outNode: CellNode = { id: outId, type: 'cell', format, content, ...outGeom, createdBy: 'ai' };
