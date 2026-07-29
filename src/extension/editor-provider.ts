@@ -1190,7 +1190,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           const id = presetId ?? `ai-${Date.now().toString(36)}`;
           const cellBase: CellNode = {
             id, type: 'cell',
-            x: cn.x + cn.width + 140, y: cn.y, width: 480, height: 320,
+            x: cn.x + cn.width + 140, y: Math.round(cn.y + (cn.height - 320) / 2), width: 480, height: 320,
             format: output.format, content: output.content, createdBy: 'ai',
           };
           outputNode = assignLabel(cellBase, c.nodes) as CellNode;

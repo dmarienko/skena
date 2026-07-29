@@ -708,7 +708,7 @@ async function runCellCore(
   await writeCanvas(p, d);
 
   const outId   = cell.outputNodeId ?? uid();
-  const outGeom = { x: Math.round(cell.x + cell.width + 140), y: Math.round(cell.y), width: 480, height: 320 };
+  const outGeom = { x: Math.round(cell.x + cell.width + 140), y: Math.round(cell.y + (cell.height - 320) / 2), width: 480, height: 320 };
   const outEdge = { id: `edge-out-${outId}`, fromNode: cell.id, fromSide: 'right' as const, toNode: outId, toSide: 'left' as const, toEnd: 'arrow' as const };
 
   let lastPost = 0;
