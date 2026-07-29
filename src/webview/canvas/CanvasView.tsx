@@ -2191,10 +2191,11 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         return next;
       });
       if (d.edge) setEdges(eds => eds.some(x => x.id === d.edge!.id) ? eds : [...eds, toFlowEdge(d.edge!)]);
-      // - the canvasRef mirror is what a later scheduleSave() serialises to disk. Only reconcile it on
-      // - a terminal status; 'running' deltas are UI-only (the host persists once at completion), so a
-      // - concurrent save can't leak a mid-run partial to disk.
-      const cr = d.lastStatus === 'running' ? null : canvasRef.current;
+      // - mirror EVERY delta (incl. 'running') into canvasRef so the output node + its edge + the
+      // - code node's outputNodeId are durable: a concurrent scheduleSave() then keeps them, and the
+      // - host also persists the node once on first output. This is what lets a close+reopen mid-run
+      // - restore the output node. (Reload flicker from the resulting writes is absorbed by reconcile.)
+      const cr = canvasRef.current;
       if (cr) {
         let nodes = cr.nodes.map(n => {
           if (n.id === d.codeNodeId) return { ...n, lastStatus: d.lastStatus, ...(out ? { outputNodeId: out.id } : {}) } as CanvasNode;

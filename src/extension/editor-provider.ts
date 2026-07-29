@@ -1231,6 +1231,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     // - a 120ms timer that has ALREADY fired (its callback is queued); such a stray flush could
     // - otherwise send a 'running' after the final 'ok' and leave the cell stuck showing running.
     let finished = false;
+    let livePersisted = false;   // - output node written to disk once so it survives a close+reopen mid-run
     const flushDelta = () => {
       deltaTimer = null;
       if (finished || !latest) return;
@@ -1251,6 +1252,21 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       try {
         send({ type: 'runOutput', codeNodeId: codeNode.id, lastStatus: 'running', kernelNodeId: kernelNode.id, kernelId, outputNode, edge });
       } catch { /* - webview disposed mid-run; disk write at completion still happens */ }
+      // - persist the output node to disk ONCE (first creation) so a close+reopen mid-run keeps it —
+      // - the live frames are otherwise UI-only. Re-runs already have it on disk, so this is skipped.
+      if (!livePersisted) {
+        livePersisted = true;
+        const c = document.canvas;
+        const cnDisk = c.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code') as CodeNode | undefined;
+        if (cnDisk && !cnDisk.outputNodeId) {
+          if (!c.nodes.some(n => n.id === outputNode.id)) c.nodes.push(assignLabel(outputNode, c.nodes) as CellNode);
+          if (!c.edges.some(e => e.id === edge.id)) c.edges.push(edge);
+          cnDisk.outputNodeId = outputNode.id;
+          setSelfSaving(true);
+          setLastWritten(JSON.stringify(c, null, 2));
+          void writeCanvas(document.uri.fsPath, c).finally(() => setTimeout(() => setSelfSaving(false), 400));
+        }
+      }
     };
     const onDelta = (partial: CollectedOutput) => {
       latest = partial;
