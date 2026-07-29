@@ -74,3 +74,27 @@ export function resolveUpstreamChain(
 
   return [...ancestors].sort((a, b) => (dist.get(a) ?? 0) - (dist.get(b) ?? 0));
 }
+
+// - all code cells transitively bound to `kernelId` (BFS through code-cell chains, not crossing into
+// - another kernel). Used to reset run-flags when the kernel is restarted/shut down — its namespace
+// - is wiped, so every bound cell is effectively un-run.
+export function resolveKernelCells(
+  kernelId:   string,
+  edges:      EdgeLike[],
+  isCodeCell: (id: string) => boolean,
+  isKernel:   (id: string) => boolean,
+): string[] {
+  const seen  = new Set<string>([kernelId]);
+  const queue = [kernelId];
+  const cells: string[] = [];
+  while (queue.length) {
+    const cur = queue.shift() as string;
+    for (const e of edges) {
+      const nb = e.fromNode === cur ? e.toNode : e.toNode === cur ? e.fromNode : null;
+      if (nb === null || seen.has(nb) || isKernel(nb)) continue;   // - stop at other kernels
+      seen.add(nb);
+      if (isCodeCell(nb)) { cells.push(nb); queue.push(nb); }      // - only walk through code cells
+    }
+  }
+  return cells;
+}

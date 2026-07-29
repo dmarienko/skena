@@ -24,7 +24,7 @@ import { getVaults } from './settings';
 import { createLLMClient, CANVAS_TOOLS, ILLMClient } from './llm-client';
 import { buildSystemPrompt, buildStaticSystemPrompt, buildCanvasContext, nodeTitle, nodeContent } from './context-builder';
 import { assignLabel } from '../shared/nodeLabels';
-import { resolveBoundKernel, resolveUpstreamChain } from '../shared/kernelBinding';
+import { resolveBoundKernel, resolveUpstreamChain, resolveKernelCells } from '../shared/kernelBinding';
 import { KernelManager } from './jupyter/manager';
 import { listKernels, startKernel, listKernelSpecs, listSessions } from './jupyter/client';
 import type { CollectedOutput } from './jupyter/protocol';
@@ -1395,18 +1395,30 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const server = manager.serverByName(kernelNode.server);
     if (!server || !kernelNode.kernelId) return;
     const name = kernelNode.displayName ?? 'kernel';
+    // - restart/shutdown wipe the kernel namespace → every bound cell is effectively un-run, so clear
+    // - their run-flag (lastStatus). Interrupt keeps variables, so it must NOT reset. The plain write
+    // - (no self-save suppression) makes the file-watcher soft-reload the cleared flags into the webview.
+    const resetBoundCellFlags = async (): Promise<void> => {
+      const typeOf = (id: string) => canvas.nodes.find(n => n.id === id)?.type;
+      const bound  = new Set(resolveKernelCells(kernelNode.id, canvas.edges, id => typeOf(id) === 'code', id => typeOf(id) === 'kernel'));
+      for (const n of canvas.nodes) {
+        if (n.type === 'code' && bound.has(n.id)) (n as CodeNode).lastStatus = undefined;
+      }
+      await writeCanvas(document.uri.fsPath, canvas);
+    };
     try {
       if (msg.action === 'restart') {
         await manager.restart(server, kernelNode.kernelId);
-        void vscode.window.showInformationMessage(`Skena: restarted ${name}.`);
+        await resetBoundCellFlags();
+        void vscode.window.showInformationMessage(`Skena: restarted ${name} — cell run-flags reset.`);
       } else if (msg.action === 'interrupt') {
         await manager.interrupt(server, kernelNode.kernelId);
         void vscode.window.showInformationMessage(`Skena: interrupted ${name}.`);
       } else {
         await manager.shutdown(server, kernelNode.kernelId);
         kernelNode.kernelId = undefined;
-        await writeCanvas(document.uri.fsPath, document.canvas);
-        void vscode.window.showInformationMessage(`Skena: shut down ${name}.`);
+        await resetBoundCellFlags();   // - also persists the cleared kernelId
+        void vscode.window.showInformationMessage(`Skena: shut down ${name} — cell run-flags reset.`);
       }
     } catch (e) {
       void vscode.window.showErrorMessage(`Skena: kernel ${msg.action} failed: ${e instanceof Error ? e.message : String(e)}`);
