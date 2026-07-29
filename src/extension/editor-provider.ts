@@ -1112,7 +1112,12 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
   ): Promise<'ok' | 'error'> {
     // - the run can outlive its panel (user closes the canvas mid-run); posting to a
     // - disposed webview throws, so swallow it — the output is still persisted to disk.
-    const send   = (m: HostToWebview) => { try { panel.webview.postMessage(m); } catch { /* panel disposed */ } };
+    // - resolve the CURRENT panel for this canvas on every send, so a run that outlives a
+    // - close+reopen streams its live output/status to the NEW panel, not the disposed original.
+    const send   = (m: HostToWebview) => {
+      const p = SkenaEditorProvider.panelsByPath.get(document.uri.fsPath) ?? panel;
+      try { p.webview.postMessage(m); } catch { /* panel disposed */ }
+    };
     const canvas = document.canvas;
 
     const codeNode = canvas.nodes.find(
