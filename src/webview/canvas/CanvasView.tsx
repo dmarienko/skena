@@ -485,10 +485,29 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     // - letting a stale timer fire would overwrite an MCP write with old state.
     if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
     const labeled = ensureLabels(canvas.nodes);
+    // - PROTECT run outputs: never let a (possibly stale) reload drop an output node that a code node
+    //   still references. A save/reload race can produce a disk snapshot lacking a just-created output
+    //   node + its edge; keep the webview's copy so it doesn't vanish or lose its connection.
+    const diskIds = new Set(labeled.map(n => n.id));
+    const referenced = new Set(
+      nodesRef.current
+        .map(n => (n.data as { outputNodeId?: string }).outputNodeId)
+        .filter((oid): oid is string => !!oid),
+    );
+    const keepNodes = nodesRef.current.filter(n => referenced.has(n.id) && !diskIds.has(n.id));
+    const keepIds   = new Set(keepNodes.map(n => n.id));
+    const keepEdges = edgesRef.current.filter(e => keepIds.has(e.target) && !canvas.edges.some(x => x.id === e.id));
+    const keepAsCanvas = keepNodes.map(n => {
+      const { accentColor: _drop, ...rest } = n.data as Record<string, unknown>;
+      return { ...rest, x: n.position.x, y: n.position.y } as unknown as CanvasNode;
+    });
+    const keepEdgesAsCanvas = keepEdges.map(e => ({ id: e.id, fromNode: e.source, toNode: e.target,
+      fromSide: e.sourceHandle ?? undefined, toSide: e.targetHandle ?? undefined, toEnd: 'arrow' } as CanvasEdge));
+
     // - reconcile (not replace) so unchanged nodes keep their exact object ref → no flicker re-render
-    setNodes(prev => reconcileFlowNodes(prev, labeled.map(toFlowNode)));
-    setEdges(canvas.edges.map(toFlowEdge));
-    canvasRef.current = { ...canvas, nodes: labeled };
+    setNodes(prev => [...reconcileFlowNodes(prev, labeled.map(toFlowNode)), ...keepNodes]);
+    setEdges([...canvas.edges.map(toFlowEdge), ...keepEdges]);
+    canvasRef.current = { ...canvas, nodes: [...labeled, ...keepAsCanvas], edges: [...canvas.edges, ...keepEdgesAsCanvas] };
 
     // - restore saved viewport immediately (external reload; defaultViewport only fires on mount)
     if (canvas.viewport) {
@@ -914,6 +933,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   // - use a ref so the stable keydown handler always sees current nodes
   const nodesRef = useRef(nodes);
   useEffect(() => { nodesRef.current = nodes; });
+  const edgesRef = useRef(edges);
+  useEffect(() => { edgesRef.current = edges; });
 
   // ─── shared focus helpers ─────────────────────────────────────────────────
 

@@ -144,9 +144,17 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
 
     // - flag to suppress file watcher events triggered by our own saves
     let isSelfSaving = false;
-    // - last JSON we wrote, so we can detect an external write (e.g. MCP) that
-    // - arrives while isSelfSaving is true and not suppress it incorrectly
-    let lastWrittenJson = '';
+    // - the last few JSONs WE wrote. A watcher event whose disk content matches ANY of these is our
+    // - own echo — remembering several (not one) is essential because the host's run writes and the
+    // - webview's saves interleave, so `disk` may still hold an earlier of OUR writes when its
+    // - watcher event finally fires. One slot got clobbered by the other writer → spurious reload.
+    const recentWrites: string[] = [];
+    let   lastWrittenJson = '';
+    const rememberWrite = (s: string) => {
+      lastWrittenJson = s;
+      recentWrites.push(s);
+      if (recentWrites.length > 8) recentWrites.shift();
+    };
 
     panel.webview.options = {
       enableScripts: true,
@@ -255,7 +263,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           break;
         }
         case 'requestFile':  await this.handleRequestFile(msg, panel, document, resolver, canvasDir); break;
-        case 'saveCanvas':   await this.handleSaveCanvas(msg, document, v => { isSelfSaving = v; }, s => { lastWrittenJson = s; }); break;
+        case 'saveCanvas':   await this.handleSaveCanvas(msg, document, v => { isSelfSaving = v; }, s => rememberWrite(s)); break;
         case 'openFile':     await this.handleOpenFile(msg, resolver, canvasDir); break;
         case 'searchVault':  {
           const results = this.indexer.search(msg.query);
@@ -434,7 +442,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         case 'showWarning':
           vscode.window.showWarningMessage(msg.text);
           break;
-        case 'runCell':      await this.handleRunCell(msg, manager, panel, document, v => { isSelfSaving = v; }, s => { lastWrittenJson = s; }); break;
+        case 'runCell':      await this.handleRunCell(msg, manager, panel, document, v => { isSelfSaving = v; }, s => rememberWrite(s)); break;
         case 'addKernel':    await this.handleAddKernel(manager, document, send); break;
         case 'kernelAction': await this.handleKernelAction(msg, manager, document); break;
         case 'interruptCell': await this.handleInterruptCell(msg, manager, document); break;
@@ -478,7 +486,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       // - run-output node. Comparing disk to the last bytes we wrote catches late echoes too.
       try {
         const raw = await fs.readFile(document.uri.fsPath, 'utf-8');
-        if (raw === lastWrittenJson) return;   // - our own write (current, or a late-firing earlier one)
+        if (recentWrites.includes(raw)) return;   // - our own write (current, or a late-firing earlier one)
       } catch { return; }
       if (reloadTimer) clearTimeout(reloadTimer);
       reloadTimer = setTimeout(() => { reloadTimer = null; void reloadFromDisk(); }, 200);
