@@ -40,6 +40,7 @@ import {
   CellNode,
   CodeNode,
   KernelNode,
+  KernelStatusEntry,
   MsgRunCell,
   MsgInterruptCell,
   HostToWebview,
@@ -169,8 +170,15 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     // - send initial canvas data once webview signals ready
     const send = (msg: HostToWebview) => panel.webview.postMessage(msg);
 
-    // - one Jupyter kernel manager per panel; pushes status to the webview
-    const manager = new KernelManager(kernels => send({ type: 'kernelStatus', kernels }));
+    // - one Jupyter kernel manager per panel; pushes status to the webview.
+    // - one-shot on open: reconcile run-flags against the live kernels — a bound kernel that died
+    // - while the canvas was closed (external restart/timeout) means a wiped namespace, so its cells
+    // - must re-run. Only the first poll, and only when the kernel's server actually responded.
+    let reconciledFlags = false;
+    const manager = new KernelManager(kernels => {
+      send({ type: 'kernelStatus', kernels });
+      if (!reconciledFlags) { reconciledFlags = true; void this.reconcileRunFlags(document, kernels); }
+    });
 
     // - handle messages from webview
     panel.webview.onDidReceiveMessage(async (msg: WebviewToHost) => {
@@ -1384,6 +1392,33 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
    * Shutdown clears the node's kernelId so its LED goes grey and the next run starts
    * a fresh kernel; restart keeps the same id (Jupyter wipes the namespace).
    */
+  // - reset run-flags (and the stale kernelId) for kernel nodes whose kernel is no longer live, so
+  // - run-with-upstream re-runs everything against a wiped namespace. Guarded: acts only when the
+  // - kernel's SERVER responded to the poll but the kernelId is absent (a fully unreachable server
+  // - is ambiguous — a live kernel could just be momentarily unreported — so it's left alone).
+  private async reconcileRunFlags(document: SkenaDocument, kernels: KernelStatusEntry[]): Promise<void> {
+    const canvas           = document.canvas;
+    const liveIds          = new Set(kernels.map(k => k.kernelId));
+    const reachableServers = new Set(kernels.map(k => k.server));
+    const typeOf           = (id: string) => canvas.nodes.find(n => n.id === id)?.type;
+    let changed = false;
+    for (const kn of canvas.nodes) {
+      if (kn.type !== 'kernel') continue;
+      const k = kn as KernelNode;
+      if (!k.kernelId || !reachableServers.has(k.server) || liveIds.has(k.kernelId)) continue;
+      const bound = new Set(resolveKernelCells(k.id, canvas.edges, id => typeOf(id) === 'code', id => typeOf(id) === 'kernel'));
+      for (const n of canvas.nodes) {
+        if (n.type === 'code' && bound.has(n.id) && (n as CodeNode).lastStatus !== undefined) {
+          (n as CodeNode).lastStatus = undefined;
+          changed = true;
+        }
+      }
+      k.kernelId = undefined;   // - drop the dead id so the next run starts a fresh kernel
+      changed = true;
+    }
+    if (changed) await writeCanvas(document.uri.fsPath, canvas);
+  }
+
   private async handleKernelAction(
     msg:      { action: 'restart' | 'shutdown' | 'interrupt'; kernelNodeId: string },
     manager:  KernelManager,
