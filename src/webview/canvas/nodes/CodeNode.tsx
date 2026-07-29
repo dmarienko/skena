@@ -394,6 +394,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
           >
             <Editor
               height="100%"
+              loading={null}   // - Monaco is bundled (loader.config in index.tsx); skip the "Loading…" flash
               defaultLanguage="python"
               language="python"
               theme="skena-code"

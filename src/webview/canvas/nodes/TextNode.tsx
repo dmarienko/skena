@@ -623,6 +623,7 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
           <div style={{ flex: 1 }}>
             <Editor
               height="100%"
+              loading={null}   // - Monaco is bundled (loader.config in index.tsx); skip the "Loading…" flash
               defaultLanguage="markdown"
               value={draft}
               theme="skena-editor"
