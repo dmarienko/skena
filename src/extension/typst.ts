@@ -52,6 +52,11 @@ export function typstMathToSvg(src: string, block: boolean): string {
     let out = svg.includes('class="')
       ? svg.replace('class="', `class="${cls} `)
       : svg.replace('<svg', `<svg class="${cls}"`);
+    // - strip Typst's hidden text-selection overlay (foreignObject > div.tsel). When its internal
+    // - transparent style doesn't take (webview CSP), it renders ON TOP of the glyphs (garbled math);
+    // - and each foreignObject forces an HTML render context that's expensive to rasterise/reposition
+    // - during canvas pan. We don't need in-SVG text selection here — drop them; glyph paths remain.
+    out = out.replace(/<foreignObject\b[\s\S]*?<\/foreignObject>/gi, '');
     // - Size in em so math scales with the surrounding font AND grows with content
     // - (display fractions get their true height). The SVG's data-width/height are in
     // - Typst units where a single text line ≈ 12; EM_UNITS tunes the on-screen size
