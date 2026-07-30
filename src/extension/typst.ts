@@ -56,7 +56,9 @@ export function typstMathToSvg(src: string, block: boolean): string {
     // - transparent style doesn't take (webview CSP), it renders ON TOP of the glyphs (garbled math);
     // - and each foreignObject forces an HTML render context that's expensive to rasterise/reposition
     // - during canvas pan. We don't need in-SVG text selection here — drop them; glyph paths remain.
-    out = out.replace(/<foreignObject\b[\s\S]*?<\/foreignObject>/gi, '');
+    // - NOTE: the compiler emits foreignObject WITHOUT a closing tag (auto-closed by the parent </g>),
+    // - so match from <foreignObject up to the overlay div's </...div> end, not </foreignObject>.
+    out = out.replace(/<foreignObject\b[\s\S]*?<\/(?:[a-z0-9]+:)?div>/gi, '');
     // - Size in em so math scales with the surrounding font AND grows with content
     // - (display fractions get their true height). The SVG's data-width/height are in
     // - Typst units where a single text line ≈ 12; EM_UNITS tunes the on-screen size
