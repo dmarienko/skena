@@ -103,6 +103,13 @@
 .skena-unknown { font-size: 11px; opacity: 0.4; padding: 8px; font-style: italic; }
 
 /* - Typst math SVGs from the host renderer */
+/* - Typst embeds a hidden text-selection overlay (foreignObject > div.tsel with the real chars,
+   - meant to be color:transparent via the SVG's OWN internal <style>). When that internal style
+   - doesn't take (webview CSP / innerHTML), the overlay text renders ON TOP of the glyph paths →
+   - doubled/garbled formulas with a stray line (seen inside table cells). We don't need in-SVG text
+   - selection here, so hide the overlay entirely; only the glyph paths render. */
+.typst-math foreignObject,
+.typst-math .tsel { display: none !important; }
 /* - width/height come from typst.ts as em (scales with font + true content height) */
 .typst-math.typst-inline { display: inline-block; vertical-align: -0.28em; }
 .typst-math.typst-block  { display: block; margin: 8px auto; max-width: 100%; }
