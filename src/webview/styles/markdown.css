@@ -118,6 +118,13 @@
    - (svg dims are in em → font-size on the svg rescales them). Nodes are unaffected. */
 .skena-chat-md .typst-math { font-size: 1.3em; }
 
+/* - Typst inside a TABLE cell: the prose baseline-hang (vertical-align:-0.28em) + the 1.3em bump
+   - push a formula across the compact row's border lines (looks struck-through / overlapped). In a
+   - cell, centre the formula in the row and drop the prose bump so it sits inside the borders. */
+.skena-markdown td, .skena-markdown th { vertical-align: middle; }
+.skena-chat-md td .typst-math, .skena-chat-md th .typst-math { font-size: 1.05em; }
+.typst-math.typst-inline:where(td *, th *) { vertical-align: middle; }
+
 /* ============================================================================
    skena.markdownTheme = "factors" — dark teal research-terminal theme.
    Scoped to [data-md-theme="factors"] so the default (vscode-adaptive) is untouched.
