@@ -87,6 +87,15 @@ Plotly figures render live in cell nodes — from notebook outputs (`go.Figure`)
 - **HTML** (`.html`) — rendered inside an isolated shadow root (its styles can't leak into the canvas)
 - **Images** — scaled to fit the node
 
+### Run code on a Jupyter kernel
+Turn code nodes into a live notebook. Run **Skena: Add Kernel** to drop a kernel node (configure servers in `skena.jupyter.kernels` as `{name, hubUrl, token}`), connect a code node to it with an edge, and execute.
+
+- **Run** — `Shift+Enter`, `Ctrl+Enter`, `Alt+R`, or `Alt+J` inside the editor, or the ▶ button in the node header (disabled until the cell is connected to a kernel). Running a cell first runs any unrun upstream cells it's wired to, in dependency order.
+- **Live output** — stdout, `tqdm` progress bars, and a subset of `ipywidgets` stream into a connected output node as the cell runs.
+- **Interrupt** — `Ctrl`/`Cmd+C` (with confirm), the ■ stop button, or right-click while a cell is running.
+- **Restart / shutdown** from the kernel node — cell run-flags reset so they re-run cleanly against the fresh namespace.
+- **Agent runs too** — the AI companion can execute cells over MCP and you see the same live output.
+
 ### Markdown theme
 `skena.markdownTheme` themes rendered markdown in nodes **and** chat:
 - `vscode` (default) — adapts to your active VS Code color theme.
