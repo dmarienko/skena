@@ -16,6 +16,7 @@
  * off-screen skipping again, gate content-visibility to the idle state (disable it while
  * a pan/zoom is in progress) rather than leaving it always-on.
  */
+
 .skena-markdown h1 { font-size: 15px; font-weight: 700; margin: 8px 0 4px; }
 .skena-markdown h2 { font-size: 13px; font-weight: 700; margin: 6px 0 3px; }
 .skena-markdown h3 { font-size: 12px; font-weight: 600; margin: 5px 0 2px; }

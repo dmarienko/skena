@@ -42,12 +42,46 @@
    * GPU texture — pan/zoom just moves/scales the cached textures, no repaint.
    * Tiled rasterization means even large nodes only upload the visible tile.
    */
-  /* - will-change only DURING pan/zoom (data-skena-interacting set by CanvasView).
-   * - At rest, a promoted layer is a cached texture scaled at fractional zoom → blurry
-   * - text; without it the browser paints at the real scale → crisp. */
   will-change: auto;
 }
-:root[data-skena-interacting="1"] .skena-node { will-change: transform; }
+
+/*
+ * Pan/zoom compositing — promote ONE layer (the whole viewport), not each node.
+ *
+ * The old rule put `will-change: transform` on every `.skena-node` during a gesture. That
+ * asks Chromium to promote N nodes to N GPU layers at once. Chromium has a layer-memory
+ * budget; with many heavy (markdown/MathML) nodes it blows the budget and promotes NONE, so
+ * everything falls back to the root layer and the full visible canvas software-repaints on
+ * every pan frame (a trace showed Paint = 53% of pan wall-clock, all on layerId 0). Lag then
+ * grows with node count — exactly the reported symptom.
+ *
+ * React Flow already applies the pan/zoom transform to `.react-flow__viewport`. Promoting
+ * THAT single element to a composited layer during a gesture means a pan just translates one
+ * cached layer — no content repaint, and the cost is independent of node count. Gated to the
+ * gesture (data-skena-interacting) so at rest the browser paints at the real scale (crisp
+ * text); only mid-zoom is a scaled cached layer briefly soft, snapping crisp when it ends.
+ */
+:root[data-skena-interacting="1"] .react-flow__viewport { will-change: transform; }
+
+/*
+ * Hide the dot grid DURING a pan/zoom. React Flow re-renders the Background SVG on every
+ * viewport change; it lives inside the composited viewport layer and spans the whole area,
+ * so each update invalidates that layer and forces a full re-raster of all visible node
+ * content behind it (~50ms, ~7×/sec — a trace showed the Background paints land on the exact
+ * timestamps as the viewport re-rasters). Dropping it while moving removes that invalidation;
+ * the grid returns the instant the gesture ends.
+ */
+:root[data-skena-interacting="1"] .react-flow__background { display: none; }
+
+/*
+ * Suppress text selection DURING a pan/zoom. Dragging to pan sweeps the pointer over the
+ * selectable node markdown, so the browser repeatedly starts a text selection — a trace
+ * showed ~95 selectstart events across a 4.7s drag, each forcing a layout recalc and a
+ * selection-highlight repaint of the (heavy MathML) region under the cursor (~20ms). That
+ * was the actual pan lag, not raster weight. user-select:none for the gesture stops the
+ * selection from ever starting; normal selection returns the instant the gesture ends.
+ */
+:root[data-skena-interacting="1"] .react-flow { user-select: none; }
 
 /* - keep the SAME drop-shadow geometry as the base (0 2px 8px); only brighten the 1px
    - ring on hover. Changing the shadow size shifted the node's paint bounds a couple px
