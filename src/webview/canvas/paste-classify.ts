@@ -1,5 +1,7 @@
 // - pure clipboard classifier for paste-to-node; no DOM, no vscode — unit-testable standalone.
-// - priority per spec: image > html > uri-list > text (yy-internal / url / path / plain).
+// - priority per spec: image > html > uri-list > text (yy-internal / node-ref / url / path / plain).
+
+import { parseNodeRef } from '../../shared/nodeRef';
 
 export interface ClipboardInput {
   hasImage:   boolean;
@@ -14,6 +16,7 @@ export type PasteAction =
   | { kind: 'cell-html'; html: string }
   | { kind: 'files'; uris: string[] }
   | { kind: 'internal' }
+  | { kind: 'noderef'; canvas: string; label: string }
   | { kind: 'link'; url: string }
   | { kind: 'verify-path'; raw: string }
   | { kind: 'text'; text: string }
@@ -109,6 +112,9 @@ export function classifyClipboard(input: ClipboardInput): PasteAction {
     if (plotly) return { kind: 'cell-plotly', json: plotly };
     if (isPythonFigureRepr(trimmed)) return { kind: 'figure-repr', text: input.text };
     if (isSingleLine(trimmed)) {
+      // - a canvas node reference (copied via `c,c` or hand-typed) → diamond node, not text
+      const ref = parseNodeRef(trimmed);
+      if (ref) return { kind: 'noderef', canvas: ref.canvas, label: ref.label };
       if (isUrl(trimmed))  return { kind: 'link', url: trimmed };
       if (isPath(trimmed)) return { kind: 'verify-path', raw: trimmed };
     }

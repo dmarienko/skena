@@ -2366,10 +2366,10 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
   // - insert a pasted node right of the focused node (edge) or at viewport centre (no edge).
   // - offsetIndex spreads same-tick batch inserts vertically (nodesRef can't see siblings yet)
-  const insertPastedNode = useCallback((partial: { type: 'text'; text: string } | { type: 'link'; url: string } | { type: 'file'; file: string }, offsetIndex = 0) => {
+  const insertPastedNode = useCallback((partial: { type: 'text'; text: string } | { type: 'link'; url: string } | { type: 'file'; file: string } | { type: 'noderef'; canvas: string; label: string; title?: string }, offsetIndex = 0) => {
     const focused = nodesRef.current.find(n => n.selected && n.type !== 'group');
-    // - link nodes are compact (matches editor-provider link node size)
-    const [nw, nh] = partial.type === 'link' ? [320, 80] : [400, 300];
+    // - link nodes are compact (matches editor-provider link node size); noderef is a small diamond
+    const [nw, nh] = partial.type === 'link' ? [320, 80] : partial.type === 'noderef' ? [200, 120] : [400, 300];
     const GAP = 40;
     let x: number, y: number;
     if (focused) {
@@ -2536,6 +2536,11 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         }
         case 'internal':
           pasteInternalClipboard();
+          return;
+        case 'noderef':
+          // - title is a display hint only (label drives activation) — resolving it needs a
+          // - host round trip to read the target canvas; skip it rather than block the paste
+          insertPastedNode({ type: 'noderef', canvas: action.canvas, label: action.label });
           return;
         case 'link':
           insertPastedNode({ type: 'link', url: action.url });
