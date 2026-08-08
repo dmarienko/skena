@@ -248,6 +248,12 @@ export function App(): JSX.Element {
         case 'chatModelInfo':
           setChatModel({ model: msg.model, provider: msg.provider, sessionName: msg.sessionName });
           break;
+        case 'focusNode':
+          // - distinct from skena:focusNode, which CanvasView's focusNodeById broadcasts
+          // - AFTER it has already selected + centered a node (TextNode listens to that one
+          // - for DOM focus) — reusing it here would recurse into focusNodeById itself
+          window.dispatchEvent(new CustomEvent('skena:focusNodeRequest', { detail: { id: msg.id } }));
+          break;
         case 'floatingChatCompacting':
           window.dispatchEvent(new CustomEvent('skena:compacting', { detail: msg.active }));
           break;

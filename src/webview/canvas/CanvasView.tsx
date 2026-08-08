@@ -2601,6 +2601,20 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     return () => window.removeEventListener('skena:restoreCanvasFocus', handler);
   }, [canvasPath, focusNodeById, pickViewportNode]);
 
+  // ─── host-driven jump: cross-canvas node reference opened this canvas ─────
+  //
+  // App.tsx relays the host's { type: 'focusNode', id } as skena:focusNodeRequest
+  // once canvasLoaded has landed. Select + center the referenced node.
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { id } = (e as CustomEvent<{ id: string }>).detail;
+      focusNodeById(id);
+    };
+    window.addEventListener('skena:focusNodeRequest', handler);
+    return () => window.removeEventListener('skena:focusNodeRequest', handler);
+  }, [focusNodeById]);
+
   return (
     <HeatmapProvider nodes={nodes} edges={edges} visible={heatmapVisible} toggle={toggleHeatmap}>
     <ZoomLevelProvider>
