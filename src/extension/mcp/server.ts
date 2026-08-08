@@ -31,7 +31,7 @@ import { assignLabel, ensureLabels } from '../../shared/nodeLabels';
 import { resolveBoundKernel, resolveUpstreamChain } from '../../shared/kernelBinding';
 import { resolveKernelConfig, type KernelServerConfig } from '../jupyter/config';
 import { executeCell } from '../jupyter/client';
-import { renderOutput } from '../jupyter/output';
+import { renderOutput, hasVisibleOutput } from '../jupyter/output';
 import type { CollectedOutput } from '../jupyter/protocol';
 
 // - "port:token" from the host (SKENA_RUN_IPC) → the 127.0.0.1 relay for live agent-run output
@@ -804,7 +804,7 @@ async function runCellCore(
   let lastPost = 0;
   const postFrame = (partial: CollectedOutput) => {
     if (!ipc) return;
-    if (partial.rich.length === 0 && partial.streamText.length === 0 && Object.keys(partial.widgets).length === 0) return;
+    if (!hasVisibleOutput(partial)) return;   // - skip style/script-only + whitespace: no empty node
     const { format, content } = renderOutput(partial);
     const message = {
       type: 'runOutput', codeNodeId: cell.id, lastStatus: 'running',
@@ -836,7 +836,7 @@ async function runCellCore(
   }
 
   const { format, content } = renderOutput(out);
-  const hasOutput = out.rich.length > 0 || out.streamText.length > 0 || !!out.error;
+  const hasOutput = hasVisibleOutput(out);
   let outLabel = '(no output)';
   if (hasOutput) {
     // - persist to the SAME node id the live frames streamed to (outId), so a re-run updates in place

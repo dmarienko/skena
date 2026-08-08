@@ -28,6 +28,12 @@ import { runIpc } from '../run-ipc';
 
 const FALLBACK_BIN = path.join(os.homedir(), '.local', 'bin', 'claude');
 
+/** - session --name for a canvas: workspace-relative path, no extension (falls back to basename) */
+export function canvasSessionName(workspaceDir: string, canvasPath: string): string {
+  return path.relative(workspaceDir, canvasPath).replace(/\.canvas$/, '')
+    || path.basename(canvasPath, '.canvas');
+}
+
 // - turn raw child stderr into a clean, user-facing chat error. Full stderr still goes
 // - to the "Skena AI (harness)" output channel; the chat should not show spawn logs or
 // - multi-line noise. Auth failures get an actionable hint.
@@ -200,6 +206,10 @@ export class HarnessAdapter implements ILLMClient {
       return null;
     }
 
+    // - name the CC session after the canvas so it is human-identifiable in `claude` session
+    // - lists / a future session registry, not a bare UUID (same string the chat title shows)
+    const sessionName = canvasSessionName(workspaceDir, canvasPath);
+
     const freshArgs = [
       '--input-format', 'stream-json',
       '--output-format', 'stream-json',
@@ -208,6 +218,7 @@ export class HarnessAdapter implements ILLMClient {
       '--model', model,
       '--permission-mode', permMode,
       '--max-turns', String(maxTurns),
+      '--name', sessionName,
       '--system-prompt', system,
       '--exclude-dynamic-system-prompt-sections',
       '--mcp-config', mcpConfigPath,   // - skena (+ user's servers when isolated)

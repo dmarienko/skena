@@ -348,7 +348,7 @@ export interface MsgFloatingChatDone {
 export interface MsgPanelActivated { type: 'panelActivated'; }
 
 /** - host → webview: current AI model + provider (for the chat title) */
-export interface MsgChatModelInfo { type: 'chatModelInfo'; model: string; provider: string; }
+export interface MsgChatModelInfo { type: 'chatModelInfo'; model: string; provider: string; sessionName?: string; }
 /** - webview → host: user clicked the chat title to change this canvas's model */
 export interface MsgPickModel { type: 'pickModel'; }
 export interface MsgRunCell   { type: 'runCell'; cellNodeId: string; code: string; }

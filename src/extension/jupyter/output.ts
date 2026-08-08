@@ -62,6 +62,37 @@ export function ansiToHtml(input: string): string {
  * there is more than one thing to show we stack them as HTML in order. The clean single cases
  * (one plot / one image / just text) keep their native format for interactivity + fidelity.
  */
+// - does a text/html payload render anything the user can see? A cell that only touches
+// - ipywidgets/tqdm.auto/pandas styling emits an HTML output that is JUST a <style> block
+// - (jupyter CSS injection) — non-empty as a string, but invisible. Such output must NOT spawn
+// - an (empty) output node. Keep true for anything visual even when it carries no text.
+function htmlHasVisibleContent(html: string): boolean {
+  if (/<(img|svg|canvas|table|video|iframe|math)\b/i.test(html)) return true;
+  const stripped = html
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .trim();
+  return stripped.length > 0;
+}
+
+/**
+ * Whether a run produced anything worth showing — the gate for creating an output node.
+ * Excludes whitespace-only streams and style/script-only HTML (the invisible-node case).
+ */
+export function hasVisibleOutput(out: CollectedOutput): boolean {
+  if (out.error) return true;
+  if (out.streamText.trim().length > 0) return true;
+  return out.rich.some(r => {
+    if (r.mime.startsWith('image/')) return true;
+    if (r.mime === 'application/vnd.plotly.v1+json') return true;
+    if (r.mime === 'application/vnd.jupyter.widget-view+json') return true;
+    if (r.mime === 'text/html') return htmlHasVisibleContent(r.data);
+    return r.data.trim().length > 0;   // - text/plain and other text mimes
+  });
+}
+
 export function renderOutput(out: CollectedOutput): { format: OutputFormat; content: string } {
   const rich = out.rich;
   const lone = rich.length === 1 && !out.error && !out.streamText;

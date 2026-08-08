@@ -27,8 +27,9 @@ import { assignLabel } from '../shared/nodeLabels';
 import { resolveBoundKernel, resolveUpstreamChain, resolveKernelCells } from '../shared/kernelBinding';
 import { KernelManager } from './jupyter/manager';
 import { listKernels, startKernel, listKernelSpecs, listSessions } from './jupyter/client';
+import { canvasSessionName } from './llm-adapters/harness';
 import type { CollectedOutput } from './jupyter/protocol';
-import { renderOutput } from './jupyter/output';
+import { renderOutput, hasVisibleOutput } from './jupyter/output';
 import {
   CanvasData,
   CanvasNode,
@@ -209,7 +210,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             send({ type: 'vaultIndex', entries: this.indexer.all() });
             // - current AI model/provider for the chat title
             const aiCfg0 = vscode.workspace.getConfiguration('skena.ai');
-            send({ type: 'chatModelInfo', model: document.canvas.metadata?.aiModel || aiCfg0.get<string>('model') || '', provider: aiCfg0.get<string>('provider') ?? '' });
+            send({ type: 'chatModelInfo', model: document.canvas.metadata?.aiModel || aiCfg0.get<string>('model') || '', provider: aiCfg0.get<string>('provider') ?? '', sessionName: this.sessionNameFor(document) });
             // - restore chat state from workspaceState (survives panel close + rename)
             const historyKey = `skena.chatHistory.${document.uri.toString()}`;
             const uiKey      = `skena.chatUI.${document.uri.toString()}`;
@@ -308,7 +309,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           document.canvas.metadata = { ...(document.canvas.metadata ?? {}), aiModel: chosen };
           await writeCanvas(document.uri.fsPath, document.canvas);
           this._llmClient?.resetSession?.(document.uri.fsPath);
-          send({ type: 'chatModelInfo', model: chosen || aiCfg.get<string>('model') || '', provider: aiCfg.get<string>('provider') ?? '' });
+          send({ type: 'chatModelInfo', model: chosen || aiCfg.get<string>('model') || '', provider: aiCfg.get<string>('provider') ?? '', sessionName: this.sessionNameFor(document) });
           break;
         }
         case 'floatingChatPersistHistory': {
@@ -543,7 +544,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         this._llmClient = null;   // - force re-creation on next chat
         // - refresh the chat title's model/provider live on settings change
         const aiCfg = vscode.workspace.getConfiguration('skena.ai');
-        send({ type: 'chatModelInfo', model: document.canvas.metadata?.aiModel || aiCfg.get<string>('model') || '', provider: aiCfg.get<string>('provider') ?? '' });
+        send({ type: 'chatModelInfo', model: document.canvas.metadata?.aiModel || aiCfg.get<string>('model') || '', provider: aiCfg.get<string>('provider') ?? '', sessionName: this.sessionNameFor(document) });
       }
       // - keep this canvas's file resolver current when vaults change, so vault:// nodes
       // - added after a vault is configured resolve without reopening the canvas
@@ -792,6 +793,12 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     } catch (e) {
       vscode.window.showErrorMessage(`Skena: cannot open file: ${e}`);
     }
+  }
+
+  // - the CC session --name for this canvas (matches what the harness spawns), shown in the chat title
+  private sessionNameFor(document: { uri: vscode.Uri }): string {
+    const wsDir = vscode.workspace.getWorkspaceFolder(document.uri)?.uri.fsPath ?? path.dirname(document.uri.fsPath);
+    return canvasSessionName(wsDir, document.uri.fsPath);
   }
 
   private handleDropFiles(
@@ -1256,8 +1263,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const flushDelta = () => {
       deltaTimer = null;
       if (finished || !latest) return;
-      const hasOut = latest.rich.length > 0 || latest.streamText.length > 0 || Object.keys(latest.widgets).length > 0;
-      if (!hasOut) return;
+      if (!hasVisibleOutput(latest)) return;   // - skip style/script-only + whitespace: no empty node
       const cn = document.canvas.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code') as CodeNode | undefined;
       if (!cn) return;
       // - reuse this cell's existing output node on a re-run so the live node updates it in place
@@ -1304,9 +1310,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         // - if partial output was streamed before the failure, persist it (status error) under the
         // - same id so the live node reconciles to disk instead of being orphaned in the webview.
         const snap = latest as CollectedOutput | null;   // - CFA narrows the closure-assigned `latest` to null; widen it
-        const streamed = snap && (snap.rich.length > 0 || snap.streamText.length > 0 || Object.keys(snap.widgets).length > 0)
-          ? renderOutput(snap)
-          : null;
+        const streamed = snap && hasVisibleOutput(snap) ? renderOutput(snap) : null;
         const { outputNode, edge } = await applyAndPersist('error', streamed, liveOutputId);
         send({ type: 'runOutput', codeNodeId: codeNode.id, lastStatus: 'error', kernelNodeId: kernelNode.id, kernelId, outputNode, edge });
       } catch { /* non-fatal */ }
@@ -1319,8 +1323,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     // - collapse ALL outputs (stream + every rich mime, in order) into one cell payload
     const { format, content } = renderOutput(out);
 
-    // - only write an output node when the run actually produced something
-    const hasOutput = out.rich.length > 0 || out.streamText.length > 0 || !!out.error;
+    // - only write an output node when the run produced something VISIBLE (style/script-only
+    // - HTML — the ipywidgets/pandas CSS injection — and whitespace streams do not count)
+    const hasOutput = hasVisibleOutput(out);
     const status: 'ok' | 'error' = out.status === 'error' ? 'error' : 'ok';
     try {
       const { outputNode, edge } = await applyAndPersist(status, hasOutput ? { format, content } : null, liveOutputId);

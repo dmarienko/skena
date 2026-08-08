@@ -190,6 +190,7 @@ interface Props {
   agentName?:   string;
   model?:       string;
   provider?:    string;
+  sessionName?: string;
   postMessage:  (msg: unknown) => void;
 
   onDelta:           (handler: (delta: string)       => void) => () => void;
@@ -214,6 +215,7 @@ export function FloatingChat({
   agentName = 'claude',
   model,
   provider,
+  sessionName,
   postMessage,
   onDelta,
   onDone,
@@ -666,23 +668,31 @@ export function FloatingChat({
           borderBottom: collapsed ? 'none' : '1px solid var(--vscode-panel-border, #333)',
         }}
       >
-        <span
-          title={`Click to change the model for this canvas${provider ? ` · provider: ${provider}` : ''}`}
-          onClick={() => (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage({ type: 'pickModel' })}
-          style={{
-            flex:         1,
-            fontSize:     11,
-            fontWeight:   600,
-            color:        '#4cc8a0',   // - teal; signals the title is clickable (model picker)
-            opacity:      0.9,
-            whiteSpace:   'nowrap',
-            overflow:     'hidden',
-            textOverflow: 'ellipsis',
-            cursor:       'pointer',
-          }}
-        >
-          Agent: {model ? `${model} @ ${agentName}` : agentName} ▾
-        </span>
+        {/* - flex:1 fills the bar (right-aligns the buttons) but is NOT the click target;
+           - only the model label below opens the picker, so clicking empty title space / the
+           - session name does nothing */}
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
+          <span
+            title={`Click to change the model for this canvas${provider ? ` · provider: ${provider}` : ''}`}
+            onClick={() => (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage({ type: 'pickModel' })}
+            style={{
+              flexShrink:   0,
+              fontSize:     11,
+              fontWeight:   600,
+              color:        '#4cc8a0',   // - teal; signals THIS label is clickable (model picker)
+              opacity:      0.9,
+              whiteSpace:   'nowrap',
+              cursor:       'pointer',
+            }}
+          >
+            Agent: {model ? `${model} @ ${agentName}` : agentName} ▾
+          </span>
+          {sessionName && (
+            <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--vscode-foreground)', opacity: 0.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
+              · {sessionName}
+            </span>
+          )}
+        </div>
 
         {chat.thinking && (
           <span style={{ fontSize: 9, color: 'var(--vscode-foreground)', opacity: 0.45 }}>

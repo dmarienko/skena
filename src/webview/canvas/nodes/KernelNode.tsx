@@ -90,7 +90,9 @@ function KernelNodeInner({ id, data }: NodeProps): JSX.Element {
 
   return (
     <>
-      <NodeLabelBadge label={node.nodeLabel} createdBy={(node as { createdBy?: string }).createdBy} />
+      {/* - kernel label lives INSIDE the circle (below), not as the generic corner badge;
+         - keep NodeLabelBadge only for the createdBy pill (label omitted) */}
+      <NodeLabelBadge label={undefined} createdBy={(node as { createdBy?: string }).createdBy} />
       <div
         onContextMenu={onContextMenu}
         style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', height: '100%', justifyContent: 'center', gap: 8 }}
@@ -106,6 +108,15 @@ function KernelNodeInner({ id, data }: NodeProps): JSX.Element {
               boxShadow: state === 'error' ? `0 0 6px ${led}` : 'none',
             }}
           />
+          {node.nodeLabel && (
+            <div
+              style={{
+                position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontFamily: 'monospace', fontSize: 20, fontWeight: 800, color: '#fff',
+                textShadow: '0 1px 3px rgba(0,0,0,0.7)', pointerEvents: 'none', userSelect: 'none',
+              }}
+            >{node.nodeLabel}</div>
+          )}
         </div>
       </div>
       {menu && createPortal(
