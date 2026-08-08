@@ -1127,6 +1127,13 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     vscodePostMessage({ type: 'requestClipboardRead' });
   }, []);
 
+  // - copy a cross-canvas reference to the single selected node (same action as the c,c hotkey)
+  const handleCopyNodeReference = useCallback(() => {
+    const focused = nodesRef.current.find(n => n.selected && n.type !== 'group');
+    const label = focused ? (focused.data as Record<string, unknown>).nodeLabel as string | undefined : undefined;
+    if (focused && label) vscodePostMessage({ type: 'copyNodeReference', label });
+  }, []);
+
   // - paste the internal node clipboard (filled by yy/copy); inline nodes+edges with fresh ids
   const pasteInternalClipboard = useCallback(() => {
     pushHistory();
@@ -1808,18 +1815,18 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         return;
       }
 
-      // - c,c (double-tap within 400 ms): copy the absolute file path of the focused node
-      // - works for file nodes and any node that references a file via a `file` field
+      // - c,c (double-tap within 400 ms): copy a cross-canvas reference to the focused node
+      // - (`<workspace-relative-path>.canvas#<label>`) — works for any node, not just files
       if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'c') {
         const now = Date.now();
         if (now - lastCPressRef.current < 400) {
-          // - double-c detected: copy absolute path of focused file node
+          // - double-c detected: copy a reference to the focused node
           lastCPressRef.current = 0; // - reset so a third c doesn't re-trigger
           const focused = nodesRef.current.find(n => n.selected && n.type !== 'group');
-          const fileUri = focused ? (focused.data as Record<string, unknown>).file as string | undefined : undefined;
-          if (focused && fileUri) {
+          const label = focused ? (focused.data as Record<string, unknown>).nodeLabel as string | undefined : undefined;
+          if (focused && label) {
             e.preventDefault();
-            vscodePostMessage({ type: 'copyAbsolutePath', uri: fileUri });
+            vscodePostMessage({ type: 'copyNodeReference', label });
           }
           return;
         }
@@ -2714,6 +2721,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           onSearch={handleMenuSearch}
           onCopy={handleCopy}
           onPaste={pasteInternalClipboard}
+          onCopyNodeReference={handleCopyNodeReference}
           onMoveToSubCanvas={handleMoveToSubCanvas}
         />
       )}

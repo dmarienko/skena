@@ -440,6 +440,12 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           }
           break;
         }
+        case 'copyNodeReference': {
+          const rel = `${this.sessionNameFor(document)}.canvas`;   // - sessionNameFor strips .canvas; re-add it
+          await vscode.env.clipboard.writeText(`${rel}#${msg.label}`);
+          vscode.window.setStatusBarMessage(`Skena: copied reference ${msg.label}`, 2000);
+          break;
+        }
         case 'verifyPath': {
           // - expand ~ and file://, answer with the same path convention dropFiles produces
           let p = msg.path.startsWith('file://') ? vscode.Uri.parse(msg.path).fsPath : msg.path;
