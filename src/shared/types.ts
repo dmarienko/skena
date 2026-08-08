@@ -14,7 +14,7 @@ export type NodeSide = 'top' | 'right' | 'bottom' | 'left';
 export type StandardNodeType = 'file' | 'text' | 'group' | 'link';
 
 /** Skena extension node types (Obsidian ignores unknown types gracefully) */
-export type SkenaNodeType = 'cell' | 'chat' | 'portal' | 'kernel' | 'code';
+export type SkenaNodeType = 'cell' | 'chat' | 'portal' | 'kernel' | 'code' | 'noderef';
 
 export type NodeType = StandardNodeType | SkenaNodeType;
 
