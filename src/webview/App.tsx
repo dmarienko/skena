@@ -81,6 +81,8 @@ export function App(): JSX.Element {
 
   // - active node id exposed to FloatingChat (updated by CanvasView via callback)
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
+  // - cross-canvas node ref: label the host asked to focus, dispatched once CanvasView is mounted
+  const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
   // - current AI model/provider shown in the chat title
   const [chatModel, setChatModel] = useState<{ model: string; provider: string; sessionName?: string } | null>(null);
 
@@ -249,10 +251,12 @@ export function App(): JSX.Element {
           setChatModel({ model: msg.model, provider: msg.provider, sessionName: msg.sessionName });
           break;
         case 'focusNode':
-          // - distinct from skena:focusNode, which CanvasView's focusNodeById broadcasts
-          // - AFTER it has already selected + centered a node (TextNode listens to that one
-          // - for DOM focus) — reusing it here would recurse into focusNodeById itself
-          window.dispatchEvent(new CustomEvent('skena:focusNodeRequest', { detail: { id: msg.id } }));
+          // - buffer, don't dispatch inline: on first open of a closed canvas this arrives right
+          // - after canvasLoaded, before CanvasView (gated on `ready`) has mounted its
+          // - skena:focusNodeRequest listener — an inline dispatch would be dropped. The effect
+          // - below fires it once ready. (skena:focusNode is a DIFFERENT event focusNodeById
+          // - broadcasts AFTER centering, for TextNode DOM focus — reusing it would recurse.)
+          setPendingFocusId(msg.id);
           break;
         case 'floatingChatCompacting':
           window.dispatchEvent(new CustomEvent('skena:compacting', { detail: msg.active }));
@@ -276,6 +280,18 @@ export function App(): JSX.Element {
     getVsCodeApi().postMessage({ type: 'webviewReady' });
     return () => window.removeEventListener('message', handler);
   }, [dispatch]);
+
+  // - dispatch a buffered cross-canvas focus once CanvasView is mounted (ready) and its
+  // - listener is live. rAF lets the canvas lay out so setCenter targets real node positions.
+  useEffect(() => {
+    if (!ready || !pendingFocusId) return;
+    const id = pendingFocusId;
+    const raf = requestAnimationFrame(() => {
+      window.dispatchEvent(new CustomEvent('skena:focusNodeRequest', { detail: { id } }));
+      setPendingFocusId(null);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [ready, pendingFocusId]);
 
   // ─── active node callback from CanvasView ──────────────────────────────
 
