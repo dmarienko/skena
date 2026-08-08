@@ -106,6 +106,17 @@ export interface PortalNode extends CanvasNodeBase {
   label?: string;
 }
 
+/** Reference (diamond) to a labelled node in another .canvas file */
+export interface NoderefNode extends CanvasNodeBase {
+  type:   'noderef';
+  /** - workspace-relative path to the target .canvas */
+  canvas: string;
+  /** - target node's nodeLabel (e.g. N2) */
+  label:  string;
+  /** - display hint captured at create time */
+  title?: string;
+}
+
 /** Live Jupyter kernel — circular status widget; drag its ring to bind a code cell */
 export interface KernelNode extends CanvasNodeBase {
   type: 'kernel';
@@ -140,6 +151,7 @@ export type CanvasNode =
   | CellNode
   | ChatNode
   | PortalNode
+  | NoderefNode
   | KernelNode
   | CodeNode;
 
@@ -349,6 +361,9 @@ export interface MsgPanelActivated { type: 'panelActivated'; }
 
 /** - host → webview: current AI model + provider (for the chat title) */
 export interface MsgChatModelInfo { type: 'chatModelInfo'; model: string; provider: string; sessionName?: string; }
+
+/** - host → webview: focus (select + pan to) a node by id */
+export interface MsgFocusNode { type: 'focusNode'; id: string; }
 /** - webview → host: user clicked the chat title to change this canvas's model */
 export interface MsgPickModel { type: 'pickModel'; }
 export interface MsgRunCell   { type: 'runCell'; cellNodeId: string; code: string; }
@@ -454,6 +469,7 @@ export type HostToWebview =
   | MsgFloatingChatUsage
   | MsgPanelActivated
   | MsgChatModelInfo
+  | MsgFocusNode
   | MsgFloatingChatCompacting
   | MsgRenderMarkdownResult
   | MsgFloatingChatDone
@@ -528,6 +544,8 @@ export interface MsgOpenFile {
   /** - true → maximize the editor group after opening (Ctrl+Enter "modal" mode) */
   modal?: boolean;
 }
+
+export interface MsgCopyNodeReference { type: 'copyNodeReference'; label: string; }
 
 export interface MsgSearchVault {
   type: 'searchVault';
@@ -684,6 +702,7 @@ export type WebviewToHost =
   | MsgRequestFile
   | MsgSaveCanvas
   | MsgOpenFile
+  | MsgCopyNodeReference
   | MsgSearchVault
   | MsgChatMessage
   | MsgRefreshVault

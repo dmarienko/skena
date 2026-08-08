@@ -22,6 +22,7 @@ export const DEFAULT_NODE_BORDER_BY_TYPE = {
   link:   '#247c06',                 // - link node — URL links
   chat:   '#a882ff',                 // - chat node — AI chat / agent terminal
   portal: '#53dfdd',                 // - portal node — link to another .canvas
+  noderef: '#c98af0',                // - node reference (diamond) to a node in another canvas
   group:  'rgba(255,255,255,0.12)',  // - group node — dashed background container
   code:   '#02542e',                 // - code node — editable code cell (Jupyter)
   kernel: '#4cc8a0',                 // - kernel node — live Jupyter kernel widget
