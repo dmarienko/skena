@@ -61,7 +61,9 @@ import {
   MsgSaveMarks,
   MsgMarksRestored,
   CanvasMark,
+  MsgFocusNode,
 } from '../shared/types';
+import { parseNodeRef } from '../shared/nodeRef';
 import { MAX_FILE_FULL_BYTES, MAX_FILE_PREVIEW_BYTES, MAX_NOTEBOOK_BYTES } from '../shared/constants';
 
 // ─── bookmarks file helpers ──────────────────────────────────────────────────
@@ -109,6 +111,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
   // - canvasPath (document.uri.fsPath) → its open panel, so the run-ipc relay can forward an
   // - out-of-process agent run's live output to the right webview.
   static panelsByPath = new Map<string, vscode.WebviewPanel>();
+
+  // - canvasPath (fsPath) → nodeLabel to focus once that canvas's webview reports ready
+  private pendingFocus = new Map<string, string>();
 
   /** - lazily-created LLM client; null until first chat request */
   private _llmClient: ILLMClient | null = null;
@@ -204,6 +209,17 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             ]);
             document.updateFromDisk(canvas);
             send({ type: 'canvasLoaded', canvas, canvasPath: document.uri.fsPath });
+            // - a cross-canvas node reference opened this canvas — focus the referenced node now
+            // - that the webview has parsed it (document.canvas isn't ready any earlier than this)
+            {
+              const wantLabel = this.pendingFocus.get(document.uri.fsPath);
+              if (wantLabel) {
+                const target = document.canvas.nodes.find(n => n.nodeLabel === wantLabel);
+                if (target) send({ type: 'focusNode', id: target.id } satisfies MsgFocusNode);
+                else vscode.window.showWarningMessage(`Skena: ${wantLabel} not found in ${path.basename(document.uri.fsPath)}`);
+                this.pendingFocus.delete(document.uri.fsPath);
+              }
+            }
             // - push clipboard content unprompted; webview caches it in clipboardCache
             // - so vim paste works before any requestClipboardRead round-trip completes
             send({ type: 'clipboardContent', text: clipboardText });
@@ -424,6 +440,12 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           }
           break;
         }
+        case 'copyNodeReference': {
+          const rel = `${this.sessionNameFor(document)}.canvas`;   // - sessionNameFor strips .canvas; re-add it
+          await vscode.env.clipboard.writeText(`${rel}#${msg.label}`);
+          vscode.window.setStatusBarMessage(`Skena: copied reference ${msg.label}`, 2000);
+          break;
+        }
         case 'verifyPath': {
           // - expand ~ and file://, answer with the same path convention dropFiles produces
           let p = msg.path.startsWith('file://') ? vscode.Uri.parse(msg.path).fsPath : msg.path;
@@ -474,6 +496,15 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         const canvas = await readCanvas(document.uri.fsPath);
         document.updateFromDisk(canvas);
         send({ type: 'canvasLoaded', canvas, canvasPath: document.uri.fsPath });
+        // - covers the rare race where a pending cross-canvas focus arrived before this
+        // - panel was registered in panelsByPath (see the webviewReady canvasLoaded above)
+        const wantLabel = this.pendingFocus.get(document.uri.fsPath);
+        if (wantLabel) {
+          const target = document.canvas.nodes.find(n => n.nodeLabel === wantLabel);
+          if (target) send({ type: 'focusNode', id: target.id } satisfies MsgFocusNode);
+          else vscode.window.showWarningMessage(`Skena: ${wantLabel} not found in ${path.basename(document.uri.fsPath)}`);
+          this.pendingFocus.delete(document.uri.fsPath);
+        }
       } catch { /* ignore parse errors during in-progress external edits */ }
     };
 
@@ -743,6 +774,22 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       return;
     }
 
+    // - cross-canvas node reference: <path>.canvas#<Label> → open that canvas and focus the node
+    const ref = parseNodeRef(msg.uri);
+    if (ref) {
+      const resolvedPath = this.resolveCanvasRefPath(ref.canvas, canvasDir, resolver);
+      if (!resolvedPath) {
+        vscode.window.showWarningMessage(`Skena: linked canvas not found — ${ref.canvas}`);
+        return;
+      }
+      this.pendingFocus.set(resolvedPath, ref.label);
+      await vscode.commands.executeCommand('vscode.openWith', vscode.Uri.file(resolvedPath), SkenaEditorProvider.viewType);
+      // - covers the already-open-panel case; a freshly-opened panel is handled by the
+      // - canvasLoaded hook in resolveCustomEditor instead, since canvasLoaded hasn't fired yet
+      await this.tryFocusPending(resolvedPath);
+      return;
+    }
+
     // - optional GitHub-style line fragment: file.py#L37 or file.py#37 → open at that line
     let target = msg.uri;
     let line: number | undefined;
@@ -792,6 +839,41 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       }
     } catch (e) {
       vscode.window.showErrorMessage(`Skena: cannot open file: ${e}`);
+    }
+  }
+
+  // - NoderefNode.canvas is documented workspace-relative (unlike PortalNode.canvas, which is
+  // - relative to the referencing .canvas). Try the shared resolver first — it covers vault://,
+  // - absolute, and canvasDir-relative (the common case, vault at the workspace root) — then
+  // - fall back to each workspace folder root for a ref authored deeper in the tree.
+  private resolveCanvasRefPath(refCanvas: string, canvasDir: string, resolver: FileResolver): string | null {
+    const direct = resolver.resolve(refCanvas, canvasDir);
+    if (direct && !direct.isNotion && resolver.exists(direct.fsPath)) return direct.fsPath;
+    for (const folder of vscode.workspace.workspaceFolders ?? []) {
+      const candidate = path.resolve(folder.uri.fsPath, refCanvas);
+      if (resolver.exists(candidate)) return candidate;
+    }
+    return null;
+  }
+
+  // - if the target canvas already has a live panel, resolve its pending label→node id and
+  // - focus it now. A freshly-opened panel hasn't sent canvasLoaded yet at this point — that
+  // - path is covered by the canvasLoaded hook in resolveCustomEditor instead.
+  private async tryFocusPending(fsPath: string): Promise<void> {
+    const label = this.pendingFocus.get(fsPath);
+    if (!label) return;
+    const panel = SkenaEditorProvider.panelsByPath.get(fsPath);
+    if (!panel) return;
+    try {
+      const canvas = await readCanvas(fsPath);
+      const node = canvas.nodes.find(n => n.nodeLabel === label);
+      if (node) {
+        panel.webview.postMessage({ type: 'focusNode', id: node.id } satisfies MsgFocusNode);
+      } else {
+        vscode.window.showWarningMessage(`Skena: ${label} not found in ${path.basename(fsPath)}`);
+      }
+    } finally {
+      this.pendingFocus.delete(fsPath);
     }
   }
 

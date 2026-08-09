@@ -14,6 +14,7 @@
  *   E  — code cells (editable, run on a kernel)
  *   A  — AI chat / agent nodes
  *   R  — portal references to other canvases
+ *   D  — node references (diamond) to a node in another canvas
  *   G  — group containers
  *   F  — other file types
  *
@@ -34,6 +35,7 @@ export function nodeLabelPrefix(node: CanvasNode): string {
     case 'code':   return 'E';
     case 'chat':   return 'A';
     case 'portal': return 'R';
+    case 'noderef': return 'D';
     case 'file': {
       const f = (node as FileNode).file.toLowerCase();
       if (f.endsWith('.ipynb'))                          return 'J';

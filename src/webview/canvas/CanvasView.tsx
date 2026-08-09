@@ -46,6 +46,7 @@ import { LinkNodeComponent }  from './nodes/LinkNode';
 import { CellNodeComponent }  from './nodes/CellNode';
 import { ChatNodeComponent }  from './nodes/ChatNode';
 import { PortalNodeComponent } from './nodes/PortalNode';
+import { NoderefNodeComponent } from './nodes/NoderefNode';
 import { KernelNodeComponent } from './nodes/KernelNode';
 import { CodeNodeComponent }   from './nodes/CodeNode';
 import { LabeledEdgeComponent } from './edges/LabeledEdge';
@@ -61,6 +62,7 @@ const NODE_TYPES: NodeTypes = {
   cell:   CellNodeComponent,
   chat:   ChatNodeComponent,
   portal: PortalNodeComponent,
+  noderef: NoderefNodeComponent,
   kernel: KernelNodeComponent,
   code:   CodeNodeComponent,
 };
@@ -395,6 +397,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const marksRef       = useRef<Record<string, CanvasMark>>({});
   const pendingMarkRef = useRef<'set' | 'jump' | null>(null);
   const markTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // - node id a cross-canvas reference asked to focus; the reload effect honors it (force-center)
+  // - so the just-opened canvas jumps to the target instead of restoring its last focus
+  const pendingCrossFocusRef = useRef<string | null>(null);
   // - Alt+X add-node chord: armed until the next h/j/k/l (or 2s timeout)
   const chordRef       = useRef(false);
   const chordTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -520,6 +525,14 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       if (!canvas.viewport) {
         // - no saved viewport → fitView so the canvas isn't off-screen
         rfRef.current.fitView({ padding: 0.1 });
+      }
+      // - a cross-canvas reference opened this canvas → jump to and center its target, overriding
+      // - the usual last-focus restore (which would otherwise clobber the jump on first open)
+      const cross = pendingCrossFocusRef.current;
+      if (cross && nodesRef.current.some(n => n.id === cross)) {
+        pendingCrossFocusRef.current = null;
+        focusNodeById(cross, true);
+        return;
       }
       const stored  = lastFocusedNodeId.get(canvasPath);
       const exists  = stored && nodesRef.current.some(n => n.id === stored);
@@ -943,7 +956,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
    * Select + DOM-focus a node by id and pan the viewport to it if it is
    * off-screen. Also persists the id in lastFocusedNodeId for restoration.
    */
-  const focusNodeById = useCallback((id: string) => {
+  const focusNodeById = useCallback((id: string, forceCenter = false) => {
     lastFocusedNodeId.set(canvasPath, id);
     setNodes(nds => nds.map(n => ({ ...n, selected: n.id === id })));
     window.dispatchEvent(new CustomEvent('skena:focusNode', { detail: { id } }));
@@ -959,7 +972,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     const top    = -vy / zoom + margin;
     const right  = left + window.innerWidth  / zoom - margin * 2;
     const bottom = top  + window.innerHeight / zoom - margin * 2;
-    if (nc.x <= left || nc.x >= right || nc.y <= top || nc.y >= bottom) {
+    // - forceCenter: a cross-canvas jump always centers its target (even if on-screen); the
+    // - default only recenters when the node is off-screen (avoids stealing pan on reloads).
+    if (forceCenter || nc.x <= left || nc.x >= right || nc.y <= top || nc.y >= bottom) {
       rfRef.current.setCenter(nc.x, nc.y, { duration: 250, zoom });
     }
   }, [setNodes, canvasPath]); // - nodesRef + rfRef are always current
@@ -1123,6 +1138,13 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     // - snapshot OS clipboard so Ctrl+V can tell "yy then paste" from "external copy then paste"
     awaitingYYSnapshot.current = true;
     vscodePostMessage({ type: 'requestClipboardRead' });
+  }, []);
+
+  // - copy a cross-canvas reference to the single selected node (same action as the c,c hotkey)
+  const handleCopyNodeReference = useCallback(() => {
+    const focused = nodesRef.current.find(n => n.selected && n.type !== 'group');
+    const label = focused ? (focused.data as Record<string, unknown>).nodeLabel as string | undefined : undefined;
+    if (focused && label) vscodePostMessage({ type: 'copyNodeReference', label });
   }, []);
 
   // - paste the internal node clipboard (filled by yy/copy); inline nodes+edges with fresh ids
@@ -1635,6 +1657,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         } else if (current.type === 'link') {
           const url = (d.url as string) ?? '';
           if (url) vscodePostMessage({ type: 'openFile', uri: url, modal });
+        } else if (current.type === 'noderef') {
+          const c = (d.canvas as string) ?? '', l = (d.label as string) ?? '';
+          if (c && l) vscodePostMessage({ type: 'openFile', uri: `${c}#${l}` });
         }
         return;
       }
@@ -1806,18 +1831,18 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         return;
       }
 
-      // - c,c (double-tap within 400 ms): copy the absolute file path of the focused node
-      // - works for file nodes and any node that references a file via a `file` field
+      // - c,c (double-tap within 400 ms): copy a cross-canvas reference to the focused node
+      // - (`<workspace-relative-path>.canvas#<label>`) — works for any node, not just files
       if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'c') {
         const now = Date.now();
         if (now - lastCPressRef.current < 400) {
-          // - double-c detected: copy absolute path of focused file node
+          // - double-c detected: copy a reference to the focused node
           lastCPressRef.current = 0; // - reset so a third c doesn't re-trigger
           const focused = nodesRef.current.find(n => n.selected && n.type !== 'group');
-          const fileUri = focused ? (focused.data as Record<string, unknown>).file as string | undefined : undefined;
-          if (focused && fileUri) {
+          const label = focused ? (focused.data as Record<string, unknown>).nodeLabel as string | undefined : undefined;
+          if (focused && label) {
             e.preventDefault();
-            vscodePostMessage({ type: 'copyAbsolutePath', uri: fileUri });
+            vscodePostMessage({ type: 'copyNodeReference', label });
           }
           return;
         }
@@ -2357,10 +2382,10 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
   // - insert a pasted node right of the focused node (edge) or at viewport centre (no edge).
   // - offsetIndex spreads same-tick batch inserts vertically (nodesRef can't see siblings yet)
-  const insertPastedNode = useCallback((partial: { type: 'text'; text: string } | { type: 'link'; url: string } | { type: 'file'; file: string }, offsetIndex = 0) => {
+  const insertPastedNode = useCallback((partial: { type: 'text'; text: string } | { type: 'link'; url: string } | { type: 'file'; file: string } | { type: 'noderef'; canvas: string; label: string; title?: string }, offsetIndex = 0) => {
     const focused = nodesRef.current.find(n => n.selected && n.type !== 'group');
-    // - link nodes are compact (matches editor-provider link node size)
-    const [nw, nh] = partial.type === 'link' ? [320, 80] : [400, 300];
+    // - link nodes are compact (matches editor-provider link node size); noderef is a small diamond
+    const [nw, nh] = partial.type === 'link' ? [320, 80] : partial.type === 'noderef' ? [200, 120] : [400, 300];
     const GAP = 40;
     let x: number, y: number;
     if (focused) {
@@ -2528,6 +2553,11 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         case 'internal':
           pasteInternalClipboard();
           return;
+        case 'noderef':
+          // - title is a display hint only (label drives activation) — resolving it needs a
+          // - host round trip to read the target canvas; skip it rather than block the paste
+          insertPastedNode({ type: 'noderef', canvas: action.canvas, label: action.label });
+          return;
         case 'link':
           insertPastedNode({ type: 'link', url: action.url });
           return;
@@ -2598,6 +2628,24 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     window.addEventListener('skena:restoreCanvasFocus', handler);
     return () => window.removeEventListener('skena:restoreCanvasFocus', handler);
   }, [canvasPath, focusNodeById, pickViewportNode]);
+
+  // ─── host-driven jump: cross-canvas node reference opened this canvas ─────
+  //
+  // App.tsx relays the host's { type: 'focusNode', id } as skena:focusNodeRequest
+  // once canvasLoaded has landed. Select + center the referenced node.
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { id } = (e as CustomEvent<{ id: string }>).detail;
+      // - mark it pending so the reload effect force-centers it once nodes land (first open),
+      // - and try centering now for the already-open case; clear the mark after it can't apply
+      pendingCrossFocusRef.current = id;
+      focusNodeById(id, true);
+      window.setTimeout(() => { if (pendingCrossFocusRef.current === id) pendingCrossFocusRef.current = null; }, 1500);
+    };
+    window.addEventListener('skena:focusNodeRequest', handler);
+    return () => window.removeEventListener('skena:focusNodeRequest', handler);
+  }, [focusNodeById]);
 
   return (
     <HeatmapProvider nodes={nodes} edges={edges} visible={heatmapVisible} toggle={toggleHeatmap}>
@@ -2698,6 +2746,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           onSearch={handleMenuSearch}
           onCopy={handleCopy}
           onPaste={pasteInternalClipboard}
+          onCopyNodeReference={handleCopyNodeReference}
           onMoveToSubCanvas={handleMoveToSubCanvas}
         />
       )}

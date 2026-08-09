@@ -28,9 +28,10 @@ interface Props {
   onAddCodeCell:     () => void;
   onAddUrl:          (url: string) => void;
   onSearch:          () => void;
-  onCopy:            () => void;
-  onPaste:           () => void;
-  onMoveToSubCanvas: () => void;
+  onCopy:              () => void;
+  onPaste:             () => void;
+  onCopyNodeReference: () => void;
+  onMoveToSubCanvas:   () => void;
 }
 
 function MenuItem({ icon, label, onClick, disabled = false }: {
@@ -77,7 +78,7 @@ function Divider(): JSX.Element {
 export function ContextMenu({
   screenX, screenY,
   selectedCount, hasClipboard,
-  onClose, onAddText, onAddCodeCell, onAddUrl, onSearch, onCopy, onPaste, onMoveToSubCanvas,
+  onClose, onAddText, onAddCodeCell, onAddUrl, onSearch, onCopy, onPaste, onCopyNodeReference, onMoveToSubCanvas,
 }: Props): JSX.Element {
   const menuRef  = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -208,6 +209,7 @@ export function ContextMenu({
       <Divider />
       <MenuItem icon="copy"   label="Copy"              onClick={() => { onCopy();  onClose(); }} disabled={selectedCount === 0} />
       <MenuItem icon="clippy" label="Paste"             onClick={() => { onPaste(); onClose(); }} disabled={!hasClipboard} />
+      <MenuItem icon="link"   label="Copy node reference" onClick={() => { onCopyNodeReference(); onClose(); }} disabled={selectedCount !== 1} />
 
       {selectedCount >= 2 && (
         <>
