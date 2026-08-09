@@ -43,13 +43,17 @@ export function NoderefNodeComponent({ data, selected }: NodeProps): JSX.Element
         <svg
           viewBox="0 0 100 100"
           preserveAspectRatio="none"
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible' }}
+          style={{
+            position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible',
+            // - glow the diamond outline when selected (a box-outline can't follow the diamond)
+            filter: selected ? `drop-shadow(0 0 5px ${borderColor})` : 'none',
+          }}
         >
           <polygon
             points="50,1 99,50 50,99 1,50"
             fill="var(--vscode-editorWidget-background, #202020)"
             stroke={borderColor}
-            strokeWidth={selected ? 3 : 2}
+            strokeWidth={selected ? 4.5 : 2}
             vectorEffect="non-scaling-stroke"
           />
         </svg>
