@@ -1352,32 +1352,48 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         ? Math.abs(dx) + Math.abs(dy) * 2.5
         : Math.abs(dy) + Math.abs(dx) * 2.5;
 
-      let bestId: string | null = null;
-      let bestScore = Infinity;
-
-      // - pass 1: strict 45° cone
-      for (const node of nodesRef.current) {
-        if (node.id === from.id || node.type === 'group') continue;
-        const nc = centerOf(node);
-        const dx = nc.x - fc.x;
-        const dy = nc.y - fc.y;
-        if (!inDir(dx, dy) || !inCone(dx, dy)) continue;
-        const s = score(dx, dy);
-        if (s < bestScore) { bestScore = s; bestId = node.id; }
+      // - edge-aware nav (highest priority): follow an edge that attaches to `from` on the pressed
+      // - side, so you walk the graph you drew — press left and go to the node wired to your left,
+      // - regardless of raw geometry. Handles are named top/right/bottom/left (map up→top, down→bottom);
+      // - flow edges carry the canvas fromSide/toSide as sourceHandle/targetHandle.
+      const dirSide = dir === 'up' ? 'top' : dir === 'down' ? 'bottom' : dir;
+      const sideNeighbours: string[] = [];
+      for (const e of edgesRef.current) {
+        if (e.source === from.id && e.sourceHandle === dirSide) sideNeighbours.push(e.target);
+        else if (e.target === from.id && e.targetHandle === dirSide) sideNeighbours.push(e.source);
       }
-      if (bestId) return bestId;
-
-      // - pass 2: fallback — full half-space, stronger perpendicular penalty
-      for (const node of nodesRef.current) {
-        if (node.id === from.id || node.type === 'group') continue;
-        const nc = centerOf(node);
-        const dx = nc.x - fc.x;
-        const dy = nc.y - fc.y;
-        if (!inDir(dx, dy)) continue;
-        const s = score(dx, dy);
-        if (s < bestScore) { bestScore = s; bestId = node.id; }
+      if (sideNeighbours.length) {
+        // - several edges on one side → take the neighbour best aligned with `dir`
+        let sideId: string | null = null;
+        let sideScore = Infinity;
+        for (const nid of sideNeighbours) {
+          const n = nodesRef.current.find(x => x.id === nid);
+          if (!n) continue;
+          const nc = centerOf(n);
+          const s = score(nc.x - fc.x, nc.y - fc.y);
+          if (s < sideScore) { sideScore = s; sideId = nid; }
+        }
+        if (sideId) return sideId;
       }
-      return bestId;
+
+      // - geometry fallback: strict 45° cone (primary axis dominates), then full half-space
+      const gather = (cone: boolean): { id: string; s: number }[] => {
+        const out: { id: string; s: number }[] = [];
+        for (const node of nodesRef.current) {
+          if (node.id === from.id || node.type === 'group') continue;
+          const nc = centerOf(node);
+          const dx = nc.x - fc.x;
+          const dy = nc.y - fc.y;
+          if (!inDir(dx, dy) || (cone && !inCone(dx, dy))) continue;
+          out.push({ id: node.id, s: score(dx, dy) });
+        }
+        return out;
+      };
+      let cands = gather(true);
+      if (!cands.length) cands = gather(false);
+      if (!cands.length) return null;
+      cands.sort((a, b) => a.s - b.s);
+      return cands[0].id;
     };
 
     // - add a node off the focused node in the given direction (Alt+X chord target)
