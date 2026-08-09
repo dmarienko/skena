@@ -397,6 +397,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const marksRef       = useRef<Record<string, CanvasMark>>({});
   const pendingMarkRef = useRef<'set' | 'jump' | null>(null);
   const markTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // - node id a cross-canvas reference asked to focus; the reload effect honors it (force-center)
+  // - so the just-opened canvas jumps to the target instead of restoring its last focus
+  const pendingCrossFocusRef = useRef<string | null>(null);
   // - Alt+X add-node chord: armed until the next h/j/k/l (or 2s timeout)
   const chordRef       = useRef(false);
   const chordTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -522,6 +525,14 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       if (!canvas.viewport) {
         // - no saved viewport → fitView so the canvas isn't off-screen
         rfRef.current.fitView({ padding: 0.1 });
+      }
+      // - a cross-canvas reference opened this canvas → jump to and center its target, overriding
+      // - the usual last-focus restore (which would otherwise clobber the jump on first open)
+      const cross = pendingCrossFocusRef.current;
+      if (cross && nodesRef.current.some(n => n.id === cross)) {
+        pendingCrossFocusRef.current = null;
+        focusNodeById(cross, true);
+        return;
       }
       const stored  = lastFocusedNodeId.get(canvasPath);
       const exists  = stored && nodesRef.current.some(n => n.id === stored);
@@ -945,7 +956,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
    * Select + DOM-focus a node by id and pan the viewport to it if it is
    * off-screen. Also persists the id in lastFocusedNodeId for restoration.
    */
-  const focusNodeById = useCallback((id: string) => {
+  const focusNodeById = useCallback((id: string, forceCenter = false) => {
     lastFocusedNodeId.set(canvasPath, id);
     setNodes(nds => nds.map(n => ({ ...n, selected: n.id === id })));
     window.dispatchEvent(new CustomEvent('skena:focusNode', { detail: { id } }));
@@ -961,7 +972,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     const top    = -vy / zoom + margin;
     const right  = left + window.innerWidth  / zoom - margin * 2;
     const bottom = top  + window.innerHeight / zoom - margin * 2;
-    if (nc.x <= left || nc.x >= right || nc.y <= top || nc.y >= bottom) {
+    // - forceCenter: a cross-canvas jump always centers its target (even if on-screen); the
+    // - default only recenters when the node is off-screen (avoids stealing pan on reloads).
+    if (forceCenter || nc.x <= left || nc.x >= right || nc.y <= top || nc.y >= bottom) {
       rfRef.current.setCenter(nc.x, nc.y, { duration: 250, zoom });
     }
   }, [setNodes, canvasPath]); // - nodesRef + rfRef are always current
@@ -1644,6 +1657,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         } else if (current.type === 'link') {
           const url = (d.url as string) ?? '';
           if (url) vscodePostMessage({ type: 'openFile', uri: url, modal });
+        } else if (current.type === 'noderef') {
+          const c = (d.canvas as string) ?? '', l = (d.label as string) ?? '';
+          if (c && l) vscodePostMessage({ type: 'openFile', uri: `${c}#${l}` });
         }
         return;
       }
@@ -2621,7 +2637,11 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   useEffect(() => {
     const handler = (e: Event) => {
       const { id } = (e as CustomEvent<{ id: string }>).detail;
-      focusNodeById(id);
+      // - mark it pending so the reload effect force-centers it once nodes land (first open),
+      // - and try centering now for the already-open case; clear the mark after it can't apply
+      pendingCrossFocusRef.current = id;
+      focusNodeById(id, true);
+      window.setTimeout(() => { if (pendingCrossFocusRef.current === id) pendingCrossFocusRef.current = null; }, 1500);
     };
     window.addEventListener('skena:focusNodeRequest', handler);
     return () => window.removeEventListener('skena:focusNodeRequest', handler);
