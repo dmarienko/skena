@@ -34,6 +34,7 @@ import { CanvasData, CanvasNode, CanvasEdge, MsgAddNodeResult, MsgRunOutput, Msg
 import { classifyClipboard } from './paste-classify';
 import { ContextMenu } from './ContextMenu';
 import { CANVAS_COLORS } from '../../shared/constants';
+import { GRID, snapGrid } from '../../shared/grid';
 import { ensureLabels, assignLabel } from './nodeLabels';
 import { ZoomLevelProvider } from '../context/ZoomLevelContext';
 import { HeatmapProvider } from '../context/HeatmapContext';
@@ -211,10 +212,9 @@ function patchCanvasNode(original: CanvasNode, rfNode: Node): CanvasNode {
 
 // ─── alignment guide helpers ──────────────────────────────────────────────────
 
-const GRID = 8; // - manual grid snap (replaces ReactFlow snapToGrid)
-
-function snapGrid(v: number): number {
-  return Math.round(v / GRID) * GRID;
+// - publish the shared grid to CSS so .skena-markdown line-height matches it (one line == one cell)
+if (typeof document !== 'undefined') {
+  document.documentElement.style.setProperty('--skena-grid', `${GRID}px`);
 }
 
 type HelperLinesState = { horizontal?: number; vertical?: number };
@@ -400,6 +400,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   // - node id a cross-canvas reference asked to focus; the reload effect honors it (force-center)
   // - so the just-opened canvas jumps to the target instead of restoring its last focus
   const pendingCrossFocusRef = useRef<string | null>(null);
+  // - true only while a real user drag is in progress, so grid-snap applies to drags (and their
+  // - drop) but never to programmatic position changes (which would move nodes on their own)
+  const draggingRef = useRef(false);
   // - Alt+X add-node chord: armed until the next h/j/k/l (or 2s timeout)
   const chordRef       = useRef(false);
   const chordTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -425,20 +428,27 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     );
 
     if (posChange?.position) {
-      const { horizontal, vertical, snapX, snapY } = getHelperLines(posChange, nodesRef.current);
-      // - show guide lines only while actively dragging; clear them on drop
+      const snap = (): void => {
+        const { horizontal, vertical, snapX, snapY } = getHelperLines(posChange, nodesRef.current);
+        setHelperLines(posChange.dragging ? { horizontal, vertical } : {});
+        posChange.position = {
+          x: snapX !== undefined ? snapX : snapGrid(posChange.position!.x),
+          y: snapY !== undefined ? snapY : snapGrid(posChange.position!.y),
+        };
+      };
       if (posChange.dragging) {
-        setHelperLines({ horizontal, vertical });
+        // - actively dragging: align to guides / grid and remember we are in a drag
+        draggingRef.current = true;
+        snap();
+      } else if (draggingRef.current) {
+        // - the drop that ends a drag: final snap so state doesn't revert to the raw mouse-up
+        draggingRef.current = false;
+        snap();
       } else {
+        // - a programmatic / measurement position change (e.g. a cell-run status update, or a node
+        // - re-measure) — do NOT snap, or a node not aligned to the current grid would jump on its own.
         setHelperLines({});
       }
-      // - snap to alignment guide if within threshold, otherwise snap to grid;
-      // - applies on every position change including the final dragging:false event
-      // - so React state never reverts to the raw mouse-up position
-      posChange.position = {
-        x: snapX !== undefined ? snapX : snapGrid(posChange.position.x),
-        y: snapY !== undefined ? snapY : snapGrid(posChange.position.y),
-      };
     } else if (!changes.some(c => c.type === 'position' && (c as NodePositionChange).dragging)) {
       setHelperLines({});
     }
@@ -2045,7 +2055,11 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   useEffect(() => {
     const handler = (e: Event) => {
       pushHistory();
-      const { id, x, y, width, height } = (e as CustomEvent<{ id: string; x: number; y: number; width: number; height: number }>).detail;
+      const d = (e as CustomEvent<{ id: string; x: number; y: number; width: number; height: number }>).detail;
+      // - snap the resized box to the grid so width/height land on whole cells (vertical = whole lines)
+      const id = d.id;
+      const x = snapGrid(d.x), y = snapGrid(d.y);
+      const width = snapGrid(d.width), height = snapGrid(d.height);
       // - sync RF node state so in-memory dimensions match the resized size
       // - (RF's NodeResizer updates its own internal store, but we must also
       // -  update width/height on the node object for focusNodeById calculations)

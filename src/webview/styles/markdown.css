@@ -2,7 +2,9 @@
 
 .skena-markdown {
   font-size: 12px;
-  line-height: 1.6;
+  /* - matches the canvas GRID (set as --skena-grid by CanvasView) so a vertical resize step
+     - hides/shows a whole line. Falls back to 20px before the var is set. */
+  line-height: var(--skena-grid, 20px);
   color: var(--vscode-foreground);
 }
 

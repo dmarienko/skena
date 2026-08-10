@@ -28,6 +28,7 @@ import * as crypto   from 'crypto';
 
 import { CanvasData, CanvasNode, CanvasEdge, CanvasNodeBase, CellNode, CodeNode } from '../../shared/types';
 import { assignLabel, ensureLabels } from '../../shared/nodeLabels';
+import { snapGrid } from '../../shared/grid';
 import { resolveBoundKernel, resolveUpstreamChain } from '../../shared/kernelBinding';
 import { resolveKernelConfig, type KernelServerConfig } from '../jupyter/config';
 import { executeCell } from '../jupyter/client';
@@ -528,10 +529,10 @@ async function canvasAddNode(args: Record<string, unknown>): Promise<string> {
   const base = {
     id:        uid(),
     type:      type as CanvasNode['type'],
-    x:         pos.x,
-    y:         pos.y,
-    width:     w,
-    height:    h,
+    x:         snapGrid(pos.x),
+    y:         snapGrid(pos.y),
+    width:     snapGrid(w),
+    height:    snapGrid(h),
     createdBy: 'ai' as const,
     ...(args.color ? { color: args.color as CanvasNodeBase['color'] } : {}),
     ...(args.tags  ? { tags:  args.tags  as string[] } : {}),
@@ -592,10 +593,10 @@ async function canvasUpdateNode(args: Record<string, unknown>): Promise<string> 
   if (args.color !== undefined) updated.color = args.color as CanvasNodeBase['color'];
   if (args.label !== undefined) updated.nodeLabel = args.label as string;
   // - move / resize (absolute coords, partial — only supplied fields change)
-  if (args.x      !== undefined) updated.x      = args.x      as number;
-  if (args.y      !== undefined) updated.y      = args.y      as number;
-  if (args.width  !== undefined) updated.width  = args.width  as number;
-  if (args.height !== undefined) updated.height = args.height as number;
+  if (args.x      !== undefined) updated.x      = snapGrid(args.x      as number);
+  if (args.y      !== undefined) updated.y      = snapGrid(args.y      as number);
+  if (args.width  !== undefined) updated.width  = snapGrid(args.width  as number);
+  if (args.height !== undefined) updated.height = snapGrid(args.height as number);
 
   d.nodes[idx] = updated;
   await writeCanvas(p, d);
@@ -687,10 +688,10 @@ async function canvasLayout(args: Record<string, unknown>): Promise<string> {
     for (const it of items) {
       const n = findNode(d, it.ref as string);
       if (!n) { missing.push(String(it.ref)); continue; }
-      if (it.x      !== undefined) n.x      = it.x      as number;
-      if (it.y      !== undefined) n.y      = it.y      as number;
-      if (it.width  !== undefined) n.width  = it.width  as number;
-      if (it.height !== undefined) n.height = it.height as number;
+      if (it.x      !== undefined) n.x      = snapGrid(it.x      as number);
+      if (it.y      !== undefined) n.y      = snapGrid(it.y      as number);
+      if (it.width  !== undefined) n.width  = snapGrid(it.width  as number);
+      if (it.height !== undefined) n.height = snapGrid(it.height as number);
       done.push(n.nodeLabel ?? n.id);
     }
     await writeCanvas(p, d);
