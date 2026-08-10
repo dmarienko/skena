@@ -211,6 +211,43 @@ export function applyVimClipboard(): void {
   }
 }
 
+/**
+ * Fix monaco-vim's J (join lines): its built-in join misbehaves under Monaco. Intercept Shift+J
+ * at the Monaco level and, when vim is in NORMAL mode (read from the status bar text, the same
+ * signal the Esc handler uses), join the current + next line vim-style — single space, drop the
+ * next line's leading whitespace — in one synchronous edit. In INSERT/VISUAL/REPLACE we bail so
+ * vim/Monaco handle the key normally. Best-effort unmap of the built-in J so it can't also fire.
+ */
+export function patchVimJoin(
+  editor:   MonacoEditor.IStandaloneCodeEditor,
+  statusEl: HTMLElement | null,
+): void {
+  const Vim = getVimSingleton() as unknown as { unmap?: (lhs: string, ctx: string) => void } | undefined;
+  try { Vim?.unmap?.('J', 'normal'); } catch { /* built-in map may not be user-removable */ }
+
+  editor.onKeyDown(e => {
+    // - Shift+J only (plain J is 'j'); ignore chorded variants so Ctrl/Cmd/Alt+J pass through
+    if (e.browserEvent.key !== 'J' || e.ctrlKey || e.metaKey || e.altKey) return;
+    const mode = statusEl?.textContent ?? '';
+    if (mode.includes('INSERT') || mode.includes('VISUAL') || mode.includes('REPLACE')) return;
+
+    const model = editor.getModel();
+    const pos   = editor.getPosition();
+    if (!model || !pos || pos.lineNumber >= model.getLineCount()) { e.preventDefault(); e.stopPropagation(); return; }
+    e.preventDefault();
+    e.stopPropagation();
+    const ln   = pos.lineNumber;
+    const cur  = model.getLineContent(ln);
+    const next = model.getLineContent(ln + 1).replace(/^\s+/, '');   // - vim J drops the next line's indent
+    const sep  = (cur.length === 0 || cur.endsWith(' ')) ? '' : ' ';
+    editor.executeEdits('vim-join', [{
+      range: { startLineNumber: ln, startColumn: 1, endLineNumber: ln + 1, endColumn: model.getLineMaxColumn(ln + 1) },
+      text: cur + sep + next,
+    }]);
+    editor.setPosition({ lineNumber: ln, column: cur.length + 1 });   // - cursor at the junction (vim behaviour)
+  });
+}
+
 // - module-level skena:clipboardContent listener — registered at bundle load,
 // - fires for both the proactive push on webviewReady AND every requestClipboardRead response.
 // - Updates clipboardCache AND syncs sysReg.linewise so vim paste reads the right flag.
@@ -471,6 +508,7 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
     // - which initialises the Vim singleton and (re)creates the RegisterController.
     applyVimClipboard();
     patchVimNewlineAndIndent();
+    patchVimJoin(editorInstance, vimStatusRef.current);
 
     // ─── vim mode tracking via MutationObserver ──────────────────────────────
     //

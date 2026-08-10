@@ -17,7 +17,7 @@ import { DEFAULT_NODE_BORDER_BY_TYPE } from '../palette';
 import { resolveBoundKernel } from '../../../shared/kernelBinding';
 import { CodeRenderer } from '../../renderers/CodeRenderer';
 import { ScrollableContent, setScrollPosition } from '../../components/ScrollableContent';
-import { applyVimClipboard, patchVimNewlineAndIndent } from './TextNode';
+import { applyVimClipboard, patchVimNewlineAndIndent, patchVimJoin } from './TextNode';
 import { ensureKernelCompletion, setActiveCodeCell } from './kernelCompletion';
 
 function vscodePostMessage(msg: unknown) {
@@ -183,6 +183,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     // - vim o/O newline. Both operate on monaco-vim's global singleton.
     applyVimClipboard();
     patchVimNewlineAndIndent();
+    patchVimJoin(editorInstance, vimStatusRef.current);
     if (savedViewState.current) editorInstance.restoreViewState(savedViewState.current);
     editorInstance.focus();
 
