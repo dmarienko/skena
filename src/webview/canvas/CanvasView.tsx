@@ -200,11 +200,16 @@ function runningPathEdgeIds(nodes: Node[], edges: Edge[]): Set<string> {
 }
 
 // - React Flow node → updated canvas node (position/size changed)
-function patchCanvasNode(original: CanvasNode, rfNode: Node): CanvasNode {
+function patchCanvasNode(original: CanvasNode, rfNode: Node, nodes: Node[]): CanvasNode {
+  // - React Flow hands onNodeDragStop the RAW (pre-snap) drag position. customOnNodesChange snapped
+  // - the DISPLAY (grid + alignment guides), so re-apply the identical snap here — otherwise the saved
+  // - position is up to a full grid cell off the on-screen position and the node shifts on reopen.
+  const change = { id: rfNode.id, type: 'position', position: rfNode.position } as NodePositionChange;
+  const { snapX, snapY } = getHelperLines(change, nodes);
   return {
     ...original,
-    x:      Math.round(rfNode.position.x),
-    y:      Math.round(rfNode.position.y),
+    x:      Math.round(snapX !== undefined ? snapX : snapGrid(rfNode.position.x)),
+    y:      Math.round(snapY !== undefined ? snapY : snapGrid(rfNode.position.y)),
     width:  Math.round(Number(rfNode.style?.width ?? original.width)),
     height: Math.round(Number(rfNode.style?.height ?? original.height)),
   };
@@ -629,14 +634,11 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const onNodeDragStop = useCallback((_: React.MouseEvent, node: Node) => {
     const original = canvasRef.current.nodes.find(n => n.id === node.id);
     if (!original) return;
-
-    // - node.position here is the last snapped position from the final drag frame;
-    // - no second snap needed — customOnNodesChange already handles alignment for
-    // - every position change including the dragging:false event React Flow fires next
+    // - patchCanvasNode re-applies the display snap (React Flow reports the RAW drag position here)
     const updated: CanvasData = {
       ...canvasRef.current,
       nodes: canvasRef.current.nodes.map(n =>
-        n.id === node.id ? patchCanvasNode(n, node) : n
+        n.id === node.id ? patchCanvasNode(n, node, nodesRef.current) : n
       ),
     };
     canvasRef.current = updated;
