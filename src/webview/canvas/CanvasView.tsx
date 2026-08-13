@@ -102,15 +102,25 @@ function toFlowNode(cn: CanvasNode): Node {
   };
 }
 
+// - how long a just-produced run output is protected from being reverted by a stale reload
+const RECENT_OUTPUT_MS = 4000;
+
+// - default size + gap for a NEW node created by directional-add (Alt+X / Ctrl+Shift+hjkl), an edge
+//   dropped on empty canvas, or `o` below a node
+const NEW_NODE_W = 780, NEW_NODE_H = 300, NEW_NODE_GAP = 160;
+
 // - reconcile a freshly-loaded node array against the current one so an output-write reload doesn't
 // - re-render (flicker) the whole canvas. An UNCHANGED node returns its EXACT previous object — React
 // - Flow memoizes node wrappers by reference, so an identical ref means zero re-render. Only genuinely
 // - changed nodes get a new object (data ref reused when only the position moved). Selection preserved.
-function reconcileFlowNodes(prev: Node[], next: Node[]): Node[] {
+function reconcileFlowNodes(prev: Node[], next: Node[], pinned?: Set<string>): Node[] {
   const prevById = new Map(prev.map(n => [n.id, n]));
   return next.map(nn => {
     const pn = prevById.get(nn.id);
     if (!pn) return nn;   // - new node
+    // - a just-produced run output: keep the webview's fresh copy so a momentarily-stale disk reload
+    //   can't revert its content back to an older run
+    if (pinned?.has(nn.id)) return pn;
     const dataSame = JSON.stringify(pn.data) === JSON.stringify(nn.data);
     const posSame  = pn.position.x === nn.position.x && pn.position.y === nn.position.y
       && pn.width === nn.width && pn.height === nn.height;
@@ -377,6 +387,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const lastCPressRef = useRef<number>(0);
   const lastYPressRef = useRef<number>(0);
   const lastDPressRef = useRef<number>(0);
+  const lastXPressRef = useRef<number>(0);
   // - OS clipboard text captured at last yy; discriminates internal vs content paste (no clipboard timestamps exist)
   const yySnapshotRef      = useRef<string | null>(null);
   const awaitingYYSnapshot = useRef(false);
@@ -428,27 +439,30 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   // - intercept onNodesChange to compute alignment guides + manual grid snap
   // - (snapToGrid is removed from <ReactFlow> so both can coexist cleanly)
   const customOnNodesChange = useCallback((changes: NodeChange[]) => {
-    const posChange = changes.find(
+    const posChanges = changes.filter(
       (c): c is NodePositionChange => c.type === 'position' && !!c.position
     );
 
-    if (posChange?.position) {
-      const snap = (): void => {
-        const { horizontal, vertical, snapX, snapY } = getHelperLines(posChange, nodesRef.current);
-        setHelperLines(posChange.dragging ? { horizontal, vertical } : {});
-        posChange.position = {
-          x: snapX !== undefined ? snapX : snapGrid(posChange.position!.x),
-          y: snapY !== undefined ? snapY : snapGrid(posChange.position!.y),
+    if (posChanges.length) {
+      const primary  = posChanges[0];
+      const dragging = posChanges.some(c => c.dragging);
+      if (dragging || draggingRef.current) {
+        // - dragging, or the drop that ends a drag: snap the WHOLE moved set. The primary aligns to
+        //   guides + grid; the rest of a multi-selection snap to grid only — so every dragged node
+        //   lands ON the grid on screen and none reverts on reload (all are persisted at drag-stop).
+        const { horizontal, vertical, snapX, snapY } = getHelperLines(primary, nodesRef.current);
+        setHelperLines(dragging ? { horizontal, vertical } : {});
+        primary.position = {
+          x: snapX !== undefined ? snapX : snapGrid(primary.position!.x),
+          y: snapY !== undefined ? snapY : snapGrid(primary.position!.y),
         };
-      };
-      if (posChange.dragging) {
-        // - actively dragging: align to guides / grid and remember we are in a drag
-        draggingRef.current = true;
-        snap();
-      } else if (draggingRef.current) {
-        // - the drop that ends a drag: final snap so state doesn't revert to the raw mouse-up
-        draggingRef.current = false;
-        snap();
+        for (let i = 1; i < posChanges.length; i++) {
+          posChanges[i].position = {
+            x: snapGrid(posChanges[i].position!.x),
+            y: snapGrid(posChanges[i].position!.y),
+          };
+        }
+        draggingRef.current = dragging;
       } else {
         // - a programmatic / measurement position change (e.g. a cell-run status update, or a node
         // - re-measure) — do NOT snap, or a node not aligned to the current grid would jump on its own.
@@ -499,12 +513,54 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const undoStackRef = useRef<HistoryEntry[]>([]);
   const redoStackRef = useRef<HistoryEntry[]>([]);
 
+  // - which canvasPath the camera has been initialized for; a reload of the SAME path must not
+  //   re-set the viewport (see the reload effect below)
+  const loadedPathRef = useRef<string | null>(null);
+  // - output-node id → time (ms) of its last run output. A reload within RECENT_OUTPUT_MS keeps the
+  //   webview's fresh content for that node instead of reverting to a momentarily-stale disk snapshot.
+  const recentOutputRef = useRef<Map<string, number>>(new Map());
+
   // - sync when canvas reloads from host; restore focus after fitView settles
   useEffect(() => {
     // - cancel any in-flight save: the freshly-loaded canvas IS the truth on disk;
     // - letting a stale timer fire would overwrite an MCP write with old state.
     if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
+    // - first load of THIS path → allow the camera to be set (restore/fit/focus). A RELOAD of the
+    //   same path (agent MCP edit, cell-run output, another window's save) must NOT move the camera:
+    //   editing node data never changes the viewpoint. The disk viewport is also stale on a reload —
+    //   hotkey nav/zoom (hjkl/z/Z) moves the camera without persisting, so restoring it would snap back.
+    const isInitialLoad = loadedPathRef.current !== canvasPath;
+    loadedPathRef.current = canvasPath;
     const labeled = ensureLabels(canvas.nodes);
+    // - TEMP INSTRUMENT (agent-run node-shift): log any node whose incoming DISK position differs from
+    //   its current ON-SCREEN position on a reload. Remove once diagnosed.
+    if (!isInitialLoad) {
+      const screenById = new Map(nodesRef.current.map(n => [n.id, n.position]));
+      const shifts = labeled
+        .map(cn => {
+          const s = screenById.get(cn.id);
+          return s ? { id: cn.id, sx: s.x, sy: s.y, dx: cn.x, dy: cn.y } : null;
+        })
+        .filter((r): r is NonNullable<typeof r> => !!r && (Math.abs(r.dx - r.sx) > 0.5 || Math.abs(r.dy - r.sy) > 0.5));
+      console.warn(
+        `[skena reload] nodes=${labeled.length} shifted=${shifts.length}`,
+        shifts.map(r => `${r.id}: screen(${Math.round(r.sx)},${Math.round(r.sy)})→disk(${r.dx},${r.dy}) Δ(${Math.round(r.dx - r.sx)},${Math.round(r.dy - r.sy)})`),
+      );
+    }
+    // - TEMP INSTRUMENT (output identity): per code node, its outputNodeId + whether it resolves on
+    //   disk; + list of output cells. Catches the "re-run doesn't replace previous output" desync.
+    {
+      const idset = new Set(labeled.map(n => n.id));
+      const cells = labeled.filter(n => n.type === 'cell').map(n => n.id);
+      const report = labeled
+        .filter(n => n.type === 'code')
+        .map(cn => {
+          const oid = (cn as { outputNodeId?: string }).outputNodeId;
+          const state = oid ? (idset.has(oid) ? 'ok' : 'MISSING') : 'none';
+          return `${cn.id}→${oid ?? '∅'}[${state}]`;
+        });
+      console.warn(`[skena outputs] cells=${cells.length}(${cells.join(',')}) code: ${report.join(' | ')}`);
+    }
     // - PROTECT run outputs: never let a (possibly stale) reload drop an output node that a code node
     //   still references. A save/reload race can produce a disk snapshot lacking a just-created output
     //   node + its edge; keep the webview's copy so it doesn't vanish or lose its connection.
@@ -525,20 +581,38 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     const keepEdgesAsCanvas = keepEdges.map(e => ({ id: e.id, fromNode: e.source, toNode: e.target,
       fromSide: e.sourceHandle ?? undefined, toSide: e.targetHandle ?? undefined, toEnd: 'arrow' } as CanvasEdge));
 
-    // - reconcile (not replace) so unchanged nodes keep their exact object ref → no flicker re-render
-    setNodes(prev => [...reconcileFlowNodes(prev, labeled.map(toFlowNode)), ...keepNodes]);
-    setEdges([...canvas.edges.map(toFlowEdge), ...keepEdges]);
-    canvasRef.current = { ...canvas, nodes: [...labeled, ...keepAsCanvas], edges: [...canvas.edges, ...keepEdgesAsCanvas] };
+    // - pin just-produced run outputs: a reload firing from a momentarily-stale writer must not revert
+    //   their fresh content to an older run. Expire entries past RECENT_OUTPUT_MS.
+    const nowMs = Date.now();
+    const pinned = new Set<string>();
+    for (const [oid, ts] of recentOutputRef.current) {
+      if (nowMs - ts < RECENT_OUTPUT_MS) pinned.add(oid); else recentOutputRef.current.delete(oid);
+    }
+    // - keep the webview's fresh version of pinned outputs in canvasRef too, so a save can't write the
+    //   stale disk content back either
+    const prevById = new Map(nodesRef.current.map(n => [n.id, n]));
+    const labeledForRef = labeled.map(cn => {
+      const wv = pinned.has(cn.id) ? prevById.get(cn.id) : undefined;
+      if (!wv) return cn;
+      const { accentColor: _drop, ...rest } = wv.data as Record<string, unknown>;
+      return { ...rest, x: wv.position.x, y: wv.position.y } as unknown as CanvasNode;
+    });
 
-    // - restore saved viewport immediately (external reload; defaultViewport only fires on mount)
-    if (canvas.viewport) {
+    // - reconcile (not replace) so unchanged nodes keep their exact object ref → no flicker re-render
+    setNodes(prev => [...reconcileFlowNodes(prev, labeled.map(toFlowNode), pinned), ...keepNodes]);
+    setEdges([...canvas.edges.map(toFlowEdge), ...keepEdges]);
+    canvasRef.current = { ...canvas, nodes: [...labeledForRef, ...keepAsCanvas], edges: [...canvas.edges, ...keepEdgesAsCanvas] };
+
+    // - restore saved viewport ONLY on the first load of this path (defaultViewport only fires on
+    //   mount). On a reload keep the user's current camera — never snap to the stale disk viewport.
+    if (isInitialLoad && canvas.viewport) {
       rfRef.current.setViewport(canvas.viewport, { duration: 0 });
     }
 
     // - fitView / focus: defer so the layout pass is done before we query positions
     const t = setTimeout(() => {
-      if (!canvas.viewport) {
-        // - no saved viewport → fitView so the canvas isn't off-screen
+      if (isInitialLoad && !canvas.viewport) {
+        // - first open, no saved viewport → fitView so the canvas isn't off-screen
         rfRef.current.fitView({ padding: 0.1 });
       }
       // - a cross-canvas reference opened this canvas → jump to and center its target, overriding
@@ -553,11 +627,11 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       const exists  = stored && nodesRef.current.some(n => n.id === stored);
       const focusId = exists ? stored : pickViewportNode();
       if (focusId) {
-        if (canvas.viewport) {
-          // - viewport already restored above; just reselect WITHOUT recentering, so an
-          // - external reload (e.g. a cell-run output write) doesn't pan the canvas / steal focus.
-          // - Skip entirely when the target is ALREADY the selected node — otherwise every
-          // - output-write reload re-selects + re-focuses it and the ring visibly blinks.
+        // - on any RELOAD (or when a viewport is saved) reselect WITHOUT moving the camera, so an
+        //   external reload (agent edit, cell-run output write) doesn't pan / steal focus. Skip when
+        //   the target is ALREADY selected — else every output-write reload re-focuses it and the
+        //   ring visibly blinks. Only the very first open with no saved viewport may pan to focus.
+        if (canvas.viewport || !isInitialLoad) {
           const already = nodesRef.current.find(n => n.id === focusId)?.selected === true;
           if (!already) {
             setNodes(nds => nds.map(n => ({ ...n, selected: n.id === focusId })));
@@ -632,14 +706,20 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   }, []);
 
   const onNodeDragStop = useCallback((_: React.MouseEvent, node: Node) => {
-    const original = canvasRef.current.nodes.find(n => n.id === node.id);
-    if (!original) return;
-    // - patchCanvasNode re-applies the display snap (React Flow reports the RAW drag position here)
+    // - a multi-selection drag moves several nodes, but React Flow fires this ONCE with the grabbed
+    //   node. Persist the grabbed node AND every other currently-selected node — else the unsaved
+    //   ones keep their old disk position and revert on the next reload (e.g. an agent edit).
+    //   patchCanvasNode re-applies the display snap (RF reports the RAW drag position for the grabbed
+    //   node; the others read their already-snapped display position from nodesRef).
+    const rfById = new Map(nodesRef.current.map(n => [n.id, n]));
+    rfById.set(node.id, node);
+    const moved = new Set<string>([node.id, ...nodesRef.current.filter(n => n.selected).map(n => n.id)]);
     const updated: CanvasData = {
       ...canvasRef.current,
-      nodes: canvasRef.current.nodes.map(n =>
-        n.id === node.id ? patchCanvasNode(n, node, nodesRef.current) : n
-      ),
+      nodes: canvasRef.current.nodes.map(n => {
+        const rf = moved.has(n.id) ? rfById.get(n.id) : undefined;
+        return rf ? patchCanvasNode(n, rf, nodesRef.current) : n;
+      }),
     };
     canvasRef.current = updated;
     scheduleSave();
@@ -714,8 +794,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       // - dragging off a kernel OR a code cell makes another code cell (its natural chain); else a text note
       const fromType = connectionState.fromNode.type;
       const makeCode = fromType === 'kernel' || fromType === 'code';
-      const nw = makeCode ? 360 : 400;
-      const nh = makeCode ? 200 : 300;
+      const nw = makeCode ? 360 : NEW_NODE_W;
+      const nh = makeCode ? 200 : NEW_NODE_H;
       const p = screenToFlowPosition({ x: mouseEvent.clientX, y: mouseEvent.clientY });
       const nodeId = `${makeCode ? 'code' : 'text'}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
       const newNode: CanvasNode = makeCode
@@ -974,20 +1054,67 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     window.dispatchEvent(new CustomEvent('skena:focusNode', { detail: { id } }));
     const node = nodesRef.current.find(n => n.id === id);
     if (!node) return;
-    const nc = {
-      x: node.position.x + Number(node.style?.width  ?? 200) / 2,
-      y: node.position.y + Number(node.style?.height ?? 150) / 2,
-    };
-    const { x: vx, y: vy, zoom } = rfRef.current.getViewport();
-    const margin = 80 / zoom;
-    const left   = -vx / zoom + margin;
-    const top    = -vy / zoom + margin;
-    const right  = left + window.innerWidth  / zoom - margin * 2;
-    const bottom = top  + window.innerHeight / zoom - margin * 2;
-    // - forceCenter: a cross-canvas jump always centers its target (even if on-screen); the
-    // - default only recenters when the node is off-screen (avoids stealing pan on reloads).
-    if (forceCenter || nc.x <= left || nc.x >= right || nc.y <= top || nc.y >= bottom) {
-      rfRef.current.setCenter(nc.x, nc.y, { duration: 250, zoom });
+
+    // - frame the node — PLUS its output cell when this is a code node that has one — inside the area
+    //   NOT covered by the (draggable, floating) AI chat panel, so focus never lands behind it.
+    const targets: Node[] = [node];
+    const outId = (node.data as { outputNodeId?: string } | undefined)?.outputNodeId;
+    if (outId) { const on = nodesRef.current.find(n => n.id === outId); if (on) targets.push(on); }
+    const nw = (n: Node) => Number(n.style?.width  ?? 200);
+    const nh = (n: Node) => Number(n.style?.height ?? 150);
+    const bx1 = Math.min(...targets.map(n => n.position.x));
+    const by1 = Math.min(...targets.map(n => n.position.y));
+    const bx2 = Math.max(...targets.map(n => n.position.x + nw(n)));
+    const by2 = Math.max(...targets.map(n => n.position.y + nh(n)));
+    const bcx = (bx1 + bx2) / 2, bcy = (by1 + by2) / 2;
+
+    // - usable screen area = window minus the chat's strip, only when it's expanded enough to occlude
+    //   AND docked to an edge (a collapsed/small or mid-floating panel is ignored → full window)
+    const winW = window.innerWidth, winH = window.innerHeight;
+    let vL = 0, vT = 0, vR = winW, vB = winH;
+    const chatEl = document.querySelector('[data-skena-chat]') as HTMLElement | null;
+    if (chatEl) {
+      const r = chatEl.getBoundingClientRect();
+      if (r.width > 40 && r.height > 60) {
+        if      (r.right  >= winW - 8 && r.left   > winW * 0.35) vR = r.left;
+        else if (r.left   <= 8        && r.right  < winW * 0.65) vL = r.right;
+        else if (r.bottom >= winH - 8 && r.top    > winH * 0.35) vB = r.top;
+        else if (r.top    <= 8        && r.bottom < winH * 0.65) vT = r.bottom;
+      }
+    }
+    const availCx = (vL + vR) / 2, availCy = (vT + vB) / 2;
+
+    const { x: vx, y: vy, zoom: curZoom } = rfRef.current.getViewport();
+
+    // - decide whether to move based on the FOCUSED NODE ALONE: if it is already fully visible in the
+    //   usable area, leave the viewport untouched — even if its output cell sits off-screen. A node's
+    //   output is placed far to its right, so judging by the whole node+output box would recenter on
+    //   nearly every focus.
+    const M = 24;
+    const nsx1 = node.position.x * curZoom + vx,              nsy1 = node.position.y * curZoom + vy;
+    const nsx2 = (node.position.x + nw(node)) * curZoom + vx, nsy2 = (node.position.y + nh(node)) * curZoom + vy;
+    const nodeInside = nsx1 >= vL + M && nsy1 >= vT + M && nsx2 <= vR - M && nsy2 <= vB - M;
+
+    if (forceCenter) {
+      // - explicit jump (e.g. a cross-canvas reference): centre the node+output box, zoom out to fit
+      const fit = targets.length > 1
+        ? Math.max(0.1, Math.min(curZoom, Math.min((vR - vL) / (bx2 - bx1 + 160), (vB - vT) / (by2 - by1 + 160))))
+        : curZoom;
+      rfRef.current.setViewport({ x: availCx - bcx * fit, y: availCy - bcy * fit, zoom: fit }, { duration: 250 });
+    } else if (!nodeInside) {
+      // - MINIMAL pan: move the viewport JUST enough to bring the node (plus its output if the pair
+      //   still fits at the current zoom) fully into the usable area. Keep the zoom — don't centre,
+      //   don't zoom out. If the target is larger than the usable area on an axis, align its top edge.
+      const fitsBox = (bx2 - bx1) * curZoom <= (vR - vL - 2 * M) && (by2 - by1) * curZoom <= (vB - vT - 2 * M);
+      const [tx1, ty1, tx2, ty2] = fitsBox
+        ? [bx1 * curZoom + vx, by1 * curZoom + vy, bx2 * curZoom + vx, by2 * curZoom + vy]
+        : [nsx1, nsy1, nsx2, nsy2];
+      let dx = 0, dy = 0;
+      if (tx1 < vL + M) dx = (vL + M) - tx1; else if (tx2 > vR - M) dx = (vR - M) - tx2;
+      if (ty1 < vT + M) dy = (vT + M) - ty1; else if (ty2 > vB - M) dy = (vB - M) - ty2;
+      if (dx !== 0 || dy !== 0) {
+        rfRef.current.setViewport({ x: vx + dx, y: vy + dy, zoom: curZoom }, { duration: 250 });
+      }
     }
   }, [setNodes, canvasPath]); // - nodesRef + rfRef are always current
 
@@ -1045,7 +1172,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
     const cw = Number(current.style?.width  ?? 400);
     const ch = Number(current.style?.height ?? 300);
-    const nw = 400, nh = 300, GAP = 40;
+    const nw = NEW_NODE_W, nh = NEW_NODE_H, GAP = NEW_NODE_GAP;
 
     const dirMap: Record<string, { dx: number; dy: number; pushX: -1|0|1; pushY: -1|0|1; fromSide: NodeSide; toSide: NodeSide }> = {
       L: { dx:  cw + GAP, dy: 0,         pushX:  1, pushY:  0, fromSide: 'right',  toSide: 'left'   },
@@ -1414,7 +1541,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       if (!current) return;
       const cw = Number(current.style?.width  ?? 400);
       const ch = Number(current.style?.height ?? 300);
-      const nw = 400, nh = 300, GAP = 40;
+      const nw = NEW_NODE_W, nh = NEW_NODE_H, GAP = NEW_NODE_GAP;
       type PD = -1 | 0 | 1;
       const dirMap: Record<string, { dx: number; dy: number; pushX: PD; pushY: PD; fromSide: NodeSide; toSide: NodeSide }> = {
         L: { dx:  cw + GAP, dy: 0,         pushX:  1, pushY:  0, fromSide: 'right',  toSide: 'left'   },
@@ -1424,7 +1551,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       };
       const { dx, dy, pushX, pushY, fromSide, toSide } = dirMap[key];
       const { x, y } = findFreePosition(nodesRef.current, current.position.x + dx, current.position.y + dy, nw, nh, pushX, pushY);
-      vscodePostMessage({ type: 'addNodeRequest', position: { x, y }, fromNodeId: current.id, fromSide, toSide });
+      // - go through the host so the "New text note / New URL / vault / workspace" picker opens (choose
+      //   what to add); pass width/height so the chosen node gets the directional-add size.
+      vscodePostMessage({ type: 'addNodeRequest', position: { x, y }, width: nw, height: nh, fromNodeId: current.id, fromSide, toSide });
     };
 
     // - scroll the focused node's content (Shift+hjkl); returns false if nothing scrollable
@@ -1692,6 +1821,41 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         return;
       }
 
+      // - i: same as pressing Enter on the focused node — edit text/code nodes, open file / portal /
+      //   link / noderef nodes in the VS Code editor. Guarded by !inField so a plain 'i' typed inside
+      //   an editor stays a normal keystroke.
+      if (!inField && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'i') {
+        const current = nodesRef.current.find(n => n.selected && n.type !== 'group');
+        if (!current) return;
+        e.preventDefault();
+        const d = current.data as Record<string, unknown>;
+        if (current.type === 'text' || current.type === 'code') {
+          window.dispatchEvent(new CustomEvent('skena:enterEdit', { detail: { id: current.id } }));
+        } else if (current.type === 'file') {
+          vscodePostMessage({ type: 'openFile', uri: (d.file as string) ?? '', modal: false });
+        } else if (current.type === 'portal') {
+          vscodePostMessage({ type: 'openFile', uri: (d.canvas as string) ?? '', modal: false });
+        } else if (current.type === 'link') {
+          const url = (d.url as string) ?? '';
+          if (url) vscodePostMessage({ type: 'openFile', uri: url, modal: false });
+        } else if (current.type === 'noderef') {
+          const c = (d.canvas as string) ?? '', l = (d.label as string) ?? '';
+          if (c && l) vscodePostMessage({ type: 'openFile', uri: `${c}#${l}` });
+        }
+        return;
+      }
+
+      // - o: add an empty text node below the focused node (mirrors `o` on a code node). Code nodes
+      //   handle their own `o` (chained code cell) via CodeNode, so skip them here.
+      if (!inField && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'o') {
+        const current = nodesRef.current.find(n => n.selected && n.type !== 'group');
+        if (current && current.type !== 'code') {
+          e.preventDefault();
+          addTextNodeInDirection('J');
+          return;
+        }
+      }
+
       // - u / r: undo / redo canvas structure (vim-style, no modifier)
       if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'u') {
         e.preventDefault();
@@ -1817,6 +1981,23 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           deleteSelectedNodes();
         } else {
           lastDPressRef.current = now;
+        }
+        return;
+      }
+
+      // - xx (double-tap x within 400 ms): remove the focused CODE node's attached output cell (if any).
+      //   performDelete clears the code node's outputNodeId + edge and refocuses it, so a re-run makes
+      //   a fresh output.
+      if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'x') {
+        const now = Date.now();
+        if (now - lastXPressRef.current < 400) {
+          lastXPressRef.current = 0;
+          const code   = nodesRef.current.find(n => n.selected && n.type === 'code');
+          const outId  = (code?.data as { outputNodeId?: string } | undefined)?.outputNodeId;
+          const outNode = outId ? nodesRef.current.find(n => n.id === outId) : undefined;
+          if (outNode) { e.preventDefault(); performDelete([outNode]); }
+        } else {
+          lastXPressRef.current = now;
         }
         return;
       }
@@ -1987,7 +2168,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       window.removeEventListener('keydown', handler);
       window.removeEventListener('keydown', panCapture, { capture: true });
     };
-  }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, jumpToMark]); // - nodesRef + spaceSelectedRef carry live state
+  }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToMark]); // - nodesRef + spaceSelectedRef carry live state
 
   // - expose a viewport snapshot for the AI companion (what the user actually sees:
   // - zoom, on-screen node labels, scroll position within the focused node)
@@ -2257,6 +2438,23 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     const handler = (e: Event) => {
       const d = (e as CustomEvent<MsgRunOutput>).detail;
       const out = d.outputNode;
+      // - TEMP INSTRUMENT (output desync): the exact moment a run's output id is compared to the code
+      //   node's EXISTING outputNodeId. A re-run of a cell that already has output must keep the id.
+      {
+        const cnPrev = nodesRef.current.find(n => n.id === d.codeNodeId);
+        const prevOid = (cnPrev?.data as { outputNodeId?: string } | undefined)?.outputNodeId;
+        const flag = out && prevOid && prevOid !== out.id ? '  ← NEW ID (desync!)'
+          : out && !prevOid ? '  ← no prevOid'
+          : '';
+        console.warn(`[skena runOutput] src=${d.source ?? '?'} code=${d.codeNodeId} status=${d.lastStatus} out=${out?.id ?? '∅'} prevOid=${prevOid ?? '∅'}${flag}`);
+      }
+      // - remember this run just now, so a stale reload can't revert the output cell's content NOR the
+      //   code node's outputNodeId link (see the reload effect's `pinned` set)
+      if (out) {
+        const t = Date.now();
+        recentOutputRef.current.set(out.id, t);
+        recentOutputRef.current.set(d.codeNodeId, t);
+      }
       setNodes(nds => {
         let next = nds.map(n => {
           if (n.id === d.codeNodeId) return { ...n, data: { ...n.data, lastStatus: d.lastStatus, ...(out ? { outputNodeId: out.id } : {}) } };

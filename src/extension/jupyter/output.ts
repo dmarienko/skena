@@ -1,6 +1,7 @@
 import type { CollectedOutput } from './protocol';
 import { renderStream } from './protocol';
 import { renderWidget } from './widgets';
+import { capOutputHtml, capOutputText } from '../../shared/outputCap';
 
 export type OutputFormat = 'markdown' | 'image' | 'html' | 'plotly';
 
@@ -107,12 +108,12 @@ export function renderOutput(out: CollectedOutput): { format: OutputFormat; cont
   }
   // - everything else (text-only, mixed, multiple) → HTML in order, ANSI colours preserved
   const parts: string[] = [];
-  if (out.streamText) parts.push(`<pre class="skena-out-stream">${ansiToHtml(renderStream(out.streamText))}</pre>`);
+  if (out.streamText) parts.push(`<pre class="skena-out-stream">${ansiToHtml(renderStream(capOutputText(out.streamText)))}</pre>`);
   for (const r of rich) {
     if (r.mime.startsWith('image/')) {
       parts.push(`<img src="data:${r.mime};base64,${r.data}" style="max-width:100%;display:block;margin:6px 0" />`);
     } else if (r.mime === 'text/html') {
-      parts.push(`<div>${r.data}</div>`);
+      parts.push(`<div>${capOutputHtml(r.data)}</div>`);
     } else if (r.mime === 'application/vnd.plotly.v1+json') {
       parts.push('<pre class="skena-out-note">[plotly figure — one interactive figure per cell run renders inline; multiple are listed only]</pre>');
     } else if (r.mime === 'application/vnd.jupyter.widget-view+json') {
@@ -121,7 +122,7 @@ export function renderOutput(out: CollectedOutput): { format: OutputFormat; cont
       const html = modelId ? renderWidget(modelId, out.widgets) : '';
       parts.push(html || '<pre class="skena-out-note">[widget]</pre>');
     } else {
-      parts.push(`<pre>${ansiToHtml(r.data)}</pre>`);
+      parts.push(`<pre>${ansiToHtml(capOutputText(r.data))}</pre>`);
     }
   }
   if (out.error) parts.push(`<pre class="skena-out-error">${ansiToHtml(out.error)}</pre>`);

@@ -69,6 +69,7 @@ function KernelNodeInner({ id, data }: NodeProps): JSX.Element {
     setMenu({ x: e.clientX, y: e.clientY });
   }, []);
 
+  const start     = () => { vscodePostMessage({ type: 'kernelAction', action: 'start',     kernelNodeId: id }); closeMenu(); };
   const restart   = () => { vscodePostMessage({ type: 'kernelAction', action: 'restart',   kernelNodeId: id }); closeMenu(); };
   const interrupt = () => { vscodePostMessage({ type: 'kernelAction', action: 'interrupt', kernelNodeId: id }); closeMenu(); };
   const shutdown  = () => { vscodePostMessage({ type: 'kernelAction', action: 'shutdown',  kernelNodeId: id }); closeMenu(); };
@@ -134,6 +135,7 @@ function KernelNodeInner({ id, data }: NodeProps): JSX.Element {
             boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
           }}
         >
+          <KernelMenuItem label="Start kernel"     disabled={!!node.kernelId} onClick={start} />
           <KernelMenuItem label="Interrupt kernel" disabled={!node.kernelId} onClick={interrupt} />
           <KernelMenuItem label="Restart kernel"   disabled={!node.kernelId} onClick={restart} />
           <KernelMenuItem label="Shutdown kernel"  disabled={!node.kernelId} onClick={shutdown} />

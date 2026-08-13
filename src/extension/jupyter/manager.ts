@@ -59,9 +59,9 @@ export class KernelManager {
     return 'idle';
   }
 
-  async ensureKernel(server: KernelServerConfig, kernelId?: string): Promise<string> {
+  async ensureKernel(server: KernelServerConfig, kernelId?: string, spec?: string): Promise<string> {
     if (kernelId) return kernelId;
-    const k = await startKernel(server);
+    const k = await startKernel(server, spec);   // - spec undefined → startKernel defaults to 'python3'
     return k.id;
   }
 

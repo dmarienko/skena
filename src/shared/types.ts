@@ -126,6 +126,8 @@ export interface KernelNode extends CanvasNodeBase {
   kernelId?: string;
   /** - e.g. "python3"; shown in the title */
   displayName?: string;
+  /** - kernelspec name to (re)launch from (e.g. "xmetals"); a restart uses the SAME environment */
+  spec?: string;
   /** - index into KERNEL_PALETTE, assigned at creation */
   colorIndex?: number;
 }
@@ -368,7 +370,7 @@ export interface MsgFocusNode { type: 'focusNode'; id: string; }
 export interface MsgPickModel { type: 'pickModel'; }
 export interface MsgRunCell   { type: 'runCell'; cellNodeId: string; code: string; }
 export interface MsgAddKernel { type: 'addKernel'; }
-export interface MsgKernelAction { type: 'kernelAction'; action: 'restart' | 'shutdown' | 'interrupt'; kernelNodeId: string; }
+export interface MsgKernelAction { type: 'kernelAction'; action: 'restart' | 'shutdown' | 'interrupt' | 'start'; kernelNodeId: string; }
 // - interrupt (SIGINT) the kernel running THIS code cell; confirm asks the host for a modal first
 export interface MsgInterruptCell { type: 'interruptCell'; cellNodeId: string; confirm?: boolean; }
 // - webview asks the host to confirm a destructive delete (e.g. an active kernel node)
@@ -515,6 +517,7 @@ export interface MsgRunOutput {
   kernelId?:    string;
   outputNode?:  CellNode;    // - present when the run produced output (upsert by id)
   edge?:        CanvasEdge;  // - present only when the output node was newly created
+  source?:      'host' | 'mcp';   // - TEMP diagnosis: which agent-run path emitted this (single-writer host vs MCP fallback)
 }
 export interface MsgRunStatus {
   type:         'runStatus';
@@ -522,6 +525,24 @@ export interface MsgRunStatus {
   kernelNodeId: string | null;
   state:        'running' | 'ok' | 'error';
   error?:       string;
+}
+
+// - agent-run persist relay: when a canvas panel is open, the out-of-process MCP delegates the
+// - .canvas WRITE to the host (single-writer) over the 127.0.0.1 relay's /persist endpoint, so the
+// - MCP's external writes no longer race the webview's debounced save (which reset outputNodeId and
+// - duplicated output nodes). The MCP still runs the kernel, streams live deltas, and returns text.
+export interface AgentRunPersist {
+  phase:         'start' | 'done';
+  cellNodeId:    string;
+  kernelNodeId:  string;
+  kernelId:      string;
+  outputNodeId?: string;                                                                          // - 'done': the id the host returned on 'start'
+  status?:       'ok' | 'error';                                                                  // - 'done' only
+  output?:       { format: 'markdown' | 'image' | 'html' | 'plotly'; content: string } | null;   // - 'done' only
+}
+export interface AgentRunPersistResult {
+  handled:       boolean;        // - false when no panel is open for this canvas → MCP falls back to writeCanvas
+  outputNodeId?: string;         // - authoritative output-node id (returned on 'start')
 }
 
 // - Webview → Host messages
@@ -796,6 +817,8 @@ export interface CanvasContext {
 export interface MsgAddNodeRequest {
   type:        'addNodeRequest';
   position:    { x: number; y: number };
+  width?:      number;   // - preferred size for the created text/file node (directional-add size)
+  height?:     number;
   fromNodeId?: string;
   fromSide?:   NodeSide;
   toSide?:     NodeSide;

@@ -62,6 +62,8 @@ import {
   MsgMarksRestored,
   CanvasMark,
   MsgFocusNode,
+  AgentRunPersist,
+  AgentRunPersistResult,
 } from '../shared/types';
 import { parseNodeRef } from '../shared/nodeRef';
 import { MAX_FILE_FULL_BYTES, MAX_FILE_PREVIEW_BYTES, MAX_NOTEBOOK_BYTES } from '../shared/constants';
@@ -111,6 +113,11 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
   // - canvasPath (document.uri.fsPath) → its open panel, so the run-ipc relay can forward an
   // - out-of-process agent run's live output to the right webview.
   static panelsByPath = new Map<string, vscode.WebviewPanel>();
+
+  // - canvasPath → the host-side persist function for an agent run. When present, the MCP delegates
+  // - the .canvas WRITE here (single-writer) instead of writing the file itself, killing the
+  // - two-writer race that duplicated output nodes. Absent → MCP falls back to its own writeCanvas.
+  static agentPersistByPath = new Map<string, { panel: vscode.WebviewPanel; fn: (payload: AgentRunPersist) => Promise<AgentRunPersistResult> }>();
 
   // - canvasPath (fsPath) → nodeLabel to focus once that canvas's webview reports ready
   private pendingFocus = new Map<string, string>();
@@ -181,8 +188,14 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
 
     panel.webview.html = this.getWebviewHtml(panel.webview);
 
-    // - send initial canvas data once webview signals ready
-    const send = (msg: HostToWebview) => panel.webview.postMessage(msg);
+    // - send initial canvas data once webview signals ready. Guard against a disposed panel: an
+    // - async kernel poll (or run) can resolve AFTER the panel closes and post to a dead webview,
+    // - which throws an uncaught "Webview is disposed" (floods on reload). No-op once disposed.
+    let panelDisposed = false;
+    const send = (msg: HostToWebview) => {
+      if (panelDisposed) return;
+      try { panel.webview.postMessage(msg); } catch { /* - panel disposed mid-async */ }
+    };
 
     // - one Jupyter kernel manager per panel; pushes status to the webview.
     // - one-shot on open: reconcile run-flags against the live kernels — a bound kernel that died
@@ -560,6 +573,12 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     SkenaEditorProvider.activePanel = panel;
     // - register this panel by canvas path so the run-ipc relay can find it for agent-run streaming
     SkenaEditorProvider.panelsByPath.set(document.uri.fsPath, panel);
+    // - register the host-side agent-run persist fn (single-writer path); closes over the same
+    // - self-save suppression + last-written tracking the webview's saveCanvas uses.
+    SkenaEditorProvider.agentPersistByPath.set(document.uri.fsPath, {
+      panel,
+      fn: payload => this.persistAgentRun(payload, panel, document, v => { isSelfSaving = v; }, s => rememberWrite(s)),
+    });
     panel.onDidChangeViewState(({ webviewPanel }) => {
       if (webviewPanel.active) {
         SkenaEditorProvider.activePanel = webviewPanel;
@@ -586,11 +605,15 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     });
 
     panel.onDidDispose(() => {
+      panelDisposed = true;   // - stop any in-flight async work from posting to the dead webview
       if (SkenaEditorProvider.activePanel === panel) {
         SkenaEditorProvider.activePanel = null;
       }
       if (SkenaEditorProvider.panelsByPath.get(document.uri.fsPath) === panel) {
         SkenaEditorProvider.panelsByPath.delete(document.uri.fsPath);
+      }
+      if (SkenaEditorProvider.agentPersistByPath.get(document.uri.fsPath)?.panel === panel) {
+        SkenaEditorProvider.agentPersistByPath.delete(document.uri.fsPath);
       }
       // - kill this canvas's persistent harness process when its panel closes
       this._llmClient?.disposeSession?.(document.uri.fsPath);
@@ -750,7 +773,17 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       // - the webview snapshot is nodes/edges only; it does NOT own canvas metadata (aiModel is
       // - set host-side via pickModel). Keep the host's metadata authoritative, else this
       // - auto-save clobbers metadata.aiModel back to null and the per-canvas model is lost on reopen.
-      const canvasToWrite = { ...msg.canvas, metadata: document.canvas.metadata };
+      // - Also keep each code node's outputNodeId: a stale webview snapshot (reverted by a reload) can
+      // - arrive with it cleared, which would unlink the output cell and make the NEXT run create a
+      // - duplicate. If the host still has the link AND the output cell is present, preserve it.
+      const hostById = new Map(document.canvas.nodes.map(n => [n.id, n]));
+      const msgIds   = new Set(msg.canvas.nodes.map(n => n.id));
+      const mergedNodes = msg.canvas.nodes.map(n => {
+        if (n.type !== 'code' || (n as CodeNode).outputNodeId) return n;
+        const hostOid = (hostById.get(n.id) as CodeNode | undefined)?.outputNodeId;
+        return hostOid && msgIds.has(hostOid) ? { ...(n as CodeNode), outputNodeId: hostOid } : n;
+      });
+      const canvasToWrite = { ...msg.canvas, nodes: mergedNodes, metadata: document.canvas.metadata };
       const json = JSON.stringify(canvasToWrite, null, 2);
       setLastWrittenJson(json);
       await writeCanvas(document.uri.fsPath, canvasToWrite);
@@ -1106,13 +1139,16 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const nodeId = `node-${Date.now()}`;
     const x      = Math.round(msg.position.x);
     const y      = Math.round(msg.position.y);
+    // - directional-add passes a preferred size; fall back to the historical default
+    const w      = msg.width  ?? 400;
+    const h      = msg.height ?? 300;
 
     let newNode: FileNode | TextNode | LinkNode | PortalNode;
     let autoEdit = false;
 
     if (picked.canvasUri === NEW_TEXT_NOTE) {
       // - inline text node — opens Monaco immediately so the user can start typing
-      newNode = { id: nodeId, type: 'text', text: '', x, y, width: 400, height: 300 };
+      newNode = { id: nodeId, type: 'text', text: '', x, y, width: w, height: h };
       autoEdit = true;
     } else if (picked.canvasUri === NEW_URL) {
       // - prompt for URL, then create a link node
@@ -1130,7 +1166,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       // - .canvas file → portal node (circle shape, opens linked canvas on click)
       newNode = { id: nodeId, type: 'portal', canvas: picked.canvasUri, x, y, width: 200, height: 200 };
     } else {
-      newNode = { id: nodeId, type: 'file', file: picked.canvasUri, x, y, width: 400, height: 300 };
+      newNode = { id: nodeId, type: 'file', file: picked.canvasUri, x, y, width: w, height: h };
     }
 
     let edge: CanvasEdge | undefined;
@@ -1191,6 +1227,94 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
   }
 
   // ─── Jupyter kernel handlers ─────────────────────────────────────────────────
+
+  /**
+   * Host-side single-writer persist for an AGENT run (MCP canvas_run_cell), delegated over the
+   * run-ipc relay when a panel is open. Mirrors runOneCell's applyAndPersist: mutate the
+   * authoritative document.canvas, write with self-save suppression (no reload), and push a
+   * targeted runOutput to the webview — so the MCP's external writes no longer race the webview's
+   * debounced save (which reset outputNodeId to a disk state and duplicated the output node).
+   */
+  private async persistAgentRun(
+    payload:        AgentRunPersist,
+    panel:          vscode.WebviewPanel,
+    document:       SkenaDocument,
+    setSelfSaving:  (v: boolean) => void,
+    setLastWritten: (s: string) => void,
+  ): Promise<AgentRunPersistResult> {
+    try {
+      const c  = document.canvas;
+      const cn = c.nodes.find(n => n.id === payload.cellNodeId && n.type === 'code') as CodeNode | undefined;
+      if (!cn) return { handled: true };   // - cell deleted mid-run; nothing to write, but we DID handle it
+
+      // - resolve the CURRENT panel on every send (a run can outlive close+reopen), like runOneCell
+      const send = (m: HostToWebview) => {
+        const p = SkenaEditorProvider.panelsByPath.get(document.uri.fsPath) ?? panel;
+        try { p.webview.postMessage(m); } catch { /* panel disposed */ }
+      };
+
+      const kn = c.nodes.find(n => n.id === payload.kernelNodeId && n.type === 'kernel') as KernelNode | undefined;
+      if (kn && payload.kernelId !== kn.kernelId) kn.kernelId = payload.kernelId;   // - reuse this kernel next run
+
+      const persist = async () => {
+        setSelfSaving(true);
+        const json = JSON.stringify(c, null, 2);
+        setLastWritten(json);
+        await writeCanvas(document.uri.fsPath, c);
+        setTimeout(() => setSelfSaving(false), 400);
+      };
+
+      if (payload.phase === 'start') {
+        cn.lastStatus = 'running';
+        // - do NOT set cn.outputNodeId yet — only commit it once there is output (matches applyAndPersist)
+        const outId = cn.outputNodeId ?? `ai-${Date.now().toString(36)}`;
+        await persist();
+        send({ type: 'runOutput', codeNodeId: cn.id, lastStatus: 'running', kernelNodeId: payload.kernelNodeId, kernelId: payload.kernelId, source: 'host' });
+        return { handled: true, outputNodeId: outId };
+      }
+
+      cn.lastStatus = payload.status ?? 'ok';
+      cn.lastRun    = Date.now();
+      let outputNode: CellNode | undefined;
+      let edge:       CanvasEdge | undefined;
+      if (payload.output) {
+        const outId    = payload.outputNodeId ?? cn.outputNodeId ?? `ai-${Date.now().toString(36)}`;
+        const existing = c.nodes.find(n => n.id === outId && n.type === 'cell') as CellNode | undefined;
+        if (existing) {
+          existing.format  = payload.output.format;
+          existing.content = payload.output.content;
+          outputNode = existing;
+          // - match by node pair so an old `edge-out-` edge on a pre-fix canvas isn't duplicated
+          edge = c.edges.find(e => e.fromNode === cn.id && e.toNode === outId);
+          if (!edge) {
+            edge = { id: `e-${outId}`, fromNode: cn.id, fromSide: 'right', toNode: outId, toSide: 'left', toEnd: 'arrow' };
+            c.edges.push(edge);
+          }
+        } else {
+          const cellBase: CellNode = {
+            id: outId, type: 'cell',
+            x: cn.x + cn.width + 140, y: Math.round(cn.y + (cn.height - 320) / 2), width: 480, height: 320,
+            format: payload.output.format, content: payload.output.content, createdBy: 'ai',
+          };
+          outputNode = assignLabel(cellBase, c.nodes) as CellNode;
+          c.nodes.push(outputNode);
+          cn.outputNodeId = outId;
+          edge = { id: `e-${outId}`, fromNode: cn.id, fromSide: 'right', toNode: outId, toSide: 'left', toEnd: 'arrow' };
+          c.edges.push(edge);
+        }
+      }
+      await persist();
+      send({
+        type: 'runOutput', codeNodeId: cn.id, lastStatus: payload.status ?? 'ok',
+        kernelNodeId: payload.kernelNodeId, kernelId: payload.kernelId, source: 'host',
+        ...(outputNode ? { outputNode } : {}),
+        ...(edge ? { edge } : {}),
+      });
+      return { handled: true };
+    } catch {
+      return { handled: false };   // - persist failed; MCP falls back to its own writeCanvas
+    }
+  }
 
   /**
    * Execute a code node on its bound kernel, route the result into a single
@@ -1321,9 +1445,20 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       return { outputNode, edge };
     };
 
+    // - relaunch the SAME environment on a restart via the node's kernelspec. Older kernel nodes
+    //   predate `spec`; recover it once by matching the stored displayName against the server's specs
+    //   and heal the node so it persists (else a shutdown+rerun falls back to plain python3).
+    let spec = kernelNode.spec;
+    if (!spec && !kernelNode.kernelId && kernelNode.displayName) {
+      try {
+        const specs = await listKernelSpecs(server);
+        spec = specs.find(s => s.displayName === kernelNode.displayName || s.name === kernelNode.displayName)?.name;
+        if (spec) kernelNode.spec = spec;
+      } catch { /* - specs unavailable; ensureKernel falls back to python3 */ }
+    }
     let kernelId: string;
     try {
-      kernelId = await manager.ensureKernel(server, kernelNode.kernelId);
+      kernelId = await manager.ensureKernel(server, kernelNode.kernelId, spec);
     } catch (e) {
       fail(`kernel start failed: ${e instanceof Error ? e.message : String(e)}`);
       return 'error';
@@ -1547,7 +1682,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
   }
 
   private async handleKernelAction(
-    msg:      { action: 'restart' | 'shutdown' | 'interrupt'; kernelNodeId: string },
+    msg:      { action: 'restart' | 'shutdown' | 'interrupt' | 'start'; kernelNodeId: string },
     manager:  KernelManager,
     document: SkenaDocument,
   ): Promise<void> {
@@ -1555,7 +1690,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const kernelNode = canvas.nodes.find(n => n.id === msg.kernelNodeId && n.type === 'kernel') as KernelNode | undefined;
     if (!kernelNode) return;
     const server = manager.serverByName(kernelNode.server);
-    if (!server || !kernelNode.kernelId) return;
+    if (!server) return;   // - 'start' needs no live kernel; the others are guarded below
     const name = kernelNode.displayName ?? 'kernel';
     // - restart/shutdown wipe the kernel namespace → every bound cell is effectively un-run, so clear
     // - their run-flag (lastStatus). Interrupt keeps variables, so it must NOT reset. The plain write
@@ -1569,6 +1704,24 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       await writeCanvas(document.uri.fsPath, canvas);
     };
     try {
+      if (msg.action === 'start') {
+        if (kernelNode.kernelId) return;   // - already running
+        // - launch a fresh kernel from the node's kernelspec (recover it from displayName for older
+        //   nodes), assign the new id, and plain-write so the webview reload picks up the live kernel
+        let spec = kernelNode.spec;
+        if (!spec && kernelNode.displayName) {
+          try {
+            const specs = await listKernelSpecs(server);
+            spec = specs.find(s => s.displayName === kernelNode.displayName || s.name === kernelNode.displayName)?.name;
+          } catch { /* - specs unavailable → ensureKernel falls back to python3 */ }
+        }
+        kernelNode.kernelId = await manager.ensureKernel(server, undefined, spec);
+        if (spec && kernelNode.spec !== spec) kernelNode.spec = spec;   // - heal older nodes
+        await writeCanvas(document.uri.fsPath, canvas);
+        void vscode.window.showInformationMessage(`Skena: started ${name}.`);
+        return;
+      }
+      if (!kernelNode.kernelId) return;   // - restart / interrupt / shutdown need a live kernel
       if (msg.action === 'restart') {
         await manager.restart(server, kernelNode.kernelId);
         await resetBoundCellFlags();
@@ -1702,6 +1855,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       server:      pick.server,
       kernelId,
       displayName,
+      spec:        pick.specName ?? pick.display,   // - remember the kernelspec so a restart relaunches the same env
       x, y, width: 140, height: 160,
     };
     send({ type: 'addNodeResult', node, autoEdit: false });

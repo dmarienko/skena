@@ -15,6 +15,7 @@ import { VaultIndexer } from './vault-indexer';
 import { FileWatcher } from './file-watcher';
 import { getVaults } from './settings';
 import { runIpc } from './run-ipc';
+import type { AgentRunPersist } from '../shared/types';
 
 let indexer: VaultIndexer | undefined;
 let watcher: FileWatcher | undefined;
@@ -27,8 +28,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   indexer = new VaultIndexer(context);
   watcher = new FileWatcher(indexer);
 
-  // - relay for out-of-process agent-run live output → the right canvas webview
-  runIpc.start(p => SkenaEditorProvider.panelsByPath.get(p));
+  // - relay for out-of-process agent-run live output → the right canvas webview, plus the /persist
+  // - handler that makes the host the single writer for an agent run while the canvas is open.
+  runIpc.start(
+    p => SkenaEditorProvider.panelsByPath.get(p),
+    async (canvasPath, payload) => {
+      const entry = SkenaEditorProvider.agentPersistByPath.get(canvasPath);
+      if (!entry) return { handled: false };
+      return entry.fn(payload as AgentRunPersist);
+    },
+  );
   context.subscriptions.push({ dispose: () => runIpc.dispose() });
 
   // - register the custom editor for *.canvas files

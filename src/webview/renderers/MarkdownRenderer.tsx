@@ -20,6 +20,7 @@ import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
 import { useFileContent } from '../hooks/useFileContent';
 import { useMarkdownConfig } from '../context/MarkdownConfigContext';
+import { normalizeMathDelimiters } from '../../shared/mathDelims';
 
 interface MarkdownRendererProps {
   content: string;
@@ -103,6 +104,10 @@ function MarkdownRendererInner({ content, baseUri }: MarkdownRendererProps): JSX
   if (fontFamily) fontStyle.fontFamily = fontFamily;
   if (fontSize)   fontStyle.fontSize   = fontSize;
 
+  // - rewrite \(…\) / \[…\] LaTeX delimiters to $ / $$ so remark-math renders them (papers exported
+  //   without dollar signs)
+  const mdContent = useMemo(() => normalizeMathDelimiters(content), [content]);
+
   return (
     <div className="skena-markdown" style={fontStyle}>
       <ReactMarkdown
@@ -111,7 +116,7 @@ function MarkdownRendererInner({ content, baseUri }: MarkdownRendererProps): JSX
         rehypePlugins={[rehypeRaw, [rehypeKatex, { output: 'html', throwOnError: false } as any]]}
         components={components}
       >
-        {content}
+        {mdContent}
       </ReactMarkdown>
     </div>
   );

@@ -4,9 +4,10 @@
  * Double-click to edit markdown/html cells.
  */
 
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import { CellNode } from '../../../shared/types';
+import { capOutputHtml } from '../../../shared/outputCap';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { MarkdownRenderer } from '../../renderers/MarkdownRenderer';
 import { PlotlyRenderer } from '../../renderers/PlotlyRenderer';
@@ -22,6 +23,13 @@ export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
   const selectedStyle = useSelectedStyle(selected);
   const bw = useZoomInvariantBorderWidth(1.5);
   const borderColor = node.accentColor ?? DEFAULT_NODE_BORDER_BY_TYPE.cell;
+
+  // - cap oversized HTML (e.g. a huge dataframe) BEFORE it becomes DOM, so an existing giant cell
+  //   from disk can't freeze the canvas on load. New runs are already capped host-side.
+  const htmlContent = useMemo(
+    () => (node.format === 'html' ? capOutputHtml(node.content) : node.content),
+    [node.format, node.content],
+  );
 
   // - auto-tail: when a live run grows the content, follow to the bottom so the latest output is
   //   visible — but only if the user is already near the bottom (don't yank them back if they
@@ -67,7 +75,7 @@ export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
       <ScrollableContent ref={scrollRef} scrollKey={id}>
         {node.format === 'markdown' && <MarkdownRenderer content={node.content} />}
         {node.format === 'image'    && <img src={node.content} alt="cell" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />}
-        {node.format === 'html'     && <div className="skena-cell-html" dangerouslySetInnerHTML={{ __html: node.content }} />}
+        {node.format === 'html'     && <div className="skena-cell-html" dangerouslySetInnerHTML={{ __html: htmlContent }} />}
         {node.format === 'plotly'   && <PlotlyRenderer json={node.content} />}
       </ScrollableContent>
     </div>

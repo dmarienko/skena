@@ -31,6 +31,7 @@ import type { Root }       from 'hast';
 import { visit }           from 'unist-util-visit';
 import { findTypstSpans }  from './typst-delim';
 import { typstMathToSvg }  from './typst';
+import { normalizeMathDelimiters } from '../shared/mathDelims';
 
 // - remark plugin: replace %..% / %%..%% spans in text nodes with raw HTML nodes
 // - carrying the compiled Typst SVG. Splits each matched text node into
@@ -162,6 +163,9 @@ export async function renderMarkdownToHtml(
   content: string,
   resolveImageUri?: (src: string) => string | undefined,
 ): Promise<string> {
+  // - rewrite \(…\) / \[…\] LaTeX delimiters to $ / $$ so remark-math (which only knows $) renders
+  //   math from exported papers that don't use dollar signs
+  content = normalizeMathDelimiters(content);
   // - pre-extract multiline %%…%% Typst blocks (fence lines) before markdown parsing
   const { text: source, blocks } = content.includes('%%')
     ? preRenderTypstBlocks(content)

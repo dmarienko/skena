@@ -26,7 +26,7 @@ import * as os       from 'os';
 import * as readline from 'readline';
 import * as crypto   from 'crypto';
 
-import { CanvasData, CanvasNode, CanvasEdge, CanvasNodeBase, CellNode, CodeNode } from '../../shared/types';
+import { CanvasData, CanvasNode, CanvasEdge, CanvasNodeBase, CellNode, CodeNode, AgentRunPersist, AgentRunPersistResult } from '../../shared/types';
 import { assignLabel, ensureLabels } from '../../shared/nodeLabels';
 import { snapGrid } from '../../shared/grid';
 import { resolveBoundKernel, resolveUpstreamChain } from '../../shared/kernelBinding';
@@ -43,6 +43,26 @@ function parseRunIpc(raw: string | undefined): { port: number; token: string } |
   const port = Number(raw.slice(0, i));
   const token = raw.slice(i + 1);
   return port && token ? { port, token } : null;
+}
+
+// - delegate the .canvas WRITE to the host over /persist so the host is the single writer while a
+// - panel is open (kills the two-writer race that duplicated output nodes). handled=false — no relay,
+// - no panel, or any error — means the MCP must fall back to its own writeCanvas.
+async function persistViaHost(
+  ipc:        { port: number; token: string } | null,
+  canvasPath: string,
+  payload:    AgentRunPersist,
+): Promise<AgentRunPersistResult> {
+  if (!ipc) return { handled: false };
+  try {
+    const res = await fetch(`http://127.0.0.1:${ipc.port}/persist`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-skena-token': ipc.token },
+      body: JSON.stringify({ canvasPath, payload }),
+    });
+    if (!res.ok) return { handled: false };
+    return await res.json() as AgentRunPersistResult;
+  } catch { return { handled: false }; }
 }
 
 // ─── path helpers ─────────────────────────────────────────────────────────────
@@ -795,12 +815,18 @@ async function runCellCore(
   p:      string,
   ipc:    { port: number; token: string } | null,
 ): Promise<{ status: 'ok' | 'error'; outLabel: string; streamText: string; error?: string }> {
-  cell.lastStatus = 'running';
-  await writeCanvas(p, d);
+  // - single-writer: when a panel is open the host owns the .canvas write (no MCP write → no
+  // - watcher reload race). It returns the authoritative output-node id. No panel → hostOwns is
+  // - false and the MCP writes the file itself, as before.
+  const startRes = await persistViaHost(ipc, p, { phase: 'start', cellNodeId: cell.id, kernelNodeId: kernel.id, kernelId });
+  const hostOwns = startRes.handled;
+  const outId    = hostOwns ? (startRes.outputNodeId ?? cell.outputNodeId ?? uid()) : (cell.outputNodeId ?? uid());
+  if (!hostOwns) { cell.lastStatus = 'running'; await writeCanvas(p, d); }
 
-  const outId   = cell.outputNodeId ?? uid();
   const outGeom = { x: Math.round(cell.x + cell.width + 140), y: Math.round(cell.y + (cell.height - 320) / 2), width: 480, height: 320 };
-  const outEdge = { id: `edge-out-${outId}`, fromNode: cell.id, fromSide: 'right' as const, toNode: outId, toSide: 'left' as const, toEnd: 'arrow' as const };
+  // - same edge-id scheme as the host persist (`e-${outId}`), so a streaming run's live-delta edge and
+  // - the host's persisted edge are ONE edge, not two with different ids
+  const outEdge = { id: `e-${outId}`, fromNode: cell.id, fromSide: 'right' as const, toNode: outId, toSide: 'left' as const, toEnd: 'arrow' as const };
 
   let lastPost = 0;
   const postFrame = (partial: CollectedOutput) => {
@@ -809,7 +835,7 @@ async function runCellCore(
     const { format, content } = renderOutput(partial);
     const message = {
       type: 'runOutput', codeNodeId: cell.id, lastStatus: 'running',
-      kernelNodeId: kernel.id, kernelId,
+      kernelNodeId: kernel.id, kernelId, source: 'mcp',
       outputNode: { id: outId, type: 'cell', format, content, ...outGeom, createdBy: 'ai' },
       edge: outEdge,
     };
@@ -830,49 +856,71 @@ async function runCellCore(
     out = await executeCell(server, kernelId, cell.code, ids, onDelta);
   } catch (e) {
     // - transport/kernel failure: persist error status so the cell isn't left stuck 'running' on disk
-    cell.lastStatus = 'error';
-    cell.lastRun    = Date.now();
-    await writeCanvas(p, d);
+    if (hostOwns) {
+      await persistViaHost(ipc, p, { phase: 'done', cellNodeId: cell.id, kernelNodeId: kernel.id, kernelId, outputNodeId: outId, status: 'error', output: null });
+    } else {
+      cell.lastStatus = 'error';
+      cell.lastRun    = Date.now();
+      await writeCanvas(p, d);
+    }
     return { status: 'error', outLabel: '(error)', streamText: '', error: e instanceof Error ? e.message : String(e) };
   }
 
   const { format, content } = renderOutput(out);
   const hasOutput = hasVisibleOutput(out);
   let outLabel = '(no output)';
-  if (hasOutput) {
-    // - persist to the SAME node id the live frames streamed to (outId), so a re-run updates in place
-    const existing = d.nodes.find(n => n.id === outId && n.type === 'cell') as CellNode | undefined;
-    if (existing) {
-      // - content only; keep the node where it is (the user may have dragged it — don't snap it)
-      existing.format  = format;
-      existing.content = content;
-      // - ensure the connecting edge exists (a stale reload may have dropped it)
-      if (!d.edges.some(e => e.id === outEdge.id)) d.edges.push(outEdge);
-      outLabel = existing.nodeLabel ?? existing.id;
-    } else {
-      const outNode: CellNode = { id: outId, type: 'cell', format, content, ...outGeom, createdBy: 'ai' };
-      const labeled = assignLabel(outNode, d.nodes);
-      d.nodes.push(labeled);
-      d.edges.push(outEdge);
-      cell.outputNodeId = outId;
-      outLabel = labeled.nodeLabel ?? labeled.id;
+
+  if (hostOwns) {
+    // - host is the single writer: it applies the output node, writes with self-save suppression,
+    // - and sends the final runOutput to the webview. Keep local status/label right for the return.
+    await persistViaHost(ipc, p, {
+      phase: 'done', cellNodeId: cell.id, kernelNodeId: kernel.id, kernelId,
+      outputNodeId: outId, status: out.status === 'error' ? 'error' : 'ok',
+      output: hasOutput ? { format, content } : null,
+    });
+    cell.lastStatus = out.status === 'error' ? 'error' : 'ok';
+    cell.lastRun    = Date.now();
+    // - keep the MCP's in-memory canvas in sync with what the host committed, so if a LATER cell in
+    //   this run falls back to a direct writeCanvas(d) it can't wipe this cell's output-node id
+    if (hasOutput) cell.outputNodeId = outId;
+    outLabel        = hasOutput ? outId : '(no output)';
+  } else {
+    if (hasOutput) {
+      // - persist to the SAME node id the live frames streamed to (outId), so a re-run updates in place
+      const existing = d.nodes.find(n => n.id === outId && n.type === 'cell') as CellNode | undefined;
+      if (existing) {
+        // - content only; keep the node where it is (the user may have dragged it — don't snap it)
+        existing.format  = format;
+        existing.content = content;
+        // - ensure the connecting edge exists (a stale reload may have dropped it); match by node
+        //   pair so an old `edge-out-` edge on a pre-fix canvas isn't duplicated by a new `e-` one
+        if (!d.edges.some(e => e.fromNode === cell.id && e.toNode === outId)) d.edges.push(outEdge);
+        outLabel = existing.nodeLabel ?? existing.id;
+      } else {
+        const outNode: CellNode = { id: outId, type: 'cell', format, content, ...outGeom, createdBy: 'ai' };
+        const labeled = assignLabel(outNode, d.nodes);
+        d.nodes.push(labeled);
+        d.edges.push(outEdge);
+        cell.outputNodeId = outId;
+        outLabel = labeled.nodeLabel ?? labeled.id;
+      }
     }
-  }
 
-  cell.lastStatus = out.status === 'error' ? 'error' : 'ok';
-  cell.lastRun    = Date.now();
-  await writeCanvas(p, d);
+    cell.lastStatus = out.status === 'error' ? 'error' : 'ok';
+    cell.lastRun    = Date.now();
+    await writeCanvas(p, d);
 
-  // - deterministic final frame so the result doesn't depend on the (racy) soft-reload winning
-  if (ipc) {
-    const message = hasOutput
-      ? { type: 'runOutput', codeNodeId: cell.id, lastStatus: cell.lastStatus, kernelNodeId: kernel.id, kernelId, outputNode: { id: outId, type: 'cell', format, content, ...outGeom, createdBy: 'ai' }, edge: outEdge }
-      : { type: 'runOutput', codeNodeId: cell.id, lastStatus: cell.lastStatus, kernelNodeId: kernel.id, kernelId };
-    void fetch(`http://127.0.0.1:${ipc.port}/delta`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-skena-token': ipc.token },
-      body: JSON.stringify({ canvasPath: p, message }),
-    }).catch(() => { /* - best-effort */ });
+    // - deterministic final frame so the result doesn't depend on the (racy) soft-reload winning
+    if (ipc) {
+      const message = hasOutput
+        ? { type: 'runOutput', codeNodeId: cell.id, lastStatus: cell.lastStatus, kernelNodeId: kernel.id, kernelId, source: 'mcp', outputNode: { id: outId, type: 'cell', format, content, ...outGeom, createdBy: 'ai' }, edge: outEdge }
+        : { type: 'runOutput', codeNodeId: cell.id, lastStatus: cell.lastStatus, kernelNodeId: kernel.id, kernelId, source: 'mcp' };
+      void fetch(`http://127.0.0.1:${ipc.port}/delta`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-skena-token': ipc.token },
+        body: JSON.stringify({ canvasPath: p, message }),
+      }).catch(() => { /* - best-effort */ });
+    }
   }
 
   return { status: cell.lastStatus, outLabel, streamText: out.streamText, error: out.error };

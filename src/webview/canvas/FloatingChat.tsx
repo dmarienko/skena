@@ -630,6 +630,7 @@ export function FloatingChat({
 
   return (
     <div
+      data-skena-chat="1"
       onKeyDown={e => { if (!e.altKey) e.stopPropagation(); }}
       onKeyUp={e => { if (!e.altKey) e.stopPropagation(); }}
       style={{

@@ -90,6 +90,15 @@
 
 /* ─── Inline HTML in CellNode (format=html) ─────────────────────────────────── */
 .skena-cell-html { overflow-x: auto; font-size: 11px; color: var(--vscode-foreground); }
+.skena-out-truncated {
+  margin: 6px 0 2px;
+  padding: 3px 8px;
+  font-size: 11px;
+  color: var(--vscode-editorWarning-foreground, #d19a66);
+  background: var(--vscode-inputValidation-warningBackground, rgba(209,154,102,0.12));
+  border-left: 2px solid var(--vscode-editorWarning-foreground, #d19a66);
+  border-radius: 2px;
+}
 .skena-cell-html table { border-collapse: collapse; white-space: nowrap; }
 .skena-cell-html th,
 .skena-cell-html td {
