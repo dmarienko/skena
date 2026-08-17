@@ -369,7 +369,7 @@ export interface MsgFocusNode { type: 'focusNode'; id: string; }
 /** - webview → host: user clicked the chat title to change this canvas's model */
 export interface MsgPickModel { type: 'pickModel'; }
 export interface MsgRunCell   { type: 'runCell'; cellNodeId: string; code: string; }
-export interface MsgAddKernel { type: 'addKernel'; }
+export interface MsgAddKernel { type: 'addKernel'; position?: { x: number; y: number }; }
 export interface MsgKernelAction { type: 'kernelAction'; action: 'restart' | 'shutdown' | 'interrupt' | 'start'; kernelNodeId: string; }
 // - interrupt (SIGINT) the kernel running THIS code cell; confirm asks the host for a modal first
 export interface MsgInterruptCell { type: 'interruptCell'; cellNodeId: string; confirm?: boolean; }

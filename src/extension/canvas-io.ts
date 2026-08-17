@@ -42,7 +42,14 @@ export async function readCanvas(fsPath: string): Promise<CanvasData> {
  */
 export async function writeCanvas(fsPath: string, data: CanvasData): Promise<void> {
   const json = JSON.stringify(data, null, 2);
-  await fs.writeFile(expandHome(fsPath), json, 'utf-8');
+  const target = expandHome(fsPath);
+  // - ATOMIC write: a reader (the file-watcher) must never see a truncated/partial file. writeFile
+  //   truncates then streams, so a concurrent read of this large .canvas can catch it empty → the
+  //   webview gets an empty reload and collapses/loses nodes. Write a temp sibling, then rename
+  //   (atomic on the same filesystem) so readers only ever see the complete old or complete new file.
+  const tmp = `${target}.${process.pid}.${Date.now().toString(36)}.tmp`;
+  await fs.writeFile(tmp, json, 'utf-8');
+  await fs.rename(tmp, target);
 }
 
 /** - create a new empty canvas file */

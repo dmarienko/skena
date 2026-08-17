@@ -180,8 +180,9 @@ export function App(): JSX.Element {
           window.dispatchEvent(new CustomEvent('skena:addTextNodeTrigger', { detail: { direction: msg.direction } }));
           break;
         case 'addKernelTrigger':
-          // - relay back to the host, where the Add-Kernel QuickPick runs
-          postMessage({ type: 'addKernel' });
+          // - route through CanvasView so it can attach the viewport-centre position; CanvasView then
+          //   posts { type:'addKernel', position } → host QuickPick places the kernel where you look
+          window.dispatchEvent(new CustomEvent('skena:addKernelRequest'));
           break;
         case 'doDelete':
           window.dispatchEvent(new CustomEvent('skena:doDelete', { detail: { confirmed: msg.confirmed } }));

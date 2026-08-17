@@ -52,6 +52,7 @@ import {
   MsgSearchVault,
   MsgChatMessage,
   MsgAddNodeRequest,
+  MsgAddKernel,
   MsgMoveToSubCanvas,
   MsgFloatingChatSend,
   MsgFloatingChatPersistHistory,
@@ -479,7 +480,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           vscode.window.showWarningMessage(msg.text);
           break;
         case 'runCell':      await this.handleRunCell(msg, manager, panel, document, v => { isSelfSaving = v; }, s => rememberWrite(s)); break;
-        case 'addKernel':    await this.handleAddKernel(manager, document, send); break;
+        case 'addKernel':    await this.handleAddKernel(msg, manager, document, send); break;
         case 'kernelAction': await this.handleKernelAction(msg, manager, document); break;
         case 'interruptCell': await this.handleInterruptCell(msg, manager, document); break;
         case 'confirmDelete': {
@@ -1778,6 +1779,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
    * The chosen kernel becomes a KernelNode delivered via addNodeResult.
    */
   private async handleAddKernel(
+    msg:      MsgAddKernel,
     manager:  KernelManager,
     document: SkenaDocument,
     send:     (m: HostToWebview) => void,
@@ -1838,14 +1840,21 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       }
     }
 
-    // - place near the last node so the widget doesn't land on the world origin;
-    //   the webview pans the viewport to it after insertion (colorIndex assigned there).
-    const nodes = document.canvas.nodes;
-    let x = 200, y = 200;
-    if (nodes.length) {
-      const last = nodes[nodes.length - 1];
-      x = last.x + last.width + 60;
-      y = last.y;
+    // - place where the webview asked (viewport centre for the command, or the right-click point for
+    //   the context menu) so the kernel lands where the user is looking. Fall back to near the last
+    //   node only when no position was supplied.
+    let x: number, y: number;
+    if (msg.position) {
+      x = Math.round(msg.position.x);
+      y = Math.round(msg.position.y);
+    } else {
+      const nodes = document.canvas.nodes;
+      x = 200; y = 200;
+      if (nodes.length) {
+        const last = nodes[nodes.length - 1];
+        x = last.x + last.width + 60;
+        y = last.y;
+      }
     }
 
     if (!pick.server) return;

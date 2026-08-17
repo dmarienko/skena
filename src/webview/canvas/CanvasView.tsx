@@ -530,6 +530,16 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     //   editing node data never changes the viewpoint. The disk viewport is also stale on a reload —
     //   hotkey nav/zoom (hjkl/z/Z) moves the camera without persisting, so restoring it would snap back.
     const isInitialLoad = loadedPathRef.current !== canvasPath;
+    // - DATA-LOSS GUARD: a reload with ZERO nodes while the webview currently HAS nodes is almost
+    //   always a torn/partial read of the .canvas mid-write (the file is large and written often),
+    //   NOT a real "everything deleted". Reconciling to it collapses canvasRef to just the kept output
+    //   cells, and the next save then truncates the file on disk — permanent loss. Ignore it entirely:
+    //   don't touch nodes/edges/canvasRef and don't reschedule a save. A genuine clear-all still works
+    //   on the FIRST load (isInitialLoad) and via explicit deletes (which go through their own paths).
+    if (!isInitialLoad && canvas.nodes.length === 0 && nodesRef.current.length > 0) {
+      console.warn(`[skena reload] IGNORED empty reload (have ${nodesRef.current.length} nodes on screen) — treating as a torn read`);
+      return;
+    }
     loadedPathRef.current = canvasPath;
     const labeled = ensureLabels(canvas.nodes);
     // - TEMP INSTRUMENT (agent-run node-shift): log any node whose incoming DISK position differs from
@@ -1213,6 +1223,19 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     return () => window.removeEventListener('skena:addTextNodeTrigger', handler);
   }, [addTextNodeInDirection]);
 
+  // - "Skena: Add Kernel" command → place the kernel at the CURRENT viewport centre (so it lands where
+  //   you're looking, not off near the last node). App relays the command as this window event.
+  useEffect(() => {
+    const handler = () => {
+      const { x: vx, y: vy, zoom } = rfRef.current.getViewport();
+      const cx = (window.innerWidth  / 2 - vx) / zoom;
+      const cy = (window.innerHeight / 2 - vy) / zoom;
+      vscodePostMessage({ type: 'addKernel', position: { x: Math.round(cx - 70), y: Math.round(cy - 80) } });
+    };
+    window.addEventListener('skena:addKernelRequest', handler);
+    return () => window.removeEventListener('skena:addKernelRequest', handler);
+  }, []); // - rfRef is always current
+
   // ─── context menu handlers ────────────────────────────────────────────────
 
   // - stable close handler — identity never changes, so ContextMenu never re-registers its effects
@@ -1244,6 +1267,13 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       detail: { type: 'addNodeResult', node: newNode, autoEdit: true } satisfies MsgAddNodeResult,
     }));
   }, []); // - no deps: reads ref, not state
+
+  // - context menu → open the Add-Kernel QuickPick, placing the kernel centred on the right-click
+  //   point (140×160). The host QuickPick runs, then sends addNodeResult back.
+  const handleMenuAddKernel = useCallback(() => {
+    const { flowX, flowY } = contextMenuFlowPos.current;
+    vscodePostMessage({ type: 'addKernel', position: { x: Math.round(flowX - 70), y: Math.round(flowY - 80) } });
+  }, []); // - reads ref, not state
 
   const handleMenuAddUrl = useCallback((url: string) => {
     const { flowX, flowY } = contextMenuFlowPos.current;
@@ -1482,10 +1512,13 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         dir === 'right' ? dx > 0 :
         dir === 'up'    ? dy < 0 : dy > 0;
 
-      // - within 45°: primary axis displacement must be ≥ perpendicular
+      // - directional cone: primary-axis displacement ≥ 0.6× perpendicular (~59° half-cone). Wider
+      //   than a strict 45° so a NEAR node that sits just off the diagonal (e.g. up-and-a-bit-left) is
+      //   still considered — the strict 45° cone would reject it and pick a far but dead-ahead node
+      //   instead. Ranking within the cone still prefers aligned + near (see `score`).
       const inCone = (dx: number, dy: number): boolean => horiz
-        ? Math.abs(dx) >= Math.abs(dy)
-        : Math.abs(dy) >= Math.abs(dx);
+        ? Math.abs(dx) >= Math.abs(dy) * 0.6
+        : Math.abs(dy) >= Math.abs(dx) * 0.6;
 
       const score = (dx: number, dy: number): number => horiz
         ? Math.abs(dx) + Math.abs(dy) * 2.5
@@ -2972,6 +3005,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           onClose={handleMenuClose}
           onAddText={handleMenuAddText}
           onAddCodeCell={handleMenuAddCodeCell}
+          onAddKernel={handleMenuAddKernel}
           onAddUrl={handleMenuAddUrl}
           onSearch={handleMenuSearch}
           onCopy={handleCopy}
