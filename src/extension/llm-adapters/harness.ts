@@ -275,6 +275,10 @@ export class HarnessAdapter implements ILLMClient {
   private launch(bin: string, args: string[], cwd: string): ChildProcess | null {
     const env = { ...process.env };
     delete env.ELECTRON_RUN_AS_NODE;   // - else the node-based CLI misbehaves under Electron
+    // - marker a workspace SessionStart hook can gate on: since --setting-sources project,local
+    //   excludes the user hook, a project/local .claude hook guarded by this var can inject crtx
+    //   pre-load ONLY for the canvas companion, without double-firing for the user's normal sessions.
+    env.SKENA_CANVAS_SESSION = '1';
     try {
       return spawn(bin, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
     } catch {
