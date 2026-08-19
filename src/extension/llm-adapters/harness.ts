@@ -76,7 +76,6 @@ interface HarnessSession {
   bin:           string;
   cwd:           string;
   freshArgs:     string[];              // - spawn args WITHOUT --resume (for respawn)
-  configDir?:    string;                // - isolated CLAUDE_CONFIG_DIR (no global hooks)
   lastTotalCost: number;                // - cumulative total_cost_usd after previous turn
   turnUsage:     LLMUsage | null;       // - cost of the just-finished turn (for onDone)
   autoContinues: number;                // - auto-"continue" resumes used this user message
@@ -193,14 +192,9 @@ export class HarnessAdapter implements ILLMClient {
     const maxTurns = cfg.get<number>('harnessMaxTurns') ?? 40;
     const system   = `${systemPrompt}\n\n${harnessDirective(canvasPath)}`;
 
-    // - isolate from the user's global ~/.claude (drops the per-message SessionStart
-    // - hook tax) while keeping keyless auth + their MCP servers (re-injected below)
-    const isolate   = cfg.get<boolean>('harnessIsolate') ?? true;
-    const configDir = isolate ? this.prepareProfile() : undefined;
-
     let mcpConfigPath: string;
     try {
-      mcpConfigPath = this.writeMcpConfig(workspaceDir, mcpJs, /*includeUserServers*/ !!configDir);
+      mcpConfigPath = this.writeMcpConfig(workspaceDir, mcpJs, /*includeUserServers*/ true);
     } catch (e) {
       callbacks.onError(`Failed to write MCP config: ${(e as Error).message}`);
       return null;
@@ -221,7 +215,15 @@ export class HarnessAdapter implements ILLMClient {
       '--name', sessionName,
       '--system-prompt', system,
       '--exclude-dynamic-system-prompt-sections',
-      '--mcp-config', mcpConfigPath,   // - skena (+ user's servers when isolated)
+      // - load project + local settings but NOT the user-level ~/.claude/settings.json (where the
+      //   SessionStart hook + enabledPlugins live → the ~20k-tok/msg tax). The session still runs in
+      //   the DEFAULT config dir, so it joins the roster and is reachable by SendMessage from other
+      //   sessions — an isolated CLAUDE_CONFIG_DIR starts no roster daemon and registers nowhere.
+      //   Agents/skills/commands/CLAUDE.md load from ~/.claude natively; creds are read normally
+      //   (no staged .credentials.json symlink, which caused "OAuth session expired" failures).
+      '--setting-sources', 'project,local',
+      '--mcp-config', mcpConfigPath,   // - skena + the user's re-injected servers
+      '--strict-mcp-config',           // - only the merged config loads (no native-discovery duplicate)
     ];
     // - grant filesystem access beyond the canvas workspace (vaults + user dirs)
     // - so the companion can read/write research material. Skipped under bypass
@@ -233,24 +235,23 @@ export class HarnessAdapter implements ILLMClient {
       freshArgs.push('--allowedTools', ...allowed);
       for (const dir of this.accessDirs()) { freshArgs.push('--add-dir', dir); }
     }
-    if (configDir) freshArgs.push('--strict-mcp-config');   // - isolated: only the merged config loads
 
     const resumeId = context?.restoreSession && context?.sessionId ? context.sessionId : null;
     const args = resumeId ? [...freshArgs, '--resume', resumeId] : freshArgs;
 
-    const proc = this.launch(bin, args, workspaceDir, configDir);
+    const proc = this.launch(bin, args, workspaceDir);
     if (!proc) { callbacks.onError(`Failed to launch '${bin}'.`); return null; }
 
     const s: HarnessSession = {
       proc, buf: '', cb: null, onSessionId: callbacks.onSessionId,
       anyText: false, lastResultText: '', isError: false, aborted: false, stderr: '',
       sessionId: '', usedResume: !!resumeId, everSucceeded: false, pendingMessage: '',
-      bin, cwd: workspaceDir, freshArgs, configDir,
+      bin, cwd: workspaceDir, freshArgs,
       lastTotalCost: 0, turnUsage: null, autoContinues: 0,
     };
     this.wire(canvasPath, s);
     this._sessions.set(canvasPath, s);
-    this.log(`spawn: ${bin} (cwd=${workspaceDir}, ${args.length} args${resumeId ? ', --resume' : ''}${configDir ? ', isolated' : ''})`);
+    this.log(`spawn: ${bin} (cwd=${workspaceDir}, ${args.length} args${resumeId ? ', --resume' : ''})`);
     return s;
   }
 
@@ -269,81 +270,18 @@ export class HarnessAdapter implements ILLMClient {
     return out;
   }
 
-  private launch(bin: string, args: string[], cwd: string, configDir?: string): ChildProcess | null {
+  private launch(bin: string, args: string[], cwd: string): ChildProcess | null {
     const env = { ...process.env };
     delete env.ELECTRON_RUN_AS_NODE;   // - else the node-based CLI misbehaves under Electron
-    if (configDir) env.CLAUDE_CONFIG_DIR = configDir;   // - isolated profile (no global hooks)
     try {
       return spawn(bin, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
     } catch {
-      if (bin !== FALLBACK_BIN) return this.launch(FALLBACK_BIN, args, cwd, configDir);
+      if (bin !== FALLBACK_BIN) return this.launch(FALLBACK_BIN, args, cwd);
       return null;
     }
   }
 
-  /**
-   * - isolated CC profile: a stable config dir with the user's creds copied in
-   * - (keyless auth) but NO settings.json → the global SessionStart hooks don't
-   * - fire, eliminating the ~20k-token-per-message tax. Returns undefined (use
-   * - global config) if creds can't be staged.
-   */
-  private prepareProfile(): string | undefined {
-    const claudeDir = path.join(os.homedir(), '.claude');
-    const profile   = path.join(os.homedir(), '.skena', 'cc-profile');
-    const srcCreds  = path.join(claudeDir, '.credentials.json');
-    try {
-      if (!fs.existsSync(srcCreds)) { this.log('no global creds to stage — using global config'); return undefined; }
-      fs.mkdirSync(profile, { recursive: true });
-      // - SYMLINK creds (don't copy): the profile then always reads the LIVE global
-      // - credentials, so a re-login or token refresh in ~/.claude is picked up
-      // - immediately. Copying left them stale until the next respawn → every message
-      // - failed with "OAuth session expired" after a re-login. Re-established each spawn
-      // - (an atomic cred-write by CC may replace the link with a real file; the next
-      // - spawn restores the link). Falls back to copy if symlinks are unsupported.
-      const dstCreds = path.join(profile, '.credentials.json');
-      try { fs.rmSync(dstCreds, { force: true }); } catch { /* absent */ }
-      try {
-        fs.symlinkSync(srcCreds, dstCreds);
-      } catch (e) {
-        this.log(`creds symlink failed (${(e as Error).message}) — copying instead`);
-        fs.copyFileSync(srcCreds, dstCreds);
-      }
-      this.syncProfile(profile, claudeDir);
-      return profile;
-    } catch (e) {
-      this.log(`profile setup failed (${(e as Error).message}) — using global config`);
-      return undefined;
-    }
-  }
-
-  /**
-   * - bring the user's CC ecosystem into the isolated profile: symlink (live)
-   * - agents/commands/skills + global CLAUDE.md, and copy settings.json with
-   * - `hooks` stripped — so the companion keeps the user's agents/skills/memory
-   * - WITHOUT the SessionStart hook tax. Plugins are deliberately NOT linked
-   * - (their hooks would re-introduce the tax).
-   */
-  private syncProfile(profile: string, claudeDir: string): void {
-    for (const name of ['agents', 'commands', 'skills', 'CLAUDE.md']) {
-      const src = path.join(claudeDir, name);
-      const dst = path.join(profile, name);
-      if (!fs.existsSync(src)) continue;
-      try {
-        const st = fs.lstatSync(dst);
-        if (st.isSymbolicLink()) fs.unlinkSync(dst);   // - refresh stale link
-        else continue;                                  // - real file/dir present → don't clobber
-      } catch { /* dst absent */ }
-      try { fs.symlinkSync(src, dst); } catch (e) { this.log(`link ${name} failed: ${(e as Error).message}`); }
-    }
-    // - settings.json minus hooks (keeps permissions/allowlist; drops the tax)
-    try {
-      const j = JSON.parse(fs.readFileSync(path.join(claudeDir, 'settings.json'), 'utf8')) as Record<string, unknown>;
-      delete j.hooks;
-      fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify(j, null, 2));
-    } catch { /* no global settings — fine */ }
-  }
-
-  /** - write the MCP config: skena server + (when isolated) the user's own servers */
+  /** - write the MCP config: skena server + the user's own servers (merged; loaded strictly) */
   private writeMcpConfig(workspaceDir: string, mcpJs: string, includeUserServers: boolean): string {
     // - pass the resolved Jupyter servers to the MCP process so canvas_run_cell can reach them,
     // - plus the run-ipc endpoint so an agent run streams live output back to the webview
@@ -475,7 +413,7 @@ export class HarnessAdapter implements ILLMClient {
     if (!s.usedResume || s.everSucceeded) return false;
     try { s.proc.kill(); } catch { /* already gone */ }
     this.log('resume failed — starting a fresh session');
-    const proc = this.launch(s.bin, s.freshArgs, s.cwd, s.configDir);
+    const proc = this.launch(s.bin, s.freshArgs, s.cwd);
     if (!proc) return false;
     const fresh: HarnessSession = {
       ...s, proc, buf: '', usedResume: false, cb: null,

@@ -2,7 +2,7 @@
   "name": "skena",
   "displayName": "Skena",
   "description": "Visual research canvas for VS Code — renders JSON Canvas files as interactive node graphs with rich content previews, a canvas-aware AI companion (Claude Code, Anthropic, or any OpenAI-compatible backend), and a markdown knowledge vault.",
-  "version": "0.16.25",
+  "version": "0.16.26",
   "publisher": "DmitryMarienko",
   "license": "MIT",
   "repository": {
@@ -280,12 +280,6 @@
           ],
           "default": "acceptEdits",
           "markdownDescription": "Permission mode for the **harness** provider.\n- **acceptEdits** (default): auto-accepts file reads/edits within the workspace + `skena.ai.harnessAddDirs`. Pair with `harnessAllowedTools` to also pre-approve Bash etc.\n- **default**: stricter — file writes are blocked too.\n- **bypassPermissions**: runs ALL tools anywhere with no checks — full power, no directory sandbox, no guardrails.\n- **plan**: read-only planning, never executes tools.",
-          "scope": "window"
-        },
-        "skena.ai.harnessIsolate": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "Run the **harness** companion in an isolated Claude Code profile (`~/.skena/cc-profile`): keyless auth (creds copied) but WITHOUT your global `~/.claude` hooks — eliminating the per-message SessionStart token tax. Your MCP servers from `~/.claude.json` are re-injected automatically. Turn off to use your full global config (hooks, memory, skills). Applies on next session (Reset/reopen).",
           "scope": "window"
         },
         "skena.ai.harnessAllowedTools": {
