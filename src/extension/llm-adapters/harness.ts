@@ -216,11 +216,13 @@ export class HarnessAdapter implements ILLMClient {
       '--system-prompt', system,
       '--exclude-dynamic-system-prompt-sections',
       // - load project + local settings but NOT the user-level ~/.claude/settings.json (where the
-      //   SessionStart hook + enabledPlugins live → the ~20k-tok/msg tax). The session still runs in
-      //   the DEFAULT config dir, so it joins the roster and is reachable by SendMessage from other
-      //   sessions — an isolated CLAUDE_CONFIG_DIR starts no roster daemon and registers nowhere.
-      //   Agents/skills/commands/CLAUDE.md load from ~/.claude natively; creds are read normally
-      //   (no staged .credentials.json symlink, which caused "OAuth session expired" failures).
+      //   SessionStart hook + enabledPlugins live). The session still runs in the DEFAULT config dir,
+      //   so it joins ~/.claude/daemon/roster.json and is reachable by SendMessage — an isolated
+      //   CLAUDE_CONFIG_DIR (what this replaces) starts no roster daemon and registers nowhere.
+      //   Agents/skills/commands/CLAUDE.md still load from ~/.claude natively; creds read normally
+      //   (no staged .credentials.json symlink → removes the "OAuth session expired" failure mode).
+      //   NB: the hook fires at most once per PERSISTENT session, not per message; the old isolated
+      //   profile suppressed it too (delete j.hooks), so this is a cleaner mechanism, not new behaviour.
       '--setting-sources', 'project,local',
       '--mcp-config', mcpConfigPath,   // - skena + the user's re-injected servers
       '--strict-mcp-config',           // - only the merged config loads (no native-discovery duplicate)
