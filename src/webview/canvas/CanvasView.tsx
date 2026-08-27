@@ -1906,19 +1906,19 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         const cur = nodesRef.current.find(nd => nd.selected && nd.type !== 'group');
         if (!cur) return;
         e.preventDefault();
-        const factor = e.key === 'w' ? 1.1 : 1 / 1.1;
-        const oldW   = Number(cur.style?.width  ?? cur.width  ?? 400);
-        const newW   = Math.round(oldW * factor);
-        // - both edges move equally: shift x left by half the delta so centre is fixed
-        const newX   = cur.position.x - (newW - oldW) / 2;
+        // - grow/shrink by ONE grid cell, snapped to the grid; LEFT edge (x) stays fixed so only the
+        //   RIGHT edge moves. min one cell.
+        const dirW = e.key === 'w' ? 1 : -1;
+        const oldW = Number(cur.style?.width ?? cur.width ?? NODE_SIZE.text.w);
+        const newW = Math.max(GRID, snapGrid(oldW) + dirW * GRID);
         setNodes(nds => nds.map(nd =>
           nd.id !== cur.id ? nd
-            : { ...nd, position: { ...nd.position, x: newX }, style: { ...nd.style, width: newW }, width: newW },
+            : { ...nd, style: { ...nd.style, width: newW }, width: newW },
         ));
         canvasRef.current = {
           ...canvasRef.current,
           nodes: canvasRef.current.nodes.map(cn =>
-            cn.id !== cur.id ? cn : { ...cn, x: newX, width: newW },
+            cn.id !== cur.id ? cn : { ...cn, width: newW },
           ),
         };
         scheduleSave();
@@ -1930,10 +1930,11 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         const cur = nodesRef.current.find(nd => nd.selected && nd.type !== 'group');
         if (!cur) return;
         e.preventDefault();
-        const factor = e.key === 'e' ? 1.1 : 1 / 1.1;
-        const oldH   = Number(cur.style?.height ?? cur.height ?? 300);
-        const newH   = Math.round(oldH * factor);
-        // - top edge (y) stays fixed; only bottom edge moves
+        // - grow/shrink by ONE grid cell, snapped to the grid; TOP edge (y) stays fixed so only the
+        //   bottom edge moves. min one cell.
+        const dirH = e.key === 'e' ? 1 : -1;
+        const oldH = Number(cur.style?.height ?? cur.height ?? NODE_SIZE.text.h);
+        const newH = Math.max(GRID, snapGrid(oldH) + dirH * GRID);
         setNodes(nds => nds.map(nd =>
           nd.id !== cur.id ? nd
             : { ...nd, style: { ...nd.style, height: newH }, height: newH },
