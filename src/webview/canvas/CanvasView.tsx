@@ -2416,10 +2416,10 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       const { sourceId } = (e as CustomEvent<{ sourceId: string }>).detail;
       const src = nodesRef.current.find(n => n.id === sourceId);
       if (!src) return;
-      const nw = Number(src.style?.width ?? 360);
-      const sh = Number(src.style?.height ?? 200);
-      // - gap below the source's bottom (~matches a comfortable hand-placed spacing, cf. E4→E5)
-      const { x, y } = findFreePosition(nodesRef.current, src.position.x, src.position.y + sh + 180, nw, NODE_SIZE.code.h, 0, 1);
+      const nw = Number(src.style?.width ?? NODE_SIZE.code.w);
+      const sh = Number(src.style?.height ?? NODE_SIZE.code.h);
+      // - gap below the source's bottom = the shared NEW_NODE gap (one knob for all new-node spacing)
+      const { x, y } = findFreePosition(nodesRef.current, src.position.x, src.position.y + sh + NEW_NODE_GAP, nw, NODE_SIZE.code.h, 0, 1);
       const newId = `code-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
       const newNode: CanvasNode = { id: newId, type: 'code', code: '', language: 'python', x, y, width: nw, height: NODE_SIZE.code.h };
       const newEdge: CanvasEdge = { id: `${sourceId}-${newId}-${Date.now()}`, fromNode: sourceId, fromSide: 'bottom', toNode: newId, toSide: 'top', toEnd: 'arrow' };
