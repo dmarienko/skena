@@ -67,7 +67,7 @@ import {
   AgentRunPersistResult,
 } from '../shared/types';
 import { parseNodeRef } from '../shared/nodeRef';
-import { MAX_FILE_FULL_BYTES, MAX_FILE_PREVIEW_BYTES, MAX_NOTEBOOK_BYTES } from '../shared/constants';
+import { MAX_FILE_FULL_BYTES, MAX_FILE_PREVIEW_BYTES, MAX_NOTEBOOK_BYTES, NODE_SIZE } from '../shared/constants';
 
 // ─── bookmarks file helpers ──────────────────────────────────────────────────
 
@@ -947,8 +947,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         file:   resolved ?? path.relative(canvasDir, fsPath).replace(/\\/g, '/'),
         x:      Math.round(position.x + i * 24),
         y:      Math.round(position.y + i * 24),
-        width:  400,
-        height: 300,
+        width:  NODE_SIZE.file.w,
+        height: NODE_SIZE.file.h,
       };
       nodes.push(node);
     });
@@ -1141,8 +1141,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const x      = Math.round(msg.position.x);
     const y      = Math.round(msg.position.y);
     // - directional-add passes a preferred size; fall back to the historical default
-    const w      = msg.width  ?? 400;
-    const h      = msg.height ?? 300;
+    const w      = msg.width  ?? NODE_SIZE.text.w;
+    const h      = msg.height ?? NODE_SIZE.text.h;
 
     let newNode: FileNode | TextNode | LinkNode | PortalNode;
     let autoEdit = false;
@@ -1162,10 +1162,10 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         },
       });
       if (!url) return; // - user cancelled the input box
-      newNode = { id: nodeId, type: 'link', url: url.trim(), x, y, width: 320, height: 80 };
+      newNode = { id: nodeId, type: 'link', url: url.trim(), x, y, width: NODE_SIZE.link.w, height: NODE_SIZE.link.h };
     } else if (picked.canvasUri.endsWith('.canvas')) {
       // - .canvas file → portal node (circle shape, opens linked canvas on click)
-      newNode = { id: nodeId, type: 'portal', canvas: picked.canvasUri, x, y, width: 200, height: 200 };
+      newNode = { id: nodeId, type: 'portal', canvas: picked.canvasUri, x, y, width: NODE_SIZE.portal.w, height: NODE_SIZE.portal.h };
     } else {
       newNode = { id: nodeId, type: 'file', file: picked.canvasUri, x, y, width: w, height: h };
     }
@@ -1216,8 +1216,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       canvas: relPath,
       x:      msg.position.x,
       y:      msg.position.y,
-      width:  200,
-      height: 200,
+      width:  NODE_SIZE.portal.w,
+      height: NODE_SIZE.portal.h,
     };
 
     send({
@@ -1865,7 +1865,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       kernelId,
       displayName,
       spec:        pick.specName ?? pick.display,   // - remember the kernelspec so a restart relaunches the same env
-      x, y, width: 140, height: 160,
+      x, y, width: NODE_SIZE.kernel.w, height: NODE_SIZE.kernel.h,
     };
     send({ type: 'addNodeResult', node, autoEdit: false });
   }

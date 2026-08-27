@@ -12,8 +12,37 @@ export const CANVAS_COLORS: Record<string, string> = {
   '6': '#a882ff',
 };
 
-export const DEFAULT_NODE_WIDTH  = 400;
-export const DEFAULT_NODE_HEIGHT = 250;
+/**
+ * Node geometry — the single source of truth for how big NEW nodes are created.
+ * Every creation path (context menu, directional-add, edge-drop, vim `o`, host add-node,
+ * and the kernel/link/portal/file widgets) reads from here. Tune these to change sizes
+ * everywhere at once. New-node spawn positions are derived from these (w/2, h/2), so a
+ * width change keeps nodes centred. The snap GRID step (below) is the one other knob.
+ */
+export const NODE_SIZE = {
+  text:   { w: 400, h: 300 },
+  code:   { w: 360, h: 200 },
+  link:   { w: 320, h:  80 },
+  portal: { w: 200, h: 200 },
+  kernel: { w: 140, h: 160 },
+  file:   { w: 400, h: 300 },
+} as const;
+
+// - bigger, deliberate size for a brand-new node created by directional-add (Alt+X /
+//   Ctrl+Shift+hjkl) or by dropping an edge on empty canvas; `gap` = spawn distance from source.
+export const NEW_NODE = { w: 780, h: 300, gap: 160 } as const;
+
+// - generic fallback (kept for back-compat; equals the text-node size)
+export const DEFAULT_NODE_WIDTH  = NODE_SIZE.text.w;
+export const DEFAULT_NODE_HEIGHT = NODE_SIZE.text.h;
+
+/**
+ * Canvas snap grid — the single step shared by the webview (drag/resize snap + markdown
+ * line-height via --skena-grid) and the host MCP tools (agent-created / moved / resized nodes),
+ * so every node lands on the same grid regardless of who moved it. Tweak GRID and it all follows.
+ * (`snapGrid()` lives in ./grid.ts and reads this value.)
+ */
+export const GRID = 100;
 
 /**
  * File size thresholds for webview preview.

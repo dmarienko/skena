@@ -33,7 +33,7 @@ import '@xyflow/react/dist/style.css';
 import { CanvasData, CanvasNode, CanvasEdge, MsgAddNodeResult, MsgRunOutput, MsgSubCanvasCreated, MsgVerifyPathResult, NodeSide, CanvasMark, ViewportSnapshot } from '../../shared/types';
 import { classifyClipboard } from './paste-classify';
 import { ContextMenu } from './ContextMenu';
-import { CANVAS_COLORS } from '../../shared/constants';
+import { CANVAS_COLORS, NODE_SIZE, NEW_NODE } from '../../shared/constants';
 import { GRID, snapGrid } from '../../shared/grid';
 import { ensureLabels, assignLabel } from './nodeLabels';
 import { ZoomLevelProvider } from '../context/ZoomLevelContext';
@@ -107,7 +107,7 @@ const RECENT_OUTPUT_MS = 4000;
 
 // - default size + gap for a NEW node created by directional-add (Alt+X / Ctrl+Shift+hjkl), an edge
 //   dropped on empty canvas, or `o` below a node
-const NEW_NODE_W = 780, NEW_NODE_H = 300, NEW_NODE_GAP = 160;
+const NEW_NODE_W = NEW_NODE.w, NEW_NODE_H = NEW_NODE.h, NEW_NODE_GAP = NEW_NODE.gap;
 
 // - reconcile a freshly-loaded node array against the current one so an output-write reload doesn't
 // - re-render (flicker) the whole canvas. An UNCHANGED node returns its EXACT previous object — React
@@ -804,8 +804,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       // - dragging off a kernel OR a code cell makes another code cell (its natural chain); else a text note
       const fromType = connectionState.fromNode.type;
       const makeCode = fromType === 'kernel' || fromType === 'code';
-      const nw = makeCode ? 360 : NEW_NODE_W;
-      const nh = makeCode ? 200 : NEW_NODE_H;
+      const nw = makeCode ? NODE_SIZE.code.w : NEW_NODE_W;
+      const nh = makeCode ? NODE_SIZE.code.h : NEW_NODE_H;
       const p = screenToFlowPosition({ x: mouseEvent.clientX, y: mouseEvent.clientY });
       const nodeId = `${makeCode ? 'code' : 'text'}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
       const newNode: CanvasNode = makeCode
@@ -1247,8 +1247,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     const nodeId = `text-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
     const newNode: CanvasNode = {
       id: nodeId, type: 'text', text: '',
-      x: Math.round(flowX - 200), y: Math.round(flowY - 150),
-      width: 400, height: 300,
+      x: Math.round(flowX - NODE_SIZE.text.w / 2), y: Math.round(flowY - NODE_SIZE.text.h / 2),
+      width: NODE_SIZE.text.w, height: NODE_SIZE.text.h,
     };
     window.dispatchEvent(new CustomEvent('skena:addNodeResult', {
       detail: { type: 'addNodeResult', node: newNode, autoEdit: true } satisfies MsgAddNodeResult,
@@ -1260,8 +1260,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     const nodeId = `code-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
     const newNode: CanvasNode = {
       id: nodeId, type: 'code', code: '', language: 'python',
-      x: Math.round(flowX - 180), y: Math.round(flowY - 100),
-      width: 360, height: 200,
+      x: Math.round(flowX - NODE_SIZE.code.w / 2), y: Math.round(flowY - NODE_SIZE.code.h / 2),
+      width: NODE_SIZE.code.w, height: NODE_SIZE.code.h,
     };
     window.dispatchEvent(new CustomEvent('skena:addNodeResult', {
       detail: { type: 'addNodeResult', node: newNode, autoEdit: true } satisfies MsgAddNodeResult,
@@ -1280,8 +1280,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     const nodeId = `node-${Date.now()}`;
     const newNode: CanvasNode = {
       id: nodeId, type: 'link', url,
-      x: Math.round(flowX - 160), y: Math.round(flowY - 40),
-      width: 320, height: 80,
+      x: Math.round(flowX - NODE_SIZE.link.w / 2), y: Math.round(flowY - NODE_SIZE.link.h / 2),
+      width: NODE_SIZE.link.w, height: NODE_SIZE.link.h,
     };
     window.dispatchEvent(new CustomEvent('skena:addNodeResult', {
       detail: { type: 'addNodeResult', node: newNode } satisfies MsgAddNodeResult,
@@ -2418,9 +2418,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       const nw = Number(src.style?.width ?? 360);
       const sh = Number(src.style?.height ?? 200);
       // - gap below the source's bottom (~matches a comfortable hand-placed spacing, cf. E4→E5)
-      const { x, y } = findFreePosition(nodesRef.current, src.position.x, src.position.y + sh + 180, nw, 200, 0, 1);
+      const { x, y } = findFreePosition(nodesRef.current, src.position.x, src.position.y + sh + 180, nw, NODE_SIZE.code.h, 0, 1);
       const newId = `code-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-      const newNode: CanvasNode = { id: newId, type: 'code', code: '', language: 'python', x, y, width: nw, height: 200 };
+      const newNode: CanvasNode = { id: newId, type: 'code', code: '', language: 'python', x, y, width: nw, height: NODE_SIZE.code.h };
       const newEdge: CanvasEdge = { id: `${sourceId}-${newId}-${Date.now()}`, fromNode: sourceId, fromSide: 'bottom', toNode: newId, toSide: 'top', toEnd: 'arrow' };
       window.dispatchEvent(new CustomEvent('skena:addNodeResult', {
         detail: { type: 'addNodeResult', node: newNode, edge: newEdge, autoEdit: true } satisfies MsgAddNodeResult,

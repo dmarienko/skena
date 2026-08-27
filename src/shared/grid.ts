@@ -1,10 +1,12 @@
 /**
- * Canvas snap grid — the single knob shared by the webview (drag/resize snap and the markdown
- * line-height via --skena-grid) and the host MCP tools (agent-created / moved / resized nodes),
- * so every node lands on the same grid regardless of who moved it. Tweak GRID and it all follows.
+ * Canvas snap grid helper. GRID (the step) now lives in ./constants.ts as the single tuning
+ * point, alongside NODE_SIZE / NEW_NODE; it is re-exported here so existing
+ * `import { GRID, snapGrid } from '.../grid'` sites keep working unchanged.
  */
 
-export const GRID = 20;
+import { GRID } from './constants';
+
+export { GRID };
 
 // - nearest grid multiple
 export function snapGrid(v: number): number {
