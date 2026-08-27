@@ -1167,7 +1167,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       // - .canvas file → portal node (circle shape, opens linked canvas on click)
       newNode = { id: nodeId, type: 'portal', canvas: picked.canvasUri, x, y, width: NODE_SIZE.portal.w, height: NODE_SIZE.portal.h };
     } else {
-      newNode = { id: nodeId, type: 'file', file: picked.canvasUri, x, y, width: w, height: h };
+      // - a vault file (md/py/…) → size it as a FILE node, not the big directional-add default:
+      //   the passed w/h is NEW_NODE (meant for a fresh text node); files want NODE_SIZE.file.
+      newNode = { id: nodeId, type: 'file', file: picked.canvasUri, x, y, width: NODE_SIZE.file.w, height: NODE_SIZE.file.h };
     }
 
     let edge: CanvasEdge | undefined;

@@ -30,10 +30,10 @@ export const GRID = 100;
 export const NODE_SIZE = {
   text:   { w: 700, h: 300 },
   code:   { w: 700, h: 300 },
-  link:   { w: 320, h: 100 },
+  link:   { w: 300, h: 100 },
   portal: { w: 200, h: 200 },
   kernel: { w: 140, h: 160 },
-  file:   { w: 700, h: 1000 },
+  file:   { w: 700, h: 700 },
 } as const;
 
 // - bigger, deliberate size for a brand-new node created by directional-add (Alt+X /
