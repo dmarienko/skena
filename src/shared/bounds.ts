@@ -17,11 +17,13 @@ export function clampToOrigin(x: number, y: number): { x: number; y: number } {
 }
 
 /**
- * Shift every node so the top-left corner of the content's bounding box sits at the origin
- * gutter. Runs once when a canvas is opened, to migrate canvases authored in negative space
- * (e.g. live-slippage near x = -5700) into the bounded field. Idempotent: a canvas already at
- * the gutter is returned by the same reference, so it triggers no save. The saved viewport is
- * shifted with the content so the reopened framing is unchanged.
+ * Shift content out of negative space into the bounded field. Runs on every canvas open but only
+ * acts when the content's bounding box actually extends left/above the origin (min x or y < 0) —
+ * e.g. live-slippage authored near x = -5700. Each negative axis is parked at the origin gutter; an
+ * axis already at or past the origin is left untouched. Content merely short of the gutter
+ * (0 <= min < ORIGIN_GUTTER) is NOT moved, so a node legitimately dragged to x = 0 never drags the
+ * whole canvas on the next load. Returns the same reference when nothing needs shifting (no save).
+ * The saved viewport is shifted with the content so the reopened framing is unchanged.
  */
 export function normalizeCanvasToOrigin(canvas: CanvasData): CanvasData {
   if (canvas.nodes.length === 0) return canvas;
@@ -31,8 +33,8 @@ export function normalizeCanvasToOrigin(canvas: CanvasData): CanvasData {
     if (n.x < minX) minX = n.x;
     if (n.y < minY) minY = n.y;
   }
-  const dx = ORIGIN_GUTTER - minX;
-  const dy = ORIGIN_GUTTER - minY;
+  const dx = minX < 0 ? ORIGIN_GUTTER - minX : 0;
+  const dy = minY < 0 ? ORIGIN_GUTTER - minY : 0;
   if (dx === 0 && dy === 0) return canvas;
   const nodes = canvas.nodes.map(n => ({ ...n, x: n.x + dx, y: n.y + dy }));
   const viewport = canvas.viewport
