@@ -14,7 +14,7 @@ export function SectionNodeComponent(_props: NodeProps): JSX.Element {
       style={{
         width: '100%',
         height: '100%',
-        background: `rgba(${SECTION_RGB}, 0.04)`,
+        background: `rgba(${SECTION_RGB}, 0.025)`,
         pointerEvents: 'none',
       }}
     />

@@ -3016,7 +3016,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         multiSelectionKeyCode="Shift"
         elevateEdgesOnSelect
       >
-        <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="var(--vscode-editorIndentGuide-background)" />
+        <Background variant={BackgroundVariant.Dots} gap={GRID} size={1} color="var(--vscode-editorIndentGuide-background)" />
         <HelperLines horizontal={helperLines.horizontal} vertical={helperLines.vertical} />
         <Controls showInteractive={false}>
           {/* - minimap toggle button — appended after the built-in zoom/fit buttons */}
