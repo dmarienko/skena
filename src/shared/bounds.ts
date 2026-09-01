@@ -17,6 +17,18 @@ export function clampToOrigin(x: number, y: number): { x: number; y: number } {
 }
 
 /**
+ * Cap a viewport translate so a programmatic camera move (zoom, keyboard pan, nav, Home) cannot
+ * reveal space above/left of the origin. React Flow only applies translateExtent to interactive
+ * mouse panning, so setViewport/setCenter calls must be clamped explicitly. Mirrors the extent's
+ * top-left bound: with translateExtent min = -ORIGIN_GUTTER, the translate may not exceed
+ * ORIGIN_GUTTER*zoom on either axis.
+ */
+export function clampViewportToOrigin(x: number, y: number, zoom: number): { x: number; y: number } {
+  const max = ORIGIN_GUTTER * zoom;
+  return { x: Math.min(x, max), y: Math.min(y, max) };
+}
+
+/**
  * Shift content out of negative space into the bounded field. Runs on every canvas open but only
  * acts when the content's bounding box actually extends left/above the origin (min x or y < 0) —
  * e.g. live-slippage authored near x = -5700. Each negative axis is parked at the origin gutter; an
