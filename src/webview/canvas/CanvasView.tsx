@@ -35,6 +35,7 @@ import { classifyClipboard } from './paste-classify';
 import { ContextMenu } from './ContextMenu';
 import { CANVAS_COLORS, NODE_SIZE, NEW_NODE } from '../../shared/constants';
 import { GRID, snapGrid } from '../../shared/grid';
+import { ORIGIN_GUTTER, clampToOrigin } from '../../shared/bounds';
 import { ensureLabels, assignLabel } from './nodeLabels';
 import { ZoomLevelProvider } from '../context/ZoomLevelContext';
 import { HeatmapProvider } from '../context/HeatmapContext';
@@ -71,6 +72,14 @@ const NODE_TYPES: NodeTypes = {
 const EDGE_TYPES: EdgeTypes = {
   labeled: LabeledEdgeComponent,
 };
+
+// - stable reference (hoisted like NODE_TYPES/EDGE_TYPES): a fresh array literal in the JSX would
+//   re-trigger React Flow's setTranslateExtent on every render. Min = one origin gutter of overscroll
+//   then a hard stop; max 1e7 is far beyond any realistic canvas extent and well inside Number precision.
+const CANVAS_TRANSLATE_EXTENT: [[number, number], [number, number]] = [
+  [-ORIGIN_GUTTER, -ORIGIN_GUTTER],
+  [1e7, 1e7],
+];
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -2954,6 +2963,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         }}
         minZoom={0.05}
         maxZoom={3}
+        translateExtent={CANVAS_TRANSLATE_EXTENT}
         deleteKeyCode="Delete"
         multiSelectionKeyCode="Shift"
         elevateEdgesOnSelect
