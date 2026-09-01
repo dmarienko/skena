@@ -80,10 +80,10 @@ const EDGE_TYPES: EdgeTypes = {
 };
 
 // - stable reference (hoisted like NODE_TYPES/EDGE_TYPES): a fresh array literal in the JSX would
-//   re-trigger React Flow's setTranslateExtent on every render. Min = one origin gutter of overscroll
-//   then a hard stop; max 1e7 is far beyond any realistic canvas extent and well inside Number precision.
+//   re-trigger React Flow's setTranslateExtent on every render. Min = [0,0] — a flush hard origin,
+//   no overscroll above/left; max 1e7 is far beyond any realistic canvas extent, inside Number precision.
 const CANVAS_TRANSLATE_EXTENT: [[number, number], [number, number]] = [
-  [-ORIGIN_GUTTER, -ORIGIN_GUTTER],
+  [0, 0],
   [1e7, 1e7],
 ];
 

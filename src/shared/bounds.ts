@@ -17,25 +17,23 @@ export function clampToOrigin(x: number, y: number): { x: number; y: number } {
 }
 
 /**
- * Cap a viewport translate so a programmatic camera move (zoom, keyboard pan, nav, Home) cannot
- * reveal space above/left of the origin. React Flow only applies translateExtent to interactive
- * mouse panning, so setViewport/setCenter calls must be clamped explicitly. Mirrors the extent's
- * top-left bound: with translateExtent min = -ORIGIN_GUTTER, the translate may not exceed
- * ORIGIN_GUTTER*zoom on either axis.
+ * Cap a viewport translate so a programmatic camera move (zoom, keyboard pan, nav, Home, restore)
+ * cannot reveal space above/left of the origin. React Flow only applies translateExtent to
+ * interactive mouse panning, so setViewport/setCenter calls must be clamped explicitly. The origin
+ * is a hard flush edge: the translate may not exceed 0 on either axis, so flow-(0,0) never appears
+ * below/right of the screen's top-left — no empty margin is ever shown above or left of the content.
  */
-export function clampViewportToOrigin(x: number, y: number, zoom: number): { x: number; y: number } {
-  const max = ORIGIN_GUTTER * zoom;
-  return { x: Math.min(x, max), y: Math.min(y, max) };
+export function clampViewportToOrigin(x: number, y: number, _zoom: number): { x: number; y: number } {
+  return { x: Math.min(x, 0), y: Math.min(y, 0) };
 }
 
 /**
  * Shift content out of negative space into the bounded field. Runs on every canvas open but only
  * acts when the content's bounding box actually extends left/above the origin (min x or y < 0) —
- * e.g. live-slippage authored near x = -5700. Each negative axis is parked at the origin gutter; an
- * axis already at or past the origin is left untouched. Content merely short of the gutter
- * (0 <= min < ORIGIN_GUTTER) is NOT moved, so a node legitimately dragged to x = 0 never drags the
- * whole canvas on the next load. Returns the same reference when nothing needs shifting (no save).
- * The saved viewport is shifted with the content so the reopened framing is unchanged.
+ * e.g. live-slippage authored near x = -5700. Each negative axis is parked flush at the origin (0);
+ * an axis already at or past the origin is left untouched (so a node legitimately at x = 0 never
+ * drags the whole canvas on the next load). Returns the same reference when nothing needs shifting
+ * (no save). The saved viewport is shifted with the content so the reopened framing is unchanged.
  */
 export function normalizeCanvasToOrigin(canvas: CanvasData): CanvasData {
   if (canvas.nodes.length === 0) return canvas;
@@ -45,8 +43,8 @@ export function normalizeCanvasToOrigin(canvas: CanvasData): CanvasData {
     if (n.x < minX) minX = n.x;
     if (n.y < minY) minY = n.y;
   }
-  const dx = minX < 0 ? ORIGIN_GUTTER - minX : 0;
-  const dy = minY < 0 ? ORIGIN_GUTTER - minY : 0;
+  const dx = minX < 0 ? -minX : 0;
+  const dy = minY < 0 ? -minY : 0;
   if (dx === 0 && dy === 0) return canvas;
   const nodes = canvas.nodes.map(n => ({ ...n, x: n.x + dx, y: n.y + dy }));
   const viewport = canvas.viewport
