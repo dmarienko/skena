@@ -11,6 +11,7 @@
 
 import type { CanvasData, CanvasNode, SectionNode } from './types';
 import { ORIGIN_GUTTER } from './bounds';
+import { GRID } from './constants';
 
 // - header overlay height (screen-space; the header is drawn above the band, not inside it)
 export const SECTION_HEADER_H = 44;
@@ -38,7 +39,8 @@ function laneGeom(members: CanvasNode[]): { x: number; y: number; width: number;
     if (n.y + n.height > maxY) maxY = n.y + n.height;
   }
   const x = Math.min(ORIGIN_GUTTER, minX);
-  return { x, y: minY, width: maxX + SECTION_OPEN_RIGHT - x, height: maxY - minY };
+  // - bottom extends one GRID below the lowest node, giving a gap before the bottom boundary line
+  return { x, y: minY, width: maxX + SECTION_OPEN_RIGHT - x, height: maxY - minY + GRID };
 }
 
 /**

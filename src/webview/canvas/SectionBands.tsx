@@ -29,7 +29,9 @@ export function SectionBands(): JSX.Element {
                 right: 0,
                 top,
                 height,
+                boxSizing: 'border-box',
                 background: `rgba(${SECTION_RGB}, 0.025)`,
+                borderBottom: `1px solid rgba(${SECTION_RGB}, 0.3)`,  // - separates stacked sections
               }}
             />
           );
