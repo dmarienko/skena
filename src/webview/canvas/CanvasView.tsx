@@ -633,7 +633,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     // - restore saved viewport ONLY on the first load of this path (defaultViewport only fires on
     //   mount). On a reload keep the user's current camera — never snap to the stale disk viewport.
     if (isInitialLoad && canvas.viewport) {
-      rfRef.current.setViewport(canvas.viewport, { duration: 0 });
+      const cRestore = clampViewportToOrigin(canvas.viewport.x, canvas.viewport.y, canvas.viewport.zoom);
+      rfRef.current.setViewport({ x: cRestore.x, y: cRestore.y, zoom: canvas.viewport.zoom }, { duration: 0 });
     }
 
     // - fitView / focus: defer so the layout pass is done before we query positions
@@ -1179,7 +1180,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       ...marksRef.current,
       '`': { nodeId: currentFocused?.id ?? null, viewport: rfRef.current.getViewport() },
     };
-    rfRef.current.setViewport(target.viewport, { duration: 300 });
+    const cMark = clampViewportToOrigin(target.viewport.x, target.viewport.y, target.viewport.zoom);
+    rfRef.current.setViewport({ x: cMark.x, y: cMark.y, zoom: target.viewport.zoom }, { duration: 300 });
     if (target.nodeId) {
       const id = target.nodeId;
       setTimeout(() => focusNodeById(id), 320);
@@ -1795,11 +1797,12 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
             window.innerWidth  * 0.85 / nw,
             window.innerHeight * 0.85 / nh,
           )));
-          rfRef.current.setCenter(
-            focused.position.x + nw / 2,
-            focused.position.y + nh / 2,
-            { duration: 350, zoom },
+          const cAltShiftC = clampViewportToOrigin(
+            window.innerWidth  / 2 - (focused.position.x + nw / 2) * zoom,
+            window.innerHeight / 2 - (focused.position.y + nh / 2) * zoom,
+            zoom,
           );
+          rfRef.current.setViewport({ x: cAltShiftC.x, y: cAltShiftC.y, zoom }, { duration: 350 });
         }
         return;
       }
@@ -1812,11 +1815,12 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           const nw  = Number(focused.style?.width  ?? 200);
           const nh  = Number(focused.style?.height ?? 150);
           const { zoom } = rfRef.current.getViewport();
-          rfRef.current.setCenter(
-            focused.position.x + nw / 2,
-            focused.position.y + nh / 2,
-            { duration: 250, zoom },
+          const cShiftC = clampViewportToOrigin(
+            window.innerWidth  / 2 - (focused.position.x + nw / 2) * zoom,
+            window.innerHeight / 2 - (focused.position.y + nh / 2) * zoom,
+            zoom,
           );
+          rfRef.current.setViewport({ x: cShiftC.x, y: cShiftC.y, zoom }, { duration: 250 });
         }
         return;
       }
@@ -2609,7 +2613,12 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       // - focus DOM + pan viewport to the new node
       focusNodeById(cnWithIdx.id);
       const { zoom } = rfRef.current.getViewport();
-      rfRef.current.setCenter(cnWithIdx.x + cnWithIdx.width / 2, cnWithIdx.y + cnWithIdx.height / 2, { duration: 250, zoom });
+      const cAddNode = clampViewportToOrigin(
+        window.innerWidth  / 2 - (cnWithIdx.x + cnWithIdx.width  / 2) * zoom,
+        window.innerHeight / 2 - (cnWithIdx.y + cnWithIdx.height / 2) * zoom,
+        zoom,
+      );
+      rfRef.current.setViewport({ x: cAddNode.x, y: cAddNode.y, zoom }, { duration: 250 });
 
       // - for new text notes: open Monaco immediately so the user can start typing
       if (autoEdit) {
