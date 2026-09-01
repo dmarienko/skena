@@ -1,8 +1,9 @@
 /**
  * Section container helpers. A section is a band node that owns other nodes via their `sectionId`.
  * `wrapNodesInSection` migrates a legacy canvas (free nodes, no sections) so every node belongs to
- * a section — runs once on the host load path, after normalizeCanvasToOrigin. Pure; bundled into
- * both host and webview. No Node.js APIs.
+ * a section — runs once on the host load path, before normalizeCanvasToOrigin (wrap first, so the
+ * section band normalizes to the origin in one pass). Pure; bundled into both host and webview. No
+ * Node.js APIs.
  */
 
 import type { CanvasData, CanvasNode, SectionNode } from './types';
