@@ -68,6 +68,7 @@ import {
 } from '../shared/types';
 import { parseNodeRef } from '../shared/nodeRef';
 import { MAX_FILE_FULL_BYTES, MAX_FILE_PREVIEW_BYTES, MAX_NOTEBOOK_BYTES, NODE_SIZE } from '../shared/constants';
+import { normalizeCanvasToOrigin } from '../shared/bounds';
 
 // ─── bookmarks file helpers ──────────────────────────────────────────────────
 
@@ -217,10 +218,11 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             // - read canvas and clipboard in parallel; clipboard pre-warm ensures
             // - that vim's `p` works immediately on first open even in a fresh
             // - cross-canvas webview where clipboardCache starts empty.
-            const [canvas, clipboardText] = await Promise.all([
+            const [rawCanvas, clipboardText] = await Promise.all([
               readCanvas(document.uri.fsPath),
               vscode.env.clipboard.readText(),
             ]);
+            const canvas = normalizeCanvasToOrigin(rawCanvas);
             document.updateFromDisk(canvas);
             send({ type: 'canvasLoaded', canvas, canvasPath: document.uri.fsPath });
             // - a cross-canvas node reference opened this canvas — focus the referenced node now
@@ -507,7 +509,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     // - mounts the one new node (React Flow diffs by id) instead of remounting all.
     const reloadFromDisk = async () => {
       try {
-        const canvas = await readCanvas(document.uri.fsPath);
+        const canvas = normalizeCanvasToOrigin(await readCanvas(document.uri.fsPath));
         document.updateFromDisk(canvas);
         send({ type: 'canvasLoaded', canvas, canvasPath: document.uri.fsPath });
         // - covers the rare race where a pending cross-canvas focus arrived before this

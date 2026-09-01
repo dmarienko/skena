@@ -32,13 +32,12 @@ export async function readCanvas(fsPath: string): Promise<CanvasData> {
 }
 
 /**
- * Write canvas data back to disk.
- *
- * Direct write (not atomic rename) is intentional here: the extension is the
- * primary owner of open canvas files and uses the `isSelfSaving` flag in
- * resolveCustomEditor to suppress its own file-watcher reload cycle.
- * Atomic rename would use the same `.tmp` name as the MCP server, risking a
- * collision when both write near-simultaneously.
+ * Write a .canvas file atomically. A reader (the file-watcher / webview) must never see a
+ * truncated file: writeFile truncates then streams, so a concurrent read of this large .canvas
+ * can catch it empty and the webview would take an empty reload. We write a PID+timestamp-named
+ * temp sibling, then rename (atomic on the same filesystem), so readers only ever see the
+ * complete old or complete new file. (The MCP server writes non-atomically on purpose — its
+ * watcher reload needs IN_CLOSE_WRITE; the webview's empty-reload guard covers that rarer path.)
  */
 export async function writeCanvas(fsPath: string, data: CanvasData): Promise<void> {
   const json = JSON.stringify(data, null, 2);
