@@ -17,6 +17,7 @@
  *   D  — node references (diamond) to a node in another canvas
  *   G  — group containers
  *   F  — other file types
+ *   S  — section container
  *
  * Labels are persisted in the .canvas JSON under `nodeLabel` on each node.
  * Obsidian ignores unknown node properties, so this is safe.
@@ -36,6 +37,7 @@ export function nodeLabelPrefix(node: CanvasNode): string {
     case 'chat':   return 'A';
     case 'portal': return 'R';
     case 'noderef': return 'D';
+    case 'section': return 'S';
     case 'file': {
       const f = (node as FileNode).file.toLowerCase();
       if (f.endsWith('.ipynb'))                          return 'J';
