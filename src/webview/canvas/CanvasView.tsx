@@ -225,10 +225,14 @@ function patchCanvasNode(original: CanvasNode, rfNode: Node, nodes: Node[]): Can
   // - position is up to a full grid cell off the on-screen position and the node shifts on reopen.
   const change = { id: rfNode.id, type: 'position', position: rfNode.position } as NodePositionChange;
   const { snapX, snapY } = getHelperLines(change, nodes);
+  const c = clampToOrigin(
+    snapX !== undefined ? snapX : snapGrid(rfNode.position.x),
+    snapY !== undefined ? snapY : snapGrid(rfNode.position.y),
+  );
   return {
     ...original,
-    x:      Math.round(snapX !== undefined ? snapX : snapGrid(rfNode.position.x)),
-    y:      Math.round(snapY !== undefined ? snapY : snapGrid(rfNode.position.y)),
+    x:      Math.round(c.x),
+    y:      Math.round(c.y),
     width:  Math.round(Number(rfNode.style?.width ?? original.width)),
     height: Math.round(Number(rfNode.style?.height ?? original.height)),
   };
@@ -331,7 +335,10 @@ function findFreePosition(
   pushY: -1 | 0 | 1,
   gap = 48,
 ): { x: number; y: number } {
-  if (pushX === 0 && pushY === 0) return { x: Math.round(x), y: Math.round(y) };
+  if (pushX === 0 && pushY === 0) {
+    const c = clampToOrigin(x, y);
+    return { x: Math.round(c.x), y: Math.round(c.y) };
+  }
 
   for (let iter = 0; iter < 40; iter++) {
     const hit = existingNodes.find(n => {
@@ -353,7 +360,8 @@ function findFreePosition(
     if (pushY > 0) y = hit.position.y + nh + gap;
     if (pushY < 0) y = hit.position.y - newH - gap;
   }
-  return { x: Math.round(x), y: Math.round(y) };
+  const c = clampToOrigin(x, y);
+  return { x: Math.round(c.x), y: Math.round(c.y) };
 }
 
 // ─── per-canvas focus memory (survives canvas reloads within a session) ──────
@@ -461,15 +469,15 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         //   lands ON the grid on screen and none reverts on reload (all are persisted at drag-stop).
         const { horizontal, vertical, snapX, snapY } = getHelperLines(primary, nodesRef.current);
         setHelperLines(dragging ? { horizontal, vertical } : {});
-        primary.position = {
-          x: snapX !== undefined ? snapX : snapGrid(primary.position!.x),
-          y: snapY !== undefined ? snapY : snapGrid(primary.position!.y),
-        };
+        primary.position = clampToOrigin(
+          snapX !== undefined ? snapX : snapGrid(primary.position!.x),
+          snapY !== undefined ? snapY : snapGrid(primary.position!.y),
+        );
         for (let i = 1; i < posChanges.length; i++) {
-          posChanges[i].position = {
-            x: snapGrid(posChanges[i].position!.x),
-            y: snapGrid(posChanges[i].position!.y),
-          };
+          posChanges[i].position = clampToOrigin(
+            snapGrid(posChanges[i].position!.x),
+            snapGrid(posChanges[i].position!.y),
+          );
         }
         draggingRef.current = dragging;
       } else {
