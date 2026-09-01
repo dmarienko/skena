@@ -1761,6 +1761,16 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         rfRef.current.setViewport({ x: cx - (cx - tx) * scale, y: cy - (cy - ty) * scale, zoom: newZoom });
         return;
       }
+      // - Home: pan the camera to the origin gutter, keeping the current zoom (pan-only invariant)
+      if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'Home') {
+        e.preventDefault();
+        const { zoom } = rfRef.current.getViewport();
+        rfRef.current.setViewport(
+          { x: 40 - ORIGIN_GUTTER * zoom, y: 40 - ORIGIN_GUTTER * zoom, zoom },
+          { duration: 300 },
+        );
+        return;
+      }
 
       // - Alt+Shift+C: center and zoom to focused node at a readable scale.
       // - Target zoom = fit node into 85% of the viewport, clamped 0.8–1.5 so
