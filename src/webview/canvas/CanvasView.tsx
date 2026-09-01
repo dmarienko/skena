@@ -54,6 +54,7 @@ import { CodeNodeComponent }   from './nodes/CodeNode';
 import { SectionNodeComponent } from './nodes/SectionNode';
 import { LabeledEdgeComponent } from './edges/LabeledEdge';
 import { HelperLines } from './HelperLines';
+import { SectionBands } from './SectionBands';
 import { CanvasSearch } from './CanvasSearch';
 import { MarksPanel  } from './MarksPanel';
 
@@ -3017,6 +3018,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         elevateEdgesOnSelect
       >
         <Background variant={BackgroundVariant.Dots} gap={GRID} size={1} color="var(--vscode-editorIndentGuide-background)" />
+        <SectionBands />
         <HelperLines horizontal={helperLines.horizontal} vertical={helperLines.vertical} />
         <Controls showInteractive={false}>
           {/* - minimap toggle button — appended after the built-in zoom/fit buttons */}
