@@ -18,13 +18,14 @@ export function clampToOrigin(x: number, y: number): { x: number; y: number } {
 
 /**
  * Cap a viewport translate so a programmatic camera move (zoom, keyboard pan, nav, Home, restore)
- * cannot reveal space above/left of the origin. React Flow only applies translateExtent to
- * interactive mouse panning, so setViewport/setCenter calls must be clamped explicitly. The origin
- * is a hard flush edge: the translate may not exceed 0 on either axis, so flow-(0,0) never appears
- * below/right of the screen's top-left — no empty margin is ever shown above or left of the content.
+ * cannot reveal MORE than one grid of margin above/left of the origin. React Flow only applies
+ * translateExtent to interactive mouse panning, so setViewport/setCenter calls must be clamped
+ * explicitly. The translate may not exceed ORIGIN_GUTTER*zoom on either axis, giving content parked
+ * at the origin a one-grid breathing margin at the top-left while still hard-stopping beyond it.
  */
-export function clampViewportToOrigin(x: number, y: number, _zoom: number): { x: number; y: number } {
-  return { x: Math.min(x, 0), y: Math.min(y, 0) };
+export function clampViewportToOrigin(x: number, y: number, zoom: number): { x: number; y: number } {
+  const max = ORIGIN_GUTTER * zoom;
+  return { x: Math.min(x, max), y: Math.min(y, max) };
 }
 
 /**

@@ -80,10 +80,11 @@ const EDGE_TYPES: EdgeTypes = {
 };
 
 // - stable reference (hoisted like NODE_TYPES/EDGE_TYPES): a fresh array literal in the JSX would
-//   re-trigger React Flow's setTranslateExtent on every render. Min = [0,0] — a flush hard origin,
-//   no overscroll above/left; max 1e7 is far beyond any realistic canvas extent, inside Number precision.
+//   re-trigger React Flow's setTranslateExtent on every render. Min = -ORIGIN_GUTTER — one grid of
+//   breathing margin above/left of the origin, then a hard stop; max 1e7 is far beyond any realistic
+//   canvas extent, inside Number precision.
 const CANVAS_TRANSLATE_EXTENT: [[number, number], [number, number]] = [
-  [0, 0],
+  [-ORIGIN_GUTTER, -ORIGIN_GUTTER],
   [1e7, 1e7],
 ];
 
@@ -1780,9 +1781,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         rfRef.current.setViewport({ x: c.x, y: c.y, zoom: newZoom });
         return;
       }
-      // - Home: pan to the top-left corner of the content, keeping the current zoom (pan-only
-      //   invariant). Targeting the content's min corner (not the abstract gutter) avoids clipping
-      //   content that sits at flow-0, and clampViewportToOrigin keeps it from over-panning.
+      // - Home: pan to the content's top-left, keeping the current zoom (pan-only invariant), with a
+      //   one-grid breathing margin at the top-left. clampViewportToOrigin keeps it within that gutter.
       if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'Home') {
         e.preventDefault();
         const { zoom } = rfRef.current.getViewport();
@@ -1790,7 +1790,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         if (!framed.length) return;
         const minX = Math.min(...framed.map(n => n.position.x));
         const minY = Math.min(...framed.map(n => n.position.y));
-        const c = clampViewportToOrigin(40 - minX * zoom, 40 - minY * zoom, zoom);
+        const c = clampViewportToOrigin((ORIGIN_GUTTER - minX) * zoom, (ORIGIN_GUTTER - minY) * zoom, zoom);
         rfRef.current.setViewport({ x: c.x, y: c.y, zoom }, { duration: 300 });
         return;
       }
