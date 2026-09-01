@@ -35,7 +35,7 @@ import { classifyClipboard } from './paste-classify';
 import { ContextMenu } from './ContextMenu';
 import { CANVAS_COLORS, NODE_SIZE, NEW_NODE } from '../../shared/constants';
 import { GRID, snapGrid } from '../../shared/grid';
-import { ORIGIN_GUTTER, clampToOrigin } from '../../shared/bounds';
+import { ORIGIN_GUTTER, clampToOrigin, clampViewportToOrigin } from '../../shared/bounds';
 import { ensureLabels, assignLabel } from './nodeLabels';
 import { ZoomLevelProvider } from '../context/ZoomLevelContext';
 import { HeatmapProvider } from '../context/HeatmapContext';
@@ -1127,7 +1127,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       const fit = targets.length > 1
         ? Math.max(0.1, Math.min(curZoom, Math.min((vR - vL) / (bx2 - bx1 + 160), (vB - vT) / (by2 - by1 + 160))))
         : curZoom;
-      rfRef.current.setViewport({ x: availCx - bcx * fit, y: availCy - bcy * fit, zoom: fit }, { duration: 250 });
+      const cForce = clampViewportToOrigin(availCx - bcx * fit, availCy - bcy * fit, fit);
+      rfRef.current.setViewport({ x: cForce.x, y: cForce.y, zoom: fit }, { duration: 250 });
     } else if (!nodeInside) {
       // - MINIMAL pan: move the viewport JUST enough to bring the node (plus its output if the pair
       //   still fits at the current zoom) fully into the usable area. Keep the zoom — don't centre,
@@ -1140,7 +1141,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       if (tx1 < vL + M) dx = (vL + M) - tx1; else if (tx2 > vR - M) dx = (vR - M) - tx2;
       if (ty1 < vT + M) dy = (vT + M) - ty1; else if (ty2 > vB - M) dy = (vB - M) - ty2;
       if (dx !== 0 || dy !== 0) {
-        rfRef.current.setViewport({ x: vx + dx, y: vy + dy, zoom: curZoom }, { duration: 250 });
+        const cMin = clampViewportToOrigin(vx + dx, vy + dy, curZoom);
+        rfRef.current.setViewport({ x: cMin.x, y: cMin.y, zoom: curZoom }, { duration: 250 });
       }
     }
   }, [setNodes, canvasPath]); // - nodesRef + rfRef are always current
@@ -1747,7 +1749,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           else if (sy > window.innerHeight - PAD) newTy -= sy - (window.innerHeight - PAD);
         }
 
-        rfRef.current.setViewport({ x: newTx, y: newTy, zoom: newZoom });
+        const cZoomIn = clampViewportToOrigin(newTx, newTy, newZoom);
+        rfRef.current.setViewport({ x: cZoomIn.x, y: cZoomIn.y, zoom: newZoom });
         return;
       }
       if (!e.ctrlKey && !e.metaKey && e.shiftKey && e.key === 'Z') {
@@ -1758,17 +1761,24 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         const scale   = newZoom / zoom;
         const cx = window.innerWidth  / 2;
         const cy = window.innerHeight / 2;
-        rfRef.current.setViewport({ x: cx - (cx - tx) * scale, y: cy - (cy - ty) * scale, zoom: newZoom });
+        const zx = cx - (cx - tx) * scale;
+        const zy = cy - (cy - ty) * scale;
+        const c  = clampViewportToOrigin(zx, zy, newZoom);
+        rfRef.current.setViewport({ x: c.x, y: c.y, zoom: newZoom });
         return;
       }
-      // - Home: pan the camera to the origin gutter, keeping the current zoom (pan-only invariant)
+      // - Home: pan to the top-left corner of the content, keeping the current zoom (pan-only
+      //   invariant). Targeting the content's min corner (not the abstract gutter) avoids clipping
+      //   content that sits at flow-0, and clampViewportToOrigin keeps it from over-panning.
       if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'Home') {
         e.preventDefault();
         const { zoom } = rfRef.current.getViewport();
-        rfRef.current.setViewport(
-          { x: 40 - ORIGIN_GUTTER * zoom, y: 40 - ORIGIN_GUTTER * zoom, zoom },
-          { duration: 300 },
-        );
+        const framed = nodesRef.current.filter(n => n.type !== 'group');
+        if (!framed.length) return;
+        const minX = Math.min(...framed.map(n => n.position.x));
+        const minY = Math.min(...framed.map(n => n.position.y));
+        const c = clampViewportToOrigin(40 - minX * zoom, 40 - minY * zoom, zoom);
+        rfRef.current.setViewport({ x: c.x, y: c.y, zoom }, { duration: 300 });
         return;
       }
 
@@ -2222,7 +2232,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         K: { dx: 0, dy:  PAN }, J: { dx: 0, dy: -PAN },
       };
       const { dx, dy } = d[k];
-      rfRef.current.setViewport({ x: x + dx, y: y + dy, zoom }, { duration: 120 });
+      const c = clampViewportToOrigin(x + dx, y + dy, zoom);
+      rfRef.current.setViewport({ x: c.x, y: c.y, zoom }, { duration: 120 });
     };
 
     window.addEventListener('keydown', handler);
