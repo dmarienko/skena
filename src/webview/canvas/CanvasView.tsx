@@ -109,10 +109,10 @@ function toFlowNode(cn: CanvasNode): Node {
     height:   cn.height,
     data:     { ...cn, accentColor: resolveColor(cn.color) },
     // - groups are non-interactive drag targets (they expand to contain nodes visually)
-    draggable:   cn.type !== 'group' && cn.type !== 'section',
+    draggable:   !isBandType(cn.type),
     selectable:  true,
-    deletable:   true,
-    zIndex:      cn.type === 'group' || cn.type === 'section' ? -1 : 0,
+    deletable:   cn.type !== 'section',
+    zIndex:      isBandType(cn.type) ? -1 : 0,
   };
 }
 

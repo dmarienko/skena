@@ -2,7 +2,7 @@ import React from 'react';
 import { NodeProps, NodeResizer } from '@xyflow/react';
 import { SectionNode } from '../../../shared/types';
 import { useZoomInvariantBorderWidth } from './nodeShared';
-import { DEFAULT_NODE_BORDER_BY_TYPE } from '../palette';
+import { DEFAULT_NODE_BORDER_BY_TYPE, SECTION_RGB } from '../palette';
 
 /**
  * SectionNode — a large kernel-tint-ready band that owns nodes (via their sectionId). Visual band
@@ -11,9 +11,9 @@ import { DEFAULT_NODE_BORDER_BY_TYPE } from '../palette';
  */
 export function SectionNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as SectionNode;
-  const accent = node.accentColor ?? undefined;
+  const accent = node.accentColor;
   const border = accent ?? DEFAULT_NODE_BORDER_BY_TYPE.section;
-  const bg = accent ? `${accent}14` : 'rgba(83,223,221,0.05)';
+  const bg = accent ? `${accent}14` : `rgba(${SECTION_RGB}, 0.05)`;
   const bw = useZoomInvariantBorderWidth(1);
   return (
     <div style={{ width: '100%', height: '100%', border: `${bw}px solid ${border}`, borderRadius: 10, background: bg }}>

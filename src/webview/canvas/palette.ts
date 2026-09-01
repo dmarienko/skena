@@ -14,6 +14,9 @@
  */
 
 // ─── node borders (fallback when a node has no Obsidian accent color) ───────────
+// - section band tint (portal-cyan family), used at several opacities
+export const SECTION_RGB = '83, 223, 221';
+
 // - keyed by NODE TYPE (`node.type`): each is the border of that kind of node.
 export const DEFAULT_NODE_BORDER_BY_TYPE = {
   text:   '#1f96bd',                 // - text node — inline text / markdown notes
@@ -24,7 +27,7 @@ export const DEFAULT_NODE_BORDER_BY_TYPE = {
   portal: '#53dfdd',                 // - portal node — link to another .canvas
   noderef: '#c98af0',                // - node reference (diamond) to a node in another canvas
   group:  'rgba(255,255,255,0.12)',  // - group node — dashed background container
-  section: 'rgba(83,223,221,0.35)',
+  section: `rgba(${SECTION_RGB}, 0.35)`, // - section band border
   code:   '#02542e',                 // - code node — editable code cell (Jupyter)
   kernel: '#4cc8a0',                 // - kernel node — live Jupyter kernel widget
 } as const;
