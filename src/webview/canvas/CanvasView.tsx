@@ -2363,11 +2363,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       const rect = el.getBoundingClientRect();
       const lx = e.clientX - rect.left;
       const ly = e.clientY - rect.top;
-      rfRef.current.setViewport({
-        x:    lx - (lx - tx) * scale,
-        y:    ly - (ly - ty) * scale,
-        zoom: newZoom,
-      });
+      // - clamp so cursor-centred wheel zoom can't reveal space above/left of the origin
+      const c = clampViewportToOrigin(lx - (lx - tx) * scale, ly - (ly - ty) * scale, newZoom);
+      rfRef.current.setViewport({ x: c.x, y: c.y, zoom: newZoom });
     };
 
     // - capture: fires before D3's bubble-phase listener on the inner pane
