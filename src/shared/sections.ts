@@ -29,18 +29,18 @@ function sectionIdFor(seedId: string): string {
  */
 function laneGeom(members: CanvasNode[]): { x: number; y: number; width: number; height: number } {
   let minX = Infinity;
-  let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
   for (const n of members) {
     if (n.x < minX) minX = n.x;
-    if (n.y < minY) minY = n.y;
     if (n.x + n.width > maxX) maxX = n.x + n.width;
     if (n.y + n.height > maxY) maxY = n.y + n.height;
   }
   const x = Math.min(ORIGIN_GUTTER, minX);
-  // - bottom extends one GRID below the lowest node, giving a gap before the bottom boundary line
-  return { x, y: minY, width: maxX + SECTION_OPEN_RIGHT - x, height: maxY - minY + GRID };
+  // - the (single, migrated) section fills from the origin (y=0) down through its content, so the
+  //   area above the content is filled band, not empty; bottom extends one GRID past the lowest node
+  //   (a gap before the bottom boundary line). Multi-section vertical stacking comes with creation.
+  return { x, y: 0, width: maxX + SECTION_OPEN_RIGHT - x, height: maxY + GRID };
 }
 
 /**
