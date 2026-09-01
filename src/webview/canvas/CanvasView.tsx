@@ -1836,17 +1836,19 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
             J: { x: 0, y: GRID },  K: { x: 0, y: -GRID },
           };
           const delta = dirMap[e.key];
+          // - clamp each pinned node to the origin so a keyboard move can't push it into negative
+          //   space, mirroring the drag/creation clamp (the bounded-canvas invariant)
           setNodes(nds => nds.map(n => {
             if (!spaceSelectedRef.current.has(n.id)) return n;
-            return { ...n, position: { x: n.position.x + delta.x, y: n.position.y + delta.y } };
+            return { ...n, position: clampToOrigin(n.position.x + delta.x, n.position.y + delta.y) };
           }));
           canvasRef.current = {
             ...canvasRef.current,
-            nodes: canvasRef.current.nodes.map(cn =>
-              spaceSelectedRef.current.has(cn.id)
-                ? { ...cn, x: cn.x + delta.x, y: cn.y + delta.y }
-                : cn
-            ),
+            nodes: canvasRef.current.nodes.map(cn => {
+              if (!spaceSelectedRef.current.has(cn.id)) return cn;
+              const p = clampToOrigin(cn.x + delta.x, cn.y + delta.y);
+              return { ...cn, x: p.x, y: p.y };
+            }),
           };
           scheduleSave();
           return;
