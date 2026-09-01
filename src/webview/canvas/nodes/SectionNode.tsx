@@ -1,29 +1,24 @@
 import React from 'react';
-import { NodeProps, NodeResizer } from '@xyflow/react';
-import { SectionNode } from '../../../shared/types';
-import { useZoomInvariantBorderWidth } from './nodeShared';
-import { DEFAULT_NODE_BORDER_BY_TYPE, SECTION_RGB } from '../palette';
+import { NodeProps } from '@xyflow/react';
+import { SECTION_RGB } from '../palette';
 
 /**
- * SectionNode — a large kernel-tint-ready band that owns nodes (via their sectionId). Visual band
- * only; the interactive header (title / fold / delete) is a separate screen-space overlay
- * (SectionHeaders) so it never scales with zoom. Renders behind everything (zIndex set in toFlowNode).
+ * SectionNode — a passive kernel-tint-ready band that owns nodes (via their sectionId). Rendered
+ * behind everything (zIndex set in toFlowNode); not draggable, selectable, or resizable — its
+ * geometry is derived (migration now, packing later) and all interaction lives in the zoom-steady
+ * header overlay (SectionHeaders). Open on the right: the tint fades out rightward, with a light
+ * left accent marking the lane. No box border, so it reads as a band, not a box around the nodes.
  */
-export function SectionNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
-  const node = data as unknown as SectionNode;
-  const accent = node.accentColor;
-  const border = accent ?? DEFAULT_NODE_BORDER_BY_TYPE.section;
-  const bg = accent ? `${accent}14` : `rgba(${SECTION_RGB}, 0.05)`;
-  const bw = useZoomInvariantBorderWidth(1);
+export function SectionNodeComponent(_props: NodeProps): JSX.Element {
   return (
-    <div style={{ width: '100%', height: '100%', border: `${bw}px solid ${border}`, borderRadius: 10, background: bg }}>
-      <NodeResizer
-        minWidth={240} minHeight={120}
-        isVisible={selected}
-        onResizeEnd={(_, p) => window.dispatchEvent(new CustomEvent('skena:nodeResize', {
-          detail: { id, x: Math.round(p.x), y: Math.round(p.y), width: Math.round(p.width), height: Math.round(p.height) },
-        }))}
-      />
-    </div>
+    <div
+      style={{
+        width: '100%',
+        height: '100%',
+        background: `linear-gradient(to right, rgba(${SECTION_RGB}, 0.10), rgba(${SECTION_RGB}, 0.03) 55%, rgba(${SECTION_RGB}, 0))`,
+        borderLeft: `3px solid rgba(${SECTION_RGB}, 0.4)`,
+        pointerEvents: 'none',
+      }}
+    />
   );
 }
