@@ -8,9 +8,10 @@
 
 import type { CanvasData, CanvasNode, SectionNode } from './types';
 
-// - screen-space header height and band padding (flow units at zoom 1)
+// - header overlay height (screen-space; the header is drawn above the band, not inside it)
 export const SECTION_HEADER_H = 44;
-export const SECTION_PAD = 40;
+// - how far the band extends past its content on the open (right) side, so it reads as a lane
+export const SECTION_OPEN_RIGHT = 600;
 
 // - deterministic id from the min node so a re-migration of the same content is stable
 function sectionIdFor(seedId: string): string {
@@ -19,8 +20,10 @@ function sectionIdFor(seedId: string): string {
 
 /**
  * Wrap every node that lacks a `sectionId` into a single new section sized to their bounding box.
- * Nodes already assigned to a section are untouched. Returns the same reference when nothing needs
- * wrapping (empty canvas, or all nodes already sectioned) so it triggers no save.
+ * The band is tight to the content on the left/top/bottom (no margin strips) and open on the right
+ * (extends past the content by SECTION_OPEN_RIGHT), so it reads as a lane, not a box. Nodes already
+ * assigned to a section are untouched. Returns the same reference when nothing needs wrapping (empty
+ * canvas, or all nodes already sectioned) so it triggers no save.
  */
 export function wrapNodesInSection(canvas: CanvasData): CanvasData {
   const free = canvas.nodes.filter(n => n.type !== 'section' && !n.sectionId);
@@ -39,15 +42,13 @@ export function wrapNodesInSection(canvas: CanvasData): CanvasData {
 
   const seed = free.reduce((a, b) => (b.y < a.y || (b.y === a.y && b.x < a.x) ? b : a));
   const id = sectionIdFor(seed.id);
-  const x = minX - SECTION_PAD;
-  const y = minY - SECTION_HEADER_H;
   const section: SectionNode = {
     id,
     type: 'section',
-    x,
-    y,
-    width: maxX + SECTION_PAD - x,
-    height: maxY + SECTION_PAD - y,
+    x: minX,
+    y: minY,
+    width: maxX - minX + SECTION_OPEN_RIGHT,
+    height: maxY - minY,
     title: 'Section',
   };
 
