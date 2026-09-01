@@ -1739,21 +1739,26 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         let newTx = cx - (cx - tx) * scale;
         let newTy = cy - (cy - ty) * scale;
 
-        // - if a node is focused, ensure its centre stays within the viewport after zoom-in
+        // - keep the WHOLE focused node in view after zoom-in when it fits (pan just enough); if
+        //   it's larger than the viewport on an axis, leave that axis alone (can't fit it)
         const focused = nodesRef.current.find(n => n.selected && !isBandType(n.type));
         if (focused) {
-          const nw  = Number(focused.style?.width  ?? 200);
-          const nh  = Number(focused.style?.height ?? 150);
-          const ncx = focused.position.x + nw / 2;
-          const ncy = focused.position.y + nh / 2;
-          // - node centre in screen coords under the proposed new viewport
-          const sx  = ncx * newZoom + newTx;
-          const sy  = ncy * newZoom + newTy;
-          const PAD = 60; // px margin from viewport edge
-          if (sx < PAD)                           newTx += PAD - sx;
-          else if (sx > window.innerWidth  - PAD) newTx -= sx - (window.innerWidth  - PAD);
-          if (sy < PAD)                           newTy += PAD - sy;
-          else if (sy > window.innerHeight - PAD) newTy -= sy - (window.innerHeight - PAD);
+          const nw = Number(focused.style?.width  ?? 200);
+          const nh = Number(focused.style?.height ?? 150);
+          const M  = 40; // - px margin from the viewport edge
+          const W  = window.innerWidth, H = window.innerHeight;
+          const nx1 = focused.position.x * newZoom + newTx;
+          const ny1 = focused.position.y * newZoom + newTy;
+          const nx2 = (focused.position.x + nw) * newZoom + newTx;
+          const ny2 = (focused.position.y + nh) * newZoom + newTy;
+          if (nx2 - nx1 <= W - 2 * M) {
+            if (nx1 < M)          newTx += M - nx1;
+            else if (nx2 > W - M) newTx -= nx2 - (W - M);
+          }
+          if (ny2 - ny1 <= H - 2 * M) {
+            if (ny1 < M)          newTy += M - ny1;
+            else if (ny2 > H - M) newTy -= ny2 - (H - M);
+          }
         }
 
         const cZoomIn = clampViewportToOrigin(newTx, newTy, newZoom);
