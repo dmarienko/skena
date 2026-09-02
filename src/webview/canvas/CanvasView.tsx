@@ -3013,6 +3013,18 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     return () => window.removeEventListener('skena:focusNodeRequest', handler);
   }, [focusNodeById]);
 
+  // - initial camera (applied by React Flow on mount, before any of our effects run). For a canvas
+  //   with sections, open at the top-left so the topmost section's title sits flush at the canvas top
+  //   edge — no empty band above it. Otherwise use the saved viewport.
+  const sectionsAtMount = canvas.nodes.filter(n => n.type === 'section');
+  const initialViewport = sectionsAtMount.length
+    ? (() => {
+        const top = sectionsAtMount.reduce((a, b) => (b.y < a.y ? b : a));
+        const zoom = canvas.viewport?.zoom ?? 1;
+        return { x: -top.x * zoom, y: -top.y * zoom, zoom };
+      })()
+    : (canvas.viewport ?? { x: 0, y: 0, zoom: 1 });
+
   return (
     <HeatmapProvider nodes={nodes} edges={edges} visible={heatmapVisible} toggle={toggleHeatmap}>
     <ZoomLevelProvider>
@@ -3040,9 +3052,10 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         disableKeyboardA11y={true}
         onDragOver={onDragOver}
         onDrop={onDrop}
-        // - viewport persistence: restore saved position/zoom; fitView only when no saved viewport
-        defaultViewport={canvas.viewport ?? { x: 0, y: 0, zoom: 1 }}
-        fitView={!canvas.viewport}
+        // - viewport persistence: restore saved position/zoom; section canvases open top-left (above);
+        //   fitView only when there is neither a section nor a saved viewport
+        defaultViewport={initialViewport}
+        fitView={!canvas.viewport && sectionsAtMount.length === 0}
         // - save viewport to canvas JSON whenever the user stops panning/zooming
         onMoveStart={() => {
           // - promote nodes to GPU layers only while panning/zooming (see canvas.css);
