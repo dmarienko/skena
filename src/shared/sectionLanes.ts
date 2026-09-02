@@ -164,9 +164,10 @@ export function laneTopForY(lanes: SectionLane[], y: number): number {
 /**
  * Where a run's output cell goes: to the right of its code cell, vertically centred on it, but never
  * above the code cell's section top — that would make the output a member of the section above.
+ * `gap` = horizontal distance from the code cell; runs use 140, a manual pin 60.
  */
-export function outputCellGeom(lanes: SectionLane[], cell: { x: number; y: number; width: number; height: number }): { x: number; y: number; width: number; height: number } {
-  const w = 480, h = 320, gap = 140;
+export function outputCellGeom(lanes: SectionLane[], cell: { x: number; y: number; width: number; height: number }, gap = 140): { x: number; y: number; width: number; height: number } {
+  const w = 480, h = 320;
   const y = Math.max(laneTopForY(lanes, cell.y), Math.round(cell.y + (cell.height - h) / 2));
   return { x: Math.round(cell.x + cell.width + gap), y, width: w, height: h };
 }

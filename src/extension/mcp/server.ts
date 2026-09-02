@@ -745,7 +745,7 @@ async function canvasPinOutput(args: Record<string, unknown>): Promise<string> {
   if (args.sourceRef) {
     sourceNode = findNode(d, args.sourceRef as string);
     if (sourceNode) {
-      ({ x, y } = outputCellGeom(d.metadata?.sections ?? [], sourceNode));   // - W/H here match outputCellGeom's 480x320, so its x/y apply outright
+      ({ x, y } = outputCellGeom(d.metadata?.sections ?? [], sourceNode, 60));   // - W/H match outputCellGeom's 480x320; a manual pin keeps its 60px gap
     } else {
       const pos = autoPlace(d.nodes, W, H);
       x = pos.x; y = pos.y;
