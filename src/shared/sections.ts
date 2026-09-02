@@ -78,6 +78,23 @@ export function wrapNodesInSection(canvas: CanvasData, now: number = Date.now())
  * Sections with no members are left as-is. Returns the same reference when nothing changed (no
  * spurious save). `now` (epoch ms) is the backfill stamp; injectable so tests stay deterministic.
  */
+/**
+ * Set the saved viewport so the topmost section's top-left sits flush at the canvas top-left edge
+ * (no empty band above the title). Runs on the host load path so `defaultViewport` / restore already
+ * point there — the webview never has to fight React Flow re-applying a stale (gutter) viewport. Keeps
+ * the existing zoom. Returns the same reference when the viewport already matches (no spurious save).
+ */
+export function frameViewportToTopSection(canvas: CanvasData): CanvasData {
+  const secs = canvas.nodes.filter(n => n.type === 'section');
+  if (secs.length === 0) return canvas;
+  const top = secs.reduce((a, b) => (b.y < a.y ? b : a));
+  const zoom = canvas.viewport?.zoom ?? 1;
+  const viewport = { x: -top.x * zoom, y: -top.y * zoom, zoom };
+  const v = canvas.viewport;
+  if (v && v.x === viewport.x && v.y === viewport.y && v.zoom === viewport.zoom) return canvas;
+  return { ...canvas, viewport };
+}
+
 export function fitSectionsToContent(canvas: CanvasData, now: number = Date.now()): CanvasData {
   if (!canvas.nodes.some(n => n.type === 'section')) return canvas;
   let changed = false;
