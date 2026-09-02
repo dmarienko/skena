@@ -184,6 +184,9 @@ export function App(): JSX.Element {
           //   posts { type:'addKernel', position } → host QuickPick places the kernel where you look
           window.dispatchEvent(new CustomEvent('skena:addKernelRequest'));
           break;
+        case 'newSectionTrigger':
+          window.dispatchEvent(new CustomEvent('skena:newSection'));
+          break;
         case 'doDelete':
           window.dispatchEvent(new CustomEvent('skena:doDelete', { detail: { confirmed: msg.confirmed } }));
           break;

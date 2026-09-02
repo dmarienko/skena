@@ -117,6 +117,10 @@
       {
         "command": "skena.addKernel",
         "title": "Skena: Add Kernel"
+      },
+      {
+        "command": "skena.newSection",
+        "title": "Skena: New Section"
       }
     ],
     "keybindings": [

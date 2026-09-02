@@ -490,6 +490,7 @@ export type HostToWebview =
   | MsgRunStatus
   | MsgRunOutput
   | MsgAddKernelTrigger
+  | MsgNewSectionTrigger
   | MsgDoDelete
   | MsgCompleteResult
   | MsgInspectResult;
@@ -497,6 +498,7 @@ export type HostToWebview =
 // - host → webview: the "Skena: Add Kernel" command asks the webview to relay an
 // - addKernel message back to the host (where the QuickPick runs).
 export interface MsgAddKernelTrigger { type: 'addKernelTrigger'; }
+export interface MsgNewSectionTrigger { type: 'newSectionTrigger'; }
 // - host → webview: result of a confirmDelete modal (proceed only when confirmed)
 export interface MsgDoDelete { type: 'doDelete'; confirmed: boolean; }
 // - host → webview: kernel tab-completion matches for a pending complete request

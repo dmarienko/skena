@@ -734,6 +734,21 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     commitLanes(lanes.map(l => (l.id === id ? { ...l, folded: !l.folded } : l)));
   }, [lanes, commitLanes, pushHistory]);
 
+  // - a new lane starts at the viewport's top edge, snapped to the grid, so it splits wherever you
+  //   are looking. An empty title renders as the creation datetime.
+  useEffect(() => {
+    const handler = () => {
+      if (!rfRef.current) return;
+      const { y, zoom } = rfRef.current.getViewport();
+      const flowY = snapGrid(-y / zoom);
+      const now = Date.now();
+      pushHistory();
+      commitLanes([...lanes, { id: `sec-${now.toString(36)}`, y: flowY, createdAt: now }]);
+    };
+    window.addEventListener('skena:newSection', handler);
+    return () => window.removeEventListener('skena:newSection', handler);
+  }, [lanes, commitLanes, pushHistory]);
+
   const handleDeleteLane = useCallback((id: string) => {
     const target = derivedLanes.find(l => l.id === id);
     if (!target) return;

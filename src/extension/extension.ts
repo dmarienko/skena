@@ -138,6 +138,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const panel = SkenaEditorProvider.activePanel;
       if (!panel) { void vscode.window.showInformationMessage('Skena: open a canvas first.'); return; }
       panel.webview.postMessage({ type: 'addKernelTrigger' });
+    }),
+    vscode.commands.registerCommand('skena.newSection', () => {
+      const panel = SkenaEditorProvider.activePanel;
+      if (!panel) { void vscode.window.showInformationMessage('Skena: open a canvas first.'); return; }
+      panel.webview.postMessage({ type: 'newSectionTrigger' });
     })
   );
 
