@@ -198,7 +198,7 @@ dims to 55% and the chevron points right. Compacting folded sections is left to 
 | chevron | toggle `folded`, save |
 | title (double-click) | `TitleEditor` popover beside the segment: input, Enter saves, Esc cancels; empty → title cleared |
 | `▶` | host message `runSection { sectionId }` |
-| kernel dot | `KernelPicker` popover: this canvas's kernel nodes as `K1 · name · status` with their colour, plus "none". Pick → sets `kernelId` on the lane, saves. No kernel nodes → the popover says so and names the command *Skena: Add Kernel*. |
+| kernel dot | `KernelPicker` popover: this canvas's kernel nodes as `K1 name` with their colour dot (live status in a later phase), plus "none". Clicking the dot again closes it. Pick → sets `kernelId` on the lane, saves. No kernel nodes → the popover says so and names the command *Skena: Add Kernel*. |
 | `✕` | as today: host confirm, then delete the section, its member nodes and their edges; the next section absorbs the range; undoable |
 | `+` | append a section at the last derived lane's `bottom` (= its content bottom + `GRID`, snapped), pan so its top sits at the viewport top. `skena.newSection` command does the same (no context-menu entry). |
 | hover | tooltip (5.4) |
