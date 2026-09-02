@@ -243,8 +243,13 @@ cell with no edges has no upstream and simply runs.
 translateExtent = [[-ORIGIN_GUTTER, 0], [1e7, 1e7]]
 ```
 
-One-grid gutter on the left as today; flush at the top. `clampCam` stays as the single funnel for
-every viewport write and becomes exactly `clampViewportToOrigin` with the top at 0. Deleted:
+The rule is the pure `clampCameraToOrigin(x, y, zoom)` in `bounds.ts`, unit-tested; `clampCam` in
+`CanvasView.tsx` is a thin wrapper and the single funnel for every viewport write, including the
+New Section pan. React Flow's `fitView` bypasses `translateExtent` (d3 `zoom.transform` never calls
+`constrain`; measured at +359px above y = 0 on letterboxed content), so the three fit paths and the
+controls' fit button go through `fitClamped`: fit, then clamp the landed viewport. Deleting the first
+section re-parks the new topmost lane at `y = 0` (`parkFirstLaneAtOrigin`), so no empty band opens
+above it. Deleted:
 `firstLaneTopRef`, the lane term in `clampCam`, the lane-dependent `translateExtent`,
 `CameraTopGuard`. `MIN_ZOOM = 0.05` unchanged. The rail is outside the flow: no extent term, no
 zoom cap, no reservation.

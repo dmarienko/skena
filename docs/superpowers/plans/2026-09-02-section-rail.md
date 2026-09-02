@@ -1178,6 +1178,8 @@ git commit -m "feat: rail popovers — bind a section to a kernel node, rename a
 
 ### Task 8: camera returns to the origin rule; separators replace the stripes
 
+> Executed (`e96d94d`). Review added: the rule is `clampCameraToOrigin` in `bounds.ts` (tested); `fitClamped` wraps the three `fitView` paths and replaces the controls' fit button (`showFitView={false}` + a `ControlButton`); the New Section pan goes through `clampCam`; `parkFirstLaneAtOrigin` after a delete; `contentTop`/`contentLeft` dropped from `DerivedLane`.
+
 **Files:**
 - Create: `src/webview/canvas/SectionSeparators.tsx`
 - Delete: `src/webview/canvas/SectionLaneMarks.tsx`, `src/webview/canvas/CameraTopGuard.tsx`
