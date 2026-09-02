@@ -24,6 +24,7 @@ These are the user's stated requirements. Every one of them is a hard constraint
 | R7 | Sections are virtual — not stored as nodes in the canvas. |
 | R8 | No background fill on the section. The section is marked by a thin coloured stripe on the left, in the section's colour — the way Jupyter marks the active cell — plus a bottom border separating it from the next section. |
 | R9 | The fold control is a real icon, large enough to read at a glance. Not a text glyph. |
+| R10 | The left rail stripe is visible at all times, whatever the zoom level or pan position. |
 
 R1, R2 and R3 are only mutually satisfiable if the title is not bounded by a flow-space box, because
 any flow-space box shrinks to nothing as zoom decreases. The title is therefore positioned in screen
@@ -122,18 +123,30 @@ Two screen-space overlays, both reading the live transform. Neither stores or ca
 
 **No background fill** (R8). A lane is marked by two elements only:
 
-- **Left rail stripe** — a vertical bar at a fixed screen x near the viewport's left edge, spanning
-  the lane's territory: `top = lane.top * zoom + ty`, `height = (lane.bottom - lane.top) * zoom`.
+- **Left rail stripe** — a vertical bar marking the lane. **Always visible, at every zoom and every
+  pan position** (R10). It achieves that by being anchored in screen space on both axes:
+  - **Horizontally fixed**: drawn at a constant screen x near the viewport's left edge. Panning the
+    canvas sideways never moves it or takes it off screen.
+  - **Vertically clipped to the viewport**: the segment is the *intersection* of the lane's territory
+    with the visible area — `top = clamp(lane.top * zoom + ty, 0, viewportH)`,
+    `bottom = clamp(lane.bottom * zoom + ty, 0, viewportH)`. A lane larger than the screen therefore
+    shows a stripe down the full viewport height, so when you are zoomed inside a lane its colour is
+    always present.
+  - **Minimum height 24px**: at far zoom-out a territory can compute to a couple of pixels; the
+    segment is floored at 24px (grown about its centre) so it never shrinks into invisibility. This
+    is what makes it independent of scale.
+  - Drawn for every lane that intersects the viewport at all.
+
   4px wide, `border-radius: 2px`, colour = the lane's colour (`SECTION_RGB` until kernel tint lands),
-  full opacity. One segment per lane with a 6px gap between segments, so the boundaries read from the
-  rail alone. Fixed horizontally, so it stays visible however far right the canvas is panned. This is
-  the Jupyter active-cell marker, applied to a lane.
+  full opacity, with a 6px gap between adjacent segments so boundaries read from the rail alone. This
+  is the Jupyter active-cell marker, applied to a lane.
 - **Bottom border** — `1px solid rgba(SECTION_RGB, 0.3)` across the full viewport width at
   `lane.bottom`, separating a lane from the one below it.
 
 Both are `pointerEvents: none`, `zIndex: 0`. Folded → the territory collapses to the header's screen
-height and the rail segment collapses with it. A lane under 2px tall draws its rail segment but skips
-the border, so a lone hairline never reads as a stray line across the canvas.
+height; the rail segment still honours its 24px floor, so a folded lane keeps a visible marker. A
+lane under 2px tall draws its rail segment but skips the border, so a lone hairline never reads as a
+stray line across the canvas.
 
 There is no header strip in flow space. That construct is what forced the title to scale, and it is
 gone.
