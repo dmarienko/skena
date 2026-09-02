@@ -88,9 +88,13 @@ Upward: no rule. A node dragged above `y_i` is in section `i−1` by membership.
 top is the origin, already clamped by `clampToOrigin`.
 
 Output cells: a run places its output cell to the right of the code cell, vertically centred on it.
-That top edge can fall above the code cell's section top, which would make the output a member of
-the section above. The placement is therefore floored at the section top (`laneTopForY`), on the
-host and in the MCP alike; the growth rule then applies to the new cell.
+That top edge can fall above the code cell's section top (a default 700×300 cell at its section top
+puts the 320px output 10px above), which would make the output a member of the section above. The
+placement is one pure, tested function, `outputCellGeom(lanes, cell)`, floored at the section top,
+used at every site that creates an output cell: the host's two persist paths and its live-delta path,
+the MCP's run and its `canvas_pin_output`; the growth rule then applies to the new cell. It cannot
+fall into the section below: growth keeps `cell.y + cell.height + GRID ≤ next.y`, and the centred
+offset is always smaller than that.
 
 Applied in three places: the webview (one hook watching node geometry, so every placement path is
 covered without touching each), the MCP add/update writes, and the host's output-cell creation.

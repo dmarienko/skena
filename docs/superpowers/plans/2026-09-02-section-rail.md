@@ -1450,6 +1450,8 @@ git commit -m "feat: sections grow when a node is moved or resized past their bo
 
 ### Task 11: host and MCP writes respect section growth; output cells never land in the section above
 
+> Executed (`5ca3a9f` + fix). Review added: placement is the shared `outputCellGeom` (tested) at five sites — the host's live-delta path and the MCP's `canvas_pin_output` were unfloored; the MCP `!hostOwns` write folds growth back into `d` (a chain's next cell reuses it).
+
 **Files:**
 - Modify: `src/extension/mcp/server.ts` — import; `canvasAddNode` (~590), `canvasUpdateNode` (~624), the output geometry at ~826
 - Modify: `src/extension/editor-provider.ts` — the two output-cell sites (~1310 and ~1444)
