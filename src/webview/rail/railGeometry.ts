@@ -22,9 +22,9 @@ export interface RailSegment {
 }
 
 /**
- * Project every lane that intersects the viewport to a screen segment. A segment below
- * SEG_MIN_H is floored, but the floor only grows into free space — it never overlaps a
- * neighbour's segment — and a lane with no visible pixel is not emitted.
+ * Project every lane that intersects the viewport to a screen segment. Lanes must be contiguous
+ * and sorted — each lane's `bottom` is the next lane's `top`, as `deriveLanes` produces. Segments
+ * never overlap; the 28px floor is honoured where the neighbours' projected ranges allow it.
  */
 export function railSegments(
   lanes: { id: string; top: number; bottom: number }[],
@@ -49,7 +49,8 @@ export function railSegments(
       top = Math.max(bottom - SEG_MIN_H, ceiling);
     }
     if (bottom - top < 1) continue;
-    out.push({ id: r.id, top: Math.round(top), height: Math.round(bottom - top), clippedTop: r.rawTop < 0 });
+    const t = Math.round(top);
+    out.push({ id: r.id, top: t, height: Math.round(bottom) - t, clippedTop: r.rawTop < 0 });
   }
   return out;
 }
