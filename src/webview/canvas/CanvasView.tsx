@@ -51,11 +51,11 @@ import { PortalNodeComponent } from './nodes/PortalNode';
 import { NoderefNodeComponent } from './nodes/NoderefNode';
 import { KernelNodeComponent } from './nodes/KernelNode';
 import { CodeNodeComponent }   from './nodes/CodeNode';
-import { SectionNodeComponent } from './nodes/SectionNode';
 import { LabeledEdgeComponent } from './edges/LabeledEdge';
 import { HelperLines } from './HelperLines';
-import { SectionBands } from './SectionBands';
-import { SectionHeaders } from './SectionHeaders';
+import { SectionLaneMarks } from './SectionLaneMarks';
+import { SectionLaneHeaders } from './SectionLaneHeaders';
+import { deriveLanes, sortLanes, type SectionLane } from '../../shared/sectionLanes';
 import { CanvasSearch } from './CanvasSearch';
 import { MarksPanel  } from './MarksPanel';
 
@@ -70,11 +70,10 @@ const NODE_TYPES: NodeTypes = {
   noderef: NoderefNodeComponent,
   kernel: KernelNodeComponent,
   code:   CodeNodeComponent,
-  section: SectionNodeComponent,
 };
 
-// - band-type nodes (group, section) are visual backdrops: skipped by snapping, nav, overlap checks
-const isBandType = (t?: string): boolean => t === 'group' || t === 'section';
+// - band-type nodes (group) are visual backdrops: skipped by snapping, nav, overlap checks
+const isBandType = (t?: string): boolean => t === 'group';
 
 const EDGE_TYPES: EdgeTypes = {
   labeled: LabeledEdgeComponent,
@@ -104,8 +103,6 @@ function toFlowNode(cn: CanvasNode): Node {
     data:     { ...cn, accentColor: resolveColor(cn.color) },
     // - groups are non-interactive drag targets (they expand to contain nodes visually)
     draggable:   !isBandType(cn.type),
-    selectable:  cn.type !== 'section',
-    deletable:   cn.type !== 'section',
     zIndex:      isBandType(cn.type) ? -1 : 0,
   };
 }
@@ -631,9 +628,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
     // - restore saved viewport ONLY on the first load of this path (defaultViewport only fires on
     //   mount). On a reload keep the user's current camera — never snap to the stale disk viewport.
-    //   A section canvas is framed to the top-left by the effect below instead, so skip the restore.
-    const hasSection = canvas.nodes.some(n => n.type === 'section');
-    if (isInitialLoad && canvas.viewport && !hasSection) {
+    if (isInitialLoad && canvas.viewport) {
       const cRestore = clampViewportToOrigin(canvas.viewport.x, canvas.viewport.y, canvas.viewport.zoom);
       rfRef.current.setViewport({ x: cRestore.x, y: cRestore.y, zoom: canvas.viewport.zoom }, { duration: 0 });
     }
@@ -660,7 +655,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         //   external reload (agent edit, cell-run output write) doesn't pan / steal focus. Skip when
         //   the target is ALREADY selected — else every output-write reload re-focuses it and the
         //   ring visibly blinks. Only the very first open with no saved viewport may pan to focus.
-        if (canvas.viewport || !isInitialLoad || hasSection) {
+        if (canvas.viewport || !isInitialLoad) {
           const already = nodesRef.current.find(n => n.id === focusId)?.selected === true;
           if (!already) {
             setNodes(nds => nds.map(n => ({ ...n, selected: n.id === focusId })));
@@ -675,22 +670,6 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   // - focusNodeById / pickViewportNode are stable useCallbacks; declared below
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canvas, canvasPath, setNodes, setEdges]);
-
-  // - frame a freshly-opened section canvas to the top-left so the topmost section's title sits flush
-  //   at the canvas top edge (no empty band above it). The migrated section canvas arrives async, AFTER
-  //   mount, so defaultViewport / first-load framing miss it — this fires once per path, when the
-  //   section actually lands in `nodes`, and never again for that path (so it can't fight user panning).
-  const framedPathRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!rfRef.current || framedPathRef.current === canvasPath) return;
-    const secs = nodes.filter(n => n.type === 'section');
-    if (secs.length === 0) return;
-    framedPathRef.current = canvasPath;
-    const top = secs.reduce((a, b) => (b.position.y < a.position.y ? b : a));
-    const zoom = canvas.viewport?.zoom ?? rfRef.current.getViewport().zoom ?? 1;
-    // - nudge into place; the dynamic translateExtent (top-left = the top section) holds it there.
-    rfRef.current.setViewport({ x: -top.position.x * zoom, y: -top.position.y * zoom, zoom }, { duration: 0 });
-  }, [nodes, canvasPath, canvas]);
 
   // - debounced save — reads canvasRef.current at fire time so it always sends
   // - the latest state even if an external write (MCP) updated canvasRef between
@@ -710,6 +689,65 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     ];
     redoStackRef.current = []; // - new action clears redo
   }, []); // - canvasRef is a ref, always current
+
+  // - lanes live in canvas metadata; the webview owns fold/create/delete and the host merges them back
+  const [lanes, setLanes] = useState<SectionLane[]>(canvas.metadata?.sections ?? []);
+  useEffect(() => { setLanes(canvas.metadata?.sections ?? []); }, [canvas]);
+
+  // - derived every render from the LIVE node array, so dragging a node moves its lane on the same
+  //   frame. Nothing about a lane is stored except its y.
+  const derivedLanes = useMemo(
+    () => deriveLanes(nodes.map(n => ({
+      id: n.id,
+      x: n.position.x,
+      y: n.position.y,
+      width: Number(n.width ?? n.style?.width ?? 0),
+      height: Number(n.height ?? n.style?.height ?? 0),
+    })), lanes),
+    [nodes, lanes],
+  );
+
+  // - fold is derived, never a one-shot mutation, so it survives a reload
+  const hiddenByFold = useMemo(() => {
+    const ids = new Set<string>();
+    for (const l of derivedLanes) if (l.folded) for (const id of l.memberIds) ids.add(id);
+    return ids;
+  }, [derivedLanes]);
+  const rfNodes = useMemo(
+    () => (hiddenByFold.size === 0 ? nodes : nodes.map(n => (hiddenByFold.has(n.id) ? { ...n, hidden: true } : n))),
+    [nodes, hiddenByFold],
+  );
+
+  // - persist a lane edit: update local state, mirror into canvasRef, schedule the save
+  const commitLanes = useCallback((next: SectionLane[]) => {
+    const sorted = sortLanes(next);
+    setLanes(sorted);
+    canvasRef.current = {
+      ...canvasRef.current,
+      metadata: { ...canvasRef.current.metadata, sections: sorted },
+    };
+    scheduleSave();
+  }, [scheduleSave]);
+
+  const handleFoldLane = useCallback((id: string) => {
+    pushHistory();
+    commitLanes(lanes.map(l => (l.id === id ? { ...l, folded: !l.folded } : l)));
+  }, [lanes, commitLanes, pushHistory]);
+
+  const handleDeleteLane = useCallback((id: string) => {
+    const target = derivedLanes.find(l => l.id === id);
+    if (!target) return;
+    pushHistory();
+    const doomed = new Set(target.memberIds);
+    setNodes(nds => nds.filter(n => !doomed.has(n.id)));
+    setEdges(eds => eds.filter(e => !doomed.has(e.source) && !doomed.has(e.target)));
+    canvasRef.current = {
+      ...canvasRef.current,
+      nodes: canvasRef.current.nodes.filter(n => !doomed.has(n.id)),
+      edges: canvasRef.current.edges.filter(e => !doomed.has(e.fromNode) && !doomed.has(e.toNode)),
+    };
+    commitLanes(lanes.filter(l => l.id !== id));
+  }, [derivedLanes, lanes, commitLanes, pushHistory, setNodes, setEdges]);
 
   // - restore nodes/edges from a history entry
   const applyHistoryState = useCallback((entry: HistoryEntry) => {
@@ -1280,40 +1318,6 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const handleMenuClose = useCallback(() => setContextMenu(null), []);
 
   // - fold/unfold a section: hide its member nodes and mark it folded (the band collapses to the header)
-  const handleFoldSection = useCallback((sectionId: string) => {
-    const section = canvasRef.current.nodes.find(n => n.id === sectionId && n.type === 'section');
-    if (!section) return;
-    const folding = !(section as { folded?: boolean }).folded;
-    const memberIds = new Set(canvasRef.current.nodes.filter(n => n.sectionId === sectionId).map(n => n.id));
-    pushHistory();
-    setNodes(nds => nds.map(n => {
-      if (n.id === sectionId) return { ...n, data: { ...n.data, folded: folding } };
-      if (memberIds.has(n.id)) return { ...n, hidden: folding };
-      return n;
-    }));
-    canvasRef.current = {
-      ...canvasRef.current,
-      nodes: canvasRef.current.nodes.map(n => (n.id === sectionId ? ({ ...n, folded: folding } as CanvasNode) : n)),
-    };
-    scheduleSave();
-  }, [pushHistory, setNodes, scheduleSave]);
-
-  // - delete a whole section: the band plus every node it owns and edges touching them (undo-able)
-  const handleDeleteSection = useCallback((sectionId: string) => {
-    const section = canvasRef.current.nodes.find(n => n.id === sectionId && n.type === 'section');
-    if (!section) return;
-    const ids = new Set(canvasRef.current.nodes.filter(n => n.id === sectionId || n.sectionId === sectionId).map(n => n.id));
-    pushHistory();
-    setNodes(nds => nds.filter(n => !ids.has(n.id)));
-    setEdges(eds => eds.filter(e => !ids.has(e.source) && !ids.has(e.target)));
-    canvasRef.current = {
-      ...canvasRef.current,
-      nodes: canvasRef.current.nodes.filter(n => !ids.has(n.id)),
-      edges: canvasRef.current.edges.filter(e => !ids.has(e.fromNode) && !ids.has(e.toNode)),
-    };
-    scheduleSave();
-  }, [pushHistory, setNodes, setEdges, scheduleSave]);
-
   // - read flow position from ref — never goes stale regardless of contextMenu state
   const handleMenuAddText = useCallback(() => {
     const { flowX, flowY } = contextMenuFlowPos.current;
@@ -3014,15 +3018,16 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     return () => window.removeEventListener('skena:focusNodeRequest', handler);
   }, [focusNodeById]);
 
-  // - pan bounds. For a section canvas the top-left is pinned to the TOPMOST section's top-left, so the
-  //   camera physically cannot rise above the title (React Flow rests the viewport there) — that is what
-  //   keeps the title flush at the canvas edge, no empty band above it. Memoized so the array ref only
-  //   changes when the bound actually moves (an inline array re-applies every render → churn).
-  const topSec = nodes.filter(n => n.type === 'section').reduce<Node | null>((a, b) => (a && a.position.y <= b.position.y ? a : b), null);
-  const extentTop: [number, number] = topSec ? [topSec.position.x, topSec.position.y] : [-ORIGIN_GUTTER, -ORIGIN_GUTTER];
+  // - pan bounds: allow a fixed flow-space margin above the first lane so its header (drawn above the
+  //   content, in screen space) is never clipped. A zoom-derived margin would be exact, but reading
+  //   zoom here re-renders every node on every zoom step — a perf trap this canvas has hit before.
+  //   800 units keeps >=40px of room down to zoom 0.05, above the ~34px the header needs.
+  const firstLaneY = derivedLanes.length ? derivedLanes[0].top : -ORIGIN_GUTTER;
+  const extentTopY = derivedLanes.length ? firstLaneY - 800 : -ORIGIN_GUTTER;
+  const extentTopX = derivedLanes.length ? Math.min(0, derivedLanes[0].contentLeft) : -ORIGIN_GUTTER;
   const translateExtent = useMemo<[[number, number], [number, number]]>(
-    () => [extentTop, [1e7, 1e7]],
-    [extentTop[0], extentTop[1]],
+    () => [[extentTopX, extentTopY], [1e7, 1e7]],
+    [extentTopX, extentTopY],
   );
 
   return (
@@ -3031,7 +3036,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     <div ref={wrapperRef} style={{ width: '100%', height: '100%' }} onContextMenu={handleContextMenu}>
       <ReactFlow
         proOptions={{ hideAttribution: true }}
-        nodes={nodes}
+        nodes={rfNodes}
         edges={edges}
         nodeTypes={NODE_TYPES}
         edgeTypes={EDGE_TYPES}
@@ -3074,8 +3079,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         elevateEdgesOnSelect
       >
         <Background variant={BackgroundVariant.Dots} gap={GRID} size={1} color="var(--vscode-editorIndentGuide-background)" />
-        <SectionBands />
-        <SectionHeaders onFold={handleFoldSection} onDelete={handleDeleteSection} />
+        <SectionLaneMarks lanes={derivedLanes} height={wrapperRef.current?.clientHeight ?? 0} />
+        <SectionLaneHeaders lanes={derivedLanes} onFold={handleFoldLane} onDelete={handleDeleteLane} />
         <HelperLines horizontal={helperLines.horizontal} vertical={helperLines.vertical} />
         <Controls showInteractive={false}>
           {/* - minimap toggle button — appended after the built-in zoom/fit buttons */}
