@@ -53,9 +53,8 @@ import { KernelNodeComponent } from './nodes/KernelNode';
 import { CodeNodeComponent }   from './nodes/CodeNode';
 import { LabeledEdgeComponent } from './edges/LabeledEdge';
 import { HelperLines } from './HelperLines';
-import { SectionLaneMarks } from './SectionLaneMarks';
+import { SectionSeparators } from './SectionSeparators';
 import { SectionRail, type RailKernel } from '../rail/SectionRail';
-import { CameraTopGuard } from './CameraTopGuard';
 import { deriveLanes, sortLanes, type SectionLane } from '../../shared/sectionLanes';
 import { CanvasSearch } from './CanvasSearch';
 import { MarksPanel  } from './MarksPanel';
@@ -79,6 +78,9 @@ const isBandType = (t?: string): boolean => t === 'group';
 
 // - the title is pinned outside the canvas area now, so no zoom is unsafe: back to the original floor
 const MIN_ZOOM = 0.05;
+
+// - pan bounds: one grid left of the origin, flush at the top (the rail is outside the flow)
+const TRANSLATE_EXTENT: [[number, number], [number, number]] = [[-ORIGIN_GUTTER, 0], [1e7, 1e7]];
 
 const EDGE_TYPES: EdgeTypes = {
   labeled: LabeledEdgeComponent,
@@ -635,16 +637,10 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     //   mount). On a reload keep the user's current camera — never snap to the stale disk viewport.
     if (isInitialLoad && canvas.viewport) {
       const zoom = Math.max(canvas.viewport.zoom, MIN_ZOOM);
+      // - React Flow applies a restored viewport verbatim (translateExtent only bounds interactive
+      //   panning), so it goes through clampCam like every other camera write
       const cRestore = clampCam(canvas.viewport.x, canvas.viewport.y, zoom);
-      // - the bounded canvas keeps one grid of margin above the origin, but on a sectioned canvas the
-      //   first lane IS the top: showing that margin opens with an empty strip above the first
-      //   section. React Flow applies a restored viewport verbatim (translateExtent only bounds
-      //   interactive panning), so cap it here.
-      const firstLaneY = canvas.metadata?.sections?.length
-        ? Math.min(...canvas.metadata.sections.map(l => l.y))
-        : undefined;
-      const y = firstLaneY === undefined ? cRestore.y : Math.min(cRestore.y, -firstLaneY * zoom);
-      rfRef.current.setViewport({ x: cRestore.x, y, zoom }, { duration: 0 });
+      rfRef.current.setViewport({ x: cRestore.x, y: cRestore.y, zoom }, { duration: 0 });
     }
 
     // - fitView / focus: defer so the layout pass is done before we query positions
@@ -723,19 +719,14 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   useEffect(() => { setLanes(canvas.metadata?.sections ?? []); }, [canvas]);
   const lanesRef = useRef<SectionLane[]>(lanes);
   useEffect(() => { lanesRef.current = lanes; }, [lanes]);
-  // - top of the first lane, for the camera clamp below; a ref so clampCam stays stable
-  const firstLaneTopRef = useRef<number | null>(null);
-
   /**
-   * The single rule every camera write obeys. clampViewportToOrigin leaves one grid of margin above
-   * the origin (the bounded-canvas gutter). On a sectioned canvas the first lane IS the top, so that
-   * margin shows as an empty strip above the first section — cap it away. Twelve call sites write the
-   * viewport; they all go through here, or the gap comes back through whichever one was missed.
+   * The single rule every camera write obeys: one grid of margin left of the origin, flush at the
+   * top. The rail lives outside the flow, so nothing above y = 0 ever needs to be shown. Twelve call
+   * sites write the viewport; they all go through here.
    */
   const clampCam = useCallback((x: number, y: number, zoom: number): { x: number; y: number } => {
     const c = clampViewportToOrigin(x, y, zoom);
-    const top = firstLaneTopRef.current;
-    return { x: c.x, y: top === null ? c.y : Math.min(c.y, -top * zoom) };
+    return { x: c.x, y: Math.min(c.y, 0) };
   }, []);
   // - assigned once confirmDeleteViaHost exists (declared further down); see handleDeleteLane
   const confirmLaneDeleteRef = useRef<((ids: string[], reason: string) => Promise<boolean>) | null>(null);
@@ -752,10 +743,6 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     })), lanes),
     [nodes, lanes],
   );
-
-  useEffect(() => {
-    firstLaneTopRef.current = derivedLanes.length ? derivedLanes[0].top : null;
-  }, [derivedLanes]);
 
   // - fold is derived, never a one-shot mutation, so it survives a reload
   const hiddenByFold = useMemo(() => {
@@ -3129,15 +3116,6 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     return () => window.removeEventListener('skena:focusNodeRequest', handler);
   }, [focusNodeById]);
 
-  // - pan bounds: stop exactly at the first lane's top, so there is never empty space above the first
-  //   section. The header sits INSIDE the lane, so no margin is needed above it.
-  const extentTopY = derivedLanes.length ? derivedLanes[0].top : -ORIGIN_GUTTER;
-  const extentTopX = -ORIGIN_GUTTER;
-  const translateExtent = useMemo<[[number, number], [number, number]]>(
-    () => [[extentTopX, extentTopY], [1e7, 1e7]],
-    [extentTopX, extentTopY],
-  );
-
   return (
     <HeatmapProvider nodes={nodes} edges={edges} visible={heatmapVisible} toggle={toggleHeatmap}>
     <ZoomLevelProvider>
@@ -3186,14 +3164,13 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         }}
         minZoom={MIN_ZOOM}
         maxZoom={3}
-        translateExtent={translateExtent}
+        translateExtent={TRANSLATE_EXTENT}
         deleteKeyCode="Delete"
         multiSelectionKeyCode="Shift"
         elevateEdgesOnSelect
       >
         <Background variant={BackgroundVariant.Dots} gap={GRID} size={1} color="var(--vscode-editorIndentGuide-background)" />
-        <CameraTopGuard topFlowY={derivedLanes.length ? derivedLanes[0].top : null} />
-        <SectionLaneMarks lanes={derivedLanes} />
+        <SectionSeparators lanes={derivedLanes} />
         <HelperLines horizontal={helperLines.horizontal} vertical={helperLines.vertical} />
         <Controls showInteractive={false}>
           {/* - minimap toggle button — appended after the built-in zoom/fit buttons */}
