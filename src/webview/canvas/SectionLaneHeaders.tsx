@@ -7,6 +7,10 @@ import type { DerivedLane } from '../../shared/sectionLanes';
 export const HEADER_H = 26;
 /** - gap kept between the header's bottom edge and the lane's topmost node */
 export const HEADER_PAD = 8;
+/** - fixed screen x, just right of the rail stripe: the lane spans the full width, so its header
+ *    belongs at the lane's left edge — not wherever the leftmost node happens to sit. Fixed in screen
+ *    space, so panning sideways never carries the title off screen. */
+export const HEADER_LEFT = 22;
 
 /**
  * Screen y of a lane's header. It sits at the lane's TOP BOUNDARY — the header labels the lane, so it
@@ -40,21 +44,19 @@ export function SectionLaneHeaders({ lanes, onFold, onDelete }: {
   onFold: (id: string) => void;
   onDelete: (id: string) => void;
 }): JSX.Element {
-  const tx = useStore(s => s.transform[0]);
   const ty = useStore(s => s.transform[1]);
   const zoom = useStore(s => s.transform[2]);
   return (
     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 6 }}>
       {lanes.map(l => {
         const top = laneHeaderTop(l, ty, zoom);
-        const left = Math.max(l.contentLeft * zoom + tx, 0);
         const hasTitle = !!l.title?.trim();
         return (
           <div
             key={l.id}
             style={{
               position: 'absolute',
-              left,
+              left: HEADER_LEFT,
               top,
               height: HEADER_H,
               display: 'flex',
