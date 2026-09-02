@@ -1,12 +1,23 @@
 import React from 'react';
 import { useStore } from '@xyflow/react';
-import { LABEL_TEXT_COLOR, SECTION_RGB } from './palette';
+import { LABEL_TEXT_COLOR, kernelColor } from './palette';
 import type { DerivedLane } from '../../shared/sectionLanes';
 
 /** - the header's fixed screen height; it NEVER scales with zoom */
 export const HEADER_H = 26;
-/** - gap between the header's bottom edge and the lane's topmost node */
+/** - gap kept between the header's bottom edge and the lane's topmost node */
 export const HEADER_PAD = 8;
+
+/**
+ * Screen y of a lane's header. It sits at the lane's TOP BOUNDARY — the header labels the lane, so it
+ * belongs to the boundary, not to whichever node happens to be topmost. The second term is a floor:
+ * when zooming out shrinks the gap between the boundary and the first node below the header's own
+ * height, the header lifts above the content instead of landing on it. So it reads as a section
+ * heading at working zooms and still never covers a node at bird's-eye.
+ */
+export function laneHeaderTop(l: DerivedLane, ty: number, zoom: number): number {
+  return Math.min(l.top * zoom + ty, l.contentTop * zoom + ty - HEADER_H - HEADER_PAD);
+}
 
 const MONO = 'var(--vscode-editor-font-family), "IBM Plex Mono", monospace';
 
@@ -21,9 +32,8 @@ function fmtDateTime(ms: number): string {
  * SectionLaneHeaders — one fixed-size header per lane: fold · `S1:` · title · time · kernel · delete.
  *
  * The header is drawn in screen space at a constant size, so it neither scales nor hides at any zoom.
- * Its BOTTOM edge is anchored HEADER_PAD above the lane's topmost node, so it cannot cover that node
- * however far you zoom out — it is bounded by nothing, which is what makes all three of "fixed size",
- * "always visible" and "never overlaps a node" hold at once.
+ * It sits at the lane's top boundary (see laneHeaderTop), which also floors it above the content, so
+ * "fixed size", "always visible" and "never overlaps a node" all hold at once.
  */
 export function SectionLaneHeaders({ lanes, onFold, onDelete }: {
   lanes: DerivedLane[];
@@ -36,7 +46,7 @@ export function SectionLaneHeaders({ lanes, onFold, onDelete }: {
   return (
     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 6 }}>
       {lanes.map(l => {
-        const top = l.contentTop * zoom + ty - HEADER_H - HEADER_PAD;
+        const top = laneHeaderTop(l, ty, zoom);
         const left = Math.max(l.contentLeft * zoom + tx, 0);
         const hasTitle = !!l.title?.trim();
         return (
@@ -87,7 +97,7 @@ export function SectionLaneHeaders({ lanes, onFold, onDelete }: {
                 color: 'var(--vscode-descriptionForeground)',
                 border: '1px solid var(--vscode-panel-border)', borderRadius: 999, padding: '2px 8px',
               }}>
-                <span style={{ width: 8, height: 8, borderRadius: 4, background: `rgb(${SECTION_RGB})` }} />
+                <span style={{ width: 8, height: 8, borderRadius: 4, background: kernelColor(l.colorIndex ?? l.index) }} />
                 {l.kernelId}
               </span>
             )}

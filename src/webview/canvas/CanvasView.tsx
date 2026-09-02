@@ -734,20 +734,26 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     commitLanes(lanes.map(l => (l.id === id ? { ...l, folded: !l.folded } : l)));
   }, [lanes, commitLanes, pushHistory]);
 
-  // - a new lane starts at the viewport's top edge, snapped to the grid, so it splits wherever you
-  //   are looking. An empty title renders as the creation datetime.
+  // - a new lane is APPENDED below the last one, past its content: sections are an append-only stack,
+  //   so creating one is the next step in the notebook and never renumbers what already exists. The
+  //   camera then pans to it, otherwise a lane created off-screen looks like nothing happened.
   useEffect(() => {
     const handler = () => {
       if (!rfRef.current) return;
-      const { y, zoom } = rfRef.current.getViewport();
-      const flowY = snapGrid(-y / zoom);
+      const last = derivedLanes[derivedLanes.length - 1];
+      const flowY = snapGrid(last ? last.bottom : 0);
       const now = Date.now();
       pushHistory();
-      commitLanes([...lanes, { id: `sec-${now.toString(36)}`, y: flowY, createdAt: now }]);
+      commitLanes([
+        ...lanes,
+        { id: `sec-${now.toString(36)}`, y: flowY, createdAt: now, colorIndex: lanes.length },
+      ]);
+      const { x, zoom } = rfRef.current.getViewport();
+      rfRef.current.setViewport({ x, y: -(flowY - GRID) * zoom, zoom }, { duration: 250 });
     };
     window.addEventListener('skena:newSection', handler);
     return () => window.removeEventListener('skena:newSection', handler);
-  }, [lanes, commitLanes, pushHistory]);
+  }, [lanes, derivedLanes, commitLanes, pushHistory]);
 
   const handleDeleteLane = useCallback((id: string) => {
     const target = derivedLanes.find(l => l.id === id);

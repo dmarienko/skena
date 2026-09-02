@@ -1,7 +1,7 @@
 import React from 'react';
 import { useStore } from '@xyflow/react';
-import { SECTION_RGB } from './palette';
-import { HEADER_H, HEADER_PAD } from './SectionLaneHeaders';
+import { kernelColor } from './palette';
+import { HEADER_H, HEADER_PAD, laneHeaderTop } from './SectionLaneHeaders';
 import type { DerivedLane } from '../../shared/sectionLanes';
 
 // - rail geometry, all in screen px
@@ -27,11 +27,9 @@ export function SectionLaneMarks({ lanes }: { lanes: DerivedLane[] }): JSX.Eleme
   return (
     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0 }}>
       {lanes.map(l => {
-        // - the stripe spans what you can actually SEE of the lane: it starts level with the header
-        //   (which is anchored above the topmost node, not at the lane's territory top) and runs to
-        //   the lane's bottom. Starting it at l.top instead would leave the stripe stranded far above
-        //   its own header whenever the first node sits well below where the lane begins.
-        const rawTop = l.contentTop * zoom + ty - HEADER_H - HEADER_PAD;
+        // - the stripe starts level with the header (same anchor helper, so the two can never drift
+        //   apart) and runs to the lane's bottom
+        const rawTop = laneHeaderTop(l, ty, zoom);
         // - a folded lane shows only its header, so the stripe collapses to that height
         const rawBottom = l.folded ? rawTop + HEADER_H + HEADER_PAD : l.bottom * zoom + ty;
         if (height <= 0 || rawBottom < 0 || rawTop > height) return null;  // - entirely off screen
@@ -45,6 +43,7 @@ export function SectionLaneMarks({ lanes }: { lanes: DerivedLane[] }): JSX.Eleme
           top = Math.max(bottom - RAIL_MIN_H, 0);
         }
 
+        const color = kernelColor(l.colorIndex ?? l.index);
         const drawBorder = rawBottom > 0 && rawBottom < height && rawBottom - rawTop >= 2;
         return (
           <React.Fragment key={l.id}>
@@ -56,7 +55,7 @@ export function SectionLaneMarks({ lanes }: { lanes: DerivedLane[] }): JSX.Eleme
                 width: RAIL_W,
                 height: bottom - top,
                 borderRadius: RAIL_W / 2,
-                background: `rgb(${SECTION_RGB})`,
+                background: color,
               }}
             />
             {drawBorder && (
@@ -67,7 +66,7 @@ export function SectionLaneMarks({ lanes }: { lanes: DerivedLane[] }): JSX.Eleme
                   right: 0,
                   top: rawBottom,
                   height: 0,
-                  borderBottom: `1px solid rgba(${SECTION_RGB}, 0.3)`,
+                  borderBottom: `1px solid ${color}4d`,   // - the lane's own colour at 30%
                 }}
               />
             )}

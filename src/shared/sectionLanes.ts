@@ -20,6 +20,8 @@ export interface SectionLane {
   createdAt: number;
   /** - true → members are hidden and the lane collapses to its header */
   folded?: boolean;
+  /** - index into the shared colour palette; gives each lane its own stripe colour */
+  colorIndex?: number;
   /** - tint + kernel pill; wired in a later phase */
   kernelId?: string;
 }
@@ -115,9 +117,9 @@ export function migrateSections(canvas: CanvasData, now: number): CanvasData {
   const needsSeed = !existing?.length && legacy.length === 0 && canvas.nodes.length > 0;
   if (legacy.length === 0 && !hasMembership && !needsSeed) return canvas;
 
-  const converted: SectionLane[] = legacy.map(n => {
+  const converted: SectionLane[] = legacy.map((n, i) => {
     const s = n as CanvasNode & { title?: string; createdAt?: number; folded?: boolean };
-    const lane: SectionLane = { id: s.id, y: s.y, createdAt: s.createdAt ?? now };
+    const lane: SectionLane = { id: s.id, y: s.y, createdAt: s.createdAt ?? now, colorIndex: i };
     // - 'Section' was the old placeholder; drop it so the header falls back to the datetime
     if (s.title && s.title !== 'Section') lane.title = s.title;
     if (s.folded) lane.folded = true;
@@ -125,7 +127,7 @@ export function migrateSections(canvas: CanvasData, now: number): CanvasData {
   });
 
   const sections = sortLanes([...(existing ?? []), ...converted]);
-  if (sections.length === 0) sections.push({ id: `sec-${now.toString(36)}`, y: 0, createdAt: now });
+  if (sections.length === 0) sections.push({ id: `sec-${now.toString(36)}`, y: 0, createdAt: now, colorIndex: 0 });
 
   const nodes = canvas.nodes
     .filter(n => (n as { type?: string }).type !== 'section')
