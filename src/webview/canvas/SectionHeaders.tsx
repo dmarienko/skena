@@ -36,13 +36,13 @@ export function SectionHeaders({ onFold, onDelete }: {
         .filter(n => n.type === 'section')
         .map(s => {
           const d = s.data as { title?: string; nodeLabel?: string; folded?: boolean; createdAt?: number };
-          // - anchored to the section's header row; scrolls with the canvas. Row height = the filled
-          //   strip (the lane in screen space), and the content is centred in it. When the lane shrinks
-          //   below the header's own height (far zoom-out / bird's-eye) the title can't fit without
-          //   overlapping the nodes, so hide it — the section still reads as its coloured band.
+          // - anchored to the section's header row; scrolls with the canvas. Row height = the lane in
+          //   screen space. While the lane is tall enough the header keeps its normal screen size; once
+          //   it is thinner (zoom-out) the content scales down to fit the lane rather than disappearing.
+          //   Bounded by the lane, it can never overlap the nodes (they start at the lane's bottom edge).
           const top = s.position.y * zoom + ty;
           const rowH = SECTION_HEADER_LANE * zoom;
-          if (rowH < HEADER_H) return null;
+          const k = Math.min(1, rowH / HEADER_H);
           const left = Math.max(s.position.x * zoom + tx, 0);
           const label = d.title?.trim()
             ? d.title
@@ -59,8 +59,8 @@ export function SectionHeaders({ onFold, onDelete }: {
                 height: rowH,
                 display: 'flex',
                 alignItems: 'center',
-                gap: 9,
-                padding: '0 12px',
+                gap: 9 * k,
+                padding: `0 ${12 * k}px`,
                 pointerEvents: 'auto',
                 fontFamily: MONO,
               }}
@@ -71,20 +71,20 @@ export function SectionHeaders({ onFold, onDelete }: {
                 style={{ ...ctl, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
                 <svg
-                  width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  width={13 * k} height={13 * k} viewBox="0 0 24 24" fill="none" stroke="currentColor"
                   strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
                   style={{ display: 'block', transform: d.folded ? 'rotate(-90deg)' : 'none', transition: 'transform 130ms ease' }}
                 >
                   <polyline points="6 9 12 15 18 9" />
                 </svg>
               </button>
-              <span style={{ fontSize: 12.5, fontWeight: 600, letterSpacing: '-0.01em', color: 'var(--vscode-foreground)', whiteSpace: 'nowrap' }}>
+              <span style={{ fontSize: 12.5 * k, fontWeight: 600, letterSpacing: '-0.01em', color: 'var(--vscode-foreground)', whiteSpace: 'nowrap' }}>
                 {label}
               </span>
-              <span style={{ fontSize: 11, fontWeight: 600, color: `rgba(${SECTION_RGB}, 0.9)` }}>
+              <span style={{ fontSize: 11 * k, fontWeight: 600, color: `rgba(${SECTION_RGB}, 0.9)` }}>
                 {d.nodeLabel ? `#${d.nodeLabel}` : ''}
               </span>
-              <button title="delete section and its nodes" onClick={() => onDelete(s.id)} style={{ ...ctl, marginLeft: 4 }}>
+              <button title="delete section and its nodes" onClick={() => onDelete(s.id)} style={{ ...ctl, fontSize: 12 * k, marginLeft: 4 * k }}>
                 ✕
               </button>
             </div>

@@ -27,10 +27,10 @@ export function SectionBands(): JSX.Element {
           const top = s.position.y * zoom + ty;
           const fullH = Number(s.height ?? s.style?.height ?? 0) * zoom;
           const stripH = SECTION_HEADER_LANE * zoom;
-          // - at bird's-eye the strip is thinner than the header (title is hidden then): drop the filled
-          //   header strip and ALL divider lines so no stray line cuts across the tiny nodes. Just the
-          //   faint band remains, marking the section without clutter.
-          const birdsEye = stripH < HEADER_H;
+          // - the strip is exactly the lane in screen space, so its divider always lands on the lane's
+          //   bottom edge (where the nodes start) and never crosses them. Sub-pixel strips are dropped:
+          //   at that size the border would be the only thing left and would read as a stray line.
+          const birdsEye = stripH < 2;
           const bodyH = folded ? stripH : fullH;
           if (bodyH <= 0) return null;
           return (
