@@ -1,8 +1,9 @@
 import React from 'react';
 import { useStore } from '@xyflow/react';
 import { SECTION_RGB } from './palette';
+import { SECTION_HEADER_LANE } from '../../shared/sections';
 
-// - fixed screen height so the header never scales with zoom (spec: drawn in screen space)
+// - the header content's own height; the strip it sits in is at least this tall (see the row height)
 export const HEADER_H = 26;
 
 const MONO = 'var(--vscode-editor-font-family), "IBM Plex Mono", monospace';
@@ -35,8 +36,10 @@ export function SectionHeaders({ onFold, onDelete }: {
         .filter(n => n.type === 'section')
         .map(s => {
           const d = s.data as { title?: string; nodeLabel?: string; folded?: boolean; createdAt?: number };
-          // - anchored to the top of the section's reserved header lane; scrolls with the canvas
+          // - anchored to the section's header row; scrolls with the canvas. Row height matches the
+          //   filled strip so the content sits centered in it (never thinner than the header itself).
           const top = s.position.y * zoom + ty;
+          const rowH = Math.max(SECTION_HEADER_LANE * zoom, HEADER_H);
           const left = Math.max(s.position.x * zoom + tx, 0);
           const label = d.title?.trim()
             ? d.title
@@ -50,7 +53,7 @@ export function SectionHeaders({ onFold, onDelete }: {
                 position: 'absolute',
                 left,
                 top,
-                height: HEADER_H,
+                height: rowH,
                 display: 'flex',
                 alignItems: 'center',
                 gap: 9,

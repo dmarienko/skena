@@ -1,7 +1,7 @@
 import React from 'react';
 import { useStore } from '@xyflow/react';
 import { SECTION_RGB } from './palette';
-import { GRID } from '../../shared/grid';
+import { SECTION_HEADER_LANE } from '../../shared/sections';
 import { HEADER_H } from './SectionHeaders';
 
 /**
@@ -25,7 +25,7 @@ export function SectionBands(): JSX.Element {
           const folded = (s.data as { folded?: boolean }).folded;
           const top = s.position.y * zoom + ty;
           const fullH = Number(s.height ?? s.style?.height ?? 0) * zoom;
-          const stripH = Math.max(GRID * zoom, HEADER_H); // - the header lane, but never thinner than the header
+          const stripH = Math.max(SECTION_HEADER_LANE * zoom, HEADER_H); // - header row, never thinner than the header
           const bodyH = folded ? stripH : fullH;
           if (bodyH <= 0) return null;
           return (

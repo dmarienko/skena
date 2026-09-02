@@ -13,8 +13,11 @@ import type { CanvasData, CanvasNode, SectionNode } from './types';
 import { ORIGIN_GUTTER } from './bounds';
 import { GRID } from './constants';
 
-// - header overlay height (screen-space; the header is drawn above the band, not inside it)
-export const SECTION_HEADER_H = 44;
+// - the compact header row reserved above the topmost node (flow units). Small on purpose: a full
+//   grid leaves a big empty gap; this keeps the node hugging the header, as in the mockup. Because it
+//   is not a grid multiple, the node stays grid-aligned (normalizeCanvasToOrigin ignores sections, so
+//   this lane can sit in the one-grid gutter above the origin without shifting members off the grid).
+export const SECTION_HEADER_LANE = 44;
 // - how far the band extends past its content on the open (right) side, so it reads as a lane
 export const SECTION_OPEN_RIGHT = 600;
 
@@ -39,11 +42,11 @@ function laneGeom(members: CanvasNode[]): { x: number; y: number; width: number;
     if (n.y + n.height > maxY) maxY = n.y + n.height;
   }
   const x = Math.min(ORIGIN_GUTTER, minX);
-  // - reserve one GRID above the topmost node as the header lane, so the header always has its own
-  //   room (never on a node, never clipped). When a node sits at/above the origin this top goes
-  //   negative; normalizeCanvasToOrigin then parks the section (lane included) at the origin and its
-  //   members shift down one grid — once, then stable. Bottom extends one GRID past the lowest node.
-  const y = minY - GRID;
+  // - reserve a compact header row above the topmost node (not a full grid — that leaves a big empty
+  //   gap). The node keeps its grid position; the section top may go into the gutter above the origin
+  //   (normalizeCanvasToOrigin ignores sections, so it never shifts members). Bottom extends one GRID
+  //   past the lowest node before the boundary line.
+  const y = minY - SECTION_HEADER_LANE;
   return { x, y, width: maxX + SECTION_OPEN_RIGHT - x, height: maxY + GRID - y };
 }
 
