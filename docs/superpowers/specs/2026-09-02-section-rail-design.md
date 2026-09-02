@@ -305,7 +305,7 @@ Pure functions, repo convention (`esbuild --bundle --format=esm` into `test/.bui
   the largest delta; last section never shifts; only nodes with `y ≥ next.y` move; every section
   below shifts by the same delta; upward move → empty shifts.
 - `resolveCellKernel`: edge wins over section; section fallback; dangling `kernelId` → `null`;
-  no section → `null`. `resolveKernelCells` includes a section-bound cell.
+  no section → `null`. `resolveKernelCellsInCanvas` includes a section-bound cell.
 - `railSegments`: clipping to `[0, H]`; 6px gap; 28px floor grown about the centre and kept inside
   `[0, H]`; a section taller than the viewport → `[0, H]`; sections outside the viewport → none.
 - `railItems`: the drop order of §5.4 at decreasing heights.

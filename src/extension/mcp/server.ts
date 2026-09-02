@@ -1125,7 +1125,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_layout',
-    description: 'Batch move/resize many nodes in one file write. Each item: { ref, x?, y?, width?, height? } (partial, absolute coordinates).',
+    description: 'Batch move/resize many nodes in one file write. Each item: { ref, x?, y?, width?, height? } (partial, absolute coordinates). A node placed past its section\'s bottom edge grows that section: every section and node below it moves down by a grid multiple.',
     inputSchema: {
       type: 'object',
       properties: {
