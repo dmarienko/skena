@@ -45,15 +45,16 @@ function laneGeom(members: CanvasNode[]): { x: number; y: number; width: number;
 
 /**
  * Wrap every node that lacks a `sectionId` into a single new full-width-lane section. Nodes already
- * assigned to a section are untouched. Returns the same reference when nothing needs wrapping.
+ * assigned to a section are untouched. Returns the same reference when nothing needs wrapping. `now`
+ * (epoch ms) stamps the section's creation time; it is injectable so tests stay deterministic.
  */
-export function wrapNodesInSection(canvas: CanvasData): CanvasData {
+export function wrapNodesInSection(canvas: CanvasData, now: number = Date.now()): CanvasData {
   const free = canvas.nodes.filter(n => n.type !== 'section' && !n.sectionId);
   if (free.length === 0) return canvas;
 
   const seed = free.reduce((a, b) => (b.y < a.y || (b.y === a.y && b.x < a.x) ? b : a));
   const id = sectionIdFor(seed.id);
-  const section: SectionNode = { id, type: 'section', ...laneGeom(free), title: 'Section' };
+  const section: SectionNode = { id, type: 'section', ...laneGeom(free), createdAt: now };
 
   const freeIds = new Set(free.map(n => n.id));
   const nodes: CanvasNode[] = [
@@ -65,10 +66,12 @@ export function wrapNodesInSection(canvas: CanvasData): CanvasData {
 
 /**
  * Re-size each section's band to fit its current members (the full-width lane geometry), so the band
- * tracks content and reflects geometry changes on reload. Sections with no members are left as-is.
- * Returns the same reference when nothing changed (no spurious save).
+ * tracks content and reflects geometry changes on reload. Also backfills a legacy section that has no
+ * `createdAt` (so its header can show a datetime) and drops the old `'Section'` placeholder title.
+ * Sections with no members are left as-is. Returns the same reference when nothing changed (no
+ * spurious save). `now` (epoch ms) is the backfill stamp; injectable so tests stay deterministic.
  */
-export function fitSectionsToContent(canvas: CanvasData): CanvasData {
+export function fitSectionsToContent(canvas: CanvasData, now: number = Date.now()): CanvasData {
   if (!canvas.nodes.some(n => n.type === 'section')) return canvas;
   let changed = false;
   const nodes = canvas.nodes.map(n => {
@@ -76,9 +79,16 @@ export function fitSectionsToContent(canvas: CanvasData): CanvasData {
     const members = canvas.nodes.filter(m => m.sectionId === n.id);
     if (members.length === 0) return n;
     const g = laneGeom(members);
-    if (n.x === g.x && n.y === g.y && n.width === g.width && n.height === g.height) return n;
+    const s = n as SectionNode;
+    const needsCreatedAt = s.createdAt === undefined;
+    const legacyTitle = s.title === 'Section'; // - old placeholder; drop so the datetime shows
+    const geomSame = n.x === g.x && n.y === g.y && n.width === g.width && n.height === g.height;
+    if (geomSame && !needsCreatedAt && !legacyTitle) return n;
     changed = true;
-    return { ...n, ...g };
+    const next: SectionNode = { ...s, ...g };
+    if (needsCreatedAt) next.createdAt = now;
+    if (legacyTitle) delete next.title;
+    return next;
   });
   return changed ? { ...canvas, nodes } : canvas;
 }

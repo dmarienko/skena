@@ -83,8 +83,10 @@ export interface GroupNode extends CanvasNodeBase {
 /** Section container — a kernel-tint-ready band that owns nodes (via their sectionId). */
 export interface SectionNode extends CanvasNodeBase {
   type: 'section';
-  /** - section title shown in the zoom-steady header */
+  /** - section title shown in the zoom-steady header; when absent the header shows the creation time */
   title?: string;
+  /** - creation time (epoch ms); the header shows this formatted when there is no explicit title */
+  createdAt?: number;
   /** - collapsed to just the header bar when true */
   folded?: boolean;
   /** - accent/tint color (a #rrggbb); kernel-derived in a later phase */

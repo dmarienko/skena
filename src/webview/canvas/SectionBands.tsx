@@ -19,14 +19,13 @@ export function SectionBands(): JSX.Element {
       {nodes
         .filter(n => n.type === 'section')
         .map(s => {
-          // - top strip above the content holds the header and gives a filled margin; it is at least
-          //   HEADER_H tall (so the fixed-height header always fits) or one grid, whichever is larger.
-          //   When folded, the band collapses to just that strip (members are hidden).
+          // - the band spans the whole section (flow y=0 down); its own empty top strip holds the
+          //   header, so nothing overhangs above the origin. When folded, it collapses to just that
+          //   strip (members are hidden).
           const folded = (s.data as { folded?: boolean }).folded;
-          const contentTop = s.position.y * zoom + ty;
-          const topPad = Math.max(GRID * zoom, HEADER_H);
-          const top = contentTop - topPad;
-          const height = folded ? topPad : topPad + Number(s.height ?? s.style?.height ?? 0) * zoom;
+          const top = s.position.y * zoom + ty;
+          const fullH = Number(s.height ?? s.style?.height ?? 0) * zoom;
+          const height = folded ? Math.max(GRID * zoom, HEADER_H) : fullH;
           if (height <= 0) return null;
           return (
             <div

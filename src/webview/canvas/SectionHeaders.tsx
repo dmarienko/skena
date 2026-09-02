@@ -7,11 +7,19 @@ export const HEADER_H = 26;
 
 const MONO = 'var(--vscode-editor-font-family), "IBM Plex Mono", monospace';
 
+// - 'YYYY-MM-DD HH:MM' in local time; the default section label when there is no explicit title
+function fmtDateTime(ms: number): string {
+  const d = new Date(ms);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 /**
  * SectionHeaders — screen-space overlay drawing each section's zoom-steady header bar (fold · title ·
  * #S address · delete), styled after the redesign mockup: monospace, weight-600 title, teal #S, muted
- * controls. Sits directly above the section's content (never overlaps the nodes) and tracks the
- * section via the live React Flow transform, but never scales.
+ * controls. It sits inside the band's empty top strip and is sticky: pinned to the viewport top edge
+ * while the section is on screen, riding up with the band as the section scrolls away. It tracks the
+ * section via the live React Flow transform but never scales.
  */
 export function SectionHeaders({ onFold, onDelete }: {
   onFold: (id: string) => void;
@@ -26,10 +34,17 @@ export function SectionHeaders({ onFold, onDelete }: {
       {nodes
         .filter(n => n.type === 'section')
         .map(s => {
-          const d = s.data as { title?: string; nodeLabel?: string; folded?: boolean };
-          // - anchor the header directly ABOVE the content (fixed height): never overlaps the nodes
-          const top = s.position.y * zoom + ty - HEADER_H;
+          const d = s.data as { title?: string; nodeLabel?: string; folded?: boolean; createdAt?: number };
+          const bandTop = s.position.y * zoom + ty;
+          const bandBottom = bandTop + Number(s.height ?? s.style?.height ?? 0) * zoom;
+          // - sticky inside the band: never above the viewport top, never past the band's bottom
+          const top = Math.min(Math.max(bandTop, 0), Math.max(bandBottom - HEADER_H, 0));
           const left = Math.max(s.position.x * zoom + tx, 0);
+          const label = d.title?.trim()
+            ? d.title
+            : typeof d.createdAt === 'number'
+              ? fmtDateTime(d.createdAt)
+              : 'Section';
           return (
             <div
               key={s.id}
@@ -54,7 +69,7 @@ export function SectionHeaders({ onFold, onDelete }: {
                 {d.folded ? '▸' : '⌄'}
               </button>
               <span style={{ fontSize: 12.5, fontWeight: 600, letterSpacing: '-0.01em', color: 'var(--vscode-foreground)', whiteSpace: 'nowrap' }}>
-                {d.title ?? 'Section'}
+                {label}
               </span>
               <span style={{ fontSize: 11, fontWeight: 600, color: `rgba(${SECTION_RGB}, 0.9)` }}>
                 {d.nodeLabel ? `#${d.nodeLabel}` : ''}
