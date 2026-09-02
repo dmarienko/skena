@@ -3,6 +3,7 @@
  */
 
 export const RAIL_W      = 44;
+export const PLUS_H      = 28;   // - strip at the rail bottom reserved for the + button
 export const SEG_GAP     = 6;     // - space between adjacent segments
 export const SEG_MIN_H   = 28;    // - a segment never shrinks below this: room for S#
 export const SEG_PAD_TOP = 8;
