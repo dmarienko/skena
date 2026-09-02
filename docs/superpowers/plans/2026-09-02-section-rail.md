@@ -1001,6 +1001,10 @@ Delete `src/webview/canvas/SectionStickyHeader.tsx`:
 git rm src/webview/canvas/SectionStickyHeader.tsx
 ```
 
+- [ ] **Step 3b: Theme variables before the first paint**
+
+The rail reads `var(--sk-*)`, which `App.tsx` sets in a passive effect (after the first paint). In `src/webview/App.tsx` change `useEffect(() => installThemeVars(), []);` to `useLayoutEffect(() => installThemeVars(), []);` and add `useLayoutEffect` to the React import on line 13.
+
 - [ ] **Step 4: Typecheck + build**
 
 Run: `npm run typecheck` — 3 pre-existing errors only (if `KernelNode` was already imported in CanvasView, drop the duplicate import). Run: `npm run build`.
