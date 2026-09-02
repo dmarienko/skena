@@ -1821,7 +1821,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         e.preventDefault();
         const STEP = 0.15;
         const { x: tx, y: ty, zoom } = rfRef.current.getViewport();
-        const newZoom = Math.max(0.05, Math.min(3, zoom * (1 + STEP)));
+        const newZoom = Math.max(MIN_ZOOM, Math.min(3, zoom * (1 + STEP)));
         const scale   = newZoom / zoom;
         const cx = window.innerWidth  / 2;
         const cy = window.innerHeight / 2;
@@ -1858,7 +1858,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         e.preventDefault();
         const STEP = 0.15;
         const { x: tx, y: ty, zoom } = rfRef.current.getViewport();
-        const newZoom = Math.max(0.05, Math.min(3, zoom / (1 + STEP)));
+        const newZoom = Math.max(MIN_ZOOM, Math.min(3, zoom / (1 + STEP)));
         const scale   = newZoom / zoom;
         const cx = window.innerWidth  / 2;
         const cy = window.innerHeight / 2;
@@ -2457,7 +2457,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       const STEP = 0.06; // - 6% per scroll notch (D3 default ≈ 15%)
       const { x: tx, y: ty, zoom } = rfRef.current.getViewport();
       const dir     = e.deltaY > 0 ? -1 : 1;
-      const newZoom = Math.max(0.05, Math.min(3, zoom * (1 + STEP * dir)));
+      const newZoom = Math.max(MIN_ZOOM, Math.min(3, zoom * (1 + STEP * dir)));
       const scale   = newZoom / zoom;
 
       // - keep the flow point under the cursor stationary:
