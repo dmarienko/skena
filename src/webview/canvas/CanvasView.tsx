@@ -35,7 +35,7 @@ import { classifyClipboard } from './paste-classify';
 import { ContextMenu } from './ContextMenu';
 import { CANVAS_COLORS, NODE_SIZE, NEW_NODE } from '../../shared/constants';
 import { GRID, snapGrid } from '../../shared/grid';
-import { ORIGIN_GUTTER, clampToOrigin, clampViewportToOrigin } from '../../shared/bounds';
+import { ORIGIN_GUTTER, clampToOrigin, clampCameraToOrigin } from '../../shared/bounds';
 import { ensureLabels, assignLabel } from './nodeLabels';
 import { ZoomLevelProvider } from '../context/ZoomLevelContext';
 import { HeatmapProvider } from '../context/HeatmapContext';
@@ -55,7 +55,7 @@ import { LabeledEdgeComponent } from './edges/LabeledEdge';
 import { HelperLines } from './HelperLines';
 import { SectionSeparators } from './SectionSeparators';
 import { SectionRail, type RailKernel } from '../rail/SectionRail';
-import { deriveLanes, sortLanes, type SectionLane } from '../../shared/sectionLanes';
+import { deriveLanes, sortLanes, parkFirstLaneAtOrigin, type SectionLane } from '../../shared/sectionLanes';
 import { CanvasSearch } from './CanvasSearch';
 import { MarksPanel  } from './MarksPanel';
 import { LanesContext } from './LanesContext';
@@ -646,8 +646,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     // - fitView / focus: defer so the layout pass is done before we query positions
     const t = setTimeout(() => {
       if (isInitialLoad && !canvas.viewport) {
-        // - first open, no saved viewport → fitView so the canvas isn't off-screen
-        rfRef.current.fitView({ padding: 0.1 });
+        // - first open, no saved viewport → fit so the canvas isn't off-screen
+        void fitClamped();
       } else if (isInitialLoad && nodesRef.current.length > 0) {
         // - a saved viewport can point at empty space (content deleted or moved since it was written),
         //   which opens the canvas on a blank screen. If it frames no node at all, fit instead.
@@ -661,7 +661,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           const sh = Number(n.height ?? n.style?.height ?? 0) * zoom;
           return sx + sw > 0 && sx < w && sy + sh > 0 && sy < h;
         });
-        if (!anyVisible) rfRef.current.fitView({ padding: 0.1 });
+        if (!anyVisible) void fitClamped();
       }
       // - a cross-canvas reference opened this canvas → jump to and center its target, overriding
       // - the usual last-focus restore (which would otherwise clobber the jump on first open)
@@ -691,7 +691,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       }
     }, 80);
     return () => clearTimeout(t);
-  // - focusNodeById / pickViewportNode are stable useCallbacks; declared below
+  // - focusNodeById / pickViewportNode / fitClamped are stable useCallbacks; declared below
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canvas, canvasPath, setNodes, setEdges]);
 
@@ -719,15 +719,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   useEffect(() => { setLanes(canvas.metadata?.sections ?? []); }, [canvas]);
   const lanesRef = useRef<SectionLane[]>(lanes);
   useEffect(() => { lanesRef.current = lanes; }, [lanes]);
-  /**
-   * The single rule every camera write obeys: one grid of margin left of the origin, flush at the
-   * top. The rail lives outside the flow, so nothing above y = 0 ever needs to be shown. Twelve call
-   * sites write the viewport; they all go through here.
-   */
-  const clampCam = useCallback((x: number, y: number, zoom: number): { x: number; y: number } => {
-    const c = clampViewportToOrigin(x, y, zoom);
-    return { x: c.x, y: Math.min(c.y, 0) };
-  }, []);
+  // - every viewport write goes through here; the rule itself lives in bounds.ts and is tested there
+  const clampCam = useCallback((x: number, y: number, zoom: number) => clampCameraToOrigin(x, y, zoom), []);
   // - assigned once confirmDeleteViaHost exists (declared further down); see handleDeleteLane
   const confirmLaneDeleteRef = useRef<((ids: string[], reason: string) => Promise<boolean>) | null>(null);
 
@@ -786,7 +779,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         { id: `sec-${now.toString(36)}`, y: flowY, createdAt: now, colorIndex: lanes.length },
       ]);
       const { x, zoom } = rfRef.current.getViewport();
-      rfRef.current.setViewport({ x, y: -flowY * zoom, zoom }, { duration: 250 });
+      const c = clampCam(x, -flowY * zoom, zoom);
+      rfRef.current.setViewport({ x: c.x, y: c.y, zoom }, { duration: 250 });
     };
     window.addEventListener('skena:newSection', handler);
     return () => window.removeEventListener('skena:newSection', handler);
@@ -812,7 +806,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       nodes: canvasRef.current.nodes.filter(n => !doomed.has(n.id)),
       edges: canvasRef.current.edges.filter(e => !doomed.has(e.fromNode) && !doomed.has(e.toNode)),
     };
-    commitLanes(lanes.filter(l => l.id !== id));
+    commitLanes(parkFirstLaneAtOrigin(lanes.filter(l => l.id !== id)));
   }, [derivedLanes, lanes, commitLanes, pushHistory, setNodes, setEdges]);
 
   const handleRunLane = useCallback((id: string) => {
@@ -913,6 +907,14 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   // - keep a ref so the stable navigation useEffect can call setCenter / getViewport
   const rfRef = useRef(rfInstance);
   useEffect(() => { rfRef.current = rfInstance; });
+
+  // - React Flow's fitView bypasses translateExtent (d3 transform, no constrain), so clamp after it lands
+  const fitClamped = useCallback(async () => {
+    await rfRef.current.fitView({ padding: 0.1 });
+    const { x, y, zoom } = rfRef.current.getViewport();
+    const c = clampCam(x, y, zoom);
+    rfRef.current.setViewport({ x: c.x, y: c.y, zoom }, { duration: 0 });
+  }, [clampCam]);
 
   // - #4: a kernel may only connect to a code cell or a .py file node (block the drag)
   const isValidConnection = useCallback((c: Connection | Edge) => {
@@ -1413,7 +1415,6 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   // - stable close handler — identity never changes, so ContextMenu never re-registers its effects
   const handleMenuClose = useCallback(() => setContextMenu(null), []);
 
-  // - fold/unfold a section: hide its member nodes and mark it folded (the band collapses to the header)
   // - read flow position from ref — never goes stale regardless of contextMenu state
   const handleMenuAddText = useCallback(() => {
     const { flowX, flowY } = contextMenuFlowPos.current;
@@ -1929,7 +1930,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         return;
       }
       // - Home: pan to the content's top-left, keeping the current zoom (pan-only invariant), with a
-      //   one-grid breathing margin at the top-left. clampViewportToOrigin keeps it within that gutter.
+      //   one-grid breathing margin at the left.
       if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'Home') {
         e.preventDefault();
         const { zoom } = rfRef.current.getViewport();
@@ -3148,9 +3149,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         disableKeyboardA11y={true}
         onDragOver={onDragOver}
         onDrop={onDrop}
-        // - viewport persistence: restore saved position/zoom; fitView only when no saved viewport
+        // - viewport persistence: restore saved position/zoom. No fitView prop: the load effect fits
+        //   through fitClamped on the same condition, and React Flow's own fit is unbounded.
         defaultViewport={canvas.viewport ? { ...canvas.viewport, zoom: Math.max(canvas.viewport.zoom, MIN_ZOOM) } : { x: 0, y: 0, zoom: 1 }}
-        fitView={!canvas.viewport}
         // - save viewport to canvas JSON whenever the user stops panning/zooming
         onMoveStart={() => {
           // - promote nodes to GPU layers only while panning/zooming (see canvas.css);
@@ -3172,8 +3173,14 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         <Background variant={BackgroundVariant.Dots} gap={GRID} size={1} color="var(--vscode-editorIndentGuide-background)" />
         <SectionSeparators lanes={derivedLanes} />
         <HelperLines horizontal={helperLines.horizontal} vertical={helperLines.vertical} />
-        <Controls showInteractive={false}>
-          {/* - minimap toggle button — appended after the built-in zoom/fit buttons */}
+        <Controls showInteractive={false} showFitView={false}>
+          {/* - our own fit button: React Flow's fires an unbounded fitView */}
+          <ControlButton onClick={() => { void fitClamped(); }} title="Fit view">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" />
+            </svg>
+          </ControlButton>
+          {/* - minimap toggle button */}
           <ControlButton
             onClick={() => setShowMinimap(v => !v)}
             title={showMinimap ? 'Hide minimap' : 'Show minimap'}

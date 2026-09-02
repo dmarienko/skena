@@ -13,7 +13,8 @@ export function SectionSeparators({ lanes }: { lanes: DerivedLane[] }): JSX.Elem
         if (i === lanes.length - 1) return null;   // - the last lane is unbounded: no line below it
         const y = l.bottom * zoom + ty;
         if (height <= 0 || y < 0 || y > height) return null;
-        return <div key={l.id} style={{ position: 'absolute', left: 0, right: 0, top: y, height: 0, borderBottom: '1px solid var(--sk-border)' }} />;
+        // - centred on the boundary, like the rail's gap
+        return <div key={l.id} style={{ position: 'absolute', left: 0, right: 0, top: y - 0.5, height: 0, borderBottom: '1px solid var(--sk-border)' }} />;
       })}
     </div>
   );

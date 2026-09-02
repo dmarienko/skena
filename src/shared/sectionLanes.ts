@@ -42,10 +42,6 @@ export interface DerivedLane extends SectionLane {
   memberIds: string[];
   top: number;
   bottom: number;
-  /** - min y over members; the lane's own top when empty (what the header anchors to) */
-  contentTop: number;
-  /** - min x over members; 0 when empty */
-  contentLeft: number;
 }
 
 /** Lanes ordered top to bottom. Returns a new array; never mutates the input. */
@@ -74,15 +70,11 @@ export function deriveLanes(nodes: LaneNodeGeom[], lanes: SectionLane[]): Derive
   if (lanes.length === 0) return [];
   const sorted = sortLanes(lanes);
   const members: string[][] = sorted.map(() => []);
-  const minX: number[] = sorted.map(() => Infinity);
-  const minY: number[] = sorted.map(() => Infinity);
   const maxY: number[] = sorted.map(() => -Infinity);
 
   for (const n of nodes) {
     const i = laneIndexForY(sorted, n.y);
     members[i].push(n.id);
-    if (n.x < minX[i]) minX[i] = n.x;
-    if (n.y < minY[i]) minY[i] = n.y;
     if (n.y + n.height > maxY[i]) maxY[i] = n.y + n.height;
   }
 
@@ -98,8 +90,6 @@ export function deriveLanes(nodes: LaneNodeGeom[], lanes: SectionLane[]): Derive
       memberIds: members[i],
       top: l.y,
       bottom,
-      contentTop: has ? minY[i] : l.y,
-      contentLeft: has ? minX[i] : 0,
     };
   });
 }
@@ -171,6 +161,13 @@ export function laneTopForY(lanes: SectionLane[], y: number): number {
   if (lanes.length === 0) return -Infinity;
   const sorted = sortLanes(lanes);
   return sorted[laneIndexForY(sorted, y)].y;
+}
+
+/** After a removal, the topmost lane starts at the origin again (a lane owns everything above it anyway). */
+export function parkFirstLaneAtOrigin(lanes: SectionLane[]): SectionLane[] {
+  const sorted = sortLanes(lanes);
+  if (sorted.length === 0 || sorted[0].y === 0) return lanes;
+  return sorted.map((l, i) => (i === 0 ? { ...l, y: 0 } : l));
 }
 
 /**

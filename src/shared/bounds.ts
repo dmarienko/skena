@@ -29,6 +29,15 @@ export function clampViewportToOrigin(x: number, y: number, zoom: number): { x: 
 }
 
 /**
+ * The one rule every camera write obeys: one grid of margin left of the origin, flush at the top.
+ * Nothing above flow y = 0 is ever shown (the section rail lives outside the flow).
+ */
+export function clampCameraToOrigin(x: number, y: number, zoom: number): { x: number; y: number } {
+  const c = clampViewportToOrigin(x, y, zoom);
+  return { x: c.x, y: Math.min(c.y, 0) };
+}
+
+/**
  * Shift content out of negative space into the bounded field. Runs on every canvas open but only
  * acts when the content's bounding box actually extends left/above the origin (min x or y < 0) —
  * e.g. live-slippage authored near x = -5700. Each negative axis is parked flush at the origin (0);
