@@ -1491,6 +1491,8 @@ with
 
 - [ ] **Step 2: Host**
 
+While in `editor-provider.ts`: key the run-section guard on the document too — `runningSections` entries become `` `${document.uri.fsPath}::${msg.sectionId}` `` (section ids are `sec-<Date.now()>`, so two canvases can collide on the id alone).
+
 `src/extension/editor-provider.ts` line 72 becomes:
 
 ```ts
