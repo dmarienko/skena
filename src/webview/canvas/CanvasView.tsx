@@ -3094,7 +3094,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         elevateEdgesOnSelect
       >
         <Background variant={BackgroundVariant.Dots} gap={GRID} size={1} color="var(--vscode-editorIndentGuide-background)" />
-        <SectionLaneMarks lanes={derivedLanes} height={wrapperRef.current?.clientHeight ?? 0} />
+        <SectionLaneMarks lanes={derivedLanes} />
         <SectionLaneHeaders lanes={derivedLanes} onFold={handleFoldLane} onDelete={handleDeleteLane} />
         <HelperLines horizontal={helperLines.horizontal} vertical={helperLines.vertical} />
         <Controls showInteractive={false}>

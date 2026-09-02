@@ -17,9 +17,12 @@ const RAIL_MIN_H = 24;    // - a segment never shrinks below this, whatever the 
  * screen) and clipped to the viewport vertically, with a minimum height, so a lane that is on screen
  * always shows its marker at any zoom.
  */
-export function SectionLaneMarks({ lanes, height }: { lanes: DerivedLane[]; height: number }): JSX.Element {
+export function SectionLaneMarks({ lanes }: { lanes: DerivedLane[] }): JSX.Element {
   const ty = useStore(s => s.transform[1]);
   const zoom = useStore(s => s.transform[2]);
+  // - the flow container's height, straight from the store: reactive and correct on the FIRST paint.
+  //   Reading a ref's clientHeight during render yields 0 until some unrelated re-render happens.
+  const height = useStore(s => s.height);
   return (
     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0 }}>
       {lanes.map(l => {
