@@ -632,11 +632,17 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     // - restore saved viewport ONLY on the first load of this path (defaultViewport only fires on
     //   mount). On a reload keep the user's current camera — never snap to the stale disk viewport.
     if (isInitialLoad && canvas.viewport) {
-      // - a viewport saved before the floor existed can carry a smaller zoom; React Flow applies a
-      //   restored viewport verbatim, so clamp it here or the header would not fit its band
       const zoom = Math.max(canvas.viewport.zoom, MIN_ZOOM);
       const cRestore = clampViewportToOrigin(canvas.viewport.x, canvas.viewport.y, zoom);
-      rfRef.current.setViewport({ x: cRestore.x, y: cRestore.y, zoom }, { duration: 0 });
+      // - the bounded canvas keeps one grid of margin above the origin, but on a sectioned canvas the
+      //   first lane IS the top: showing that margin opens with an empty strip above the first
+      //   section. React Flow applies a restored viewport verbatim (translateExtent only bounds
+      //   interactive panning), so cap it here.
+      const firstLaneY = canvas.metadata?.sections?.length
+        ? Math.min(...canvas.metadata.sections.map(l => l.y))
+        : undefined;
+      const y = firstLaneY === undefined ? cRestore.y : Math.min(cRestore.y, -firstLaneY * zoom);
+      rfRef.current.setViewport({ x: cRestore.x, y, zoom }, { duration: 0 });
     }
 
     // - fitView / focus: defer so the layout pass is done before we query positions
