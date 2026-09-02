@@ -8,22 +8,24 @@ const geomOf = (n: Node) => ({
 });
 
 /**
- * Watches node geometry. After any change that is not part of an in-progress drag (drop, keyboard
- * move, resize, creation, paste, an external write), asks growLaneForNodes whether a section must
- * grow and hands the shifts to `apply`. The shifted nodes come back through this effect once more
- * and produce no further growth, so it settles in one extra pass.
+ * Watches node geometry. After any change that is not part of an in-progress drag or resize (drop,
+ * resize end, keyboard move, creation, paste, an external write), asks growLaneForNodes whether a
+ * section must grow and hands the shifts to `apply`. The shifted nodes come back through this
+ * effect once more and produce no further growth, so it settles in one extra pass.
  */
-export function useLaneGrowth(nodes: Node[], lanes: SectionLane[], dragging: MutableRefObject<boolean>, apply: (g: LaneGrowth) => void): void {
+export function useLaneGrowth(nodes: Node[], lanes: SectionLane[], dragging: MutableRefObject<boolean>, skipOnce: MutableRefObject<boolean>, apply: (g: LaneGrowth) => void): void {
   const prev = useRef<Map<string, string> | null>(null);
   useEffect(() => {
-    if (dragging.current) return;   // - record nothing mid-drag: the drop is diffed against the drag start
+    // - mid-drag or mid-resize: the end state is diffed against the start
+    if (dragging.current || nodes.some(n => n.resizing)) return;
     const sig = new Map(nodes.map(n => { const g = geomOf(n); return [n.id, `${g.x},${g.y},${g.width},${g.height}`]; }));
     const before = prev.current;
     prev.current = sig;
+    if (skipOnce.current) { skipOnce.current = false; return; }   // - a state restored by undo/redo is taken as is: record it, grow nothing
     if (!before) return;
     const changed = [...sig].filter(([id, s]) => before.get(id) !== s).map(([id]) => id);
     if (changed.length === 0) return;
     const g = growLaneForNodes(lanes, nodes.map(geomOf), changed);
     if (Object.keys(g.laneShifts).length) apply(g);
-  }, [nodes, lanes, dragging, apply]);
+  }, [nodes, lanes, dragging, skipOnce, apply]);
 }

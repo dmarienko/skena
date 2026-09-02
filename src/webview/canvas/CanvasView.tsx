@@ -533,6 +533,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   type HistoryEntry = { nodes: CanvasNode[]; edges: CanvasEdge[]; sections: SectionLane[] };
   const undoStackRef = useRef<HistoryEntry[]>([]);
   const redoStackRef = useRef<HistoryEntry[]>([]);
+  // - the next geometry render comes from a restored entry, not a user edit; growth must not re-run
+  const fromHistoryRef = useRef(false);
 
   // - which canvasPath the camera has been initialized for; a reload of the SAME path must not
   //   re-set the viewport (see the reload effect below)
@@ -761,18 +763,17 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   }, [scheduleSave]);
 
   // - a node moved or resized past its section's bottom edge: push every section below it down.
-  //   A drag already pushed its own entry at drag start, so undoing a drag that grew a section
-  //   takes two undos — first the growth, then the move.
+  //   No history entry of its own — the action that moved the node pushed one before mutating, so
+  //   one undo reverts move and growth together
   const applyGrowth = useCallback((g: LaneGrowth) => {
-    pushHistory();
     setNodes(nds => nds.map(n => (g.nodeShifts[n.id] ? { ...n, position: { x: n.position.x, y: n.position.y + g.nodeShifts[n.id] } } : n)));
     canvasRef.current = {
       ...canvasRef.current,
       nodes: canvasRef.current.nodes.map(n => (g.nodeShifts[n.id] ? { ...n, y: n.y + g.nodeShifts[n.id] } : n)),
     };
     commitLanes(lanesRef.current.map(l => (g.laneShifts[l.id] ? { ...l, y: l.y + g.laneShifts[l.id] } : l)));
-  }, [pushHistory, setNodes, commitLanes]);
-  useLaneGrowth(nodes, lanes, draggingRef, applyGrowth);
+  }, [setNodes, commitLanes]);
+  useLaneGrowth(nodes, lanes, draggingRef, fromHistoryRef, applyGrowth);
 
   const handleFoldLane = useCallback((id: string) => {
     pushHistory();
@@ -856,6 +857,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
   // - restore nodes/edges/sections from a history entry
   const applyHistoryState = useCallback((entry: HistoryEntry) => {
+    fromHistoryRef.current = true;
     canvasRef.current = { ...canvasRef.current, nodes: entry.nodes, edges: entry.edges, metadata: { ...canvasRef.current.metadata, sections: entry.sections } };
     setLanes(entry.sections);
     setNodes(entry.nodes.map(toFlowNode));
@@ -2023,6 +2025,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         // - if any nodes are space-pinned, shift+hjkl moves them by one grid step
         if (spaceSelectedRef.current.size > 0) {
           e.preventDefault();
+          pushHistory();
           const dirMap: Record<string, { x: number; y: number }> = {
             H: { x: -GRID, y: 0 }, L: { x: GRID, y: 0 },
             J: { x: 0, y: GRID },  K: { x: 0, y: -GRID },
@@ -2127,6 +2130,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         const cur = nodesRef.current.find(nd => nd.selected && !isBandType(nd.type));
         if (!cur) return;
         e.preventDefault();
+        pushHistory();
         // - grow/shrink by ONE grid cell, snapped to the grid; LEFT edge (x) stays fixed so only the
         //   RIGHT edge moves. min one cell.
         const dirW = e.key === 'w' ? 1 : -1;
@@ -2151,6 +2155,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         const cur = nodesRef.current.find(nd => nd.selected && !isBandType(nd.type));
         if (!cur) return;
         e.preventDefault();
+        pushHistory();
         // - grow/shrink by ONE grid cell, snapped to the grid; TOP edge (y) stays fixed so only the
         //   bottom edge moves. min one cell.
         const dirH = e.key === 'e' ? 1 : -1;
