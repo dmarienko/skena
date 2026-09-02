@@ -54,8 +54,8 @@ import { CodeNodeComponent }   from './nodes/CodeNode';
 import { LabeledEdgeComponent } from './edges/LabeledEdge';
 import { HelperLines } from './HelperLines';
 import { SectionLaneMarks } from './SectionLaneMarks';
-import { SectionLaneHeaders, HEADER_H } from './SectionLaneHeaders';
-import { deriveLanes, sortLanes, clampOutOfHeaderBand, LANE_HEADER_BAND, type SectionLane } from '../../shared/sectionLanes';
+import { SectionStickyHeader } from './SectionStickyHeader';
+import { deriveLanes, sortLanes, type SectionLane } from '../../shared/sectionLanes';
 import { CanvasSearch } from './CanvasSearch';
 import { MarksPanel  } from './MarksPanel';
 
@@ -75,12 +75,8 @@ const NODE_TYPES: NodeTypes = {
 // - band-type nodes (group) are visual backdrops: skipped by snapping, nav, overlap checks
 const isBandType = (t?: string): boolean => t === 'group';
 
-/**
- * Furthest zoom-out. Derived, not chosen: at this zoom a lane's reserved header band still measures
- * at least the header's own height on screen, so the header always fits inside the band and can never
- * land on a node. Zooming out further would break that, so it is simply not allowed.
- */
-const MIN_ZOOM = (HEADER_H + 2) / LANE_HEADER_BAND;
+// - the title is pinned outside the canvas area now, so no zoom is unsafe: back to the original floor
+const MIN_ZOOM = 0.05;
 
 const EDGE_TYPES: EdgeTypes = {
   labeled: LabeledEdgeComponent,
@@ -222,7 +218,7 @@ function runningPathEdgeIds(nodes: Node[], edges: Edge[]): Set<string> {
 }
 
 // - React Flow node → updated canvas node (position/size changed)
-function patchCanvasNode(original: CanvasNode, rfNode: Node, nodes: Node[], lanes: SectionLane[]): CanvasNode {
+function patchCanvasNode(original: CanvasNode, rfNode: Node, nodes: Node[]): CanvasNode {
   // - React Flow hands onNodeDragStop the RAW (pre-snap) drag position. customOnNodesChange snapped
   // - the DISPLAY (grid + alignment guides), so re-apply the identical snap here — otherwise the saved
   // - position is up to a full grid cell off the on-screen position and the node shifts on reopen.
@@ -232,12 +228,10 @@ function patchCanvasNode(original: CanvasNode, rfNode: Node, nodes: Node[], lane
     snapX !== undefined ? snapX : snapGrid(rfNode.position.x),
     snapY !== undefined ? snapY : snapGrid(rfNode.position.y),
   );
-  // - the SAME header-band clamp the live drag applies to the display; without it the saved position
-  //   differs from what is on screen and the node reappears under the title on the next load
   return {
     ...original,
     x:      Math.round(c.x),
-    y:      Math.round(clampOutOfHeaderBand(c.y, lanes)),
+    y:      Math.round(c.y),
     width:  Math.round(Number(rfNode.style?.width ?? original.width)),
     height: Math.round(Number(rfNode.style?.height ?? original.height)),
   };
@@ -474,18 +468,15 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         //   lands ON the grid on screen and none reverts on reload (all are persisted at drag-stop).
         const { horizontal, vertical, snapX, snapY } = getHelperLines(primary, nodesRef.current);
         setHelperLines(dragging ? { horizontal, vertical } : {});
-        const pc = clampToOrigin(
+        primary.position = clampToOrigin(
           snapX !== undefined ? snapX : snapGrid(primary.position!.x),
           snapY !== undefined ? snapY : snapGrid(primary.position!.y),
         );
-        // - a node may not enter a lane's reserved header band, so it can never land under the title
-        primary.position = { x: pc.x, y: clampOutOfHeaderBand(pc.y, lanesRef.current) };
         for (let i = 1; i < posChanges.length; i++) {
-          const c = clampToOrigin(
+          posChanges[i].position = clampToOrigin(
             snapGrid(posChanges[i].position!.x),
             snapGrid(posChanges[i].position!.y),
           );
-          posChanges[i].position = { x: c.x, y: clampOutOfHeaderBand(c.y, lanesRef.current) };
         }
         draggingRef.current = dragging;
       } else {
@@ -839,7 +830,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       ...canvasRef.current,
       nodes: canvasRef.current.nodes.map(n => {
         const rf = moved.has(n.id) ? rfById.get(n.id) : undefined;
-        return rf ? patchCanvasNode(n, rf, nodesRef.current, lanesRef.current) : n;
+        return rf ? patchCanvasNode(n, rf, nodesRef.current) : n;
       }),
     };
     canvasRef.current = updated;
@@ -3068,7 +3059,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   return (
     <HeatmapProvider nodes={nodes} edges={edges} visible={heatmapVisible} toggle={toggleHeatmap}>
     <ZoomLevelProvider>
-    <div ref={wrapperRef} style={{ width: '100%', height: '100%' }} onContextMenu={handleContextMenu}>
+    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <SectionStickyHeader lanes={derivedLanes} onFold={handleFoldLane} onDelete={handleDeleteLane} />
+    <div ref={wrapperRef} style={{ flex: '1 1 auto', minHeight: 0, position: 'relative' }} onContextMenu={handleContextMenu}>
       <ReactFlow
         proOptions={{ hideAttribution: true }}
         nodes={rfNodes}
@@ -3115,7 +3108,6 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       >
         <Background variant={BackgroundVariant.Dots} gap={GRID} size={1} color="var(--vscode-editorIndentGuide-background)" />
         <SectionLaneMarks lanes={derivedLanes} />
-        <SectionLaneHeaders lanes={derivedLanes} onFold={handleFoldLane} onDelete={handleDeleteLane} />
         <HelperLines horizontal={helperLines.horizontal} vertical={helperLines.vertical} />
         <Controls showInteractive={false}>
           {/* - minimap toggle button — appended after the built-in zoom/fit buttons */}
@@ -3172,6 +3164,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           onMoveToSubCanvas={handleMoveToSubCanvas}
         />
       )}
+    </div>
     </div>
     </ZoomLevelProvider>
     </HeatmapProvider>

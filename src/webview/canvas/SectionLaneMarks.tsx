@@ -1,7 +1,6 @@
 import React from 'react';
 import { useStore } from '@xyflow/react';
 import { kernelColor } from './palette';
-import { HEADER_H, HEADER_PAD, laneHeaderTop } from './SectionLaneHeaders';
 import type { DerivedLane } from '../../shared/sectionLanes';
 
 // - rail geometry, all in screen px
@@ -27,11 +26,10 @@ export function SectionLaneMarks({ lanes }: { lanes: DerivedLane[] }): JSX.Eleme
   return (
     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0 }}>
       {lanes.map(l => {
-        // - the stripe starts level with the header (same anchor helper, so the two can never drift
-        //   apart) and runs to the lane's bottom
-        const rawTop = laneHeaderTop(l, ty, zoom);
-        // - a folded lane shows only its header, so the stripe collapses to that height
-        const rawBottom = l.folded ? rawTop + HEADER_H + HEADER_PAD : l.bottom * zoom + ty;
+        // - the stripe spans the lane's own territory; the title now lives in the pinned bar above
+        //   the canvas, so there is no in-canvas header to align with
+        const rawTop = l.top * zoom + ty;
+        const rawBottom = l.folded ? rawTop : l.bottom * zoom + ty;
         if (height <= 0 || rawBottom < 0 || rawTop > height) return null;  // - entirely off screen
 
         // - clip to the viewport, then enforce the minimum height about the segment's centre
