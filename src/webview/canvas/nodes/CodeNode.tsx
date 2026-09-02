@@ -6,7 +6,7 @@
 
 import React, { useCallback, useState, useEffect, useRef, useMemo, memo } from 'react';
 import { createPortal } from 'react-dom';
-import { NodeProps, Handle, Position, NodeResizer, useStore } from '@xyflow/react';
+import { NodeProps, Handle, Position, NodeResizer, useStore, type Node as RFNode, type Edge } from '@xyflow/react';
 import Editor, { BeforeMount, OnMount } from '@monaco-editor/react';
 import type { editor as MonacoEditor } from 'monaco-editor';
 import { initVimMode } from 'monaco-vim';
@@ -14,7 +14,9 @@ import { CodeNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
 import { DEFAULT_NODE_BORDER_BY_TYPE } from '../palette';
-import { resolveBoundKernel } from '../../../shared/kernelBinding';
+import { makeCellKernelResolver } from '../../../shared/kernelBinding';
+import type { SectionLane } from '../../../shared/sectionLanes';
+import { useLanes } from '../LanesContext';
 import { CodeRenderer } from '../../renderers/CodeRenderer';
 import { ScrollableContent, setScrollPosition } from '../../components/ScrollableContent';
 import { applyVimClipboard, patchVimNewlineAndIndent, patchVimJoin } from './TextNode';
@@ -40,6 +42,22 @@ function overflowWidgetsRoot(): HTMLElement {
   return el;
 }
 
+// - one resolver per store snapshot: the selector below runs once per code node per store change, and
+//   building the node index inside each call was measured at 6 ms per change for 300 nodes (1 ms shared)
+let resolverKey: { nodes: unknown; edges: unknown; lanes: unknown } | null = null;
+let resolverFn: ((cellId: string) => string | null) | null = null;
+function cellKernelResolver(nodes: RFNode[], edges: Edge[], lanes: SectionLane[]): (cellId: string) => string | null {
+  if (!resolverFn || !resolverKey || resolverKey.nodes !== nodes || resolverKey.edges !== edges || resolverKey.lanes !== lanes) {
+    resolverFn = makeCellKernelResolver({
+      nodes:    nodes.map(n => ({ id: n.id, type: String(n.type ?? ''), y: n.position.y })),
+      edges:    edges.map(e => ({ fromNode: e.source, toNode: e.target })),
+      sections: lanes,
+    });
+    resolverKey = { nodes, edges, lanes };
+  }
+  return resolverFn;
+}
+
 function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as CodeNode & { accentColor?: string };
   const bw = useZoomInvariantBorderWidth(1.5);
@@ -63,17 +81,9 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   // - instance by id, so a changed data.code prop would otherwise leave `code` stale.
   useEffect(() => { setCode(node.code ?? ''); }, [node.code]);
 
-  // - selector returns a primitive (kernel id | null), so default Object.is
-  // - equality is safe and does not trigger a render loop.
-  const bound = useStore(s => {
-    const edges = s.edges.map(e => ({ fromNode: e.source, toNode: e.target }));
-    const kernelIds = new Set(
-      s.nodes
-        .filter(n => (n.data as { type?: string } | undefined)?.type === 'kernel' || n.type === 'kernel')
-        .map(n => n.id),
-    );
-    return resolveBoundKernel(id, edges, nid => kernelIds.has(nid));
-  });
+  const lanes = useLanes();
+  // - selector returns a primitive (kernel id | null), so default Object.is equality is safe
+  const bound = useStore(s => cellKernelResolver(s.nodes, s.edges, lanes)(id));
 
   const run = useCallback(() => {
     if (!bound) return;
@@ -370,7 +380,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
           <button
             onClick={e => { e.stopPropagation(); run(); }}
             disabled={!bound}
-            title={bound ? 'Run on bound kernel (Shift+Enter)' : 'Connect this cell to a kernel node to run'}
+            title={bound ? 'Run on bound kernel (Shift+Enter)' : 'Connect this cell to a kernel node, or bind a kernel to its section, to run'}
             style={{ cursor: bound ? 'pointer' : 'not-allowed', background: 'transparent', border: 'none', color: bound ? borderColor : '#6b7280', fontSize: 13, padding: 0 }}
           >▶</button>
           {isRunning && (

@@ -24,7 +24,7 @@ import { getVaults } from './settings';
 import { createLLMClient, CANVAS_TOOLS, ILLMClient } from './llm-client';
 import { buildSystemPrompt, buildStaticSystemPrompt, buildCanvasContext, nodeTitle, nodeContent } from './context-builder';
 import { assignLabel } from '../shared/nodeLabels';
-import { resolveBoundKernel, resolveUpstreamChain, resolveKernelCells } from '../shared/kernelBinding';
+import { resolveUpstreamChain, resolveCellKernel, resolveKernelCellsInCanvas, cellKernelView } from '../shared/kernelBinding';
 import { KernelManager } from './jupyter/manager';
 import { listKernels, startKernel, listKernelSpecs, listSessions } from './jupyter/client';
 import { canvasSessionName } from './llm-adapters/harness';
@@ -43,6 +43,7 @@ import {
   KernelNode,
   KernelStatusEntry,
   MsgRunCell,
+  MsgRunSection,
   MsgInterruptCell,
   HostToWebview,
   WebviewToHost,
@@ -69,7 +70,7 @@ import {
 import { parseNodeRef } from '../shared/nodeRef';
 import { MAX_FILE_FULL_BYTES, MAX_FILE_PREVIEW_BYTES, MAX_NOTEBOOK_BYTES, NODE_SIZE } from '../shared/constants';
 import { normalizeCanvasToOrigin } from '../shared/bounds';
-import { migrateSections } from '../shared/sectionLanes';
+import { migrateSections, deriveLanes } from '../shared/sectionLanes';
 
 // ─── bookmarks file helpers ──────────────────────────────────────────────────
 
@@ -483,6 +484,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           vscode.window.showWarningMessage(msg.text);
           break;
         case 'runCell':      await this.handleRunCell(msg, manager, panel, document, v => { isSelfSaving = v; }, s => rememberWrite(s)); break;
+        case 'runSection':   await this.handleRunSection(msg, manager, panel, document, v => { isSelfSaving = v; }, s => rememberWrite(s)); break;
         case 'addKernel':    await this.handleAddKernel(msg, manager, document, send); break;
         case 'kernelAction': await this.handleKernelAction(msg, manager, document); break;
         case 'interruptCell': await this.handleInterruptCell(msg, manager, document); break;
@@ -1366,7 +1368,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     // - bound kernel: the nearest kernel reachable through edges (BFS), so a chain
     // - of cells (cell2 → cell1 → kernel) shares one kernel.
     const nodeById = new Map(canvas.nodes.map(n => [n.id, n]));
-    const boundKernelNodeId = resolveBoundKernel(codeNode.id, canvas.edges, id => nodeById.get(id)?.type === 'kernel');
+    const boundKernelNodeId = resolveCellKernel(codeNode.id, cellKernelView(canvas));
     const kernelNode = boundKernelNodeId ? nodeById.get(boundKernelNodeId) as KernelNode | undefined : undefined;
     if (!kernelNode) {
       send({ type: 'runStatus', cellNodeId: codeNode.id, kernelNodeId: null, state: 'error', error: 'no kernel bound' });
@@ -1609,6 +1611,38 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
   }
 
   /**
+   * Run every code cell of one section, top to bottom (y, then x), each on its resolved kernel.
+   * Every cell runs regardless of lastStatus; the first error stops the sequence.
+   */
+  private async handleRunSection(
+    msg:            MsgRunSection,
+    manager:        KernelManager,
+    panel:          vscode.WebviewPanel,
+    document:       SkenaDocument,
+    setSelfSaving:  (v: boolean) => void,
+    setLastWritten: (s: string) => void,
+  ): Promise<void> {
+    const canvas = document.canvas;
+    const lane   = deriveLanes(canvas.nodes, canvas.metadata?.sections ?? []).find(l => l.id === msg.sectionId);
+    if (!lane) return;
+    const members = new Set(lane.memberIds);
+    const order = canvas.nodes
+      .filter((n): n is CodeNode => n.type === 'code' && members.has(n.id))
+      .sort((a, b) => a.y - b.y || a.x - b.x)
+      .map(n => n.id);
+    for (const id of order) {
+      // - re-read each turn: runOneCell rewrites the document's nodes (output node, flags)
+      const cell = document.canvas.nodes.find(n => n.id === id && n.type === 'code') as CodeNode | undefined;
+      if (!cell) continue;
+      const st = await this.runOneCell(
+        { type: 'runCell', cellNodeId: cell.id, code: cell.code ?? '' },
+        manager, panel, document, setSelfSaving, setLastWritten,
+      );
+      if (st === 'error') return;
+    }
+  }
+
+  /**
    * Kernel tab-completion (Ctrl+Space in a code cell). Resolves the cell's bound kernel
    * and asks it to complete the LIVE editor code at the cursor; returns matches (or empty).
    */
@@ -1623,7 +1657,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const codeNode = canvas.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code');
     if (!codeNode) return empty();
     const nodeById = new Map(canvas.nodes.map(n => [n.id, n]));
-    const kid = resolveBoundKernel(codeNode.id, canvas.edges, id => nodeById.get(id)?.type === 'kernel');
+    const kid = resolveCellKernel(codeNode.id, cellKernelView(canvas));
     const kernelNode = kid ? nodeById.get(kid) as KernelNode | undefined : undefined;
     const server = kernelNode ? manager.serverByName(kernelNode.server) : undefined;
     if (!kernelNode?.kernelId || !server) return empty();
@@ -1651,7 +1685,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const codeNode = canvas.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code');
     if (!codeNode) return empty();
     const nodeById = new Map(canvas.nodes.map(n => [n.id, n]));
-    const kid = resolveBoundKernel(codeNode.id, canvas.edges, id => nodeById.get(id)?.type === 'kernel');
+    const kid = resolveCellKernel(codeNode.id, cellKernelView(canvas));
     const kernelNode = kid ? nodeById.get(kid) as KernelNode | undefined : undefined;
     const server = kernelNode ? manager.serverByName(kernelNode.server) : undefined;
     if (!kernelNode?.kernelId || !server) return empty();
@@ -1677,13 +1711,12 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const canvas           = document.canvas;
     const liveIds          = new Set(kernels.map(k => k.kernelId));
     const reachableServers = new Set(kernels.map(k => k.server));
-    const typeOf           = (id: string) => canvas.nodes.find(n => n.id === id)?.type;
     let changed = false;
     for (const kn of canvas.nodes) {
       if (kn.type !== 'kernel') continue;
       const k = kn as KernelNode;
       if (!k.kernelId || !reachableServers.has(k.server) || liveIds.has(k.kernelId)) continue;
-      const bound = new Set(resolveKernelCells(k.id, canvas.edges, id => typeOf(id) === 'code', id => typeOf(id) === 'kernel'));
+      const bound = new Set(resolveKernelCellsInCanvas(k.id, cellKernelView(canvas)));
       for (const n of canvas.nodes) {
         if (n.type === 'code' && bound.has(n.id) && (n as CodeNode).lastStatus !== undefined) {
           (n as CodeNode).lastStatus = undefined;
@@ -1711,8 +1744,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     // - their run-flag (lastStatus). Interrupt keeps variables, so it must NOT reset. The plain write
     // - (no self-save suppression) makes the file-watcher soft-reload the cleared flags into the webview.
     const resetBoundCellFlags = async (): Promise<void> => {
-      const typeOf = (id: string) => canvas.nodes.find(n => n.id === id)?.type;
-      const bound  = new Set(resolveKernelCells(kernelNode.id, canvas.edges, id => typeOf(id) === 'code', id => typeOf(id) === 'kernel'));
+      const bound  = new Set(resolveKernelCellsInCanvas(kernelNode.id, cellKernelView(canvas)));
       for (const n of canvas.nodes) {
         if (n.type === 'code' && bound.has(n.id)) (n as CodeNode).lastStatus = undefined;
       }
@@ -1766,7 +1798,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const cell = canvas.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code') as CodeNode | undefined;
     if (!cell) return;
     const nodeById = new Map(canvas.nodes.map(n => [n.id, n]));
-    const kernelNodeId = resolveBoundKernel(cell.id, canvas.edges, id => nodeById.get(id)?.type === 'kernel');
+    const kernelNodeId = resolveCellKernel(cell.id, cellKernelView(canvas));
     const kernelNode = kernelNodeId ? nodeById.get(kernelNodeId) as KernelNode | undefined : undefined;
     const server = kernelNode ? manager.serverByName(kernelNode.server) : undefined;
     if (!kernelNode || !kernelNode.kernelId || !server) {

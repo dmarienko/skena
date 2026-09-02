@@ -59,6 +59,7 @@ import { CameraTopGuard } from './CameraTopGuard';
 import { deriveLanes, sortLanes, type SectionLane } from '../../shared/sectionLanes';
 import { CanvasSearch } from './CanvasSearch';
 import { MarksPanel  } from './MarksPanel';
+import { LanesContext } from './LanesContext';
 
 const NODE_TYPES: NodeTypes = {
   file:   FileNodeComponent,
@@ -3110,6 +3111,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   return (
     <HeatmapProvider nodes={nodes} edges={edges} visible={heatmapVisible} toggle={toggleHeatmap}>
     <ZoomLevelProvider>
+    <LanesContext.Provider value={lanes}>
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
     <SectionStickyHeader lanes={derivedLanes} onFold={handleFoldLane} onDelete={handleDeleteLane} />
     <div ref={wrapperRef} style={{ flex: '1 1 auto', minHeight: 0, position: 'relative' }} onContextMenu={handleContextMenu}>
@@ -3218,6 +3220,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       )}
     </div>
     </div>
+    </LanesContext.Provider>
     </ZoomLevelProvider>
     </HeatmapProvider>
   );

@@ -374,6 +374,8 @@ export interface MsgFocusNode { type: 'focusNode'; id: string; }
 /** - webview → host: user clicked the chat title to change this canvas's model */
 export interface MsgPickModel { type: 'pickModel'; }
 export interface MsgRunCell   { type: 'runCell'; cellNodeId: string; code: string; }
+// - run every code cell of a section top to bottom on its resolved kernel; the first error stops it
+export interface MsgRunSection { type: 'runSection'; sectionId: string; }
 export interface MsgAddKernel { type: 'addKernel'; position?: { x: number; y: number }; }
 export interface MsgKernelAction { type: 'kernelAction'; action: 'restart' | 'shutdown' | 'interrupt' | 'start'; kernelNodeId: string; }
 // - interrupt (SIGINT) the kernel running THIS code cell; confirm asks the host for a modal first
@@ -754,6 +756,7 @@ export type WebviewToHost =
   | MsgShowWarning
   | MsgPickModel
   | MsgRunCell
+  | MsgRunSection
   | MsgInterruptCell
   | MsgAddKernel
   | MsgKernelAction

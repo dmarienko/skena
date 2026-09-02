@@ -29,7 +29,7 @@ import * as crypto   from 'crypto';
 import { CanvasData, CanvasNode, CanvasEdge, CanvasNodeBase, CellNode, CodeNode, AgentRunPersist, AgentRunPersistResult } from '../../shared/types';
 import { assignLabel, ensureLabels } from '../../shared/nodeLabels';
 import { snapGrid } from '../../shared/grid';
-import { resolveBoundKernel, resolveUpstreamChain } from '../../shared/kernelBinding';
+import { resolveCellKernel, resolveUpstreamChain, cellKernelView } from '../../shared/kernelBinding';
 import { resolveKernelConfig, type KernelServerConfig } from '../jupyter/config';
 import { executeCell } from '../jupyter/client';
 import { renderOutput, hasVisibleOutput } from '../jupyter/output';
@@ -938,9 +938,8 @@ async function canvasRunCell(args: Record<string, unknown>): Promise<string> {
     // - so a chain of cells (cell2 → cell1 → kernel) shares one kernel.
     let kernelNode = args.kernelRef ? findNode(d, args.kernelRef as string) : undefined;
     if (!kernelNode) {
-      const byId = new Map(d.nodes.map(n => [n.id, n]));
-      const kid = resolveBoundKernel(cell.id, d.edges, id => byId.get(id)?.type === 'kernel');
-      kernelNode = kid ? byId.get(kid) : undefined;
+      const kid = resolveCellKernel(cell.id, cellKernelView(d));
+      kernelNode = kid ? d.nodes.find(n => n.id === kid) : undefined;
     }
     if (!kernelNode || kernelNode.type !== 'kernel') return 'error: no kernel bound to this cell';
 
