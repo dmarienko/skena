@@ -10,6 +10,21 @@ import type { CanvasData, CanvasNode } from './types';
 
 // - how far a lane extends past its lowest node when nothing bounds it from below
 export const LANE_BOTTOM_PAD = GRID;
+// - reserved band at the top of every lane: the header lives here and NO node may enter it, which is
+//   what keeps a node from ever sitting under the title. One grid, so the header (fixed screen height)
+//   fits inside it at any working zoom.
+export const LANE_HEADER_BAND = GRID;
+
+/**
+ * Push a y coordinate out of its lane's reserved header band. Applied while dragging, when persisting
+ * a drag, and during migration, so no node can occupy the strip the header is drawn in.
+ */
+export function clampOutOfHeaderBand(y: number, lanes: SectionLane[]): number {
+  if (lanes.length === 0) return y;
+  const sorted = sortLanes(lanes);
+  const floor = sorted[laneIndexForY(sorted, y)].y + LANE_HEADER_BAND;
+  return y < floor ? floor : y;
+}
 
 export interface SectionLane {
   id: string;
@@ -120,7 +135,10 @@ export function migrateSections(canvas: CanvasData, now: number): CanvasData {
   //   content, so migrated lanes land negative. Detect it here and shift everything back down.
   const minLaneY = existing?.length ? Math.min(...existing.map(l => l.y)) : 0;
   const needsLift = minLaneY < 0;
-  if (legacy.length === 0 && !hasMembership && !needsSeed && !needsLift) return canvas;
+  // - a node already parked in a header band predates the reservation and must be evicted
+  const needsEvict = !!existing?.length
+    && canvas.nodes.some(n => clampOutOfHeaderBand(n.y, existing) !== n.y);
+  if (legacy.length === 0 && !hasMembership && !needsSeed && !needsLift && !needsEvict) return canvas;
 
   const converted: SectionLane[] = legacy.map((n, i) => {
     const s = n as CanvasNode & { title?: string; createdAt?: number; folded?: boolean };
@@ -149,6 +167,12 @@ export function migrateSections(canvas: CanvasData, now: number): CanvasData {
     sections = sections.map(l => ({ ...l, y: l.y + lift }));
     nodes = nodes.map(n => ({ ...n, y: n.y + lift }));
   }
+
+  // - evict any node already sitting in a header band (old canvases predate the reservation)
+  nodes = nodes.map(n => {
+    const y = clampOutOfHeaderBand(n.y, sections);
+    return y === n.y ? n : { ...n, y };
+  });
 
   return { ...canvas, nodes, metadata: { ...canvas.metadata, sections } };
 }

@@ -54,8 +54,8 @@ import { CodeNodeComponent }   from './nodes/CodeNode';
 import { LabeledEdgeComponent } from './edges/LabeledEdge';
 import { HelperLines } from './HelperLines';
 import { SectionLaneMarks } from './SectionLaneMarks';
-import { SectionLaneHeaders } from './SectionLaneHeaders';
-import { deriveLanes, sortLanes, type SectionLane } from '../../shared/sectionLanes';
+import { SectionLaneHeaders, HEADER_H } from './SectionLaneHeaders';
+import { deriveLanes, sortLanes, clampOutOfHeaderBand, LANE_HEADER_BAND, type SectionLane } from '../../shared/sectionLanes';
 import { CanvasSearch } from './CanvasSearch';
 import { MarksPanel  } from './MarksPanel';
 
@@ -74,6 +74,13 @@ const NODE_TYPES: NodeTypes = {
 
 // - band-type nodes (group) are visual backdrops: skipped by snapping, nav, overlap checks
 const isBandType = (t?: string): boolean => t === 'group';
+
+/**
+ * Furthest zoom-out. Derived, not chosen: at this zoom a lane's reserved header band still measures
+ * at least the header's own height on screen, so the header always fits inside the band and can never
+ * land on a node. Zooming out further would break that, so it is simply not allowed.
+ */
+const MIN_ZOOM = (HEADER_H + 2) / LANE_HEADER_BAND;
 
 const EDGE_TYPES: EdgeTypes = {
   labeled: LabeledEdgeComponent,
@@ -465,15 +472,18 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         //   lands ON the grid on screen and none reverts on reload (all are persisted at drag-stop).
         const { horizontal, vertical, snapX, snapY } = getHelperLines(primary, nodesRef.current);
         setHelperLines(dragging ? { horizontal, vertical } : {});
-        primary.position = clampToOrigin(
+        const pc = clampToOrigin(
           snapX !== undefined ? snapX : snapGrid(primary.position!.x),
           snapY !== undefined ? snapY : snapGrid(primary.position!.y),
         );
+        // - a node may not enter a lane's reserved header band, so it can never land under the title
+        primary.position = { x: pc.x, y: clampOutOfHeaderBand(pc.y, lanesRef.current) };
         for (let i = 1; i < posChanges.length; i++) {
-          posChanges[i].position = clampToOrigin(
+          const c = clampToOrigin(
             snapGrid(posChanges[i].position!.x),
             snapGrid(posChanges[i].position!.y),
           );
+          posChanges[i].position = { x: c.x, y: clampOutOfHeaderBand(c.y, lanesRef.current) };
         }
         draggingRef.current = dragging;
       } else {
@@ -486,7 +496,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     }
 
     onNodesChange(changes);
-  }, [onNodesChange]); // - nodesRef always current via its own useEffect
+  }, [onNodesChange]); // - nodesRef / lanesRef always current via their own useEffects
 
   // ─── active node tracking (for FloatingChat context) ─────────────────────────
   const activeNodeIdRef = useRef<string | null>(null);
@@ -693,6 +703,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   // - lanes live in canvas metadata; the webview owns fold/create/delete and the host merges them back
   const [lanes, setLanes] = useState<SectionLane[]>(canvas.metadata?.sections ?? []);
   useEffect(() => { setLanes(canvas.metadata?.sections ?? []); }, [canvas]);
+  const lanesRef = useRef<SectionLane[]>(lanes);
+  useEffect(() => { lanesRef.current = lanes; }, [lanes]);
 
   // - derived every render from the LIVE node array, so dragging a node moves its lane on the same
   //   frame. Nothing about a lane is stored except its y.
@@ -3089,7 +3101,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           canvasRef.current = { ...canvasRef.current, viewport };
           scheduleSave();
         }}
-        minZoom={0.05}
+        minZoom={MIN_ZOOM}
         maxZoom={3}
         translateExtent={translateExtent}
         deleteKeyCode="Delete"
