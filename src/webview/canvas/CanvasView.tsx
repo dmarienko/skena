@@ -405,7 +405,8 @@ function ViewportDebug({ dbg }: { dbg: React.MutableRefObject<Record<string, num
     `LIVE  tx=${tx.toFixed(1)} ty=${ty.toFixed(1)} z=${zoom.toFixed(3)}\n` +
     `STORE sections: ${secs || '(none)'}\n` +
     `EFFECT nodesLen=${d.nodesLen ?? '?'} nSecs=${d.nSecs ?? '?'} hasRf=${d.hasRf ?? '?'} alreadyFramed=${d.alreadyFramed ?? '?'}\n` +
-    `FRAME fired=${d.fired ?? 0} secY=${d.secY ?? '?'} → set tx=${typeof d.tx === 'number' ? d.tx.toFixed(1) : '?'} ty=${typeof d.ty === 'number' ? d.ty.toFixed(1) : '?'} z=${typeof d.zoom === 'number' ? (d.zoom as number).toFixed(3) : '?'}`;
+    `FRAME fired=${d.fired ?? 0} secY=${d.secY ?? '?'} → set tx=${typeof d.tx === 'number' ? d.tx.toFixed(1) : '?'} ty=${typeof d.ty === 'number' ? d.ty.toFixed(1) : '?'} z=${typeof d.zoom === 'number' ? (d.zoom as number).toFixed(3) : '?'}\n` +
+    `AFTER-SET live ty=${typeof d.liveTyAfter === 'number' ? (d.liveTyAfter as number).toFixed(1) : '?'}`;
   return (
     <div style={{ position: 'absolute', top: 6, right: 6, zIndex: 99999, background: 'rgba(0,0,0,0.82)', color: '#39ff14', font: '11px/1.5 monospace', padding: '6px 9px', pointerEvents: 'none', whiteSpace: 'pre', borderRadius: 4 }}>
       {txt}
@@ -724,9 +725,16 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     const ty = -top.position.y * zoom;
     // - React Flow re-applies its saved/default viewport (clamped to the gutter) right AFTER this
     //   effect, clobbering a single setViewport. Re-assert across the next few frames so ours wins.
-    const apply = () => rfRef.current?.setViewport({ x: tx, y: ty, zoom }, { duration: 0 });
+    const apply = () => {
+      rfRef.current?.setViewport({ x: tx, y: ty, zoom }, { duration: 0 });
+      const v = rfRef.current?.getViewport();
+      if (v) frameDbgRef.current = { ...frameDbgRef.current, liveTyAfter: v.y };
+    };
     apply();
     requestAnimationFrame(() => { apply(); requestAnimationFrame(() => { apply(); requestAnimationFrame(apply); }); });
+    setTimeout(apply, 120);
+    setTimeout(apply, 250);
+    setTimeout(apply, 500);
     frameDbgRef.current = { ...frameDbgRef.current, fired: (Number(frameDbgRef.current.fired) || 0) + 1, secY: top.position.y, secX: top.position.x, tx, ty, zoom };
   }, [nodes, canvasPath, canvas]);
 
