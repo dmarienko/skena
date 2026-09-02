@@ -722,7 +722,11 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     const zoom = canvas.viewport?.zoom ?? rfRef.current.getViewport().zoom ?? 1;
     const tx = -top.position.x * zoom;
     const ty = -top.position.y * zoom;
-    rfRef.current.setViewport({ x: tx, y: ty, zoom }, { duration: 0 });
+    // - React Flow re-applies its saved/default viewport (clamped to the gutter) right AFTER this
+    //   effect, clobbering a single setViewport. Re-assert across the next few frames so ours wins.
+    const apply = () => rfRef.current?.setViewport({ x: tx, y: ty, zoom }, { duration: 0 });
+    apply();
+    requestAnimationFrame(() => { apply(); requestAnimationFrame(() => { apply(); requestAnimationFrame(apply); }); });
     frameDbgRef.current = { ...frameDbgRef.current, fired: (Number(frameDbgRef.current.fired) || 0) + 1, secY: top.position.y, secX: top.position.x, tx, ty, zoom };
   }, [nodes, canvasPath, canvas]);
 
