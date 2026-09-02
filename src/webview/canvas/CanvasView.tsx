@@ -3054,8 +3054,10 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         elevateEdgesOnSelect
       >
         <Background variant={BackgroundVariant.Dots} gap={GRID} size={1} color="var(--vscode-editorIndentGuide-background)" />
-        <SectionBands />
-        <SectionHeaders onFold={handleFoldSection} onDelete={handleDeleteSection} />
+        {/* - section band + header overlays disabled: the visual is being redesigned. The section
+             data model (sectionId, section nodes, migration) is untouched; only rendering is off. */}
+        {/* <SectionBands /> */}
+        {/* <SectionHeaders onFold={handleFoldSection} onDelete={handleDeleteSection} /> */}
         <HelperLines horizontal={helperLines.horizontal} vertical={helperLines.vertical} />
         <Controls showInteractive={false}>
           {/* - minimap toggle button — appended after the built-in zoom/fit buttons */}
