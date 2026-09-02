@@ -1,6 +1,7 @@
 import React from 'react';
 import { useStore } from '@xyflow/react';
 import { SECTION_RGB } from './palette';
+import { GRID } from '../../shared/grid';
 
 /**
  * SectionBands — screen-space overlay that draws each section as a full-viewport-width horizontal
@@ -17,8 +18,10 @@ export function SectionBands(): JSX.Element {
       {nodes
         .filter(n => n.type === 'section')
         .map(s => {
-          const top = s.position.y * zoom + ty;
-          const height = Number(s.height ?? s.style?.height ?? 0) * zoom;
+          // - fill one grid ABOVE the section too, so the band reaches the top of the view (into the
+          //   gutter) with the content inset — a filled top margin, never an empty strip
+          const top = (s.position.y - GRID) * zoom + ty;
+          const height = (Number(s.height ?? s.style?.height ?? 0) + GRID) * zoom;
           if (height <= 0) return null;
           return (
             <div
