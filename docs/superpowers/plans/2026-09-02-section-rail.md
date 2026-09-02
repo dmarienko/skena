@@ -51,7 +51,7 @@ npm run build       # - expect "⚡ Done in …ms"
 - Modify: `src/shared/sectionLanes.ts` (append after `deriveLanes`, before `migrateSections`)
 - Test: `test/section-lanes.mjs` (append)
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `test/section-lanes.mjs`. Extend the existing import line to:
 
@@ -125,12 +125,12 @@ test('laneTopForY: the owning lane top, or -Infinity without lanes', () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `npx esbuild src/shared/sectionLanes.ts --bundle --format=esm --outfile=test/.build/sectionLanes.mjs && node --test test/section-lanes.mjs`
 Expected: SyntaxError — `growLaneForNodes` is not exported.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Insert after `deriveLanes` in `src/shared/sectionLanes.ts`:
 
@@ -205,12 +205,12 @@ export function laneTopForY(lanes: SectionLane[], y: number): number {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `npx esbuild src/shared/sectionLanes.ts --bundle --format=esm --outfile=test/.build/sectionLanes.mjs && node --test test/section-lanes.mjs`
 Expected: all tests pass, `# fail 0`.
 
-- [ ] **Step 5: Commit** (`test/` is gitignored — src only)
+- [x] **Step 5: Commit** (`test/` is gitignored — src only)
 
 ```bash
 git add src/shared/sectionLanes.ts
@@ -225,7 +225,7 @@ git commit -m "feat: growLaneForNodes — dragging past a section's bottom edge 
 - Modify: `src/shared/kernelBinding.ts` (append)
 - Test: `test/kernel-binding.mjs` (append)
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Change the import line of `test/kernel-binding.mjs` to:
 
@@ -273,12 +273,12 @@ test('resolveKernelCellsInCanvas: edge-bound and section-bound cells, edge wins 
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `npx esbuild src/shared/kernelBinding.ts --bundle --format=esm --outfile=test/.build/kernel-binding.mjs && node --test test/kernel-binding.mjs`
 Expected: SyntaxError — `resolveCellKernel` is not exported.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Add at the top of `src/shared/kernelBinding.ts`:
 
@@ -323,12 +323,12 @@ export function resolveKernelCellsInCanvas(kernelId: string, c: CellKernelCanvas
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `npx esbuild src/shared/kernelBinding.ts --bundle --format=esm --outfile=test/.build/kernel-binding.mjs && node --test test/kernel-binding.mjs`
 Expected: `# fail 0`.
 
-- [ ] **Step 5: Typecheck, commit**
+- [x] **Step 5: Typecheck, commit**
 
 Run: `npm run typecheck` — the 3 pre-existing errors only.
 
@@ -349,7 +349,7 @@ git commit -m "feat: resolveCellKernel — edge-bound kernel, else the section's
 - Modify: `src/webview/canvas/nodes/CodeNode.tsx:17`, `:66-76`, `:373`
 - Modify: `src/webview/canvas/CanvasView.tsx` — provider around the tree (see Step 6)
 
-- [ ] **Step 1: Message type**
+- [x] **Step 1: Message type**
 
 In `src/shared/types.ts`, after the `MsgRunCell` line (376):
 
@@ -364,7 +364,7 @@ In the `WebviewToHost` union, after `| MsgRunCell`:
   | MsgRunSection
 ```
 
-- [ ] **Step 2: Host — imports and the six sites**
+- [x] **Step 2: Host — imports and the six sites**
 
 `src/extension/editor-provider.ts` line 27 becomes:
 
@@ -421,7 +421,7 @@ with
 
 Then delete the now-unused `const typeOf = …` lines next to those two sites if the compiler reports them unused (it does not — `noUnusedLocals` is off — so delete them by hand: the one directly above the ~1686 loop and the one inside `resetBoundCellFlags`).
 
-- [ ] **Step 3: Host — `runSection` handler and dispatch**
+- [x] **Step 3: Host — `runSection` handler and dispatch**
 
 In the message `switch`, after the `case 'runCell': …` line:
 
@@ -467,7 +467,7 @@ Add the method after `handleRunCell`:
 
 Add `MsgRunSection` to the types import at the top of `editor-provider.ts` (the import that already lists `MsgRunCell`).
 
-- [ ] **Step 4: MCP server**
+- [x] **Step 4: MCP server**
 
 `src/extension/mcp/server.ts` line 32 becomes:
 
@@ -488,7 +488,7 @@ with
       kernelNode = kid ? d.nodes.find(n => n.id === kid) : undefined;
 ```
 
-- [ ] **Step 5: Webview — `LanesContext` and `CodeNode`**
+- [x] **Step 5: Webview — `LanesContext` and `CodeNode`**
 
 Create `src/webview/canvas/LanesContext.ts`:
 
@@ -548,7 +548,7 @@ Line 373's title becomes:
             title={bound ? 'Run on bound kernel (Shift+Enter)' : 'Connect this cell to a kernel node, or bind a kernel to its section, to run'}
 ```
 
-- [ ] **Step 6: Webview — provide the lanes**
+- [x] **Step 6: Webview — provide the lanes**
 
 In `src/webview/canvas/CanvasView.tsx`, add the import next to the other `./` imports:
 
@@ -558,7 +558,7 @@ import { LanesContext } from './LanesContext';
 
 In the render (~3110), wrap the outer `<div style={{ width: '100%', height: '100%', … }}>` in `<LanesContext.Provider value={lanes}>` … `</LanesContext.Provider>` (inside `ZoomLevelProvider`).
 
-- [ ] **Step 7: Typecheck + build + commit**
+- [x] **Step 7: Typecheck + build + commit**
 
 Run: `npm run typecheck` — 3 pre-existing errors only. `grep -n resolveBoundKernel src/extension src/webview -r` → only `kernelBinding.ts` itself. Run: `npm run build`.
 
@@ -576,7 +576,7 @@ git commit -m "feat: run section; every kernel-resolution site uses the edge-the
 - Create: `src/webview/theme.ts`
 - Modify: `src/webview/App.tsx` (imports at 13–19; a mount effect)
 
-- [ ] **Step 1: Tokens**
+- [x] **Step 1: Tokens**
 
 Append to `src/webview/canvas/palette.ts`:
 
@@ -589,7 +589,7 @@ export const THEME = {
 } as const;
 ```
 
-- [ ] **Step 2: Installer**
+- [x] **Step 2: Installer**
 
 Create `src/webview/theme.ts`:
 
@@ -614,7 +614,7 @@ export function installThemeVars(): () => void {
 }
 ```
 
-- [ ] **Step 3: Mount**
+- [x] **Step 3: Mount**
 
 In `src/webview/App.tsx` add to the imports:
 
@@ -628,7 +628,7 @@ and, inside the `App` component next to the other effects (e.g. right before the
   useEffect(() => installThemeVars(), []);
 ```
 
-- [ ] **Step 4: Build + commit**
+- [x] **Step 4: Build + commit**
 
 Run: `npm run build`.
 
@@ -647,7 +647,7 @@ git commit -m "feat: neutral theme tokens as --sk-* variables, following the VS 
 - Create: `src/webview/rail/railGeometry.ts`
 - Test: `test/rail-geometry.mjs`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `test/rail-geometry.mjs`:
 
@@ -698,12 +698,12 @@ test('railItems: strict priority — S#, fold, title, run, kernel, delete', () =
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `npx esbuild src/webview/rail/railGeometry.ts --bundle --format=esm --outfile=test/.build/railGeometry.mjs && node --test test/rail-geometry.mjs`
 Expected: esbuild error — file not found.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Create `src/webview/rail/railGeometry.ts`:
 
@@ -778,12 +778,12 @@ export function railItems(height: number, titleChars: number): RailItem[] {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `npx esbuild src/webview/rail/railGeometry.ts --bundle --format=esm --outfile=test/.build/railGeometry.mjs && node --test test/rail-geometry.mjs`
 Expected: `# fail 0`. (Arithmetic check for the floor test: 0..10 → 3..7 → mid 5 → top 0 → bottom 28.)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/webview/rail/railGeometry.ts
@@ -799,7 +799,7 @@ git commit -m "feat: rail geometry — segment projection with gap and floor, it
 - Modify: `src/webview/canvas/CanvasView.tsx` (imports ~56–58; render ~3110–3116; new handlers next to `handleFoldLane` ~781)
 - Delete: `src/webview/canvas/SectionStickyHeader.tsx`
 
-- [ ] **Step 1: `RailSegment.tsx`**
+- [x] **Step 1: `RailSegment.tsx`**
 
 ```tsx
 import React from 'react';
@@ -885,7 +885,7 @@ export function RailSegment({ lane, seg, color, kernelName, current, onFold, onR
 }
 ```
 
-- [ ] **Step 2: `SectionRail.tsx`** (popovers come in Task 7 — for now the kernel/title callbacks are wired to no-ops from CanvasView)
+- [x] **Step 2: `SectionRail.tsx`** (popovers come in Task 7 — for now the kernel/title callbacks are wired to no-ops from CanvasView)
 
 ```tsx
 import React from 'react';
@@ -947,7 +947,7 @@ export function SectionRail({ lanes, kernels, selectedNodeId, onFold, onRun, onD
 }
 ```
 
-- [ ] **Step 3: CanvasView — imports, handlers, layout**
+- [x] **Step 3: CanvasView — imports, handlers, layout**
 
 Replace the import at line 57 (`SectionStickyHeader`) with:
 
@@ -1003,15 +1003,15 @@ Delete `src/webview/canvas/SectionStickyHeader.tsx`:
 git rm src/webview/canvas/SectionStickyHeader.tsx
 ```
 
-- [ ] **Step 3b: Theme variables before the first paint**
+- [x] **Step 3b: Theme variables before the first paint**
 
 The rail reads `var(--sk-*)`, which `App.tsx` sets in a passive effect (after the first paint). In `src/webview/App.tsx` change `useEffect(() => installThemeVars(), []);` to `useLayoutEffect(() => installThemeVars(), []);` and add `useLayoutEffect` to the React import on line 13.
 
-- [ ] **Step 4: Typecheck + build**
+- [x] **Step 4: Typecheck + build**
 
 Run: `npm run typecheck` — 3 pre-existing errors only (if `KernelNode` was already imported in CanvasView, drop the duplicate import). Run: `npm run build`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/webview/rail/RailSegment.tsx src/webview/rail/SectionRail.tsx src/webview/canvas/CanvasView.tsx
@@ -1026,7 +1026,7 @@ git commit -m "feat: section rail beside the flow — stripe, rotated title, fol
 - Create: `src/webview/rail/KernelPicker.tsx`, `src/webview/rail/TitleEditor.tsx`
 - Modify: `src/webview/rail/SectionRail.tsx` (popover state), `src/webview/canvas/CanvasView.tsx` (two handlers, replace the no-ops)
 
-- [ ] **Step 1: `KernelPicker.tsx`**
+- [x] **Step 1: `KernelPicker.tsx`**
 
 ```tsx
 import React, { useEffect, useRef } from 'react';
@@ -1075,7 +1075,7 @@ export function KernelPicker({ anchor, kernels, currentId, onPick, onClose }: {
 }
 ```
 
-- [ ] **Step 2: `TitleEditor.tsx`**
+- [x] **Step 2: `TitleEditor.tsx`**
 
 ```tsx
 import React, { useEffect, useRef, useState } from 'react';
@@ -1103,7 +1103,7 @@ export function TitleEditor({ anchor, initial, onCommit, onClose }: {
 }
 ```
 
-- [ ] **Step 3: Popover state in `SectionRail.tsx`**
+- [x] **Step 3: Popover state in `SectionRail.tsx`**
 
 Add imports:
 
@@ -1146,7 +1146,7 @@ Pass `onKernel={openKernel} onTitle={openTitle}` to `RailSegment`, and before th
 
 (`fmtDateTime` import is unused here if the placeholder path is not needed — remove the import if so.)
 
-- [ ] **Step 4: Handlers in `CanvasView.tsx`**
+- [x] **Step 4: Handlers in `CanvasView.tsx`**
 
 Replace the `noopAnchor` callback with:
 
@@ -1165,7 +1165,7 @@ Replace the `noopAnchor` callback with:
 
 and in the render replace `onKernel={noopAnchor} onTitle={noopAnchor}` with `onBindKernel={handleBindKernel} onRename={handleRenameLane}`.
 
-- [ ] **Step 5: Typecheck + build + commit**
+- [x] **Step 5: Typecheck + build + commit**
 
 Run: `npm run typecheck` (3 pre-existing), `npm run build`.
 
@@ -1185,7 +1185,7 @@ git commit -m "feat: rail popovers — bind a section to a kernel node, rename a
 - Delete: `src/webview/canvas/SectionLaneMarks.tsx`, `src/webview/canvas/CameraTopGuard.tsx`
 - Modify: `src/webview/canvas/CanvasView.tsx` — imports 56–58; `firstLaneTopRef` block ~726–738 and effect ~755–757; `translateExtent` ~3101–3108; mounts ~3161–3162
 
-- [ ] **Step 1: `SectionSeparators.tsx`**
+- [x] **Step 1: `SectionSeparators.tsx`**
 
 ```tsx
 import React from 'react';
@@ -1210,7 +1210,7 @@ export function SectionSeparators({ lanes }: { lanes: DerivedLane[] }): JSX.Elem
 }
 ```
 
-- [ ] **Step 2: CanvasView — camera**
+- [x] **Step 2: CanvasView — camera**
 
 Imports: replace lines 56 and 58 (`SectionLaneMarks`, `CameraTopGuard`) with
 
@@ -1264,11 +1264,11 @@ with
 git rm src/webview/canvas/SectionLaneMarks.tsx src/webview/canvas/CameraTopGuard.tsx
 ```
 
-- [ ] **Step 3: Typecheck + build**
+- [x] **Step 3: Typecheck + build**
 
 Run: `npm run typecheck` (3 pre-existing; `useMemo` may now be unused only if nothing else uses it — it is used elsewhere, keep the import). `grep -n 'firstLaneTopRef\|extentTopY\|CameraTopGuard\|SectionLaneMarks' src -r` → nothing. Run: `npm run build`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/webview/canvas/SectionSeparators.tsx src/webview/canvas/CanvasView.tsx
@@ -1284,7 +1284,7 @@ git commit -m "refactor: camera back to the origin rule — top flush at 0, no l
 - Modify: `src/webview/canvas/CanvasView.tsx` (new-section handler ~798)
 - Test: `test/section-lanes.mjs`
 
-- [ ] **Step 1: Write the failing test** (append to `test/section-lanes.mjs`)
+- [x] **Step 1: Write the failing test** (append to `test/section-lanes.mjs`)
 
 ```js
 test('migrateSections drops a stored colorIndex and is idempotent afterwards', () => {
@@ -1295,12 +1295,12 @@ test('migrateSections drops a stored colorIndex and is idempotent afterwards', (
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `npx esbuild src/shared/sectionLanes.ts --bundle --format=esm --outfile=test/.build/sectionLanes.mjs && node --test test/section-lanes.mjs`
 Expected: the new test fails (the `colorIndex: 3` survives).
 
-- [ ] **Step 3: Implementation**
+- [x] **Step 3: Implementation**
 
 In `SectionLane`, delete the two lines
 
@@ -1330,11 +1330,11 @@ In `migrateSections`:
 
 In `CanvasView.tsx`'s `skena:newSection` handler, `{ id: \`sec-${now.toString(36)}\`, y: flowY, createdAt: now, colorIndex: lanes.length }` → `{ id: \`sec-${now.toString(36)}\`, y: flowY, createdAt: now }`.
 
-- [ ] **Step 4: Run the tests, typecheck, build**
+- [x] **Step 4: Run the tests, typecheck, build**
 
 Run the section-lanes test command — `# fail 0` (fix any older test in that file that asserted `colorIndex`: `grep -n colorIndex test/section-lanes.mjs`). Run: `npm run typecheck` (3 pre-existing), `grep -rn colorIndex src/shared src/webview/rail src/webview/canvas/CanvasView.tsx` → only `KernelNode.colorIndex` uses remain. Run: `npm run build`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/shared/sectionLanes.ts src/webview/canvas/CanvasView.tsx
@@ -1351,7 +1351,7 @@ git commit -m "refactor: a section's colour is its kernel's — drop SectionLane
 - Create: `src/webview/rail/useLaneGrowth.ts`
 - Modify: `src/webview/canvas/CanvasView.tsx` — `HistoryEntry` ~line 525; `pushHistory` ~712; `lanes` state ~721–724; `applyHistoryState`/`undo`/`redo` ~831–858; a new `applyGrowth` callback after `commitLanes`
 
-- [ ] **Step 1: `useLaneGrowth.ts`**
+- [x] **Step 1: `useLaneGrowth.ts`**
 
 ```ts
 import { useEffect, useRef, type MutableRefObject } from 'react';
@@ -1385,7 +1385,7 @@ export function useLaneGrowth(nodes: Node[], lanes: SectionLane[], dragging: Mut
 }
 ```
 
-- [ ] **Step 2: History entries carry sections**
+- [x] **Step 2: History entries carry sections**
 
 Move the two lines
 
@@ -1415,7 +1415,7 @@ Every place that builds an entry — `pushHistory`, `undo` (the `redoStackRef` p
   }, [setNodes, setEdges, scheduleSave]);
 ```
 
-- [ ] **Step 3: Apply growth in CanvasView**
+- [x] **Step 3: Apply growth in CanvasView**
 
 Add the import: `import { useLaneGrowth } from '../rail/useLaneGrowth';` and `type LaneGrowth` to the `sectionLanes` import.
 
@@ -1437,7 +1437,7 @@ After `commitLanes`:
 
 (`draggingRef` is declared at ~438, above this point.)
 
-- [ ] **Step 4: Typecheck + build + commit**
+- [x] **Step 4: Typecheck + build + commit**
 
 Run: `npm run typecheck` (3 pre-existing), `npm run build`.
 
@@ -1456,7 +1456,7 @@ git commit -m "feat: sections grow when a node is moved or resized past their bo
 - Modify: `src/extension/mcp/server.ts` — import; `canvasAddNode` (~590), `canvasUpdateNode` (~624), the output geometry at ~826
 - Modify: `src/extension/editor-provider.ts` — the two output-cell sites (~1310 and ~1444)
 
-- [ ] **Step 1: MCP**
+- [x] **Step 1: MCP**
 
 Add to the imports of `src/extension/mcp/server.ts`:
 
@@ -1501,7 +1501,7 @@ with
   const outGeom = { x: Math.round(cell.x + cell.width + 140), y: outY, width: 480, height: 320 };
 ```
 
-- [ ] **Step 2: Host**
+- [x] **Step 2: Host**
 
 While in `editor-provider.ts`: key the run-section guard on the document too — `runningSections` entries become `` `${document.uri.fsPath}::${msg.sectionId}` `` (section ids are `sec-<Date.now()>`, so two canvases can collide on the id alone).
 
@@ -1529,7 +1529,7 @@ and after each `c.nodes.push(outputNode);` add:
 
 (`c` is the document's canvas, mutated in place by the surrounding code; `Object.assign` keeps that contract — the shifted node objects are new, the unshifted ones are the same references, so `cn` stays valid.)
 
-- [ ] **Step 3: Typecheck + build + commit**
+- [x] **Step 3: Typecheck + build + commit**
 
 Run: `npm run typecheck` (3 pre-existing), `npm run build`.
 
@@ -1546,7 +1546,7 @@ git commit -m "feat: MCP and host writes grow sections; an output cell never lan
 - Modify: `package.json` (`"version": "0.17.0"` → `"0.17.1"`)
 - Modify: `docs/superpowers/specs/2026-09-02-section-rail-design.md` (only if the smoke test forces a change)
 
-- [ ] **Step 1: All pure tests**
+- [x] **Step 1: All pure tests**
 
 ```bash
 npx esbuild src/shared/sectionLanes.ts --bundle --format=esm --outfile=test/.build/sectionLanes.mjs && node --test test/section-lanes.mjs
@@ -1556,7 +1556,7 @@ npx esbuild src/shared/bounds.ts --bundle --format=esm --outfile=test/.build/bou
 ```
 Expected: `# fail 0` for each.
 
-- [ ] **Step 2: Package**
+- [x] **Step 2: Package**
 
 ```bash
 sed -i 's/"version": "0.17.0"/"version": "0.17.1"/' package.json
@@ -1577,7 +1577,7 @@ Install `skena-0.17.1.vsix` (or F5 the dev host), open `test/H5.canvas`, and che
 - Degradation: at 0.07 short segments show only `S#`; hovering shows the full tooltip.
 - Reload twice → no extra sections, no stored `colorIndex` in the file.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add package.json
