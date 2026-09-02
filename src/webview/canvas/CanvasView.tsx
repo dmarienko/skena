@@ -1219,7 +1219,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     if (forceCenter) {
       // - explicit jump (e.g. a cross-canvas reference): centre the node+output box, zoom out to fit
       const fit = targets.length > 1
-        ? Math.max(0.1, Math.min(curZoom, Math.min((vR - vL) / (bx2 - bx1 + 160), (vB - vT) / (by2 - by1 + 160))))
+        ? Math.max(MIN_ZOOM, Math.min(curZoom, Math.min((vR - vL) / (bx2 - bx1 + 160), (vB - vT) / (by2 - by1 + 160))))
         : curZoom;
       const cForce = clampViewportToOrigin(availCx - bcx * fit, availCy - bcy * fit, fit);
       rfRef.current.setViewport({ x: cForce.x, y: cForce.y, zoom: fit }, { duration: 250 });
