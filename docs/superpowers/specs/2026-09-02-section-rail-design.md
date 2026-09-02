@@ -125,7 +125,9 @@ them without importing TS.
 
 ### 5.2 Segments
 
-Rail: width 44px, full panel height, background `bg1`, 1px right border `border`.
+Rail: width 44px, full panel height, background `bg1`, 1px right border `border`. The bottom 28px of
+the rail is a strip holding the `+` button (`PLUS_H`); segments are projected and clipped above it,
+so a section whose projection falls entirely inside that strip has no segment until the camera moves.
 
 One segment per section whose range intersects the viewport:
 
@@ -152,7 +154,7 @@ Stacked from the segment's **visible** top, centred in the remaining 34px, gap 7
 4. kernel dot — 9px circle in the section colour; grey ring when unbound
 5. `✕` delete — 12px, `text3`
 
-`+` new section: pinned at the rail's bottom, 16px, `text2`.
+`+` new section: in the 28px bottom strip, 16px, `text2`, centred on the controls column.
 
 The **current** section (the one holding the selected node) draws its title in `text1`; the others
 in `text2`.
@@ -169,6 +171,9 @@ The title is elastic: it replaces the horizontal `S#` and takes whatever height 
 with an ellipsis, when at least 40px is left (`TITLE_MIN_PX`). A long title therefore never removes
 a control. Below that, `S#` is drawn horizontally (fits in 44px up to `S99`); at the 28px floor only
 `S#` remains.
+
+The item budget uses the rendered boxes (fold / run / delete 20px, kernel 14px, `S#` 12px, 7px
+gaps, 8px top pad), so a control that does not fit is dropped, never clipped.
 
 The 28px floor grows a segment only into free space: never into a neighbour's projected range.
 So at extreme zoom-out stacked sections become thin stripes without labels rather than
@@ -294,6 +299,11 @@ bottom edge → the section grows and the sections below shift as one; drag it u
 section above; `+` appends and pans; reload → no extra sections.
 
 ## 12. Out of scope
+
+Known, pre-existing, not fixed here: about 20 sites in `CanvasView.tsx` use `window.innerWidth` /
+`innerHeight` as the flow viewport size (`focusNodeById`, zoom centre, new-node placement); with the
+44px rail those are off by 44px horizontally, as they were off by 28px vertically with the old header.
+The store's `s.width` / `s.height` are the right numbers.
 
 Node / edge / label restyle (second spec). Kernelspec-driven kernels in the rail (replacing kernel
 nodes). Reordering sections. Compacting folded sections. Cross-section edge rules. The packing /

@@ -641,7 +641,7 @@ git commit -m "feat: neutral theme tokens as --sk-* variables, following the VS 
 
 ### Task 5: rail geometry (pure)
 
-> Executed. Review changed the shape: `railItems` returns `RailLayout { items, titleMaxPx }` (elastic, truncated title), the floor grows only into free space, edges are rounded; 11 tests. See `f5264f9`, `c085626` and spec §5.4.
+> Executed. Review changed the shape: `railItems` returns `RailLayout { items, titleMaxPx }` (elastic, truncated title), the floor grows only into free space, edges are rounded; 11 tests. See `f5264f9`, `c085626` and spec §5.4. Task 6 review then replaced the item constants with the rendered box sizes (`ICON_PX` 14, `BTN_H` 20, `DOT_BTN_H` 14, `LABEL_H` 12) and dropped `clippedTop`; `PLUS_H` = 28 reserves the + strip.
 
 **Files:**
 - Create: `src/webview/rail/railGeometry.ts`
