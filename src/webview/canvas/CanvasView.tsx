@@ -4,7 +4,7 @@
  * handles user interactions (drag, connect, delete) and saves back to host.
  */
 
-import React, { useCallback, useState, useEffect, useRef } from 'react';
+import React, { useCallback, useState, useEffect, useRef, useMemo } from 'react';
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -723,19 +723,11 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     const zoom = canvas.viewport?.zoom ?? rfRef.current.getViewport().zoom ?? 1;
     const tx = -top.position.x * zoom;
     const ty = -top.position.y * zoom;
-    // - React Flow re-applies its saved/default viewport (clamped to the gutter) right AFTER this
-    //   effect, clobbering a single setViewport. Re-assert across the next few frames so ours wins.
-    const apply = () => {
-      rfRef.current?.setViewport({ x: tx, y: ty, zoom }, { duration: 0 });
-      const v = rfRef.current?.getViewport();
-      if (v) frameDbgRef.current = { ...frameDbgRef.current, liveTyAfter: v.y };
-    };
-    apply();
-    requestAnimationFrame(() => { apply(); requestAnimationFrame(() => { apply(); requestAnimationFrame(apply); }); });
-    setTimeout(apply, 120);
-    setTimeout(apply, 250);
-    setTimeout(apply, 500);
-    frameDbgRef.current = { ...frameDbgRef.current, fired: (Number(frameDbgRef.current.fired) || 0) + 1, secY: top.position.y, secX: top.position.x, tx, ty, zoom };
+    // - the dynamic translateExtent (top-left = the top section) now stops the camera from rising above
+    //   the title, so this is just a nudge into place; the extent holds it.
+    rfRef.current.setViewport({ x: tx, y: ty, zoom }, { duration: 0 });
+    const v = rfRef.current.getViewport();
+    frameDbgRef.current = { ...frameDbgRef.current, fired: (Number(frameDbgRef.current.fired) || 0) + 1, secY: top.position.y, secX: top.position.x, tx, ty, zoom, liveTyAfter: v.y };
   }, [nodes, canvasPath, canvas]);
 
   // - debounced save — reads canvasRef.current at fire time so it always sends
@@ -3060,6 +3052,17 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     return () => window.removeEventListener('skena:focusNodeRequest', handler);
   }, [focusNodeById]);
 
+  // - pan bounds. For a section canvas the top-left is pinned to the TOPMOST section's top-left, so the
+  //   camera physically cannot rise above the title (React Flow rests the viewport there) — that is what
+  //   keeps the title flush at the canvas edge, no empty band above it. Memoized so the array ref only
+  //   changes when the bound actually moves (an inline array re-applies every render → churn).
+  const topSec = nodes.filter(n => n.type === 'section').reduce<Node | null>((a, b) => (a && a.position.y <= b.position.y ? a : b), null);
+  const extentTop: [number, number] = topSec ? [topSec.position.x, topSec.position.y] : [-ORIGIN_GUTTER, -ORIGIN_GUTTER];
+  const translateExtent = useMemo<[[number, number], [number, number]]>(
+    () => [extentTop, [1e7, 1e7]],
+    [extentTop[0], extentTop[1]],
+  );
+
   return (
     <HeatmapProvider nodes={nodes} edges={edges} visible={heatmapVisible} toggle={toggleHeatmap}>
     <ZoomLevelProvider>
@@ -3103,7 +3106,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         }}
         minZoom={0.05}
         maxZoom={3}
-        translateExtent={CANVAS_TRANSLATE_EXTENT}
+        translateExtent={translateExtent}
         deleteKeyCode="Delete"
         multiSelectionKeyCode="Shift"
         elevateEdgesOnSelect
