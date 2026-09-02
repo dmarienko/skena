@@ -26,7 +26,7 @@ import * as os       from 'os';
 import * as readline from 'readline';
 import * as crypto   from 'crypto';
 
-import { CanvasData, CanvasNode, CanvasEdge, CanvasNodeBase, CellNode, CodeNode, AgentRunPersist, AgentRunPersistResult } from '../../shared/types';
+import { CanvasData, CanvasNode, CanvasEdge, CanvasNodeBase, CellNode, CodeNode, KernelNode, AgentRunPersist, AgentRunPersistResult } from '../../shared/types';
 import { assignLabel, ensureLabels } from '../../shared/nodeLabels';
 import { snapGrid } from '../../shared/grid';
 import { applyLaneGrowth, outputCellGeom } from '../../shared/sectionLanes';
@@ -589,7 +589,8 @@ async function canvasAddNode(args: Record<string, unknown>): Promise<string> {
 
   const labeled = assignLabel(newNode, d.nodes);
   d.nodes.push(labeled);
-  await writeCanvas(p, applyLaneGrowth(d, [labeled.id]));   // - a node past its section's bottom edge grows the section
+  Object.assign(d, applyLaneGrowth(d, [labeled.id]));
+  await writeCanvas(p, d);
 
   return `Created node ${labeled.nodeLabel} (id: ${labeled.id})\nType: ${type}\nPosition: (${labeled.x}, ${labeled.y})  Size: ${labeled.width}×${labeled.height}\nCanvas: ${p}`;
   }); // - withFileLock
@@ -620,7 +621,8 @@ async function canvasUpdateNode(args: Record<string, unknown>): Promise<string> 
   if (args.height !== undefined) updated.height = snapGrid(args.height as number);
 
   d.nodes[idx] = updated;
-  await writeCanvas(p, applyLaneGrowth(d, [updated.id]));
+  Object.assign(d, applyLaneGrowth(d, [updated.id]));
+  await writeCanvas(p, d);
   return `Updated node ${updated.nodeLabel ?? updated.id}`;
   }); // - withFileLock
 }
@@ -968,9 +970,14 @@ async function canvasRunCell(args: Record<string, unknown>): Promise<string> {
       }
     }
 
-    const res    = await runCellCore(d, cell, kernelNode, kernelId, server, p, ipc);
+    // - the upstream loop may have grown sections and replaced d.nodes: read the target again
+    const cellNow   = d.nodes.find(n => n.id === cell.id) as CodeNode | undefined;
+    const kernelNow = d.nodes.find(n => n.id === kernelNode.id) as KernelNode | undefined;
+    if (!cellNow || !kernelNow) return 'error: cell or kernel node vanished during the upstream run';
+
+    const res    = await runCellCore(d, cellNow, kernelNow, kernelId, server, p, ipc);
     const prefix = ran.length ? `(upstream ${ran.join(', ')}) ` : '';
-    return `${prefix}ran ${cell.nodeLabel ?? cell.id} on ${kernelNode.server} → ${res.outLabel}: ${res.status}` +
+    return `${prefix}ran ${cellNow.nodeLabel ?? cellNow.id} on ${kernelNow.server} → ${res.outLabel}: ${res.status}` +
       `${res.error ? ' — ' + res.error : ''}\n${res.streamText.slice(0, 500)}`;
   }); // - withFileLock
 }
