@@ -36,10 +36,13 @@ export function SectionHeaders({ onFold, onDelete }: {
         .filter(n => n.type === 'section')
         .map(s => {
           const d = s.data as { title?: string; nodeLabel?: string; folded?: boolean; createdAt?: number };
-          // - anchored to the section's header row; scrolls with the canvas. Row height matches the
-          //   filled strip so the content sits centered in it (never thinner than the header itself).
+          // - anchored to the section's header row; scrolls with the canvas. Row height = the filled
+          //   strip (the lane in screen space), and the content is centred in it. When the lane shrinks
+          //   below the header's own height (far zoom-out / bird's-eye) the title can't fit without
+          //   overlapping the nodes, so hide it — the section still reads as its coloured band.
           const top = s.position.y * zoom + ty;
-          const rowH = Math.max(SECTION_HEADER_LANE * zoom, HEADER_H);
+          const rowH = SECTION_HEADER_LANE * zoom;
+          if (rowH < HEADER_H) return null;
           const left = Math.max(s.position.x * zoom + tx, 0);
           const label = d.title?.trim()
             ? d.title
@@ -65,9 +68,15 @@ export function SectionHeaders({ onFold, onDelete }: {
               <button
                 title={d.folded ? 'unfold section' : 'fold section'}
                 onClick={() => onFold(s.id)}
-                style={{ ...ctl, width: 10, textAlign: 'center' }}
+                style={{ ...ctl, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
-                {d.folded ? '▸' : '⌄'}
+                <svg
+                  width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
+                  style={{ display: 'block', transform: d.folded ? 'rotate(-90deg)' : 'none', transition: 'transform 130ms ease' }}
+                >
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
               </button>
               <span style={{ fontSize: 12.5, fontWeight: 600, letterSpacing: '-0.01em', color: 'var(--vscode-foreground)', whiteSpace: 'nowrap' }}>
                 {label}

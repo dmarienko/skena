@@ -17,7 +17,7 @@ import { GRID } from './constants';
 //   grid leaves a big empty gap; this keeps the node hugging the header, as in the mockup. Because it
 //   is not a grid multiple, the node stays grid-aligned (normalizeCanvasToOrigin ignores sections, so
 //   this lane can sit in the one-grid gutter above the origin without shifting members off the grid).
-export const SECTION_HEADER_LANE = 44;
+export const SECTION_HEADER_LANE = 60;
 // - how far the band extends past its content on the open (right) side, so it reads as a lane
 export const SECTION_OPEN_RIGHT = 600;
 

@@ -22,7 +22,6 @@ import {
   useNodesState,
   useEdgesState,
   useReactFlow,
-  useStore,
   addEdge,
   NodeTypes,
   EdgeTypes,
@@ -80,15 +79,6 @@ const isBandType = (t?: string): boolean => t === 'group' || t === 'section';
 const EDGE_TYPES: EdgeTypes = {
   labeled: LabeledEdgeComponent,
 };
-
-// - stable reference (hoisted like NODE_TYPES/EDGE_TYPES): a fresh array literal in the JSX would
-//   re-trigger React Flow's setTranslateExtent on every render. Min = -ORIGIN_GUTTER — one grid of
-//   breathing margin above/left of the origin, then a hard stop; max 1e7 is far beyond any realistic
-//   canvas extent, inside Number precision.
-const CANVAS_TRANSLATE_EXTENT: [[number, number], [number, number]] = [
-  [-ORIGIN_GUTTER, -ORIGIN_GUTTER],
-  [1e7, 1e7],
-];
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -393,27 +383,6 @@ interface CanvasViewProps {
   onActiveNodeChange?: (nodeId: string | null, label: string | null) => void;
 }
 
-// - TEMPORARY on-screen debug: shows the live camera + the section-framing computation so we can see
-//   exactly why the title framing does/doesn't land. Remove once fixed.
-function ViewportDebug({ dbg }: { dbg: React.MutableRefObject<Record<string, number | boolean>> }): JSX.Element {
-  const tx = useStore(s => s.transform[0]);
-  const ty = useStore(s => s.transform[1]);
-  const zoom = useStore(s => s.transform[2]);
-  const secs = useStore(s => s.nodes.filter(n => n.type === 'section').map(n => `${n.id.slice(0, 10)}@(${Math.round(n.position.x)},${Math.round(n.position.y)})`).join(' '));
-  const d = dbg.current;
-  const txt =
-    `LIVE  tx=${tx.toFixed(1)} ty=${ty.toFixed(1)} z=${zoom.toFixed(3)}\n` +
-    `STORE sections: ${secs || '(none)'}\n` +
-    `EFFECT nodesLen=${d.nodesLen ?? '?'} nSecs=${d.nSecs ?? '?'} hasRf=${d.hasRf ?? '?'} alreadyFramed=${d.alreadyFramed ?? '?'}\n` +
-    `FRAME fired=${d.fired ?? 0} secY=${d.secY ?? '?'} → set tx=${typeof d.tx === 'number' ? d.tx.toFixed(1) : '?'} ty=${typeof d.ty === 'number' ? d.ty.toFixed(1) : '?'} z=${typeof d.zoom === 'number' ? (d.zoom as number).toFixed(3) : '?'}\n` +
-    `AFTER-SET live ty=${typeof d.liveTyAfter === 'number' ? (d.liveTyAfter as number).toFixed(1) : '?'}`;
-  return (
-    <div style={{ position: 'absolute', top: 6, right: 6, zIndex: 99999, background: 'rgba(0,0,0,0.82)', color: '#39ff14', font: '11px/1.5 monospace', padding: '6px 9px', pointerEvents: 'none', whiteSpace: 'pre', borderRadius: 4 }}>
-      {txt}
-    </div>
-  );
-}
-
 // ─── inner component (needs ReactFlowProvider context) ────────────────────────
 
 function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewProps): JSX.Element {
@@ -712,22 +681,15 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   //   mount, so defaultViewport / first-load framing miss it — this fires once per path, when the
   //   section actually lands in `nodes`, and never again for that path (so it can't fight user panning).
   const framedPathRef = useRef<string | null>(null);
-  const frameDbgRef = useRef<Record<string, number | boolean>>({});
   useEffect(() => {
-    const secs = nodes.filter(n => n.type === 'section');
-    frameDbgRef.current = { ...frameDbgRef.current, nodesLen: nodes.length, nSecs: secs.length, hasRf: !!rfRef.current, alreadyFramed: framedPathRef.current === canvasPath };
     if (!rfRef.current || framedPathRef.current === canvasPath) return;
+    const secs = nodes.filter(n => n.type === 'section');
     if (secs.length === 0) return;
     framedPathRef.current = canvasPath;
     const top = secs.reduce((a, b) => (b.position.y < a.position.y ? b : a));
     const zoom = canvas.viewport?.zoom ?? rfRef.current.getViewport().zoom ?? 1;
-    const tx = -top.position.x * zoom;
-    const ty = -top.position.y * zoom;
-    // - the dynamic translateExtent (top-left = the top section) now stops the camera from rising above
-    //   the title, so this is just a nudge into place; the extent holds it.
-    rfRef.current.setViewport({ x: tx, y: ty, zoom }, { duration: 0 });
-    const v = rfRef.current.getViewport();
-    frameDbgRef.current = { ...frameDbgRef.current, fired: (Number(frameDbgRef.current.fired) || 0) + 1, secY: top.position.y, secX: top.position.x, tx, ty, zoom, liveTyAfter: v.y };
+    // - nudge into place; the dynamic translateExtent (top-left = the top section) holds it there.
+    rfRef.current.setViewport({ x: -top.position.x * zoom, y: -top.position.y * zoom, zoom }, { duration: 0 });
   }, [nodes, canvasPath, canvas]);
 
   // - debounced save — reads canvasRef.current at fire time so it always sends
@@ -3112,7 +3074,6 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         elevateEdgesOnSelect
       >
         <Background variant={BackgroundVariant.Dots} gap={GRID} size={1} color="var(--vscode-editorIndentGuide-background)" />
-        <ViewportDebug dbg={frameDbgRef} />
         <SectionBands />
         <SectionHeaders onFold={handleFoldSection} onDelete={handleDeleteSection} />
         <HelperLines horizontal={helperLines.horizontal} vertical={helperLines.vertical} />

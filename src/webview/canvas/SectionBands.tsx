@@ -2,7 +2,6 @@ import React from 'react';
 import { useStore } from '@xyflow/react';
 import { SECTION_RGB } from './palette';
 import { SECTION_HEADER_LANE } from '../../shared/sections';
-import { HEADER_H } from './SectionHeaders';
 
 /**
  * SectionBands — screen-space overlay that draws each section as a full-viewport-width horizontal
@@ -20,12 +19,13 @@ export function SectionBands(): JSX.Element {
         .filter(n => n.type === 'section')
         .map(s => {
           // - two bands per section: a faint body over the whole section, and a distinctly-filled
-          //   header strip over the reserved top lane (its bottom divider separates header from the
-          //   nodes). Both are anchored to the section's canvas position. Folded → just the strip.
+          //   header strip over the reserved top lane. The strip height is EXACTLY the lane in screen
+          //   space, so the topmost node (at section.y + lane) sits precisely at the strip's bottom edge
+          //   — never under it, at any zoom. Folded → just the strip.
           const folded = (s.data as { folded?: boolean }).folded;
           const top = s.position.y * zoom + ty;
           const fullH = Number(s.height ?? s.style?.height ?? 0) * zoom;
-          const stripH = Math.max(SECTION_HEADER_LANE * zoom, HEADER_H); // - header row, never thinner than the header
+          const stripH = SECTION_HEADER_LANE * zoom;
           const bodyH = folded ? stripH : fullH;
           if (bodyH <= 0) return null;
           return (
