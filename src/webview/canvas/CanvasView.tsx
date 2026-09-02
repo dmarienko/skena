@@ -776,7 +776,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       pushHistory();
       commitLanes([
         ...lanes,
-        { id: `sec-${now.toString(36)}`, y: flowY, createdAt: now, colorIndex: lanes.length },
+        { id: `sec-${now.toString(36)}`, y: flowY, createdAt: now },
       ]);
       const { x, zoom } = rfRef.current.getViewport();
       const c = clampCam(x, -flowY * zoom, zoom);
@@ -909,6 +909,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   useEffect(() => { rfRef.current = rfInstance; });
 
   // - React Flow's fitView bypasses translateExtent (d3 transform, no constrain), so clamp after it lands
+  //   fitView's promise resolves before d3's transform call, but that call is synchronous and the store
+  //   update happens in the same task, so the await's continuation (a microtask) always reads the landed
+  //   transform
   const fitClamped = useCallback(async () => {
     await rfRef.current.fitView({ padding: 0.1 });
     const { x, y, zoom } = rfRef.current.getViewport();

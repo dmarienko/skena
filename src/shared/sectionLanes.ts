@@ -20,8 +20,6 @@ export interface SectionLane {
   createdAt: number;
   /** - true → members are hidden and the lane collapses to its header */
   folded?: boolean;
-  /** - index into the shared colour palette; gives each lane its own stripe colour */
-  colorIndex?: number;
   /** - id of a kernel node on this canvas: the section's colour and the fallback kernel of its cells */
   kernelId?: string;
 }
@@ -202,19 +200,24 @@ export function migrateSections(canvas: CanvasData, now: number): CanvasData {
   //   content, so migrated lanes land negative. Detect it here and shift everything back down.
   const minLaneY = existing?.length ? Math.min(...existing.map(l => l.y)) : 0;
   const needsLift = minLaneY < 0;
-  if (legacy.length === 0 && !hasMembership && !needsSeed && !needsLift) return canvas;
+  const hasColor = !!existing?.some(l => (l as { colorIndex?: number }).colorIndex !== undefined);   // - pre-rail canvases stored a stripe colour
+  if (legacy.length === 0 && !hasMembership && !needsSeed && !needsLift && !hasColor) return canvas;
 
-  const converted: SectionLane[] = legacy.map((n, i) => {
+  const converted: SectionLane[] = legacy.map(n => {
     const s = n as CanvasNode & { title?: string; createdAt?: number; folded?: boolean };
-    const lane: SectionLane = { id: s.id, y: s.y, createdAt: s.createdAt ?? now, colorIndex: i };
+    const lane: SectionLane = { id: s.id, y: s.y, createdAt: s.createdAt ?? now };
     // - 'Section' was the old placeholder; drop it so the header falls back to the datetime
     if (s.title && s.title !== 'Section') lane.title = s.title;
     if (s.folded) lane.folded = true;
     return lane;
   });
 
-  let sections = sortLanes([...(existing ?? []), ...converted]);
-  if (sections.length === 0) sections.push({ id: `sec-${now.toString(36)}`, y: 0, createdAt: now, colorIndex: 0 });
+  const stripped = (existing ?? []).map(l => {
+    const { colorIndex: _drop, ...rest } = l as SectionLane & { colorIndex?: number };
+    return rest as SectionLane;
+  });
+  let sections = sortLanes([...stripped, ...converted]);
+  if (sections.length === 0) sections.push({ id: `sec-${now.toString(36)}`, y: 0, createdAt: now });
 
   let nodes = canvas.nodes
     .filter(n => (n as { type?: string }).type !== 'section')
