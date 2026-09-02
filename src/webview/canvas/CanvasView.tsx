@@ -633,7 +633,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     //   mount). On a reload keep the user's current camera — never snap to the stale disk viewport.
     if (isInitialLoad && canvas.viewport) {
       const zoom = Math.max(canvas.viewport.zoom, MIN_ZOOM);
-      const cRestore = clampViewportToOrigin(canvas.viewport.x, canvas.viewport.y, zoom);
+      const cRestore = clampCam(canvas.viewport.x, canvas.viewport.y, zoom);
       // - the bounded canvas keeps one grid of margin above the origin, but on a sectioned canvas the
       //   first lane IS the top: showing that margin opens with an empty strip above the first
       //   section. React Flow applies a restored viewport verbatim (translateExtent only bounds
@@ -721,6 +721,20 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   useEffect(() => { setLanes(canvas.metadata?.sections ?? []); }, [canvas]);
   const lanesRef = useRef<SectionLane[]>(lanes);
   useEffect(() => { lanesRef.current = lanes; }, [lanes]);
+  // - top of the first lane, for the camera clamp below; a ref so clampCam stays stable
+  const firstLaneTopRef = useRef<number | null>(null);
+
+  /**
+   * The single rule every camera write obeys. clampViewportToOrigin leaves one grid of margin above
+   * the origin (the bounded-canvas gutter). On a sectioned canvas the first lane IS the top, so that
+   * margin shows as an empty strip above the first section — cap it away. Twelve call sites write the
+   * viewport; they all go through here, or the gap comes back through whichever one was missed.
+   */
+  const clampCam = useCallback((x: number, y: number, zoom: number): { x: number; y: number } => {
+    const c = clampViewportToOrigin(x, y, zoom);
+    const top = firstLaneTopRef.current;
+    return { x: c.x, y: top === null ? c.y : Math.min(c.y, -top * zoom) };
+  }, []);
   // - assigned once confirmDeleteViaHost exists (declared further down); see handleDeleteLane
   const confirmLaneDeleteRef = useRef<((ids: string[], reason: string) => Promise<boolean>) | null>(null);
 
@@ -736,6 +750,10 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     })), lanes),
     [nodes, lanes],
   );
+
+  useEffect(() => {
+    firstLaneTopRef.current = derivedLanes.length ? derivedLanes[0].top : null;
+  }, [derivedLanes]);
 
   // - fold is derived, never a one-shot mutation, so it survives a reload
   const hiddenByFold = useMemo(() => {
@@ -1242,7 +1260,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       const fit = targets.length > 1
         ? Math.max(MIN_ZOOM, Math.min(curZoom, Math.min((vR - vL) / (bx2 - bx1 + 160), (vB - vT) / (by2 - by1 + 160))))
         : curZoom;
-      const cForce = clampViewportToOrigin(availCx - bcx * fit, availCy - bcy * fit, fit);
+      const cForce = clampCam(availCx - bcx * fit, availCy - bcy * fit, fit);
       rfRef.current.setViewport({ x: cForce.x, y: cForce.y, zoom: fit }, { duration: 250 });
     } else if (!nodeInside) {
       // - MINIMAL pan: move the viewport JUST enough to bring the node (plus its output if the pair
@@ -1256,7 +1274,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       if (tx1 < vL + M) dx = (vL + M) - tx1; else if (tx2 > vR - M) dx = (vR - M) - tx2;
       if (ty1 < vT + M) dy = (vT + M) - ty1; else if (ty2 > vB - M) dy = (vB - M) - ty2;
       if (dx !== 0 || dy !== 0) {
-        const cMin = clampViewportToOrigin(vx + dx, vy + dy, curZoom);
+        const cMin = clampCam(vx + dx, vy + dy, curZoom);
         rfRef.current.setViewport({ x: cMin.x, y: cMin.y, zoom: curZoom }, { duration: 250 });
       }
     }
@@ -1294,7 +1312,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       ...marksRef.current,
       '`': { nodeId: currentFocused?.id ?? null, viewport: rfRef.current.getViewport() },
     };
-    const cMark = clampViewportToOrigin(target.viewport.x, target.viewport.y, target.viewport.zoom);
+    const cMark = clampCam(target.viewport.x, target.viewport.y, target.viewport.zoom);
     rfRef.current.setViewport({ x: cMark.x, y: cMark.y, zoom: target.viewport.zoom }, { duration: 300 });
     if (target.nodeId) {
       const id = target.nodeId;
@@ -1873,7 +1891,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           }
         }
 
-        const cZoomIn = clampViewportToOrigin(newTx, newTy, newZoom);
+        const cZoomIn = clampCam(newTx, newTy, newZoom);
         rfRef.current.setViewport({ x: cZoomIn.x, y: cZoomIn.y, zoom: newZoom });
         return;
       }
@@ -1887,7 +1905,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         const cy = window.innerHeight / 2;
         const zx = cx - (cx - tx) * scale;
         const zy = cy - (cy - ty) * scale;
-        const c  = clampViewportToOrigin(zx, zy, newZoom);
+        const c  = clampCam(zx, zy, newZoom);
         rfRef.current.setViewport({ x: c.x, y: c.y, zoom: newZoom });
         return;
       }
@@ -1900,7 +1918,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         if (!framed.length) return;
         const minX = Math.min(...framed.map(n => n.position.x));
         const minY = Math.min(...framed.map(n => n.position.y));
-        const c = clampViewportToOrigin((ORIGIN_GUTTER - minX) * zoom, (ORIGIN_GUTTER - minY) * zoom, zoom);
+        const c = clampCam((ORIGIN_GUTTER - minX) * zoom, (ORIGIN_GUTTER - minY) * zoom, zoom);
         rfRef.current.setViewport({ x: c.x, y: c.y, zoom }, { duration: 300 });
         return;
       }
@@ -1918,7 +1936,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
             window.innerWidth  * 0.85 / nw,
             window.innerHeight * 0.85 / nh,
           )));
-          const cAltShiftC = clampViewportToOrigin(
+          const cAltShiftC = clampCam(
             window.innerWidth  / 2 - (focused.position.x + nw / 2) * zoom,
             window.innerHeight / 2 - (focused.position.y + nh / 2) * zoom,
             zoom,
@@ -1936,7 +1954,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           const nw  = Number(focused.style?.width  ?? 200);
           const nh  = Number(focused.style?.height ?? 150);
           const { zoom } = rfRef.current.getViewport();
-          const cShiftC = clampViewportToOrigin(
+          const cShiftC = clampCam(
             window.innerWidth  / 2 - (focused.position.x + nw / 2) * zoom,
             window.innerHeight / 2 - (focused.position.y + nh / 2) * zoom,
             zoom,
@@ -2357,7 +2375,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         K: { dx: 0, dy:  PAN }, J: { dx: 0, dy: -PAN },
       };
       const { dx, dy } = d[k];
-      const c = clampViewportToOrigin(x + dx, y + dy, zoom);
+      const c = clampCam(x + dx, y + dy, zoom);
       rfRef.current.setViewport({ x: c.x, y: c.y, zoom }, { duration: 120 });
     };
 
@@ -2489,7 +2507,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       const lx = e.clientX - rect.left;
       const ly = e.clientY - rect.top;
       // - clamp so cursor-centred wheel zoom can't reveal space above/left of the origin
-      const c = clampViewportToOrigin(lx - (lx - tx) * scale, ly - (ly - ty) * scale, newZoom);
+      const c = clampCam(lx - (lx - tx) * scale, ly - (ly - ty) * scale, newZoom);
       rfRef.current.setViewport({ x: c.x, y: c.y, zoom: newZoom });
     };
 
@@ -2734,7 +2752,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       // - focus DOM + pan viewport to the new node
       focusNodeById(cnWithIdx.id);
       const { zoom } = rfRef.current.getViewport();
-      const cAddNode = clampViewportToOrigin(
+      const cAddNode = clampCam(
         window.innerWidth  / 2 - (cnWithIdx.x + cnWithIdx.width  / 2) * zoom,
         window.innerHeight / 2 - (cnWithIdx.y + cnWithIdx.height / 2) * zoom,
         zoom,
