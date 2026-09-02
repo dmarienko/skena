@@ -17,6 +17,7 @@ import { useCanvasData } from './hooks/useCanvasData';
 import { HostToWebview, MarkdownConfig, ChatToolEvent, ChatTokenUsage } from '../shared/types';
 import { MarkdownConfigContext, DEFAULT_MARKDOWN_CONFIG } from './context/MarkdownConfigContext';
 import { warmCodeHighlighter } from './lib/codeHighlight';
+import { installThemeVars } from './theme';
 
 type VsCodeApi = { postMessage: (msg: unknown) => void };
 
@@ -100,6 +101,8 @@ export function App(): JSX.Element {
     pos?:       { x: number; y: number };
     size?:      { w: number; h: number };
   }>());
+
+  useEffect(() => installThemeVars(), []);
 
   // ─── markdown link clicks (host-rendered HTML) ─────────────────────────
   // - host-rendered markdown (Typst/code text nodes, .md file nodes, chat) is injected as

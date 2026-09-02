@@ -82,3 +82,10 @@ export function kernelColor(colorIndex: number): string {
 export function nextKernelColorIndex(existingKernelCount: number): number {
   return existingKernelCount % KERNEL_PALETTE.length;
 }
+
+// - neutral chrome tokens (the rail now, the node restyle next). Picked by the VS Code theme kind and
+// - exposed as --sk-* CSS variables on <html> by src/webview/theme.ts
+export const THEME = {
+  light: { bg1: '#f5f5f7', bg2: '#ffffff', bg3: '#e5e5e7', border: '#d1d1d6', text1: '#1d1d1f', text2: '#86868b', text3: '#aeaeb2', accent: '#0071e3' },
+  dark:  { bg1: '#1d1d1f', bg2: '#2d2d2f', bg3: '#3d3d3f', border: '#424245', text1: '#f5f5f7', text2: '#86868b', text3: '#636366', accent: '#0a84ff' },
+} as const;
