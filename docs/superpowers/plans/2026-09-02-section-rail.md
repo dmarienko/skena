@@ -844,7 +844,7 @@ export function RailSegment({ lane, seg, color, kernelName, current, onFold, onR
 }): JSX.Element {
   const title = lane.title?.trim() || fmtDateTime(lane.createdAt);
   const full = `${lane.label}: ${title}`;
-  const items = railItems(seg.height, full.length);
+  const { items, titleMaxPx } = railItems(seg.height, full.length);
   const tooltip = `${full} · ${fmtDateTime(lane.createdAt)} · ${kernelName ?? 'no kernel'}${lane.folded ? ' · folded' : ''}`;
   const anchor = (e: React.MouseEvent) => (e.currentTarget as HTMLElement).getBoundingClientRect();
 
@@ -859,7 +859,7 @@ export function RailSegment({ lane, seg, color, kernelName, current, onFold, onR
             case 'title':
               return (
                 <span key={item} onDoubleClick={e => onTitle(lane.id, anchor(e))} title="double-click to rename"
-                  style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', fontFamily: FONT, fontWeight: 600, fontSize: 10.5, whiteSpace: 'nowrap', cursor: 'default', color: current ? 'var(--sk-text1)' : 'var(--sk-text2)', userSelect: 'none' }}>
+                  style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', fontFamily: FONT, fontWeight: 600, fontSize: 10.5, whiteSpace: 'nowrap', cursor: 'default', color: current ? 'var(--sk-text1)' : 'var(--sk-text2)', userSelect: 'none', maxHeight: titleMaxPx, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   <span style={{ color }}>{lane.label}:</span> {title}
                 </span>
               );

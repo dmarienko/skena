@@ -159,14 +159,20 @@ in `text2`.
 
 ### 5.4 Degradation
 
-When the segment is shorter than its contents, items drop in this order (last to drop first):
+The fixed controls are taken in priority order while they fit, each with its 7px gap:
 
 ```
-S#  >  fold  >  title  >  ▶  >  kernel  >  ✕
+S#  >  fold  >  ▶  >  kernel  >  ✕
 ```
 
-When the title does not fit, `S#` is drawn horizontally (fits in 44px up to `S99`). At the 28px
-floor only `S#` remains. Every segment has a tooltip `S2: <title> · <created> · <kernel name>`,
+The title is elastic: it replaces the horizontal `S#` and takes whatever height is left, truncated
+with an ellipsis, when at least 40px is left (`TITLE_MIN_PX`). A long title therefore never removes
+a control. Below that, `S#` is drawn horizontally (fits in 44px up to `S99`); at the 28px floor only
+`S#` remains.
+
+The 28px floor grows a segment only into free space: never into a neighbour's projected range.
+So at extreme zoom-out stacked sections become thin stripes without labels rather than
+overlapping; the tooltip still names them. Every segment has a tooltip `S2: <title> · <created> · <kernel name>`,
 which is how short segments stay readable.
 
 ### 5.5 Tall section
