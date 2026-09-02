@@ -15,10 +15,10 @@ export interface SectionLane {
   id: string;
   /** - flow y where this lane starts; the only geometry a section stores */
   y: number;
-  /** - absent → the header shows the creation datetime instead */
+  /** - absent → the rail shows the creation datetime instead */
   title?: string;
   createdAt: number;
-  /** - true → members are hidden and the lane collapses to its header */
+  /** - true → members are hidden; the lane's range is unchanged */
   folded?: boolean;
   /** - id of a kernel node on this canvas: the section's colour and the fallback kernel of its cells */
   kernelId?: string;
@@ -207,7 +207,7 @@ export function migrateSections(canvas: CanvasData, now: number): CanvasData {
   const existing = canvas.metadata?.sections;
   const needsSeed = !existing?.length && legacy.length === 0 && canvas.nodes.length > 0;
   // - a lane above the origin makes the strip between it and y=0 unusable: nodes are floored at 0, so
-  //   that band can never be dragged into. Legacy section nodes sat one header-lane above their
+  //   that band can never be dragged into. Legacy section nodes sat one lane above their
   //   content, so migrated lanes land negative. Detect it here and shift everything back down.
   const minLaneY = existing?.length ? Math.min(...existing.map(l => l.y)) : 0;
   const needsLift = minLaneY < 0;
@@ -217,7 +217,7 @@ export function migrateSections(canvas: CanvasData, now: number): CanvasData {
   const converted: SectionLane[] = legacy.map(n => {
     const s = n as CanvasNode & { title?: string; createdAt?: number; folded?: boolean };
     const lane: SectionLane = { id: s.id, y: s.y, createdAt: s.createdAt ?? now };
-    // - 'Section' was the old placeholder; drop it so the header falls back to the datetime
+    // - 'Section' was the old placeholder; drop it so the rail falls back to the datetime
     if (s.title && s.title !== 'Section') lane.title = s.title;
     if (s.folded) lane.folded = true;
     return lane;
@@ -239,7 +239,7 @@ export function migrateSections(canvas: CanvasData, now: number): CanvasData {
     });
 
   // - park the topmost lane at the origin, carrying the nodes with it, so no lane sits in the
-  //   unusable negative band and the first lane's header lands flush at the top of the canvas
+  //   unusable negative band and the first lane starts flush at the top of the canvas
   const lift = sections[0].y < 0 ? -sections[0].y : 0;
   if (lift > 0) {
     sections = sections.map(l => ({ ...l, y: l.y + lift }));

@@ -29,7 +29,7 @@ import * as crypto   from 'crypto';
 import { CanvasData, CanvasNode, CanvasEdge, CanvasNodeBase, CellNode, CodeNode, KernelNode, AgentRunPersist, AgentRunPersistResult } from '../../shared/types';
 import { assignLabel, ensureLabels } from '../../shared/nodeLabels';
 import { snapGrid } from '../../shared/grid';
-import { applyLaneGrowth, outputCellGeom } from '../../shared/sectionLanes';
+import { applyLaneGrowth, deriveLanes, outputCellGeom } from '../../shared/sectionLanes';
 import { resolveCellKernel, resolveUpstreamChain, cellKernelView } from '../../shared/kernelBinding';
 import { resolveKernelConfig, type KernelServerConfig } from '../jupyter/config';
 import { executeCell } from '../jupyter/client';
@@ -199,10 +199,12 @@ function withFileLock<T>(fsPath: string, fn: () => Promise<T>): Promise<T> {
 async function readCanvas(fsPath: string): Promise<CanvasData> {
   const raw    = await fs.readFile(fsPath, 'utf-8');
   const parsed = JSON.parse(raw) as Partial<CanvasData>;
+  // - spread first: metadata (sections, aiModel), creationCounter and any Obsidian-owned field must
+  //   survive the round trip — writeCanvas serialises this object, so a dropped key is a deleted key
   const data: CanvasData = {
-    nodes:    parsed.nodes    ?? [],
-    edges:    parsed.edges    ?? [],
-    viewport: parsed.viewport,
+    ...(parsed as CanvasData),
+    nodes: parsed.nodes ?? [],
+    edges: parsed.edges ?? [],
   };
   // - ensure every node has a label (idempotent)
   data.nodes = ensureLabels(data.nodes);
@@ -289,6 +291,15 @@ function nowLabel(): string {
   const hh  = String(d.getHours()).padStart(2, '0');
   const min = String(d.getMinutes()).padStart(2, '0');
   return `${yy}-${mm}-${dd} ${hh}:${min}`;
+}
+
+function stampLabel(ms: number): string {
+  const d   = new Date(ms);
+  const mm  = String(d.getMonth() + 1).padStart(2, '0');
+  const dd  = String(d.getDate()).padStart(2, '0');
+  const hh  = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${d.getFullYear()}-${mm}-${dd} ${hh}:${min}`;
 }
 
 function uid(): string {
@@ -399,6 +410,15 @@ async function canvasList(args: Record<string, unknown>): Promise<string> {
     lines.push(`  ${(n.nodeLabel ?? '?').padEnd(4)}  ${typeLabel(n).padEnd(10)}  ${nodeSnippet(n)}${aiMark}${tags}`);
   }
 
+  if (d.metadata?.sections?.length) {
+    lines.push('', 'Sections:');
+    for (const l of deriveLanes(d.nodes, d.metadata.sections)) {
+      const kernel = (l.kernelId && d.nodes.find(n => n.id === l.kernelId)?.nodeLabel) || '-';
+      const title  = l.title ? `"${l.title}"` : `(untitled, ${stampLabel(l.createdAt)})`;
+      lines.push(`  ${l.label.padEnd(4)}${`y=${l.top}`.padEnd(8)}${`kernel=${kernel}`.padEnd(11)}${title}`);
+    }
+  }
+
   if (d.edges.length > 0) {
     lines.push('', 'Edges:');
     const labelMap = new Map(d.nodes.map(n => [n.id, n.nodeLabel ?? n.id.slice(0, 8)]));
@@ -431,6 +451,8 @@ async function canvasRead(args: Record<string, unknown>): Promise<string> {
   if (ext.createdBy) meta.push(`Created by: ${ext.createdBy}`);
   if (ext.tags?.length) meta.push(`Tags: [${ext.tags.join(', ')}]`);
   meta.push(`Position: (${n.x}, ${n.y})  Size: ${n.width}×${n.height}`);
+  const lane = deriveLanes(d.nodes, d.metadata?.sections ?? []).find(l => l.memberIds.includes(n.id));
+  if (lane) meta.push(`Section: ${lane.label}`);
   if (incoming.length || outgoing.length) {
     meta.push(`Connections: ${[...incoming, ...outgoing].join('  ')}`);
   }
@@ -708,15 +730,19 @@ async function canvasLayout(args: Record<string, unknown>): Promise<string> {
     const items = Array.isArray(args.nodes) ? args.nodes as Array<Record<string, unknown>> : [];
     const done: string[] = [];
     const missing: string[] = [];
+    const changed: string[] = [];
     for (const it of items) {
       const n = findNode(d, it.ref as string);
       if (!n) { missing.push(String(it.ref)); continue; }
+      const before = `${n.x},${n.y},${n.width},${n.height}`;
       if (it.x      !== undefined) n.x      = snapGrid(it.x      as number);
       if (it.y      !== undefined) n.y      = snapGrid(it.y      as number);
       if (it.width  !== undefined) n.width  = snapGrid(it.width  as number);
       if (it.height !== undefined) n.height = snapGrid(it.height as number);
+      if (`${n.x},${n.y},${n.width},${n.height}` !== before) changed.push(n.id);
       done.push(n.nodeLabel ?? n.id);
     }
+    Object.assign(d, applyLaneGrowth(d, changed));   // - a laid-out node past its section's bottom edge grows the section, like every other write
     await writeCanvas(p, d);
     return `Laid out ${done.length} node(s): ${done.join(', ')}` +
       (missing.length ? ` — not found: ${missing.join(', ')}` : '');
@@ -944,7 +970,7 @@ async function canvasRunCell(args: Record<string, unknown>): Promise<string> {
       const kid = resolveCellKernel(cell.id, cellKernelView(d));
       kernelNode = kid ? d.nodes.find(n => n.id === kid) : undefined;
     }
-    if (!kernelNode || kernelNode.type !== 'kernel') return 'error: no kernel bound to this cell';
+    if (!kernelNode || kernelNode.type !== 'kernel') return 'error: no kernel bound to this cell — connect it to a kernel node, or bind a kernel to its section from the rail';
 
     const servers = loadKernelServersFromEnv();
     const server  = servers.find(s => s.name === kernelNode.server);
@@ -987,7 +1013,7 @@ async function canvasRunCell(args: Record<string, unknown>): Promise<string> {
 const TOOLS = [
   {
     name: 'canvas_list',
-    description: 'List all nodes and edges on a canvas. Returns node labels (N1, J3, etc.), types, and content previews. Use these labels to reference nodes in other tools.',
+    description: 'List all nodes and edges on a canvas. Returns node labels (N1, J3, etc.), types, and content previews. Use these labels to reference nodes in other tools. Lists the sections (S1…, their y, kernel and title) when the canvas has any.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1047,7 +1073,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_add_node',
-    description: 'Add a new node to the canvas. The node is automatically marked as AI-created (🤖 badge) and assigned a label. Position defaults to the right of all existing nodes.',
+    description: 'Add a new node to the canvas. The node is automatically marked as AI-created (🤖 badge) and assigned a label. Position defaults to the right of all existing nodes. A node placed past its section\'s bottom edge grows that section: every section and node below it moves down by a grid multiple.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1070,7 +1096,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_update_node',
-    description: 'Update an existing node: content, tags, color, label, and/or move/resize it. Partial — only supplied fields change. Move/resize uses absolute canvas coordinates.',
+    description: 'Update an existing node: content, tags, color, label, and/or move/resize it. Partial — only supplied fields change. Move/resize uses absolute canvas coordinates. A node placed past its section\'s bottom edge grows that section: every section and node below it moves down by a grid multiple.',
     inputSchema: {
       type: 'object',
       properties: {

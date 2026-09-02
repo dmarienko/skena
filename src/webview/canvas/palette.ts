@@ -14,9 +14,6 @@
  */
 
 // ─── node borders (fallback when a node has no Obsidian accent color) ───────────
-// - section band tint (portal-cyan family), used at several opacities
-export const SECTION_RGB = '83, 223, 221';
-
 // - keyed by NODE TYPE (`node.type`): each is the border of that kind of node.
 export const DEFAULT_NODE_BORDER_BY_TYPE = {
   text:   '#1f96bd',                 // - text node — inline text / markdown notes

@@ -30,7 +30,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
-import { CanvasData, CanvasNode, CanvasEdge, KernelNode, MsgAddNodeResult, MsgRunOutput, MsgSubCanvasCreated, MsgVerifyPathResult, NodeSide, CanvasMark, ViewportSnapshot } from '../../shared/types';
+import { CanvasData, CanvasNode, CanvasEdge, CanvasViewport, KernelNode, MsgAddNodeResult, MsgRunOutput, MsgSubCanvasCreated, MsgVerifyPathResult, NodeSide, CanvasMark, ViewportSnapshot } from '../../shared/types';
 import { classifyClipboard } from './paste-classify';
 import { ContextMenu } from './ContextMenu';
 import { CANVAS_COLORS, NODE_SIZE, NEW_NODE } from '../../shared/constants';
@@ -82,6 +82,15 @@ const MIN_ZOOM = 0.05;
 
 // - pan bounds: one grid left of the origin, flush at the top (the rail is outside the flow)
 const TRANSLATE_EXTENT: [[number, number], [number, number]] = [[-ORIGIN_GUTTER, 0], [1e7, 1e7]];
+
+// - the mount camera. React Flow applies defaultViewport verbatim, so a file saved above the origin
+//   would paint one frame there before the load effect clamps it — clamp it here instead.
+function initialViewport(viewport: CanvasViewport | undefined): CanvasViewport {
+  if (!viewport) return { x: 0, y: 0, zoom: 1 };
+  const zoom = Math.max(viewport.zoom, MIN_ZOOM);
+  const c    = clampCameraToOrigin(viewport.x, viewport.y, zoom);
+  return { x: c.x, y: c.y, zoom };
+}
 
 const EDGE_TYPES: EdgeTypes = {
   labeled: LabeledEdgeComponent,
@@ -3175,7 +3184,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         onDrop={onDrop}
         // - viewport persistence: restore saved position/zoom. No fitView prop: the load effect fits
         //   through fitClamped on the same condition, and React Flow's own fit is unbounded.
-        defaultViewport={canvas.viewport ? { ...canvas.viewport, zoom: Math.max(canvas.viewport.zoom, MIN_ZOOM) } : { x: 0, y: 0, zoom: 1 }}
+        defaultViewport={initialViewport(canvas.viewport)}
         // - save viewport to canvas JSON whenever the user stops panning/zooming
         onMoveStart={() => {
           // - promote nodes to GPU layers only while panning/zooming (see canvas.css);
