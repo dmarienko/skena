@@ -70,7 +70,7 @@ import {
 import { parseNodeRef } from '../shared/nodeRef';
 import { MAX_FILE_FULL_BYTES, MAX_FILE_PREVIEW_BYTES, MAX_NOTEBOOK_BYTES, NODE_SIZE } from '../shared/constants';
 import { normalizeCanvasToOrigin } from '../shared/bounds';
-import { migrateSections, memberCodeCellsInRunOrder } from '../shared/sectionLanes';
+import { migrateSections, memberCodeCellsInRunOrder, applyLaneGrowth, laneTopForY } from '../shared/sectionLanes';
 
 // ─── bookmarks file helpers ──────────────────────────────────────────────────
 
@@ -1312,11 +1312,12 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         } else {
           const cellBase: CellNode = {
             id: outId, type: 'cell',
-            x: cn.x + cn.width + 140, y: Math.round(cn.y + (cn.height - 320) / 2), width: 480, height: 320,
+            x: cn.x + cn.width + 140, y: Math.max(laneTopForY(c.metadata?.sections ?? [], cn.y), Math.round(cn.y + (cn.height - 320) / 2)), width: 480, height: 320,
             format: payload.output.format, content: payload.output.content, createdBy: 'ai',
           };
           outputNode = assignLabel(cellBase, c.nodes) as CellNode;
           c.nodes.push(outputNode);
+          Object.assign(c, applyLaneGrowth(c, [outputNode.id]));   // - c is mutated in place by this path; keep that contract
           cn.outputNodeId = outId;
           edge = { id: `e-${outId}`, fromNode: cn.id, fromSide: 'right', toNode: outId, toSide: 'left', toEnd: 'arrow' };
           c.edges.push(edge);
@@ -1445,11 +1446,12 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           const id = presetId ?? `ai-${Date.now().toString(36)}`;
           const cellBase: CellNode = {
             id, type: 'cell',
-            x: cn.x + cn.width + 140, y: Math.round(cn.y + (cn.height - 320) / 2), width: 480, height: 320,
+            x: cn.x + cn.width + 140, y: Math.max(laneTopForY(c.metadata?.sections ?? [], cn.y), Math.round(cn.y + (cn.height - 320) / 2)), width: 480, height: 320,
             format: output.format, content: output.content, createdBy: 'ai',
           };
           outputNode = assignLabel(cellBase, c.nodes) as CellNode;
           c.nodes.push(outputNode);
+          Object.assign(c, applyLaneGrowth(c, [outputNode.id]));   // - c is mutated in place by this path; keep that contract
           edge = { id: `e-${id}`, fromNode: cn.id, fromSide: 'right', toNode: id, toSide: 'left', toEnd: 'arrow' };
           c.edges.push(edge);
           cn.outputNodeId = id;
@@ -1629,11 +1631,13 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       vscode.window.showInformationMessage('Skena: no code cells in this section.');
       return;
     }
-    if (this.runningSections.has(msg.sectionId)) {
+    // - section ids are sec-<timestamp>; two canvases can collide on the id alone
+    const key = `${document.uri.fsPath}::${msg.sectionId}`;
+    if (this.runningSections.has(key)) {
       vscode.window.showInformationMessage('Skena: this section is already running.');
       return;
     }
-    this.runningSections.add(msg.sectionId);
+    this.runningSections.add(key);
     try {
       for (const id of order) {
         // - re-read each turn: runOneCell rewrites the document's nodes (output node, flags)
@@ -1646,7 +1650,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         if (st === 'error') return;
       }
     } finally {
-      this.runningSections.delete(msg.sectionId);
+      this.runningSections.delete(key);
     }
   }
 
