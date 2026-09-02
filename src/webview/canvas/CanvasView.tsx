@@ -55,6 +55,7 @@ import { SectionNodeComponent } from './nodes/SectionNode';
 import { LabeledEdgeComponent } from './edges/LabeledEdge';
 import { HelperLines } from './HelperLines';
 import { SectionBands } from './SectionBands';
+import { SectionHeaders } from './SectionHeaders';
 import { CanvasSearch } from './CanvasSearch';
 import { MarksPanel  } from './MarksPanel';
 
@@ -1268,6 +1269,41 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
   // - stable close handler — identity never changes, so ContextMenu never re-registers its effects
   const handleMenuClose = useCallback(() => setContextMenu(null), []);
+
+  // - fold/unfold a section: hide its member nodes and mark it folded (the band collapses to the header)
+  const handleFoldSection = useCallback((sectionId: string) => {
+    const section = canvasRef.current.nodes.find(n => n.id === sectionId && n.type === 'section');
+    if (!section) return;
+    const folding = !(section as { folded?: boolean }).folded;
+    const memberIds = new Set(canvasRef.current.nodes.filter(n => n.sectionId === sectionId).map(n => n.id));
+    pushHistory();
+    setNodes(nds => nds.map(n => {
+      if (n.id === sectionId) return { ...n, data: { ...n.data, folded: folding } };
+      if (memberIds.has(n.id)) return { ...n, hidden: folding };
+      return n;
+    }));
+    canvasRef.current = {
+      ...canvasRef.current,
+      nodes: canvasRef.current.nodes.map(n => (n.id === sectionId ? ({ ...n, folded: folding } as CanvasNode) : n)),
+    };
+    scheduleSave();
+  }, [pushHistory, setNodes, scheduleSave]);
+
+  // - delete a whole section: the band plus every node it owns and edges touching them (undo-able)
+  const handleDeleteSection = useCallback((sectionId: string) => {
+    const section = canvasRef.current.nodes.find(n => n.id === sectionId && n.type === 'section');
+    if (!section) return;
+    const ids = new Set(canvasRef.current.nodes.filter(n => n.id === sectionId || n.sectionId === sectionId).map(n => n.id));
+    pushHistory();
+    setNodes(nds => nds.filter(n => !ids.has(n.id)));
+    setEdges(eds => eds.filter(e => !ids.has(e.source) && !ids.has(e.target)));
+    canvasRef.current = {
+      ...canvasRef.current,
+      nodes: canvasRef.current.nodes.filter(n => !ids.has(n.id)),
+      edges: canvasRef.current.edges.filter(e => !ids.has(e.fromNode) && !ids.has(e.toNode)),
+    };
+    scheduleSave();
+  }, [pushHistory, setNodes, setEdges, scheduleSave]);
 
   // - read flow position from ref — never goes stale regardless of contextMenu state
   const handleMenuAddText = useCallback(() => {
@@ -3019,6 +3055,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       >
         <Background variant={BackgroundVariant.Dots} gap={GRID} size={1} color="var(--vscode-editorIndentGuide-background)" />
         <SectionBands />
+        <SectionHeaders onFold={handleFoldSection} onDelete={handleDeleteSection} />
         <HelperLines horizontal={helperLines.horizontal} vertical={helperLines.vertical} />
         <Controls showInteractive={false}>
           {/* - minimap toggle button — appended after the built-in zoom/fit buttons */}

@@ -19,9 +19,12 @@ export function SectionBands(): JSX.Element {
         .filter(n => n.type === 'section')
         .map(s => {
           // - fill one grid ABOVE the section too, so the band reaches the top of the view (into the
-          //   gutter) with the content inset — a filled top margin, never an empty strip
+          //   gutter) with the content inset — a filled top margin, never an empty strip. When folded,
+          //   collapse to just that top strip (the header sits there; members are hidden).
+          const folded = (s.data as { folded?: boolean }).folded;
           const top = (s.position.y - GRID) * zoom + ty;
-          const height = (Number(s.height ?? s.style?.height ?? 0) + GRID) * zoom;
+          const rawH = folded ? GRID : Number(s.height ?? s.style?.height ?? 0) + GRID;
+          const height = rawH * zoom;
           if (height <= 0) return null;
           return (
             <div
