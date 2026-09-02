@@ -640,7 +640,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
     // - restore saved viewport ONLY on the first load of this path (defaultViewport only fires on
     //   mount). On a reload keep the user's current camera — never snap to the stale disk viewport.
-    if (isInitialLoad && canvas.viewport) {
+    //   A section canvas is framed to the top-left by the effect below instead, so skip the restore.
+    const hasSection = canvas.nodes.some(n => n.type === 'section');
+    if (isInitialLoad && canvas.viewport && !hasSection) {
       const cRestore = clampViewportToOrigin(canvas.viewport.x, canvas.viewport.y, canvas.viewport.zoom);
       rfRef.current.setViewport({ x: cRestore.x, y: cRestore.y, zoom: canvas.viewport.zoom }, { duration: 0 });
     }
@@ -667,7 +669,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         //   external reload (agent edit, cell-run output write) doesn't pan / steal focus. Skip when
         //   the target is ALREADY selected — else every output-write reload re-focuses it and the
         //   ring visibly blinks. Only the very first open with no saved viewport may pan to focus.
-        if (canvas.viewport || !isInitialLoad) {
+        if (canvas.viewport || !isInitialLoad || hasSection) {
           const already = nodesRef.current.find(n => n.id === focusId)?.selected === true;
           if (!already) {
             setNodes(nds => nds.map(n => ({ ...n, selected: n.id === focusId })));
@@ -682,6 +684,21 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   // - focusNodeById / pickViewportNode are stable useCallbacks; declared below
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canvas, canvasPath, setNodes, setEdges]);
+
+  // - frame a freshly-opened section canvas to the top-left so the topmost section's title sits flush
+  //   at the canvas top edge (no empty band above it). The migrated section canvas arrives async, AFTER
+  //   mount, so defaultViewport / first-load framing miss it — this fires once per path, when the
+  //   section actually lands in `nodes`, and never again for that path (so it can't fight user panning).
+  const framedPathRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!rfRef.current || framedPathRef.current === canvasPath) return;
+    const secs = nodes.filter(n => n.type === 'section');
+    if (secs.length === 0) return;
+    framedPathRef.current = canvasPath;
+    const top = secs.reduce((a, b) => (b.position.y < a.position.y ? b : a));
+    const zoom = canvas.viewport?.zoom ?? rfRef.current.getViewport().zoom ?? 1;
+    rfRef.current.setViewport({ x: -top.position.x * zoom, y: -top.position.y * zoom, zoom }, { duration: 0 });
+  }, [nodes, canvasPath, canvas]);
 
   // - debounced save — reads canvasRef.current at fire time so it always sends
   // - the latest state even if an external write (MCP) updated canvasRef between
