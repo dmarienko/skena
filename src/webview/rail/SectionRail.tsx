@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useStore } from '@xyflow/react';
 import type { DerivedLane } from '../../shared/sectionLanes';
 import { kernelColor } from '../canvas/palette';
@@ -43,9 +43,12 @@ export function SectionRail({ lanes, kernels, selectedNodeId, onFold, onRun, onD
   // - one popover at a time, anchored to the control that opened it
   const [pop, setPop] = useState<{ kind: 'kernel' | 'title'; laneId: string; anchor: DOMRect } | null>(null);
   const closePop = useCallback(() => setPop(null), []);
-  const openKernel = useCallback((id: string, anchor: DOMRect) => setPop({ kind: 'kernel', laneId: id, anchor }), []);
-  const openTitle = useCallback((id: string, anchor: DOMRect) => setPop({ kind: 'title', laneId: id, anchor }), []);
+  // - a second click on the same anchor closes the popover instead of reopening it
+  const openKernel = useCallback((id: string, anchor: DOMRect) => setPop(p => (p?.kind === 'kernel' && p.laneId === id ? null : { kind: 'kernel', laneId: id, anchor })), []);
+  const openTitle = useCallback((id: string, anchor: DOMRect) => setPop(p => (p?.kind === 'title' && p.laneId === id ? null : { kind: 'title', laneId: id, anchor })), []);
   const popLane = pop ? byId.get(pop.laneId) : undefined;
+  // - the lane can go away under an open popover (deleted, or undone)
+  useEffect(() => { if (pop && !byId.has(pop.laneId)) setPop(null); }, [pop, lanes]);
 
   return (
     <div style={{ width: RAIL_W, flex: '0 0 auto', position: 'relative', background: 'var(--sk-bg1)', borderRight: '1px solid var(--sk-border)', overflow: 'hidden' }}>
@@ -66,11 +69,11 @@ export function SectionRail({ lanes, kernels, selectedNodeId, onFold, onRun, onD
         +
       </button>
       {pop && popLane && pop.kind === 'kernel' && (
-        <KernelPicker anchor={pop.anchor} kernels={kernels} currentId={popLane.kernelId ?? null}
+        <KernelPicker key={pop.laneId} anchor={pop.anchor} kernels={kernels} currentId={popLane.kernelId ?? null}
           onPick={kid => onBindKernel(popLane.id, kid)} onClose={closePop} />
       )}
       {pop && popLane && pop.kind === 'title' && (
-        <TitleEditor anchor={pop.anchor} initial={popLane.title ?? ''}
+        <TitleEditor key={pop.laneId} anchor={pop.anchor} initial={popLane.title ?? ''}
           onCommit={t => onRename(popLane.id, t)} onClose={closePop} />
       )}
     </div>

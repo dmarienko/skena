@@ -11,6 +11,7 @@ export const ITEM_GAP    = 7;
 export const ICON_PX     = 14;    // - svg size of the play icon
 export const BTN_H       = 20;    // - box of the fold / run / delete buttons (what the column actually stacks)
 export const DOT_BTN_H   = 14;    // - box of the kernel-dot button
+export const DOT_PX      = 9;     // - kernel dot
 export const LABEL_H     = 12;    // - S# drawn horizontally
 export const TITLE_PX_PER_CHAR = 6.5;   // - 10.5px system font, rotated; average advance
 export const TITLE_MIN_PX = 40;   // - below this the horizontal S# stays instead of a truncated title

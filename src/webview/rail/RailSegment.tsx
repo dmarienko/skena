@@ -1,6 +1,6 @@
 import React from 'react';
 import type { DerivedLane } from '../../shared/sectionLanes';
-import { railItems, ICON_PX, BTN_H, DOT_BTN_H, type RailSegment as Seg } from './railGeometry';
+import { railItems, ICON_PX, BTN_H, DOT_BTN_H, DOT_PX, type RailSegment as Seg } from './railGeometry';
 
 const FONT = 'system-ui, -apple-system, sans-serif';
 
@@ -25,7 +25,7 @@ const Play = () => (
 const btn: React.CSSProperties = {
   background: 'transparent', border: 'none', padding: 0, margin: 0, cursor: 'pointer',
   color: 'var(--sk-text2)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-  width: 20, height: BTN_H, flex: 'none',
+  width: BTN_H, height: BTN_H, flex: 'none',
 };
 
 export function RailSegment({ lane, seg, color, kernelName, current, onFold, onRun, onDelete, onKernel, onTitle }: {
@@ -59,19 +59,19 @@ export function RailSegment({ lane, seg, color, kernelName, current, onFold, onR
               return (
                 // - vertical-rl puts the text run on the element's height, so maxHeight + overflow hidden
                 //   truncate along the title; the span is a flex item, already a block container
-                <span key={item} onDoubleClick={e => onTitle(lane.id, anchor(e))}
+                <span key={item} data-sk-popover-anchor="" onDoubleClick={e => onTitle(lane.id, anchor(e))}
                   style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', fontFamily: FONT, fontWeight: 600, fontSize: 10.5, whiteSpace: 'nowrap', cursor: 'default', color: current ? 'var(--sk-text1)' : 'var(--sk-text2)', userSelect: 'none', maxHeight: titleMaxPx, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   <span style={{ color }}>{lane.label}:</span> {title}
                 </span>
               );
             case 'label':
-              return <span key={item} onDoubleClick={e => onTitle(lane.id, anchor(e))} style={{ fontFamily: FONT, fontWeight: 700, fontSize: 10, color, userSelect: 'none' }}>{lane.label}</span>;
+              return <span key={item} data-sk-popover-anchor="" onDoubleClick={e => onTitle(lane.id, anchor(e))} style={{ fontFamily: FONT, fontWeight: 700, fontSize: 10, color, userSelect: 'none' }}>{lane.label}</span>;
             case 'run':
               return <button key={item} style={btn} title="run section" onClick={() => onRun(lane.id)}><Play /></button>;
             case 'kernel':
               return (
-                <button key={item} style={{ ...btn, height: DOT_BTN_H }} title={kernelName ? `kernel: ${kernelName}` : 'bind a kernel'} onClick={e => onKernel(lane.id, anchor(e))}>
-                  <span style={{ width: 9, height: 9, borderRadius: '50%', background: kernelName ? color : 'transparent', border: kernelName ? 'none' : '1.5px solid var(--sk-text3)', display: 'block' }} />
+                <button key={item} data-sk-popover-anchor="" style={{ ...btn, height: DOT_BTN_H }} title={kernelName ? `kernel: ${kernelName}` : 'bind a kernel'} onClick={e => onKernel(lane.id, anchor(e))}>
+                  <span style={{ width: DOT_PX, height: DOT_PX, borderRadius: '50%', background: kernelName ? color : 'transparent', border: kernelName ? 'none' : '1.5px solid var(--sk-text3)', display: 'block' }} />
                 </button>
               );
             case 'delete':

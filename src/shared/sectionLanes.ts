@@ -22,7 +22,7 @@ export interface SectionLane {
   folded?: boolean;
   /** - index into the shared colour palette; gives each lane its own stripe colour */
   colorIndex?: number;
-  /** - tint + kernel pill; wired in a later phase */
+  /** - id of a kernel node on this canvas: the section's colour and the fallback kernel of its cells */
   kernelId?: string;
 }
 
