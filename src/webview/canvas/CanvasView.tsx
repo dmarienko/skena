@@ -222,7 +222,7 @@ function runningPathEdgeIds(nodes: Node[], edges: Edge[]): Set<string> {
 }
 
 // - React Flow node → updated canvas node (position/size changed)
-function patchCanvasNode(original: CanvasNode, rfNode: Node, nodes: Node[]): CanvasNode {
+function patchCanvasNode(original: CanvasNode, rfNode: Node, nodes: Node[], lanes: SectionLane[]): CanvasNode {
   // - React Flow hands onNodeDragStop the RAW (pre-snap) drag position. customOnNodesChange snapped
   // - the DISPLAY (grid + alignment guides), so re-apply the identical snap here — otherwise the saved
   // - position is up to a full grid cell off the on-screen position and the node shifts on reopen.
@@ -232,10 +232,12 @@ function patchCanvasNode(original: CanvasNode, rfNode: Node, nodes: Node[]): Can
     snapX !== undefined ? snapX : snapGrid(rfNode.position.x),
     snapY !== undefined ? snapY : snapGrid(rfNode.position.y),
   );
+  // - the SAME header-band clamp the live drag applies to the display; without it the saved position
+  //   differs from what is on screen and the node reappears under the title on the next load
   return {
     ...original,
     x:      Math.round(c.x),
-    y:      Math.round(c.y),
+    y:      Math.round(clampOutOfHeaderBand(c.y, lanes)),
     width:  Math.round(Number(rfNode.style?.width ?? original.width)),
     height: Math.round(Number(rfNode.style?.height ?? original.height)),
   };
@@ -639,8 +641,11 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     // - restore saved viewport ONLY on the first load of this path (defaultViewport only fires on
     //   mount). On a reload keep the user's current camera — never snap to the stale disk viewport.
     if (isInitialLoad && canvas.viewport) {
-      const cRestore = clampViewportToOrigin(canvas.viewport.x, canvas.viewport.y, canvas.viewport.zoom);
-      rfRef.current.setViewport({ x: cRestore.x, y: cRestore.y, zoom: canvas.viewport.zoom }, { duration: 0 });
+      // - a viewport saved before the floor existed can carry a smaller zoom; React Flow applies a
+      //   restored viewport verbatim, so clamp it here or the header would not fit its band
+      const zoom = Math.max(canvas.viewport.zoom, MIN_ZOOM);
+      const cRestore = clampViewportToOrigin(canvas.viewport.x, canvas.viewport.y, zoom);
+      rfRef.current.setViewport({ x: cRestore.x, y: cRestore.y, zoom }, { duration: 0 });
     }
 
     // - fitView / focus: defer so the layout pass is done before we query positions
@@ -834,7 +839,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       ...canvasRef.current,
       nodes: canvasRef.current.nodes.map(n => {
         const rf = moved.has(n.id) ? rfById.get(n.id) : undefined;
-        return rf ? patchCanvasNode(n, rf, nodesRef.current) : n;
+        return rf ? patchCanvasNode(n, rf, nodesRef.current, lanesRef.current) : n;
       }),
     };
     canvasRef.current = updated;
@@ -3088,7 +3093,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         onDragOver={onDragOver}
         onDrop={onDrop}
         // - viewport persistence: restore saved position/zoom; fitView only when no saved viewport
-        defaultViewport={canvas.viewport ?? { x: 0, y: 0, zoom: 1 }}
+        defaultViewport={canvas.viewport ? { ...canvas.viewport, zoom: Math.max(canvas.viewport.zoom, MIN_ZOOM) } : { x: 0, y: 0, zoom: 1 }}
         fitView={!canvas.viewport}
         // - save viewport to canvas JSON whenever the user stops panning/zooming
         onMoveStart={() => {
