@@ -84,8 +84,13 @@ per boundary wins. Then every section below gets `y += delta`, and every node wi
 Upward: no rule. A node dragged above `y_i` is in section `i−1` by membership. The first section's
 top is the origin, already clamped by `clampToOrigin`.
 
-Applied in exactly two places: the webview's node-change commit path (after `customOnNodesChange`
-commits a drag / resize, and after every programmatic placement), and the host's MCP write path.
+Output cells: a run places its output cell to the right of the code cell, vertically centred on it.
+That top edge can fall above the code cell's section top, which would make the output a member of
+the section above. The placement is therefore floored at the section top (`laneTopForY`), on the
+host and in the MCP alike; the growth rule then applies to the new cell.
+
+Applied in three places: the webview (one hook watching node geometry, so every placement path is
+covered without touching each), the MCP add/update writes, and the host's output-cell creation.
 
 ## 4. Layout
 
@@ -181,9 +186,9 @@ dims to 55% and the chevron points right. Compacting folded sections is left to 
 | chevron | toggle `folded`, save |
 | title (double-click) | `TitleEditor` popover beside the segment: input, Enter saves, Esc cancels; empty → title cleared |
 | `▶` | host message `runSection { sectionId }` |
-| kernel dot | `KernelPicker` popover: this canvas's kernel nodes as `K1 · name · status` with their colour, plus "none". Pick → `patchSection { id, kernelId }`, save. No kernel nodes → the popover says so and names the command *Skena: Add Kernel*. |
+| kernel dot | `KernelPicker` popover: this canvas's kernel nodes as `K1 · name · status` with their colour, plus "none". Pick → sets `kernelId` on the lane, saves. No kernel nodes → the popover says so and names the command *Skena: Add Kernel*. |
 | `✕` | as today: host confirm, then delete the section, its member nodes and their edges; the next section absorbs the range; undoable |
-| `+` | append a section at the last derived lane's `bottom` (= its content bottom + `GRID`, snapped), pan so its top sits at the viewport top. `skena.newSection` command and the context-menu entry do the same. |
+| `+` | append a section at the last derived lane's `bottom` (= its content bottom + `GRID`, snapped), pan so its top sits at the viewport top. `skena.newSection` command does the same (no context-menu entry). |
 | hover | tooltip (5.4) |
 
 ### 6.1 Run section
@@ -226,13 +231,12 @@ zoom cap, no reservation.
 ## 9. Messages
 
 ```ts
-interface MsgRunSection   { type: 'runSection';   sectionId: string }
-interface MsgPatchSection { type: 'patchSection'; sectionId: string;
-                            patch: { title?: string | null; kernelId?: string | null; folded?: boolean } }
+interface MsgRunSection { type: 'runSection'; sectionId: string }
 ```
 
-Both webview → host. `patchSection` writes metadata through the normal save path (the same one
-`handleFoldLane` uses today); `runSection` is §6.1.
+Webview → host; §6.1. Title, kernel and fold edits need no message: the webview owns
+`metadata.sections` and persists them through `commitLanes` → `saveCanvas` (the host merges
+`sections` in `handleSaveCanvas`), which is how fold already works.
 
 ## 10. Files
 
@@ -246,9 +250,9 @@ Both webview → host. `patchSection` writes metadata through the normal save pa
 | `src/shared/sectionLanes.ts` | `+ growLaneForNodes`; `− colorIndex`; `migrateSections` drops the field |
 | `src/shared/kernelBinding.ts` | `+ resolveCellKernel`; `resolveKernelCells` section fallback |
 | `src/shared/palette.ts` | `+ THEME` tokens |
-| `src/shared/types.ts` | `+ MsgRunSection`, `+ MsgPatchSection` |
-| `src/extension/editor-provider.ts` | `runSection`, `patchSection` handlers; six sites → `resolveCellKernel`; `growLaneForNodes` on MCP writes |
-| `src/extension/mcp/server.ts` | `canvas_run_cell` → `resolveCellKernel` |
+| `src/shared/types.ts` | `+ MsgRunSection` |
+| `src/extension/editor-provider.ts` | `runSection` handler; six sites → `resolveCellKernel`; output cells floored at the section top + `applyLaneGrowth` |
+| `src/extension/mcp/server.ts` | `canvas_run_cell` → `resolveCellKernel`; `applyLaneGrowth` on add/update; output cell floored at the section top |
 | `src/webview/canvas/CanvasView.tsx` | `[rail][flow]` layout; `growLaneForNodes` on commit; camera per §8; remove the three overlay mounts |
 | `src/webview/App.tsx` | sets the `--sk-*` variables from the theme kind |
 | **delete** | `SectionStickyHeader.tsx`, `CameraTopGuard.tsx`; `SectionLaneMarks.tsx` shrinks to `SectionSeparators.tsx` |
