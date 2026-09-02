@@ -10,7 +10,7 @@
  *   4. App switches from loading screen to CanvasView + FloatingChat
  */
 
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react';
 import { CanvasView } from './canvas/CanvasView';
 import { FloatingChat } from './canvas/FloatingChat';
 import { useCanvasData } from './hooks/useCanvasData';
@@ -102,7 +102,7 @@ export function App(): JSX.Element {
     size?:      { w: number; h: number };
   }>());
 
-  useEffect(() => installThemeVars(), []);
+  useLayoutEffect(() => installThemeVars(), []);
 
   // ─── markdown link clicks (host-rendered HTML) ─────────────────────────
   // - host-rendered markdown (Typst/code text nodes, .md file nodes, chat) is injected as

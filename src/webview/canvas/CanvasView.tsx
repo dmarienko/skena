@@ -30,7 +30,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
-import { CanvasData, CanvasNode, CanvasEdge, MsgAddNodeResult, MsgRunOutput, MsgSubCanvasCreated, MsgVerifyPathResult, NodeSide, CanvasMark, ViewportSnapshot } from '../../shared/types';
+import { CanvasData, CanvasNode, CanvasEdge, KernelNode, MsgAddNodeResult, MsgRunOutput, MsgSubCanvasCreated, MsgVerifyPathResult, NodeSide, CanvasMark, ViewportSnapshot } from '../../shared/types';
 import { classifyClipboard } from './paste-classify';
 import { ContextMenu } from './ContextMenu';
 import { CANVAS_COLORS, NODE_SIZE, NEW_NODE } from '../../shared/constants';
@@ -54,7 +54,7 @@ import { CodeNodeComponent }   from './nodes/CodeNode';
 import { LabeledEdgeComponent } from './edges/LabeledEdge';
 import { HelperLines } from './HelperLines';
 import { SectionLaneMarks } from './SectionLaneMarks';
-import { SectionStickyHeader } from './SectionStickyHeader';
+import { SectionRail, type RailKernel } from '../rail/SectionRail';
 import { CameraTopGuard } from './CameraTopGuard';
 import { deriveLanes, sortLanes, type SectionLane } from '../../shared/sectionLanes';
 import { CanvasSearch } from './CanvasSearch';
@@ -827,6 +827,27 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     };
     commitLanes(lanes.filter(l => l.id !== id));
   }, [derivedLanes, lanes, commitLanes, pushHistory, setNodes, setEdges]);
+
+  const handleRunLane = useCallback((id: string) => {
+    vscodePostMessage({ type: 'runSection', sectionId: id });
+  }, []);
+
+  const handleNewSectionClick = useCallback(() => {
+    window.dispatchEvent(new CustomEvent('skena:newSection'));
+  }, []);
+
+  // - kernel nodes on this canvas, for the rail's colours and picker
+  const railKernels = useMemo<RailKernel[]>(() => nodes
+    .filter(n => n.type === 'kernel')
+    .map(n => {
+      const k = n.data as unknown as KernelNode;
+      return { id: n.id, label: k.nodeLabel ?? 'K?', name: k.displayName ?? 'kernel', colorIndex: k.colorIndex ?? 0 };
+    }), [nodes]);
+
+  const selectedNodeId = useMemo(() => nodes.find(n => n.selected && !isBandType(n.type))?.id ?? null, [nodes]);
+
+  // - popovers arrive with Task 7
+  const noopAnchor = useCallback((_id: string, _anchor: DOMRect) => {}, []);
 
   // - restore nodes/edges from a history entry
   const applyHistoryState = useCallback((entry: HistoryEntry) => {
@@ -3112,9 +3133,11 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     <HeatmapProvider nodes={nodes} edges={edges} visible={heatmapVisible} toggle={toggleHeatmap}>
     <ZoomLevelProvider>
     <LanesContext.Provider value={lanes}>
-    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
-    <SectionStickyHeader lanes={derivedLanes} onFold={handleFoldLane} onDelete={handleDeleteLane} />
-    <div ref={wrapperRef} style={{ flex: '1 1 auto', minHeight: 0, position: 'relative' }} onContextMenu={handleContextMenu}>
+    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'row' }}>
+    <SectionRail lanes={derivedLanes} kernels={railKernels} selectedNodeId={selectedNodeId}
+      onFold={handleFoldLane} onRun={handleRunLane} onDelete={handleDeleteLane}
+      onKernel={noopAnchor} onTitle={noopAnchor} onNewSection={handleNewSectionClick} />
+    <div ref={wrapperRef} style={{ flex: '1 1 auto', minWidth: 0, position: 'relative' }} onContextMenu={handleContextMenu}>
       <ReactFlow
         proOptions={{ hideAttribution: true }}
         nodes={rfNodes}
