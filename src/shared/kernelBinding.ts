@@ -102,7 +102,7 @@ export function resolveKernelCells(
   return cells;
 }
 
-/** The slice of a canvas the kernel rule needs; a React Flow store can supply it as easily as CanvasData. */
+/** The slice of a canvas the kernel rule needs. CanvasData satisfies it directly; a React Flow store needs a map to {id, type, y: position.y}. */
 export interface CellKernelCanvas {
   nodes:    { id: string; type: string; y: number }[];
   edges:    EdgeLike[];
@@ -113,23 +113,34 @@ export function cellKernelView(c: Pick<CanvasData, 'nodes' | 'edges' | 'metadata
   return { nodes: c.nodes, edges: c.edges, sections: c.metadata?.sections };
 }
 
-// - the kernel a code cell runs on: an edge-bound kernel wins; else the kernel of the section that
-// - owns the cell's top edge; else null. One rule for the host, the MCP and the webview.
-export function resolveCellKernel(cellId: string, c: CellKernelCanvas): string | null {
+/**
+ * Build the kernel rule once for a canvas snapshot: the node index and the sorted lanes are computed
+ * here, and the returned function answers per cell. Use this wherever the rule is asked many times
+ * on the same snapshot (the webview asks once per code node per store change).
+ */
+export function makeCellKernelResolver(c: CellKernelCanvas): (cellId: string) => string | null {
   const byId = new Map(c.nodes.map(n => [n.id, n]));
   const isKernel = (id: string) => byId.get(id)?.type === 'kernel';
-  const viaEdge = resolveBoundKernel(cellId, c.edges, isKernel);
-  if (viaEdge) return viaEdge;
-  const cell = byId.get(cellId);
-  const lanes = c.sections ?? [];
-  if (!cell || lanes.length === 0) return null;
-  const sorted = sortLanes(lanes);
-  const lane = sorted[laneIndexForY(sorted, cell.y)];
-  return lane.kernelId && isKernel(lane.kernelId) ? lane.kernelId : null;
+  const sorted = sortLanes(c.sections ?? []);
+  return (cellId: string): string | null => {
+    // - an edge-bound kernel wins; else the kernel of the section owning the cell's top edge; else null
+    const viaEdge = resolveBoundKernel(cellId, c.edges, isKernel);
+    if (viaEdge) return viaEdge;
+    const cell = byId.get(cellId);
+    if (!cell || sorted.length === 0) return null;
+    const lane = sorted[laneIndexForY(sorted, cell.y)];
+    return lane.kernelId && isKernel(lane.kernelId) ? lane.kernelId : null;
+  };
+}
+
+/** One-shot form of the rule, for call sites that ask once per event (host run / complete / inspect, MCP). */
+export function resolveCellKernel(cellId: string, c: CellKernelCanvas): string | null {
+  return makeCellKernelResolver(c)(cellId);
 }
 
 // - every code cell that resolves to `kernelId`. Used to clear run-flags when that kernel is
 // - restarted or shut down (its namespace is gone, so every one of them is un-run).
 export function resolveKernelCellsInCanvas(kernelId: string, c: CellKernelCanvas): string[] {
-  return c.nodes.filter(n => n.type === 'code' && resolveCellKernel(n.id, c) === kernelId).map(n => n.id);
+  const resolve = makeCellKernelResolver(c);
+  return c.nodes.filter(n => n.type === 'code' && resolve(n.id) === kernelId).map(n => n.id);
 }
