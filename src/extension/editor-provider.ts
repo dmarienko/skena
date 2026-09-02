@@ -70,7 +70,7 @@ import {
 import { parseNodeRef } from '../shared/nodeRef';
 import { MAX_FILE_FULL_BYTES, MAX_FILE_PREVIEW_BYTES, MAX_NOTEBOOK_BYTES, NODE_SIZE } from '../shared/constants';
 import { normalizeCanvasToOrigin } from '../shared/bounds';
-import { migrateSections, memberCodeCellsInRunOrder, applyLaneGrowth, laneTopForY } from '../shared/sectionLanes';
+import { migrateSections, memberCodeCellsInRunOrder, applyLaneGrowth, outputCellGeom } from '../shared/sectionLanes';
 
 // ─── bookmarks file helpers ──────────────────────────────────────────────────
 
@@ -1312,12 +1312,12 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         } else {
           const cellBase: CellNode = {
             id: outId, type: 'cell',
-            x: cn.x + cn.width + 140, y: Math.max(laneTopForY(c.metadata?.sections ?? [], cn.y), Math.round(cn.y + (cn.height - 320) / 2)), width: 480, height: 320,
+            ...outputCellGeom(c.metadata?.sections ?? [], cn),
             format: payload.output.format, content: payload.output.content, createdBy: 'ai',
           };
           outputNode = assignLabel(cellBase, c.nodes) as CellNode;
           c.nodes.push(outputNode);
-          Object.assign(c, applyLaneGrowth(c, [outputNode.id]));   // - c is mutated in place by this path; keep that contract
+          Object.assign(c, applyLaneGrowth(c, [outputNode.id]));   // - c IS document.canvas and persist() captured that reference: assign into it, never reassign c
           cn.outputNodeId = outId;
           edge = { id: `e-${outId}`, fromNode: cn.id, fromSide: 'right', toNode: outId, toSide: 'left', toEnd: 'arrow' };
           c.edges.push(edge);
@@ -1446,12 +1446,12 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           const id = presetId ?? `ai-${Date.now().toString(36)}`;
           const cellBase: CellNode = {
             id, type: 'cell',
-            x: cn.x + cn.width + 140, y: Math.max(laneTopForY(c.metadata?.sections ?? [], cn.y), Math.round(cn.y + (cn.height - 320) / 2)), width: 480, height: 320,
+            ...outputCellGeom(c.metadata?.sections ?? [], cn),
             format: output.format, content: output.content, createdBy: 'ai',
           };
           outputNode = assignLabel(cellBase, c.nodes) as CellNode;
           c.nodes.push(outputNode);
-          Object.assign(c, applyLaneGrowth(c, [outputNode.id]));   // - c is mutated in place by this path; keep that contract
+          Object.assign(c, applyLaneGrowth(c, [outputNode.id]));   // - c IS document.canvas and persist() captured that reference: assign into it, never reassign c
           edge = { id: `e-${id}`, fromNode: cn.id, fromSide: 'right', toNode: id, toSide: 'left', toEnd: 'arrow' };
           c.edges.push(edge);
           cn.outputNodeId = id;
@@ -1509,7 +1509,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       const { format, content } = renderOutput(latest);
       const outputNode: CellNode = {
         id: liveOutputId, type: 'cell',
-        x: cn.x + cn.width + 140, y: Math.round(cn.y + (cn.height - 320) / 2), width: 480, height: 320,
+        ...outputCellGeom(document.canvas.metadata?.sections ?? [], cn),
         format, content, createdBy: 'ai',
       };
       const edge: CanvasEdge = { id: `e-${liveOutputId}`, fromNode: cn.id, fromSide: 'right', toNode: liveOutputId, toSide: 'left', toEnd: 'arrow' };
@@ -1524,6 +1524,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         const cnDisk = c.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code') as CodeNode | undefined;
         if (cnDisk && !cnDisk.outputNodeId) {
           if (!c.nodes.some(n => n.id === outputNode.id)) c.nodes.push(assignLabel(outputNode, c.nodes) as CellNode);
+          Object.assign(c, applyLaneGrowth(c, [outputNode.id]));   // - c IS document.canvas, written below: assign into it, never reassign c
           if (!c.edges.some(e => e.id === edge.id)) c.edges.push(edge);
           cnDisk.outputNodeId = outputNode.id;
           setSelfSaving(true);

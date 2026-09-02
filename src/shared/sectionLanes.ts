@@ -161,6 +161,16 @@ export function laneTopForY(lanes: SectionLane[], y: number): number {
   return sorted[laneIndexForY(sorted, y)].y;
 }
 
+/**
+ * Where a run's output cell goes: to the right of its code cell, vertically centred on it, but never
+ * above the code cell's section top — that would make the output a member of the section above.
+ */
+export function outputCellGeom(lanes: SectionLane[], cell: { x: number; y: number; width: number; height: number }): { x: number; y: number; width: number; height: number } {
+  const w = 480, h = 320, gap = 140;
+  const y = Math.max(laneTopForY(lanes, cell.y), Math.round(cell.y + (cell.height - h) / 2));
+  return { x: Math.round(cell.x + cell.width + gap), y, width: w, height: h };
+}
+
 /** After a removal, the topmost lane starts at the origin again (a lane owns everything above it anyway). */
 export function parkFirstLaneAtOrigin(lanes: SectionLane[]): SectionLane[] {
   const sorted = sortLanes(lanes);

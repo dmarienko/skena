@@ -29,7 +29,7 @@ import * as crypto   from 'crypto';
 import { CanvasData, CanvasNode, CanvasEdge, CanvasNodeBase, CellNode, CodeNode, AgentRunPersist, AgentRunPersistResult } from '../../shared/types';
 import { assignLabel, ensureLabels } from '../../shared/nodeLabels';
 import { snapGrid } from '../../shared/grid';
-import { applyLaneGrowth, laneTopForY } from '../../shared/sectionLanes';
+import { applyLaneGrowth, outputCellGeom } from '../../shared/sectionLanes';
 import { resolveCellKernel, resolveUpstreamChain, cellKernelView } from '../../shared/kernelBinding';
 import { resolveKernelConfig, type KernelServerConfig } from '../jupyter/config';
 import { executeCell } from '../jupyter/client';
@@ -745,8 +745,7 @@ async function canvasPinOutput(args: Record<string, unknown>): Promise<string> {
   if (args.sourceRef) {
     sourceNode = findNode(d, args.sourceRef as string);
     if (sourceNode) {
-      x = Math.round(sourceNode.x + sourceNode.width + 60);
-      y = Math.round(sourceNode.y + (sourceNode.height - H) / 2);
+      ({ x, y } = outputCellGeom(d.metadata?.sections ?? [], sourceNode));   // - W/H here match outputCellGeom's 480x320, so its x/y apply outright
     } else {
       const pos = autoPlace(d.nodes, W, H);
       x = pos.x; y = pos.y;
@@ -786,6 +785,7 @@ async function canvasPinOutput(args: Record<string, unknown>): Promise<string> {
     edgeId = edge.id;
   }
 
+  Object.assign(d, applyLaneGrowth(d, [labeled.id]));
   await writeCanvas(p, d);
 
   const lines = [`Pinned output as cell node ${labeled.nodeLabel} (id: ${labeled.id})`];
@@ -824,9 +824,7 @@ async function runCellCore(
   const outId    = hostOwns ? (startRes.outputNodeId ?? cell.outputNodeId ?? uid()) : (cell.outputNodeId ?? uid());
   if (!hostOwns) { cell.lastStatus = 'running'; await writeCanvas(p, d); }
 
-  // - never above the code cell's section top: that would make the output a member of the section above
-  const outY = Math.max(laneTopForY(d.metadata?.sections ?? [], cell.y), Math.round(cell.y + (cell.height - 320) / 2));
-  const outGeom = { x: Math.round(cell.x + cell.width + 140), y: outY, width: 480, height: 320 };
+  const outGeom = outputCellGeom(d.metadata?.sections ?? [], cell);
   // - same edge-id scheme as the host persist (`e-${outId}`), so a streaming run's live-delta edge and
   // - the host's persisted edge are ONE edge, not two with different ids
   const outEdge = { id: `e-${outId}`, fromNode: cell.id, fromSide: 'right' as const, toNode: outId, toSide: 'left' as const, toEnd: 'arrow' as const };
@@ -911,7 +909,8 @@ async function runCellCore(
 
     cell.lastStatus = out.status === 'error' ? 'error' : 'ok';
     cell.lastRun    = Date.now();
-    await writeCanvas(p, applyLaneGrowth(d, [outId]));   // - a pushed output node past its section's bottom edge grows the section
+    Object.assign(d, applyLaneGrowth(d, [outId]));   // - d is reused for the next cell of a chain; a discarded result would be undone by that cell's write
+    await writeCanvas(p, d);
 
     // - deterministic final frame so the result doesn't depend on the (racy) soft-reload winning
     if (ipc) {
