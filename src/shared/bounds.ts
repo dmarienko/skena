@@ -41,9 +41,6 @@ export function normalizeCanvasToOrigin(canvas: CanvasData): CanvasData {
   let minX = Infinity;
   let minY = Infinity;
   for (const n of canvas.nodes) {
-    // - sections are derived geometry; their compact header lane may sit in the one-grid gutter
-    //   above the origin, and must not drag member nodes off their grid positions.
-    if (n.type === 'section') continue;
     if (n.x < minX) minX = n.x;
     if (n.y < minY) minY = n.y;
   }

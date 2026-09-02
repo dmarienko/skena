@@ -3,6 +3,9 @@
  * NO Node.js APIs here — this file is bundled into both contexts.
  */
 
+// - type-only, so the sectionLanes ↔ types cycle is erased at build time
+import type { SectionLane } from './sectionLanes';
+
 // ─── JSON Canvas spec types ───────────────────────────────────────────────────
 
 export type CanvasColor = '1' | '2' | '3' | '4' | '5' | '6';
@@ -14,7 +17,7 @@ export type NodeSide = 'top' | 'right' | 'bottom' | 'left';
 export type StandardNodeType = 'file' | 'text' | 'group' | 'link';
 
 /** Skena extension node types (Obsidian ignores unknown types gracefully) */
-export type SkenaNodeType = 'cell' | 'chat' | 'portal' | 'kernel' | 'code' | 'noderef' | 'section';
+export type SkenaNodeType = 'cell' | 'chat' | 'portal' | 'kernel' | 'code' | 'noderef';
 
 export type NodeType = StandardNodeType | SkenaNodeType;
 
@@ -55,11 +58,6 @@ export interface CanvasNodeBase {
    * Ignored by Obsidian.
    */
   editIndex?: number;
-  /**
-   * Id of the section node this node belongs to. Every node except a section itself carries one
-   * once migrated. Membership is explicit (not geometric) so it survives drags. Ignored by Obsidian.
-   */
-  sectionId?: string;
 }
 
 export interface FileNode extends CanvasNodeBase {
@@ -78,19 +76,6 @@ export interface GroupNode extends CanvasNodeBase {
   label?: string;
   background?: string;
   backgroundStyle?: 'cover' | 'ratio' | 'repeat';
-}
-
-/** Section container — a kernel-tint-ready band that owns nodes (via their sectionId). */
-export interface SectionNode extends CanvasNodeBase {
-  type: 'section';
-  /** - section title shown in the zoom-steady header; when absent the header shows the creation time */
-  title?: string;
-  /** - creation time (epoch ms); the header shows this formatted when there is no explicit title */
-  createdAt?: number;
-  /** - collapsed to just the header bar when true */
-  folded?: boolean;
-  /** - accent/tint color (a #rrggbb); kernel-derived in a later phase */
-  accentColor?: string;
 }
 
 export interface LinkNode extends CanvasNodeBase {
@@ -173,8 +158,7 @@ export type CanvasNode =
   | PortalNode
   | NoderefNode
   | KernelNode
-  | CodeNode
-  | SectionNode;
+  | CodeNode;
 
 export interface CanvasEdge {
   id: string;
@@ -208,6 +192,8 @@ export interface CanvasData {
   metadata?: {
     /** - AI model for this canvas's chat; overrides the global skena.ai.model */
     aiModel?: string;
+    /** - virtual section lanes, sorted by y; geometry is derived, see sectionLanes.ts */
+    sections?: SectionLane[];
   };
 }
 

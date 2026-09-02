@@ -69,7 +69,7 @@ import {
 import { parseNodeRef } from '../shared/nodeRef';
 import { MAX_FILE_FULL_BYTES, MAX_FILE_PREVIEW_BYTES, MAX_NOTEBOOK_BYTES, NODE_SIZE } from '../shared/constants';
 import { normalizeCanvasToOrigin } from '../shared/bounds';
-import { wrapNodesInSection, fitSectionsToContent, frameViewportToTopSection } from '../shared/sections';
+import { migrateSections } from '../shared/sectionLanes';
 
 // ─── bookmarks file helpers ──────────────────────────────────────────────────
 
@@ -223,7 +223,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
               readCanvas(document.uri.fsPath),
               vscode.env.clipboard.readText(),
             ]);
-            const canvas = frameViewportToTopSection(normalizeCanvasToOrigin(fitSectionsToContent(wrapNodesInSection(rawCanvas))));
+            const canvas = normalizeCanvasToOrigin(migrateSections(rawCanvas, Date.now()));
             document.updateFromDisk(canvas);
             send({ type: 'canvasLoaded', canvas, canvasPath: document.uri.fsPath });
             // - a cross-canvas node reference opened this canvas — focus the referenced node now
@@ -510,7 +510,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     // - mounts the one new node (React Flow diffs by id) instead of remounting all.
     const reloadFromDisk = async () => {
       try {
-        const canvas = frameViewportToTopSection(normalizeCanvasToOrigin(fitSectionsToContent(wrapNodesInSection(await readCanvas(document.uri.fsPath)))));
+        const canvas = normalizeCanvasToOrigin(migrateSections(await readCanvas(document.uri.fsPath), Date.now()));
         document.updateFromDisk(canvas);
         send({ type: 'canvasLoaded', canvas, canvasPath: document.uri.fsPath });
         // - covers the rare race where a pending cross-canvas focus arrived before this
@@ -787,7 +787,16 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         const hostOid = (hostById.get(n.id) as CodeNode | undefined)?.outputNodeId;
         return hostOid && msgIds.has(hostOid) ? { ...(n as CodeNode), outputNodeId: hostOid } : n;
       });
-      const canvasToWrite = { ...msg.canvas, nodes: mergedNodes, metadata: document.canvas.metadata };
+      const canvasToWrite = {
+        ...msg.canvas,
+        nodes: mergedNodes,
+        // - aiModel is host-owned (set via pickModel); sections are webview-owned (fold/create/delete).
+        //   A blanket `metadata: document.canvas.metadata` would silently drop every lane edit.
+        metadata: {
+          ...document.canvas.metadata,
+          sections: msg.canvas.metadata?.sections ?? document.canvas.metadata?.sections,
+        },
+      };
       const json = JSON.stringify(canvasToWrite, null, 2);
       setLastWrittenJson(json);
       await writeCanvas(document.uri.fsPath, canvasToWrite);
