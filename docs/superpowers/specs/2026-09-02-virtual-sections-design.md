@@ -1,6 +1,6 @@
 # Virtual Sections — Design
 
-**Status:** approved in brainstorm 2026-09-02. Replaces the section implementation built on
+**Status:** header part (§4.2, §6) superseded by `2026-09-02-section-rail-design.md`; the model (§3, §7) stays. Replaces the section implementation built on
 2026-09-01 (`docs/superpowers/plans/2026-09-01-spatial-notebook-1b-section-container.md`), which is
 withdrawn.
 
