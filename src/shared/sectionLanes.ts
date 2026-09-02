@@ -104,6 +104,75 @@ export function deriveLanes(nodes: LaneNodeGeom[], lanes: SectionLane[]): Derive
   });
 }
 
+export interface LaneGrowth {
+  /** - lane id → how far it moves down, flow units */
+  laneShifts: Record<string, number>;
+  /** - node id → how far it moves down, flow units */
+  nodeShifts: Record<string, number>;
+}
+
+/**
+ * Downward growth. A changed node whose bottom edge plus one GRID crosses into the next lane pushes
+ * that lane and everything below it down by a GRID multiple, so membership (by `y`) is unchanged: the
+ * boundary moves, the node does not change section. The last lane is unbounded. Pushes accumulate
+ * down the stack. Pure; the caller applies the shifts.
+ */
+export function growLaneForNodes(lanes: SectionLane[], nodes: LaneNodeGeom[], changedIds: string[]): LaneGrowth {
+  const empty: LaneGrowth = { laneShifts: {}, nodeShifts: {} };
+  const sorted = sortLanes(lanes);
+  if (sorted.length < 2 || changedIds.length === 0) return empty;
+
+  const byId = new Map(nodes.map(n => [n.id, n]));
+  const need: number[] = sorted.map(() => 0);   // - need[i] = push of the boundary below lane i
+  for (const id of changedIds) {
+    const n = byId.get(id);
+    if (!n) continue;
+    const i = laneIndexForY(sorted, n.y);
+    if (i >= sorted.length - 1) continue;
+    const overflow = n.y + n.height + GRID - sorted[i + 1].y;
+    if (overflow <= 0) continue;
+    const delta = Math.ceil(overflow / GRID) * GRID;
+    if (delta > need[i]) need[i] = delta;
+  }
+
+  const laneShifts: Record<string, number> = {};
+  let acc = 0;
+  for (let k = 1; k < sorted.length; k++) {
+    acc += need[k - 1];
+    if (acc > 0) laneShifts[sorted[k].id] = acc;
+  }
+  if (acc === 0) return empty;
+
+  const nodeShifts: Record<string, number> = {};
+  for (const n of nodes) {
+    const s = laneShifts[sorted[laneIndexForY(sorted, n.y)].id];
+    if (s) nodeShifts[n.id] = s;
+  }
+  return { laneShifts, nodeShifts };
+}
+
+/** Apply `growLaneForNodes` to a canvas. Same reference when nothing moves (no spurious save). */
+export function applyLaneGrowth(canvas: CanvasData, changedIds: string[]): CanvasData {
+  const lanes = canvas.metadata?.sections ?? [];
+  const g = growLaneForNodes(lanes, canvas.nodes, changedIds);
+  if (Object.keys(g.laneShifts).length === 0) return canvas;
+  return {
+    ...canvas,
+    nodes: canvas.nodes.map(n => (g.nodeShifts[n.id] ? { ...n, y: n.y + g.nodeShifts[n.id] } : n)),
+    metadata: {
+      ...canvas.metadata,
+      sections: sortLanes(lanes).map(l => (g.laneShifts[l.id] ? { ...l, y: l.y + g.laneShifts[l.id] } : l)),
+    },
+  };
+}
+
+/** Top of the lane owning flow y; -Infinity when the canvas has no lanes (nothing to clamp to). */
+export function laneTopForY(lanes: SectionLane[], y: number): number {
+  if (lanes.length === 0) return -Infinity;
+  const sorted = sortLanes(lanes);
+  return sorted[laneIndexForY(sorted, y)].y;
+}
+
 /**
  * One-time conversion from the stored-section-node model to lanes. Legacy `type: 'section'` nodes
  * become lane records keyed on their y; the nodes themselves and every `sectionId` are dropped. A
