@@ -197,7 +197,10 @@ Host handler. Order: member code nodes by `y`, then `x`. For each: resolve its k
 `resolveCellKernel`; run through `runOneCell`; stop at the first `'error'`. Every cell runs
 regardless of `lastStatus` (unlike run-with-upstream, which skips already-run cells). A section
 with no resolvable kernel for its first cell reports `runStatus … 'no kernel bound'` for that cell
-and stops.
+and stops. One run per section at a time: a second `▶` while a run is in flight is answered with an
+information message, as is `▶` on a section with no code cell. The order is computed by the pure
+`memberCodeCellsInRunOrder(nodes, lanes, sectionId)` in `sectionLanes.ts`, unit-tested. Folded
+sections run too: fold is visual only (hidden cells are still members).
 
 ## 7. Kernel resolution
 
