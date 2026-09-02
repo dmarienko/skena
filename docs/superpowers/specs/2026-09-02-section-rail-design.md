@@ -107,7 +107,7 @@ under it, so R1 needs no z-order and no pointer-event blocking.
 
 ## 5. Rail rendering
 
-### 5.1 Tokens (`src/shared/palette.ts`)
+### 5.1 Tokens (`src/webview/canvas/palette.ts`)
 
 ```ts
 export const THEME = {
@@ -118,7 +118,8 @@ export const THEME = {
 } as const;
 ```
 
-Picked by the VS Code theme kind (`body.vscode-dark` / `vscode-light` / high-contrast → dark).
+Picked by the VS Code theme kind on `body`: `vscode-dark` and `vscode-high-contrast` → dark;
+`vscode-light` and `vscode-high-contrast-light` → light.
 Exposed as CSS variables `--sk-bg1 … --sk-accent` on the webview root so the node restyle can use
 them without importing TS.
 
@@ -258,7 +259,7 @@ Webview → host; §6.1. Title, kernel and fold edits need no message: the webvi
 | `src/webview/rail/railGeometry.ts` | new, pure: `railSegments(lanes, transform, H)`, `railItems(segmentH, titleLen)` |
 | `src/shared/sectionLanes.ts` | `+ growLaneForNodes`; `− colorIndex`; `migrateSections` drops the field |
 | `src/shared/kernelBinding.ts` | `+ resolveCellKernel`; `resolveKernelCells` section fallback |
-| `src/shared/palette.ts` | `+ THEME` tokens |
+| `src/webview/canvas/palette.ts` | `+ THEME` tokens |
 | `src/shared/types.ts` | `+ MsgRunSection` |
 | `src/extension/editor-provider.ts` | `runSection` handler; six sites → `resolveCellKernel`; output cells floored at the section top + `applyLaneGrowth` |
 | `src/extension/mcp/server.ts` | `canvas_run_cell` → `resolveCellKernel`; `applyLaneGrowth` on add/update; output cell floored at the section top |
