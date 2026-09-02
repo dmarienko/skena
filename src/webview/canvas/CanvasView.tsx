@@ -644,6 +644,20 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       if (isInitialLoad && !canvas.viewport) {
         // - first open, no saved viewport → fitView so the canvas isn't off-screen
         rfRef.current.fitView({ padding: 0.1 });
+      } else if (isInitialLoad && nodesRef.current.length > 0) {
+        // - a saved viewport can point at empty space (content deleted or moved since it was written),
+        //   which opens the canvas on a blank screen. If it frames no node at all, fit instead.
+        const { x, y, zoom } = rfRef.current.getViewport();
+        const w = wrapperRef.current?.clientWidth ?? 0;
+        const h = wrapperRef.current?.clientHeight ?? 0;
+        const anyVisible = nodesRef.current.some(n => {
+          const sx = n.position.x * zoom + x;
+          const sy = n.position.y * zoom + y;
+          const sw = Number(n.width ?? n.style?.width ?? 0) * zoom;
+          const sh = Number(n.height ?? n.style?.height ?? 0) * zoom;
+          return sx + sw > 0 && sx < w && sy + sh > 0 && sy < h;
+        });
+        if (!anyVisible) rfRef.current.fitView({ padding: 0.1 });
       }
       // - a cross-canvas reference opened this canvas → jump to and center its target, overriding
       // - the usual last-focus restore (which would otherwise clobber the jump on first open)
@@ -701,6 +715,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   useEffect(() => { setLanes(canvas.metadata?.sections ?? []); }, [canvas]);
   const lanesRef = useRef<SectionLane[]>(lanes);
   useEffect(() => { lanesRef.current = lanes; }, [lanes]);
+  // - assigned once confirmDeleteViaHost exists (declared further down); see handleDeleteLane
+  const confirmLaneDeleteRef = useRef<((ids: string[], reason: string) => Promise<boolean>) | null>(null);
 
   // - derived every render from the LIVE node array, so dragging a node moves its lane on the same
   //   frame. Nothing about a lane is stored except its y.
@@ -763,9 +779,17 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     return () => window.removeEventListener('skena:newSection', handler);
   }, [lanes, derivedLanes, commitLanes, pushHistory]);
 
-  const handleDeleteLane = useCallback((id: string) => {
+  const handleDeleteLane = useCallback(async (id: string) => {
     const target = derivedLanes.find(l => l.id === id);
     if (!target) return;
+    // - this also deletes every node in the lane, so never do it on a single unguarded click
+    if (target.memberIds.length > 0) {
+      const ok = await confirmLaneDeleteRef.current?.(
+        target.memberIds,
+        `Delete section ${target.label} and its ${target.memberIds.length} node(s)?`,
+      );
+      if (!ok) return;
+    }
     pushHistory();
     const doomed = new Set(target.memberIds);
     setNodes(nds => nds.filter(n => !doomed.has(n.id)));
@@ -1525,6 +1549,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
   // - confirm a destructive delete via a host modal; resolves when doDelete arrives
   const confirmResolveRef = useRef<((v: boolean) => void) | null>(null);
+  // - published for handleDeleteLane, which is declared above this point
   const confirmDeleteViaHost = useCallback((nodeIds: string[], reason: string) => new Promise<boolean>(resolve => {
     confirmResolveRef.current?.(false);   // - abandon any prior pending confirm
     confirmResolveRef.current = resolve;
@@ -1577,6 +1602,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     if (reason && !(await confirmDeleteViaHost(dn.map(n => n.id), reason))) return false;
     return allowedEdges.length === de.length ? true : { nodes: dn, edges: allowedEdges };
   }, [confirmDeleteViaHost]);
+  useEffect(() => { confirmLaneDeleteRef.current = confirmDeleteViaHost; }, [confirmDeleteViaHost]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
