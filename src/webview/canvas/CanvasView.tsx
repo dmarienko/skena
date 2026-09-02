@@ -55,7 +55,8 @@ import { LabeledEdgeComponent } from './edges/LabeledEdge';
 import { HelperLines } from './HelperLines';
 import { SectionSeparators } from './SectionSeparators';
 import { SectionRail, type RailKernel } from '../rail/SectionRail';
-import { deriveLanes, sortLanes, parkFirstLaneAtOrigin, type SectionLane } from '../../shared/sectionLanes';
+import { deriveLanes, sortLanes, parkFirstLaneAtOrigin, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
+import { useLaneGrowth } from '../rail/useLaneGrowth';
 import { CanvasSearch } from './CanvasSearch';
 import { MarksPanel  } from './MarksPanel';
 import { LanesContext } from './LanesContext';
@@ -529,7 +530,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
   // ─── undo / redo ──────────────────────────────────────────────────────────────
   const MAX_HISTORY = 50;
-  type HistoryEntry = { nodes: CanvasNode[]; edges: CanvasEdge[] };
+  type HistoryEntry = { nodes: CanvasNode[]; edges: CanvasEdge[]; sections: SectionLane[] };
   const undoStackRef = useRef<HistoryEntry[]>([]);
   const redoStackRef = useRef<HistoryEntry[]>([]);
 
@@ -705,20 +706,20 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     }, 500);
   }, []); // - canvasRef is a ref — stable, no closure dependency
 
-  // - snapshot current state BEFORE a mutation so it can be undone
-  const pushHistory = useCallback(() => {
-    undoStackRef.current = [
-      ...undoStackRef.current.slice(-(MAX_HISTORY - 1)),
-      { nodes: [...canvasRef.current.nodes], edges: [...canvasRef.current.edges] },
-    ];
-    redoStackRef.current = []; // - new action clears redo
-  }, []); // - canvasRef is a ref, always current
-
   // - lanes live in canvas metadata; the webview owns fold/create/delete and the host merges them back
   const [lanes, setLanes] = useState<SectionLane[]>(canvas.metadata?.sections ?? []);
   useEffect(() => { setLanes(canvas.metadata?.sections ?? []); }, [canvas]);
   const lanesRef = useRef<SectionLane[]>(lanes);
   useEffect(() => { lanesRef.current = lanes; }, [lanes]);
+
+  // - snapshot current state BEFORE a mutation so it can be undone
+  const pushHistory = useCallback(() => {
+    undoStackRef.current = [
+      ...undoStackRef.current.slice(-(MAX_HISTORY - 1)),
+      { nodes: [...canvasRef.current.nodes], edges: [...canvasRef.current.edges], sections: [...lanesRef.current] },
+    ];
+    redoStackRef.current = []; // - new action clears redo
+  }, []); // - canvasRef / lanesRef are refs, always current
   // - every viewport write goes through here; the rule itself lives in bounds.ts and is tested there
   const clampCam = useCallback((x: number, y: number, zoom: number) => clampCameraToOrigin(x, y, zoom), []);
   // - assigned once confirmDeleteViaHost exists (declared further down); see handleDeleteLane
@@ -758,6 +759,20 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     };
     scheduleSave();
   }, [scheduleSave]);
+
+  // - a node moved or resized past its section's bottom edge: push every section below it down.
+  //   A drag already pushed its own entry at drag start, so undoing a drag that grew a section
+  //   takes two undos — first the growth, then the move.
+  const applyGrowth = useCallback((g: LaneGrowth) => {
+    pushHistory();
+    setNodes(nds => nds.map(n => (g.nodeShifts[n.id] ? { ...n, position: { x: n.position.x, y: n.position.y + g.nodeShifts[n.id] } } : n)));
+    canvasRef.current = {
+      ...canvasRef.current,
+      nodes: canvasRef.current.nodes.map(n => (g.nodeShifts[n.id] ? { ...n, y: n.y + g.nodeShifts[n.id] } : n)),
+    };
+    commitLanes(lanesRef.current.map(l => (g.laneShifts[l.id] ? { ...l, y: l.y + g.laneShifts[l.id] } : l)));
+  }, [pushHistory, setNodes, commitLanes]);
+  useLaneGrowth(nodes, lanes, draggingRef, applyGrowth);
 
   const handleFoldLane = useCallback((id: string) => {
     pushHistory();
@@ -839,9 +854,10 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     commitLanes(lanes.map(l => (l.id === id ? { ...l, title: t || undefined } : l)));
   }, [lanes, commitLanes, pushHistory]);
 
-  // - restore nodes/edges from a history entry
+  // - restore nodes/edges/sections from a history entry
   const applyHistoryState = useCallback((entry: HistoryEntry) => {
-    canvasRef.current = { ...canvasRef.current, nodes: entry.nodes, edges: entry.edges };
+    canvasRef.current = { ...canvasRef.current, nodes: entry.nodes, edges: entry.edges, metadata: { ...canvasRef.current.metadata, sections: entry.sections } };
+    setLanes(entry.sections);
     setNodes(entry.nodes.map(toFlowNode));
     setEdges(entry.edges.map(toFlowEdge));
     scheduleSave();
@@ -851,7 +867,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     if (undoStackRef.current.length === 0) return;
     const prev = undoStackRef.current[undoStackRef.current.length - 1];
     redoStackRef.current = [
-      { nodes: [...canvasRef.current.nodes], edges: [...canvasRef.current.edges] },
+      { nodes: [...canvasRef.current.nodes], edges: [...canvasRef.current.edges], sections: [...lanesRef.current] },
       ...redoStackRef.current.slice(0, MAX_HISTORY - 1),
     ];
     undoStackRef.current = undoStackRef.current.slice(0, -1);
@@ -863,7 +879,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     const next = redoStackRef.current[0];
     undoStackRef.current = [
       ...undoStackRef.current.slice(-(MAX_HISTORY - 1)),
-      { nodes: [...canvasRef.current.nodes], edges: [...canvasRef.current.edges] },
+      { nodes: [...canvasRef.current.nodes], edges: [...canvasRef.current.edges], sections: [...lanesRef.current] },
     ];
     redoStackRef.current = redoStackRef.current.slice(1);
     applyHistoryState(next);
@@ -909,10 +925,10 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   useEffect(() => { rfRef.current = rfInstance; });
 
   // - React Flow's fitView bypasses translateExtent (d3 transform, no constrain), so clamp after it lands
-  //   fitView's promise resolves before d3's transform call, but that call is synchronous and the store
-  //   update happens in the same task, so the await's continuation (a microtask) always reads the landed
-  //   transform
+  //   the public fitView promise resolves after fitViewport has landed the transform in the store
+  //   (d3's transform is synchronous), so the continuation reads the final viewport
   const fitClamped = useCallback(async () => {
+    if (rfRef.current.getNodes().length === 0) return;   // - fitView never resolves on an empty canvas; nothing to fit anyway
     await rfRef.current.fitView({ padding: 0.1 });
     const { x, y, zoom } = rfRef.current.getViewport();
     const c = clampCam(x, y, zoom);
