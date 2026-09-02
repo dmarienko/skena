@@ -1,6 +1,6 @@
 import React from 'react';
 import type { DerivedLane } from '../../shared/sectionLanes';
-import { railItems, ITEM_H, type RailSegment as Seg } from './railGeometry';
+import { railItems, ICON_PX, type RailSegment as Seg } from './railGeometry';
 
 const FONT = 'system-ui, -apple-system, sans-serif';
 
@@ -19,7 +19,7 @@ const Chevron = ({ folded }: { folded: boolean }) => (
 );
 
 const Play = () => (
-  <svg width={ITEM_H} height={ITEM_H} viewBox="0 0 16 16" fill="currentColor"><path d="M5 3l8 5-8 5z" /></svg>
+  <svg width={ICON_PX} height={ICON_PX} viewBox="0 0 16 16" fill="currentColor"><path d="M5 3l8 5-8 5z" /></svg>
 );
 
 const btn: React.CSSProperties = {
@@ -43,7 +43,8 @@ export function RailSegment({ lane, seg, color, kernelName, current, onFold, onR
   const title = lane.title?.trim() || fmtDateTime(lane.createdAt);
   const full = `${lane.label}: ${title}`;
   const { items, titleMaxPx } = railItems(seg.height, full.length);
-  const tooltip = `${full} · ${fmtDateTime(lane.createdAt)} · ${kernelName ?? 'no kernel'}${lane.folded ? ' · folded' : ''}`;
+  // - an untitled section already shows its datetime as the title: do not print it twice
+  const tooltip = `${full}${lane.title?.trim() ? ` · ${fmtDateTime(lane.createdAt)}` : ''} · ${kernelName ?? 'no kernel'}${lane.folded ? ' · folded' : ''} · double-click the title to rename`;
   const anchor = (e: React.MouseEvent) => (e.currentTarget as HTMLElement).getBoundingClientRect();
 
   return (
@@ -56,10 +57,10 @@ export function RailSegment({ lane, seg, color, kernelName, current, onFold, onR
               return <button key={item} style={btn} title={lane.folded ? 'unfold section' : 'fold section'} onClick={() => onFold(lane.id)}><Chevron folded={!!lane.folded} /></button>;
             case 'title':
               return (
-                // - vertical-rl puts the text run on the element's HEIGHT, so maxHeight truncates along
-                //   the text; display:block is what makes overflow/text-overflow apply to a span at all
-                <span key={item} onDoubleClick={e => onTitle(lane.id, anchor(e))} title="double-click to rename"
-                  style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', fontFamily: FONT, fontWeight: 600, fontSize: 10.5, whiteSpace: 'nowrap', cursor: 'default', color: current ? 'var(--sk-text1)' : 'var(--sk-text2)', userSelect: 'none', display: 'block', maxHeight: titleMaxPx, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                // - vertical-rl puts the text run on the element's height, so maxHeight + overflow hidden
+                //   truncate along the title; the span is a flex item, already a block container
+                <span key={item} onDoubleClick={e => onTitle(lane.id, anchor(e))}
+                  style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', fontFamily: FONT, fontWeight: 600, fontSize: 10.5, whiteSpace: 'nowrap', cursor: 'default', color: current ? 'var(--sk-text1)' : 'var(--sk-text2)', userSelect: 'none', maxHeight: titleMaxPx, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   <span style={{ color }}>{lane.label}:</span> {title}
                 </span>
               );

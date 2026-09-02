@@ -53,7 +53,7 @@ export function SectionRail({ lanes, kernels, selectedNodeId, onFold, onRun, onD
       </div>
       {/* - paddingLeft 10 puts the + on the same axis as a segment's controls, which start right of the stripe */}
       <button title="new section" onClick={onNewSection}
-        style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: PLUS_H, display: 'flex', alignItems: 'center', justifyContent: 'center', paddingLeft: 10, background: 'var(--sk-bg1)', border: 'none', borderTop: '1px solid var(--sk-border)', cursor: 'pointer', color: 'var(--sk-text2)', fontFamily: 'system-ui, -apple-system, sans-serif', fontSize: 18, lineHeight: 1, boxSizing: 'border-box' }}>
+        style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: PLUS_H, display: 'flex', alignItems: 'center', justifyContent: 'center', paddingLeft: 10, background: 'var(--sk-bg1)', border: 'none', borderTop: '1px solid var(--sk-border)', cursor: 'pointer', color: 'var(--sk-text2)', fontFamily: 'system-ui, -apple-system, sans-serif', fontSize: 16, lineHeight: 1 }}>
         +
       </button>
     </div>

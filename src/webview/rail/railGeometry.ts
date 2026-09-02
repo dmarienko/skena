@@ -8,9 +8,10 @@ export const SEG_GAP     = 6;     // - space between adjacent segments
 export const SEG_MIN_H   = 28;    // - a segment never shrinks below this: room for S#
 export const SEG_PAD_TOP = 8;
 export const ITEM_GAP    = 7;
-export const ITEM_H      = 14;    // - chevron / run icon / ✕ box
+export const ICON_PX     = 14;    // - svg size of the play icon
+export const BTN_H       = 20;    // - box of the fold / run / delete buttons (what the column actually stacks)
+export const DOT_BTN_H   = 14;    // - box of the kernel-dot button
 export const LABEL_H     = 12;    // - S# drawn horizontally
-export const DOT_H       = 9;     // - kernel dot
 export const TITLE_PX_PER_CHAR = 6.5;   // - 10.5px system font, rotated; average advance
 export const TITLE_MIN_PX = 40;   // - below this the horizontal S# stays instead of a truncated title
 
@@ -18,14 +19,13 @@ export interface RailSegment {
   id: string;
   top: number;
   height: number;
-  /** - the lane continues above the viewport (contents sit at the viewport top) */
-  clippedTop: boolean;
 }
 
 /**
  * Project every lane that intersects the viewport to a screen segment. Lanes must be contiguous
  * and sorted — each lane's `bottom` is the next lane's `top`, as `deriveLanes` produces. Segments
- * never overlap; the 28px floor is honoured where the neighbours' projected ranges allow it.
+ * never overlap; the 28px floor is honoured where the neighbours' projected ranges allow it. A lane
+ * running off the top is cut at 0, so its controls sit at the viewport top.
  */
 export function railSegments(
   lanes: { id: string; top: number; bottom: number }[],
@@ -51,7 +51,7 @@ export function railSegments(
     }
     if (bottom - top < 1) continue;
     const t = Math.round(top);
-    out.push({ id: r.id, top: t, height: Math.round(bottom) - t, clippedTop: r.rawTop < 0 });
+    out.push({ id: r.id, top: t, height: Math.round(bottom) - t });
   }
   return out;
 }
@@ -68,11 +68,14 @@ export interface RailLayout {
  * Which controls fit in a segment of `height` px, in display order. The fixed controls are taken in
  * priority order (S#, fold, run, kernel, delete) while they fit; the title is elastic: it replaces the
  * S# label and takes whatever is left, truncated, when that is at least TITLE_MIN_PX.
+ *
+ * The heights are the RENDERED boxes (BTN_H, DOT_BTN_H, LABEL_H), not the icons inside them — budget
+ * an icon size here and the last control ends up clipped by the column's overflow instead of dropped.
  */
 export function railItems(height: number, titleChars: number): RailLayout {
   const titleH = titleChars > 0 ? Math.ceil(titleChars * TITLE_PX_PER_CHAR) : 0;
   const fixed: [RailItem, number][] = [
-    ['label', LABEL_H], ['fold', ITEM_H], ['run', ITEM_H], ['kernel', DOT_H], ['delete', ITEM_H],
+    ['label', LABEL_H], ['fold', BTN_H], ['run', BTN_H], ['kernel', DOT_BTN_H], ['delete', BTN_H],
   ];
   let budget = height - SEG_PAD_TOP;
   const got = new Set<RailItem>();
