@@ -203,8 +203,14 @@ and stops.
 
 ```ts
 // src/shared/kernelBinding.ts
-export function resolveCellKernel(cellId: string, canvas: CanvasData): string | null
+interface CellKernelCanvas { nodes: { id; type; y }[]; edges: EdgeLike[]; sections: SectionLane[] | undefined }
+function cellKernelView(canvas: CanvasData): CellKernelCanvas          // - adapter for host / MCP
+function makeCellKernelResolver(c: CellKernelCanvas): (cellId: string) => string | null   // - index built once per snapshot
+function resolveCellKernel(cellId: string, c: CellKernelCanvas): string | null            // - one-shot form
 ```
+
+The webview builds one resolver per React Flow store snapshot (node index and sorted lanes computed
+once) and asks it once per code node; the host and the MCP use the one-shot form.
 
 1. the edge-bound kernel (`resolveBoundKernel`, today's BFS) — wins
 2. else the `kernelId` of the cell's section, if that node exists and is a kernel
