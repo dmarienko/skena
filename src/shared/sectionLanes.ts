@@ -174,6 +174,22 @@ export function laneTopForY(lanes: SectionLane[], y: number): number {
 }
 
 /**
+ * Ids of the code cells in one section, in run order: top to bottom, then left to right. Empty when
+ * the section id is unknown or the section holds no code cell.
+ */
+export function memberCodeCellsInRunOrder(
+  nodes: (LaneNodeGeom & { type: string })[], lanes: SectionLane[], sectionId: string,
+): string[] {
+  const lane = deriveLanes(nodes, lanes).find(l => l.id === sectionId);
+  if (!lane) return [];
+  const members = new Set(lane.memberIds);
+  return nodes
+    .filter(n => n.type === 'code' && members.has(n.id))
+    .sort((a, b) => a.y - b.y || a.x - b.x)
+    .map(n => n.id);
+}
+
+/**
  * One-time conversion from the stored-section-node model to lanes. Legacy `type: 'section'` nodes
  * become lane records keyed on their y; the nodes themselves and every `sectionId` are dropped. A
  * canvas with content but no sections gets a single lane at the origin. Returns the same reference

@@ -934,8 +934,7 @@ async function canvasRunCell(args: Record<string, unknown>): Promise<string> {
     const cell = findNode(d, args.cellRef as string);
     if (!cell || cell.type !== 'code') return `error: ${args.cellRef} is not a code node`;
 
-    // - explicit kernelRef, else the nearest kernel reachable through edges (BFS),
-    // - so a chain of cells (cell2 → cell1 → kernel) shares one kernel.
+    // - explicit kernelRef, else the cell's kernel: edge-bound kernel, else the kernel bound to the cell's section.
     let kernelNode = args.kernelRef ? findNode(d, args.kernelRef as string) : undefined;
     if (!kernelNode) {
       const kid = resolveCellKernel(cell.id, cellKernelView(d));
@@ -1188,13 +1187,13 @@ const TOOLS = [
   },
   {
     name: 'canvas_run_cell',
-    description: 'Run a code cell node on a Jupyter kernel and write its output to a linked cell node. Resolves the kernel from kernelRef or the code node\'s bound-kernel edge.',
+    description: 'Run a code cell node on a Jupyter kernel and write its output to a linked cell node. Resolves the kernel from kernelRef, else the code node\'s bound-kernel edge, else the kernel bound to the node\'s section.',
     inputSchema: {
       type: 'object',
       properties: {
         canvasPath: { type: 'string', description: 'absolute path to the .canvas file' },
         cellRef:    { type: 'string', description: 'label or id of the code node to run' },
-        kernelRef:  { type: 'string', description: 'optional label or id of the kernel node; defaults to the bound one' },
+        kernelRef:  { type: 'string', description: 'optional label or id of the kernel node; defaults to the resolved one' },
       },
       required: ['canvasPath', 'cellRef'],
     },

@@ -42,14 +42,14 @@ function overflowWidgetsRoot(): HTMLElement {
   return el;
 }
 
-// - one resolver per store snapshot: the selector below runs once per code node per store change, and
-//   building the node index inside each call was measured at 6 ms per change for 300 nodes (1 ms shared)
+// - one resolver per store snapshot: this selector runs once per code node per store change, so the
+//   node index is built once and shared instead of once per node
 let resolverKey: { nodes: unknown; edges: unknown; lanes: unknown } | null = null;
 let resolverFn: ((cellId: string) => string | null) | null = null;
 function cellKernelResolver(nodes: RFNode[], edges: Edge[], lanes: SectionLane[]): (cellId: string) => string | null {
   if (!resolverFn || !resolverKey || resolverKey.nodes !== nodes || resolverKey.edges !== edges || resolverKey.lanes !== lanes) {
     resolverFn = makeCellKernelResolver({
-      nodes:    nodes.map(n => ({ id: n.id, type: String(n.type ?? ''), y: n.position.y })),
+      nodes:    nodes.map(n => ({ id: n.id, type: n.type ?? '', y: n.position.y })),
       edges:    edges.map(e => ({ fromNode: e.source, toNode: e.target })),
       sections: lanes,
     });

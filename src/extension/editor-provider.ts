@@ -70,7 +70,7 @@ import {
 import { parseNodeRef } from '../shared/nodeRef';
 import { MAX_FILE_FULL_BYTES, MAX_FILE_PREVIEW_BYTES, MAX_NOTEBOOK_BYTES, NODE_SIZE } from '../shared/constants';
 import { normalizeCanvasToOrigin } from '../shared/bounds';
-import { migrateSections, deriveLanes } from '../shared/sectionLanes';
+import { migrateSections, memberCodeCellsInRunOrder } from '../shared/sectionLanes';
 
 // ─── bookmarks file helpers ──────────────────────────────────────────────────
 
@@ -125,6 +125,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
 
   // - canvasPath (fsPath) → nodeLabel to focus once that canvas's webview reports ready
   private pendingFocus = new Map<string, string>();
+
+  private runningSections = new Set<string>();   // - one run per section at a time
 
   /** - lazily-created LLM client; null until first chat request */
   private _llmClient: ILLMClient | null = null;
@@ -1365,8 +1367,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     ) as CodeNode | undefined;
     if (!codeNode) return 'error';
 
-    // - bound kernel: the nearest kernel reachable through edges (BFS), so a chain
-    // - of cells (cell2 → cell1 → kernel) shares one kernel.
+    // - the cell's kernel: edge-bound kernel, else the kernel bound to the cell's section (kernelBinding.ts)
     const nodeById = new Map(canvas.nodes.map(n => [n.id, n]));
     const boundKernelNodeId = resolveCellKernel(codeNode.id, cellKernelView(canvas));
     const kernelNode = boundKernelNodeId ? nodeById.get(boundKernelNodeId) as KernelNode | undefined : undefined;
@@ -1623,22 +1624,29 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     setLastWritten: (s: string) => void,
   ): Promise<void> {
     const canvas = document.canvas;
-    const lane   = deriveLanes(canvas.nodes, canvas.metadata?.sections ?? []).find(l => l.id === msg.sectionId);
-    if (!lane) return;
-    const members = new Set(lane.memberIds);
-    const order = canvas.nodes
-      .filter((n): n is CodeNode => n.type === 'code' && members.has(n.id))
-      .sort((a, b) => a.y - b.y || a.x - b.x)
-      .map(n => n.id);
-    for (const id of order) {
-      // - re-read each turn: runOneCell rewrites the document's nodes (output node, flags)
-      const cell = document.canvas.nodes.find(n => n.id === id && n.type === 'code') as CodeNode | undefined;
-      if (!cell) continue;
-      const st = await this.runOneCell(
-        { type: 'runCell', cellNodeId: cell.id, code: cell.code ?? '' },
-        manager, panel, document, setSelfSaving, setLastWritten,
-      );
-      if (st === 'error') return;
+    const order  = memberCodeCellsInRunOrder(canvas.nodes, canvas.metadata?.sections ?? [], msg.sectionId);
+    if (order.length === 0) {
+      vscode.window.showInformationMessage('Skena: no code cells in this section.');
+      return;
+    }
+    if (this.runningSections.has(msg.sectionId)) {
+      vscode.window.showInformationMessage('Skena: this section is already running.');
+      return;
+    }
+    this.runningSections.add(msg.sectionId);
+    try {
+      for (const id of order) {
+        // - re-read each turn: runOneCell rewrites the document's nodes (output node, flags)
+        const cell = document.canvas.nodes.find(n => n.id === id && n.type === 'code') as CodeNode | undefined;
+        if (!cell) continue;
+        const st = await this.runOneCell(
+          { type: 'runCell', cellNodeId: cell.id, code: cell.code ?? '' },
+          manager, panel, document, setSelfSaving, setLastWritten,
+        );
+        if (st === 'error') return;
+      }
+    } finally {
+      this.runningSections.delete(msg.sectionId);
     }
   }
 
@@ -1788,7 +1796,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
   }
 
   // - interrupt (SIGINT) the kernel running a specific code cell. Resolves the cell's bound kernel
-  // - the same way a run does (BFS through edges), so a chained cell interrupts the shared kernel.
+  // - the same way a run does (edge-bound kernel, else the section's kernel), so a chained cell interrupts the shared kernel.
   private async handleInterruptCell(
     msg:      MsgInterruptCell,
     manager:  KernelManager,
