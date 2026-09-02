@@ -1,3 +1,6 @@
+import { laneIndexForY, sortLanes, type SectionLane } from './sectionLanes';
+import type { CanvasData } from './types';
+
 export interface EdgeLike {
   fromNode: string;
   toNode:   string;
@@ -97,4 +100,36 @@ export function resolveKernelCells(
     }
   }
   return cells;
+}
+
+/** The slice of a canvas the kernel rule needs; a React Flow store can supply it as easily as CanvasData. */
+export interface CellKernelCanvas {
+  nodes:    { id: string; type: string; y: number }[];
+  edges:    EdgeLike[];
+  sections: SectionLane[] | undefined;
+}
+
+export function cellKernelView(c: Pick<CanvasData, 'nodes' | 'edges' | 'metadata'>): CellKernelCanvas {
+  return { nodes: c.nodes, edges: c.edges, sections: c.metadata?.sections };
+}
+
+// - the kernel a code cell runs on: an edge-bound kernel wins; else the kernel of the section that
+// - owns the cell's top edge; else null. One rule for the host, the MCP and the webview.
+export function resolveCellKernel(cellId: string, c: CellKernelCanvas): string | null {
+  const byId = new Map(c.nodes.map(n => [n.id, n]));
+  const isKernel = (id: string) => byId.get(id)?.type === 'kernel';
+  const viaEdge = resolveBoundKernel(cellId, c.edges, isKernel);
+  if (viaEdge) return viaEdge;
+  const cell = byId.get(cellId);
+  const lanes = c.sections ?? [];
+  if (!cell || lanes.length === 0) return null;
+  const sorted = sortLanes(lanes);
+  const lane = sorted[laneIndexForY(sorted, cell.y)];
+  return lane.kernelId && isKernel(lane.kernelId) ? lane.kernelId : null;
+}
+
+// - every code cell that resolves to `kernelId`. Used to clear run-flags when that kernel is
+// - restarted or shut down (its namespace is gone, so every one of them is un-run).
+export function resolveKernelCellsInCanvas(kernelId: string, c: CellKernelCanvas): string[] {
+  return c.nodes.filter(n => n.type === 'code' && resolveCellKernel(n.id, c) === kernelId).map(n => n.id);
 }
