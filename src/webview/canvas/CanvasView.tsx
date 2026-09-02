@@ -640,22 +640,14 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
     // - restore saved viewport ONLY on the first load of this path (defaultViewport only fires on
     //   mount). On a reload keep the user's current camera — never snap to the stale disk viewport.
-    //   A canvas with sections is framed to the top-left instead (below), so skip the restore for it.
-    const hasSection = canvas.nodes.some(n => n.type === 'section');
-    if (isInitialLoad && canvas.viewport && !hasSection) {
+    if (isInitialLoad && canvas.viewport) {
       const cRestore = clampViewportToOrigin(canvas.viewport.x, canvas.viewport.y, canvas.viewport.zoom);
       rfRef.current.setViewport({ x: cRestore.x, y: cRestore.y, zoom: canvas.viewport.zoom }, { duration: 0 });
     }
 
     // - fitView / focus: defer so the layout pass is done before we query positions
     const t = setTimeout(() => {
-      if (isInitialLoad && hasSection) {
-        // - spatial-notebook framing: open at the top-left so the topmost section's title sits flush
-        //   at the canvas top edge (no empty band above it). Overrides the saved viewport on open.
-        const top = canvas.nodes.filter(n => n.type === 'section').reduce((a, b) => (b.y < a.y ? b : a));
-        const zoom = canvas.viewport?.zoom ?? 1;
-        rfRef.current.setViewport({ x: -top.x * zoom, y: -top.y * zoom, zoom }, { duration: 0 });
-      } else if (isInitialLoad && !canvas.viewport) {
+      if (isInitialLoad && !canvas.viewport) {
         // - first open, no saved viewport → fitView so the canvas isn't off-screen
         rfRef.current.fitView({ padding: 0.1 });
       }
@@ -675,7 +667,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         //   external reload (agent edit, cell-run output write) doesn't pan / steal focus. Skip when
         //   the target is ALREADY selected — else every output-write reload re-focuses it and the
         //   ring visibly blinks. Only the very first open with no saved viewport may pan to focus.
-        if (canvas.viewport || !isInitialLoad || hasSection) {
+        if (canvas.viewport || !isInitialLoad) {
           const already = nodesRef.current.find(n => n.id === focusId)?.selected === true;
           if (!already) {
             setNodes(nds => nds.map(n => ({ ...n, selected: n.id === focusId })));
