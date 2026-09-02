@@ -2,6 +2,7 @@ import React from 'react';
 import { useStore } from '@xyflow/react';
 import { SECTION_RGB } from './palette';
 import { GRID } from '../../shared/grid';
+import { HEADER_H } from './SectionHeaders';
 
 /**
  * SectionBands — screen-space overlay that draws each section as a full-viewport-width horizontal
@@ -18,13 +19,14 @@ export function SectionBands(): JSX.Element {
       {nodes
         .filter(n => n.type === 'section')
         .map(s => {
-          // - fill one grid ABOVE the section too, so the band reaches the top of the view (into the
-          //   gutter) with the content inset — a filled top margin, never an empty strip. When folded,
-          //   collapse to just that top strip (the header sits there; members are hidden).
+          // - top strip above the content holds the header and gives a filled margin; it is at least
+          //   HEADER_H tall (so the fixed-height header always fits) or one grid, whichever is larger.
+          //   When folded, the band collapses to just that strip (members are hidden).
           const folded = (s.data as { folded?: boolean }).folded;
-          const top = (s.position.y - GRID) * zoom + ty;
-          const rawH = folded ? GRID : Number(s.height ?? s.style?.height ?? 0) + GRID;
-          const height = rawH * zoom;
+          const contentTop = s.position.y * zoom + ty;
+          const topPad = Math.max(GRID * zoom, HEADER_H);
+          const top = contentTop - topPad;
+          const height = folded ? topPad : topPad + Number(s.height ?? s.style?.height ?? 0) * zoom;
           if (height <= 0) return null;
           return (
             <div
