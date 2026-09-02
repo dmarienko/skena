@@ -79,7 +79,10 @@ export function growLaneForNodes(
 For each changed node in section `i` (not the last): `overflow = node.y + node.height + GRID − y_{i+1}`.
 If `overflow > 0`: `delta = ceil(overflow / GRID) · GRID`. Over all changed nodes the largest `delta`
 per boundary wins. Then every section below gets `y += delta`, and every node with `y ≥ y_{i+1}` gets
-`y += delta`. Edges untouched. One history entry. The camera does not move.
+`y += delta`. Edges untouched. The camera does not move. Growth pushes no history entry of its own:
+the action that moved the node pushed one before mutating, so one undo reverts move and growth
+together; a state restored by undo/redo is taken as is (recorded, never re-grown); a resize grows
+once, at the end of the gesture.
 
 Upward: no rule. A node dragged above `y_i` is in section `i−1` by membership. The first section's
 top is the origin, already clamped by `clampToOrigin`.

@@ -1345,6 +1345,8 @@ git commit -m "refactor: a section's colour is its kernel's — drop SectionLane
 
 ### Task 10: history carries sections; the webview grows sections on geometry changes
 
+> Executed (`c3fa1c9` + fix). Review changed: `applyGrowth` pushes no history entry (the causing action already did); `useLaneGrowth(nodes, lanes, dragging, skipOnce, apply)` skips the render produced by undo/redo and returns early while any node is `resizing`.
+
 **Files:**
 - Create: `src/webview/rail/useLaneGrowth.ts`
 - Modify: `src/webview/canvas/CanvasView.tsx` — `HistoryEntry` ~line 525; `pushHistory` ~712; `lanes` state ~721–724; `applyHistoryState`/`undo`/`redo` ~831–858; a new `applyGrowth` callback after `commitLanes`
