@@ -1,6 +1,6 @@
 import React from 'react';
 import type { DerivedLane } from '../../shared/sectionLanes';
-import { railItems, ICON_PX, type RailSegment as Seg } from './railGeometry';
+import { railItems, ICON_PX, BTN_H, DOT_BTN_H, type RailSegment as Seg } from './railGeometry';
 
 const FONT = 'system-ui, -apple-system, sans-serif';
 
@@ -25,7 +25,7 @@ const Play = () => (
 const btn: React.CSSProperties = {
   background: 'transparent', border: 'none', padding: 0, margin: 0, cursor: 'pointer',
   color: 'var(--sk-text2)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-  width: 20, height: 20, flex: 'none',
+  width: 20, height: BTN_H, flex: 'none',
 };
 
 export function RailSegment({ lane, seg, color, kernelName, current, onFold, onRun, onDelete, onKernel, onTitle }: {
@@ -70,7 +70,7 @@ export function RailSegment({ lane, seg, color, kernelName, current, onFold, onR
               return <button key={item} style={btn} title="run section" onClick={() => onRun(lane.id)}><Play /></button>;
             case 'kernel':
               return (
-                <button key={item} style={{ ...btn, height: 14 }} title={kernelName ? `kernel: ${kernelName}` : 'bind a kernel'} onClick={e => onKernel(lane.id, anchor(e))}>
+                <button key={item} style={{ ...btn, height: DOT_BTN_H }} title={kernelName ? `kernel: ${kernelName}` : 'bind a kernel'} onClick={e => onKernel(lane.id, anchor(e))}>
                   <span style={{ width: 9, height: 9, borderRadius: '50%', background: kernelName ? color : 'transparent', border: kernelName ? 'none' : '1.5px solid var(--sk-text3)', display: 'block' }} />
                 </button>
               );

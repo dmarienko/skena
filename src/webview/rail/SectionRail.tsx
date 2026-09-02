@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useCallback, useState } from 'react';
 import { useStore } from '@xyflow/react';
 import type { DerivedLane } from '../../shared/sectionLanes';
 import { kernelColor } from '../canvas/palette';
 import { railSegments, RAIL_W, PLUS_H } from './railGeometry';
 import { RailSegment } from './RailSegment';
+import { KernelPicker } from './KernelPicker';
+import { TitleEditor } from './TitleEditor';
 
 /** What the rail needs to know about a kernel node on this canvas. */
 export interface RailKernel {
@@ -18,15 +20,15 @@ export function laneColor(lane: { kernelId?: string }, kernels: RailKernel[]): {
   return { color: k ? kernelColor(k.colorIndex) : 'var(--sk-text3)', kernel: k };
 }
 
-export function SectionRail({ lanes, kernels, selectedNodeId, onFold, onRun, onDelete, onKernel, onTitle, onNewSection }: {
+export function SectionRail({ lanes, kernels, selectedNodeId, onFold, onRun, onDelete, onBindKernel, onRename, onNewSection }: {
   lanes: DerivedLane[];
   kernels: RailKernel[];
   selectedNodeId: string | null;
   onFold: (id: string) => void;
   onRun: (id: string) => void;
   onDelete: (id: string) => void;
-  onKernel: (id: string, anchor: DOMRect) => void;
-  onTitle: (id: string, anchor: DOMRect) => void;
+  onBindKernel: (id: string, kernelId: string | null) => void;
+  onRename: (id: string, title: string) => void;
   onNewSection: () => void;
 }): JSX.Element {
   const ty = useStore(s => s.transform[1]);
@@ -38,6 +40,13 @@ export function SectionRail({ lanes, kernels, selectedNodeId, onFold, onRun, onD
   const byId = new Map(lanes.map(l => [l.id, l]));
   const currentId = selectedNodeId ? lanes.find(l => l.memberIds.includes(selectedNodeId))?.id ?? null : null;
 
+  // - one popover at a time, anchored to the control that opened it
+  const [pop, setPop] = useState<{ kind: 'kernel' | 'title'; laneId: string; anchor: DOMRect } | null>(null);
+  const closePop = useCallback(() => setPop(null), []);
+  const openKernel = useCallback((id: string, anchor: DOMRect) => setPop({ kind: 'kernel', laneId: id, anchor }), []);
+  const openTitle = useCallback((id: string, anchor: DOMRect) => setPop({ kind: 'title', laneId: id, anchor }), []);
+  const popLane = pop ? byId.get(pop.laneId) : undefined;
+
   return (
     <div style={{ width: RAIL_W, flex: '0 0 auto', position: 'relative', background: 'var(--sk-bg1)', borderRight: '1px solid var(--sk-border)', overflow: 'hidden' }}>
       <div style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: PLUS_H, overflow: 'hidden' }}>
@@ -47,7 +56,7 @@ export function SectionRail({ lanes, kernels, selectedNodeId, onFold, onRun, onD
           const { color, kernel } = laneColor(lane, kernels);
           return (
             <RailSegment key={seg.id} lane={lane} seg={seg} color={color} kernelName={kernel ? `${kernel.label} · ${kernel.name}` : null}
-              current={lane.id === currentId} onFold={onFold} onRun={onRun} onDelete={onDelete} onKernel={onKernel} onTitle={onTitle} />
+              current={lane.id === currentId} onFold={onFold} onRun={onRun} onDelete={onDelete} onKernel={openKernel} onTitle={openTitle} />
           );
         })}
       </div>
@@ -56,6 +65,14 @@ export function SectionRail({ lanes, kernels, selectedNodeId, onFold, onRun, onD
         style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: PLUS_H, display: 'flex', alignItems: 'center', justifyContent: 'center', paddingLeft: 10, background: 'var(--sk-bg1)', border: 'none', borderTop: '1px solid var(--sk-border)', cursor: 'pointer', color: 'var(--sk-text2)', fontFamily: 'system-ui, -apple-system, sans-serif', fontSize: 16, lineHeight: 1 }}>
         +
       </button>
+      {pop && popLane && pop.kind === 'kernel' && (
+        <KernelPicker anchor={pop.anchor} kernels={kernels} currentId={popLane.kernelId ?? null}
+          onPick={kid => onBindKernel(popLane.id, kid)} onClose={closePop} />
+      )}
+      {pop && popLane && pop.kind === 'title' && (
+        <TitleEditor anchor={pop.anchor} initial={popLane.title ?? ''}
+          onCommit={t => onRename(popLane.id, t)} onClose={closePop} />
+      )}
     </div>
   );
 }

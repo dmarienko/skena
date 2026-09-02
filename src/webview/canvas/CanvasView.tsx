@@ -846,8 +846,17 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
   const selectedNodeId = useMemo(() => nodes.find(n => n.selected && !isBandType(n.type))?.id ?? null, [nodes]);
 
-  // - popovers arrive with Task 7
-  const noopAnchor = useCallback((_id: string, _anchor: DOMRect) => {}, []);
+  const handleBindKernel = useCallback((id: string, kernelId: string | null) => {
+    pushHistory();
+    // - the explicit undefined key is dropped by JSON.stringify, so an unbound lane saves no field
+    commitLanes(lanes.map(l => (l.id === id ? { ...l, kernelId: kernelId ?? undefined } : l)));
+  }, [lanes, commitLanes, pushHistory]);
+
+  const handleRenameLane = useCallback((id: string, title: string) => {
+    const t = title.trim();
+    pushHistory();
+    commitLanes(lanes.map(l => (l.id === id ? { ...l, title: t || undefined } : l)));
+  }, [lanes, commitLanes, pushHistory]);
 
   // - restore nodes/edges from a history entry
   const applyHistoryState = useCallback((entry: HistoryEntry) => {
@@ -3136,7 +3145,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'row' }}>
     <SectionRail lanes={derivedLanes} kernels={railKernels} selectedNodeId={selectedNodeId}
       onFold={handleFoldLane} onRun={handleRunLane} onDelete={handleDeleteLane}
-      onKernel={noopAnchor} onTitle={noopAnchor} onNewSection={handleNewSectionClick} />
+      onBindKernel={handleBindKernel} onRename={handleRenameLane} onNewSection={handleNewSectionClick} />
     <div ref={wrapperRef} style={{ flex: '1 1 auto', minWidth: 0, position: 'relative' }} onContextMenu={handleContextMenu}>
       <ReactFlow
         proOptions={{ hideAttribution: true }}
