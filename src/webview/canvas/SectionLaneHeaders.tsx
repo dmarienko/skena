@@ -13,14 +13,13 @@ export const HEADER_PAD = 8;
 export const HEADER_LEFT = 22;
 
 /**
- * Screen y of a lane's header. It sits at the lane's TOP BOUNDARY — the header labels the lane, so it
- * belongs to the boundary, not to whichever node happens to be topmost. The second term is a floor:
- * when zooming out shrinks the gap between the boundary and the first node below the header's own
- * height, the header lifts above the content instead of landing on it. So it reads as a section
- * heading at working zooms and still never covers a node at bird's-eye.
+ * Screen y of a lane's header: the lane's TOP BOUNDARY, always. The header labels the lane, so it
+ * belongs to the boundary — never to whichever node happens to be topmost, which made it drift down
+ * the canvas. It occupies the first HEADER_H px INSIDE the lane, so it needs no room above the lane
+ * and the first lane can sit flush against the top of the canvas.
  */
 export function laneHeaderTop(l: DerivedLane, ty: number, zoom: number): number {
-  return Math.min(l.top * zoom + ty, l.contentTop * zoom + ty - HEADER_H - HEADER_PAD);
+  return l.top * zoom + ty;
 }
 
 const MONO = 'var(--vscode-editor-font-family), "IBM Plex Mono", monospace';

@@ -115,7 +115,12 @@ export function migrateSections(canvas: CanvasData, now: number): CanvasData {
   const hasMembership = canvas.nodes.some(n => (n as { sectionId?: string }).sectionId !== undefined);
   const existing = canvas.metadata?.sections;
   const needsSeed = !existing?.length && legacy.length === 0 && canvas.nodes.length > 0;
-  if (legacy.length === 0 && !hasMembership && !needsSeed) return canvas;
+  // - a lane above the origin makes the strip between it and y=0 unusable: nodes are floored at 0, so
+  //   that band can never be dragged into. Legacy section nodes sat one header-lane above their
+  //   content, so migrated lanes land negative. Detect it here and shift everything back down.
+  const minLaneY = existing?.length ? Math.min(...existing.map(l => l.y)) : 0;
+  const needsLift = minLaneY < 0;
+  if (legacy.length === 0 && !hasMembership && !needsSeed && !needsLift) return canvas;
 
   const converted: SectionLane[] = legacy.map((n, i) => {
     const s = n as CanvasNode & { title?: string; createdAt?: number; folded?: boolean };
@@ -126,16 +131,24 @@ export function migrateSections(canvas: CanvasData, now: number): CanvasData {
     return lane;
   });
 
-  const sections = sortLanes([...(existing ?? []), ...converted]);
+  let sections = sortLanes([...(existing ?? []), ...converted]);
   if (sections.length === 0) sections.push({ id: `sec-${now.toString(36)}`, y: 0, createdAt: now, colorIndex: 0 });
 
-  const nodes = canvas.nodes
+  let nodes = canvas.nodes
     .filter(n => (n as { type?: string }).type !== 'section')
     .map(n => {
       if ((n as { sectionId?: string }).sectionId === undefined) return n;
       const { sectionId: _drop, ...rest } = n as CanvasNode & { sectionId?: string };
       return rest as CanvasNode;
     });
+
+  // - park the topmost lane at the origin, carrying the nodes with it, so no lane sits in the
+  //   unusable negative band and the first lane's header lands flush at the top of the canvas
+  const lift = sections[0].y < 0 ? -sections[0].y : 0;
+  if (lift > 0) {
+    sections = sections.map(l => ({ ...l, y: l.y + lift }));
+    nodes = nodes.map(n => ({ ...n, y: n.y + lift }));
+  }
 
   return { ...canvas, nodes, metadata: { ...canvas.metadata, sections } };
 }

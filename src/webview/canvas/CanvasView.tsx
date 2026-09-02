@@ -3039,13 +3039,10 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     return () => window.removeEventListener('skena:focusNodeRequest', handler);
   }, [focusNodeById]);
 
-  // - pan bounds: allow a fixed flow-space margin above the first lane so its header (drawn above the
-  //   content, in screen space) is never clipped. A zoom-derived margin would be exact, but reading
-  //   zoom here re-renders every node on every zoom step — a perf trap this canvas has hit before.
-  //   800 units keeps >=40px of room down to zoom 0.05, above the ~34px the header needs.
-  const firstLaneY = derivedLanes.length ? derivedLanes[0].top : -ORIGIN_GUTTER;
-  const extentTopY = derivedLanes.length ? firstLaneY - 800 : -ORIGIN_GUTTER;
-  const extentTopX = derivedLanes.length ? Math.min(0, derivedLanes[0].contentLeft) : -ORIGIN_GUTTER;
+  // - pan bounds: stop exactly at the first lane's top, so there is never empty space above the first
+  //   section. The header sits INSIDE the lane, so no margin is needed above it.
+  const extentTopY = derivedLanes.length ? derivedLanes[0].top : -ORIGIN_GUTTER;
+  const extentTopX = -ORIGIN_GUTTER;
   const translateExtent = useMemo<[[number, number], [number, number]]>(
     () => [[extentTopX, extentTopY], [1e7, 1e7]],
     [extentTopX, extentTopY],
