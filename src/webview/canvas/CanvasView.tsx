@@ -55,6 +55,7 @@ import { LabeledEdgeComponent } from './edges/LabeledEdge';
 import { HelperLines } from './HelperLines';
 import { SectionLaneMarks } from './SectionLaneMarks';
 import { SectionStickyHeader } from './SectionStickyHeader';
+import { CameraTopGuard } from './CameraTopGuard';
 import { deriveLanes, sortLanes, type SectionLane } from '../../shared/sectionLanes';
 import { CanvasSearch } from './CanvasSearch';
 import { MarksPanel  } from './MarksPanel';
@@ -797,7 +798,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         { id: `sec-${now.toString(36)}`, y: flowY, createdAt: now, colorIndex: lanes.length },
       ]);
       const { x, zoom } = rfRef.current.getViewport();
-      rfRef.current.setViewport({ x, y: -(flowY - GRID) * zoom, zoom }, { duration: 250 });
+      rfRef.current.setViewport({ x, y: -flowY * zoom, zoom }, { duration: 250 });
     };
     window.addEventListener('skena:newSection', handler);
     return () => window.removeEventListener('skena:newSection', handler);
@@ -3157,6 +3158,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         elevateEdgesOnSelect
       >
         <Background variant={BackgroundVariant.Dots} gap={GRID} size={1} color="var(--vscode-editorIndentGuide-background)" />
+        <CameraTopGuard topFlowY={derivedLanes.length ? derivedLanes[0].top : null} />
         <SectionLaneMarks lanes={derivedLanes} />
         <HelperLines horizontal={helperLines.horizontal} vertical={helperLines.vertical} />
         <Controls showInteractive={false}>
