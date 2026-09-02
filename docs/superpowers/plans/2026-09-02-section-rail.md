@@ -641,6 +641,8 @@ git commit -m "feat: neutral theme tokens as --sk-* variables, following the VS 
 
 ### Task 5: rail geometry (pure)
 
+> Executed. Review changed the shape: `railItems` returns `RailLayout { items, titleMaxPx }` (elastic, truncated title), the floor grows only into free space, edges are rounded; 11 tests. See `f5264f9`, `c085626` and spec §5.4.
+
 **Files:**
 - Create: `src/webview/rail/railGeometry.ts`
 - Test: `test/rail-geometry.mjs`
