@@ -15,11 +15,11 @@ function fmtDateTime(ms: number): string {
 }
 
 /**
- * SectionHeaders — screen-space overlay drawing each section's zoom-steady header bar (fold · title ·
- * #S address · delete), styled after the redesign mockup: monospace, weight-600 title, teal #S, muted
- * controls. It sits inside the band's empty top strip and is sticky: pinned to the viewport top edge
- * while the section is on screen, riding up with the band as the section scrolls away. It tracks the
- * section via the live React Flow transform but never scales.
+ * SectionHeaders — screen-space overlay drawing each section's header bar (fold · title · #S address ·
+ * delete), styled after the redesign mockup: monospace, weight-600 title, teal #S, muted controls. It
+ * sits at the top of the section's reserved header lane and stays anchored to that canvas position
+ * (scrolls with the content, not sticky), tracking the section via the live React Flow transform but
+ * never scaling.
  */
 export function SectionHeaders({ onFold, onDelete }: {
   onFold: (id: string) => void;
@@ -35,10 +35,8 @@ export function SectionHeaders({ onFold, onDelete }: {
         .filter(n => n.type === 'section')
         .map(s => {
           const d = s.data as { title?: string; nodeLabel?: string; folded?: boolean; createdAt?: number };
-          const bandTop = s.position.y * zoom + ty;
-          const bandBottom = bandTop + Number(s.height ?? s.style?.height ?? 0) * zoom;
-          // - sticky inside the band: never above the viewport top, never past the band's bottom
-          const top = Math.min(Math.max(bandTop, 0), Math.max(bandBottom - HEADER_H, 0));
+          // - anchored to the top of the section's reserved header lane; scrolls with the canvas
+          const top = s.position.y * zoom + ty;
           const left = Math.max(s.position.x * zoom + tx, 0);
           const label = d.title?.trim()
             ? d.title

@@ -19,28 +19,42 @@ export function SectionBands(): JSX.Element {
       {nodes
         .filter(n => n.type === 'section')
         .map(s => {
-          // - the band spans the whole section (flow y=0 down); its own empty top strip holds the
-          //   header, so nothing overhangs above the origin. When folded, it collapses to just that
-          //   strip (members are hidden).
+          // - two bands per section: a faint body over the whole section, and a distinctly-filled
+          //   header strip over the reserved top lane (its bottom divider separates header from the
+          //   nodes). Both are anchored to the section's canvas position. Folded → just the strip.
           const folded = (s.data as { folded?: boolean }).folded;
           const top = s.position.y * zoom + ty;
           const fullH = Number(s.height ?? s.style?.height ?? 0) * zoom;
-          const height = folded ? Math.max(GRID * zoom, HEADER_H) : fullH;
-          if (height <= 0) return null;
+          const stripH = Math.max(GRID * zoom, HEADER_H); // - the header lane, but never thinner than the header
+          const bodyH = folded ? stripH : fullH;
+          if (bodyH <= 0) return null;
           return (
-            <div
-              key={s.id}
-              style={{
-                position: 'absolute',
-                left: 0,
-                right: 0,
-                top,
-                height,
-                boxSizing: 'border-box',
-                background: `rgba(${SECTION_RGB}, 0.025)`,
-                borderBottom: `1px solid rgba(${SECTION_RGB}, 0.3)`,  // - separates stacked sections
-              }}
-            />
+            <React.Fragment key={s.id}>
+              <div
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  right: 0,
+                  top,
+                  height: bodyH,
+                  boxSizing: 'border-box',
+                  background: `rgba(${SECTION_RGB}, 0.025)`,
+                  borderBottom: `1px solid rgba(${SECTION_RGB}, 0.3)`,  // - separates stacked sections
+                }}
+              />
+              <div
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  right: 0,
+                  top,
+                  height: stripH,
+                  boxSizing: 'border-box',
+                  background: `rgba(${SECTION_RGB}, 0.08)`,             // - filled header lane
+                  borderBottom: `1px solid rgba(${SECTION_RGB}, 0.35)`, // - divider under the header
+                }}
+              />
+            </React.Fragment>
           );
         })}
     </div>
