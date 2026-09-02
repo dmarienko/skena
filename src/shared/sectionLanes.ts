@@ -141,7 +141,7 @@ export function growLaneForNodes(lanes: SectionLane[], nodes: LaneNodeGeom[], ch
     acc += need[k - 1];
     if (acc > 0) laneShifts[sorted[k].id] = acc;
   }
-  if (acc === 0) return empty;
+  if (acc === 0) return empty;   // - nothing moved; skip the node scan
 
   const nodeShifts: Record<string, number> = {};
   for (const n of nodes) {
