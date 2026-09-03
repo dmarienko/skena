@@ -172,7 +172,7 @@ test('fitLanes: content taller than the minimum → content + GRID, snapped up',
 
 test('fitLanes: slack shrinks the lane back, snapped, and everything below moves up', () => {
   const lanes = [lane('a', 0), lane('b', 2000), lane('c', 3000)];
-  const nodes = [node('n1', 0, 300), node('n2', 2000), node('n3', 3000)];   // - a needs max(800, 400) = 800 → −1200
+  const nodes = [node('n1', 0, 300), node('n2', 2000, 900), node('n3', 3000)];   // - a needs max(800, 400) = 800 → −1200; b: 900 + 100 = 1000 = its range
   const f = fitLanes(lanes, nodes);
   assert.deepEqual(f.laneShifts, { b: -1200, c: -1200 });
   assert.deepEqual(f.nodeShifts, { n2: -1200, n3: -1200 });
