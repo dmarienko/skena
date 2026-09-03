@@ -47,7 +47,7 @@ idle/busy state; and `kernel=<name>` on bound sections).
 ## 3. Rail
 
 **Kernel dot → `KernelPicker`** lists, in this order: the canvas's kernel records (dot in the
-record's colour + live LED from `kernelStatus`: idle green / busy / dead grey / error red), then
+record's colour + live LED from `kernelStatus`: idle and busy green (the same colour today, as on the kernel node) / dead grey / error red), then
 legacy kernel nodes if any, then a separator and **New kernel…** and **none**.
 
 **New kernel…** posts `{ type: 'addKernel', forSection: sectionId }`. The host shows the existing
