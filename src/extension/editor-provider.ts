@@ -1850,6 +1850,12 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     if (server && kernel.kernelId) {
       try { await manager.shutdown(server, kernel.kernelId); } catch { /* - already gone */ }
     }
+    // - its namespace is gone with it: every cell that ran on it is un-run (as handleKernelAction's shutdown does).
+    //   Resolved BEFORE the rewrite below, while the lanes still point at this kernel.
+    const bound = new Set(resolveKernelCellsInCanvas(kernel.id, cellKernelView(canvas)));
+    for (const n of canvas.nodes) {
+      if (n.type === 'code' && bound.has(n.id)) (n as CodeNode).lastStatus = undefined;
+    }
     canvas.metadata = {
       ...canvas.metadata,
       kernels:  canvas.metadata?.kernels?.filter(k => k.id !== msg.kernelRef),
