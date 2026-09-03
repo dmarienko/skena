@@ -90,6 +90,19 @@ export function cellKernelView(c: Pick<CanvasData, 'nodes' | 'edges' | 'metadata
   return { nodes: c.nodes, edges: c.edges, sections: c.metadata?.sections, kernels: c.metadata?.kernels };
 }
 
+/** The kernel a section supplies to a node: its lane's kernelId when that names a record or a kernel node. */
+export function makeSectionKernelResolver(c: CellKernelCanvas): (node: { id: string; y: number }) => string | null {
+  const recordIds = new Set((c.kernels ?? []).map(k => k.id));
+  const kernelNodeIds = new Set(c.nodes.filter(n => n.type === 'kernel').map(n => n.id));
+  const sorted = sortLanes(c.sections ?? []);
+  const pinned = pinnedLaneIndex(sorted);
+  return node => {
+    if (sorted.length === 0) return null;
+    const lane = sorted[laneIndexForNode(sorted, node, pinned)];
+    return lane.kernelId && (recordIds.has(lane.kernelId) || kernelNodeIds.has(lane.kernelId)) ? lane.kernelId : null;
+  };
+}
+
 /**
  * Build the kernel rule once for a canvas snapshot: the node index and the sorted lanes are computed
  * here, and the returned function answers per cell. Use this wherever the rule is asked many times
@@ -100,22 +113,14 @@ export function makeCellKernelResolver(c: CellKernelCanvas): (cellId: string) =>
   // - answers are stable for one snapshot; the webview asks once per code node per store change
   const memo = new Map<string, string | null>();
   const isKernel = (id: string) => byId.get(id)?.type === 'kernel';
-  const recordIds = new Set((c.kernels ?? []).map(k => k.id));
-  const sorted = sortLanes(c.sections ?? []);
-  const pinned = pinnedLaneIndex(sorted);
+  const sectionKernel = makeSectionKernelResolver(c);
   return (cellId: string): string | null => {
     const hit = memo.get(cellId);
     if (hit !== undefined) return hit;
     // - an edge-bound kernel wins; else the kernel of the section owning the cell (pinned or by y); else null
     const viaEdge = resolveBoundKernel(cellId, c.edges, isKernel);
     const cell = byId.get(cellId);
-    let out: string | null = null;
-    if (viaEdge) {
-      out = viaEdge;
-    } else if (cell && sorted.length > 0) {
-      const lane = sorted[laneIndexForNode(sorted, cell, pinned)];
-      out = lane.kernelId && (recordIds.has(lane.kernelId) || isKernel(lane.kernelId)) ? lane.kernelId : null;
-    }
+    const out = viaEdge ?? (cell ? sectionKernel(cell) : null);
     memo.set(cellId, out);
     return out;
   };
@@ -182,9 +187,12 @@ export function upstreamCellsForRun(targetId: string, c: CellKernelCanvas): stri
   }
   const pos = (id: string) => { const n = byId.get(id); return { y: n?.y ?? 0, x: n?.x ?? 0 }; };
   const t = pos(targetId);
+  // - inside the code-only component no member reaches a kernel node by edges (the target did not), so
+  //   its kernel is its section's
+  const laneKernel = makeSectionKernelResolver(c);
   return [...seen]
     .filter(id => id !== targetId)
     .filter(id => { const p = pos(id); return p.y < t.y || (p.y === t.y && p.x < t.x); })
-    .filter(id => resolve(id) === kernel)
+    .filter(id => laneKernel(byId.get(id)!) === kernel)
     .sort((a, b) => { const pa = pos(a), pb = pos(b); return pa.y - pb.y || pa.x - pb.x; });
 }
