@@ -362,6 +362,8 @@ git commit -m "feat: every applier fits sections (grow and shrink) instead of gr
 
 (`{ ...l, folded: undefined }` leaves an own key; `JSON.stringify` drops it — same pattern as `kernelId`.)
 
+- [ ] **Step 1b: prune and polish** — in `CanvasView.tsx`'s node-delete path (`onNodesDelete` / the history-free delete that filters `canvasRef.current.nodes`) also drop the deleted ids from every lane's `folded` list via `commitLanes` when any list changes. In `RailSegment.tsx`: the tooltip ends `· right-click for the menu` instead of `· double-click the title to rename`; `onContextMenu` uses the existing `anchor(e)` helper. In `sectionLanes.ts` `migrateSections`: the legacy-fold member scan skips `type: 'section'` nodes.
+
 - [ ] **Step 2: rail files** — wherever `lane.folded` is used as a boolean (`RailSegment.tsx` tooltip/opacity/chevron, `SegmentMenu` `folded` prop from `SectionRail`), use `!!lane.folded`; `Chevron folded={!!lane.folded}` already coerces — check each.
 
 - [ ] **Step 3: Typecheck + build** — clean (3 pre-existing). Manual reasoning check: fold S2 → its members hidden and listed; `derivedLanes` gives S2 `bottom = S3.y` still → the hook fits: S2 target = 100 → S3 and below move up by (range − 100); unfold → list cleared → target = content → S3 moves down. Undo of a fold: history restored lanes (list cleared) + nodes → `skipOnce` prevents a re-fit on that render, and the next real change re-fits consistently.

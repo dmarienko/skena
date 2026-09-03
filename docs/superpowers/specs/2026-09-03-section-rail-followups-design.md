@@ -43,7 +43,7 @@ For every lane except the last (the last is unbounded and follows its content):
 
 ```
 content = max(y + height) over the lane's VISIBLE members, or top when there are none
-target  = folded ? SECTION_FOLDED_H : max(SECTION_MIN_H, content + GRID − top)
+target  = folded ? max(SECTION_FOLDED_H, visible content, if any) : max(SECTION_MIN_H, content + GRID − top)
 target  = ceil(target / GRID) · GRID
 delta_i = target − (next.y − top)         // - > 0 grows, < 0 shrinks
 ```
@@ -66,8 +66,10 @@ pinned nodes count for nothing in any lane's `content`. Fold = set the list, fit
 up). Unfold = clear the list, fit (lanes below move down). Members move only when their lane moves.
 Migration: `folded: true` from earlier builds → the member ids by `y` at load.
 
-`deriveLanes`, `fitLanes`, `memberCodeCellsInRunOrder` and `laneTopForY` share one
-`laneIndexForNode(sorted, node)`: pinned → its lane; else by `y`. Run section still runs hidden
+`deriveLanes`, `fitLanes`, `memberCodeCellsInRunOrder`, `laneTopForNode` (used by `outputCellGeom`) and the
+kernel resolver in `kernelBinding.ts` share one `laneIndexForNode(sorted, node, pinned)`: pinned → its
+lane; else by `y`. A visible node placed into a folded lane still makes it fit. Deleting nodes prunes
+their ids from any `folded` list; the migration never pins a legacy section node's own id. Run section still runs hidden
 cells. Deleting a folded lane deletes its pinned members too.
 
 ## 6. Tests
