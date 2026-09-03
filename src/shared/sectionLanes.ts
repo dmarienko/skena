@@ -134,18 +134,22 @@ export function sectionTargetHeight(l: SectionLane, members: LaneNodeGeom[]): nu
  * Fit every lane but the last to its content: a lane taller than its target shrinks, a shorter one
  * grows; the difference moves every lane below and that lane's members (pinned members travel with
  * their lane). Pure; the caller applies the shifts. Idempotent after one application.
+ * `own` maps node id → lane index for nodes that belong to that lane even where their y says
+ * otherwise, but that are still visible and still count for its content: used while a fold is
+ * released, so the lane grows back before the lane below can adopt them.
  */
-export function fitLanes(lanes: SectionLane[], nodes: LaneNodeGeom[]): LaneGrowth {
+export function fitLanes(lanes: SectionLane[], nodes: LaneNodeGeom[], own?: Map<string, number>): LaneGrowth {
   const empty: LaneGrowth = { laneShifts: {}, nodeShifts: {} };
   const sorted = sortLanes(lanes);
   if (sorted.length < 2) return empty;
-  const pinned = pinnedLaneIndex(sorted);
+  const hidden = pinnedLaneIndex(sorted);
+  const owner  = new Map([...hidden, ...(own ?? [])]);
   const visible: LaneNodeGeom[][] = sorted.map(() => []);
   const laneOf = new Map<string, number>();
   for (const n of nodes) {
-    const i = laneIndexForNode(sorted, n, pinned);
+    const i = laneIndexForNode(sorted, n, owner);
     laneOf.set(n.id, i);
-    if (!pinned.has(n.id)) visible[i].push(n);
+    if (!hidden.has(n.id)) visible[i].push(n);
   }
 
   const laneShifts: Record<string, number> = {};
@@ -163,6 +167,21 @@ export function fitLanes(lanes: SectionLane[], nodes: LaneNodeGeom[]): LaneGrowt
     if (s) nodeShifts[n.id] = s;
   }
   return { laneShifts, nodeShifts };
+}
+
+/**
+ * Release a fold in one step: the lane's range grows to its members while they still belong to it,
+ * so no member is adopted by the lane below. Returns the shifts to apply and the lanes with the key
+ * removed. Same lanes reference and empty shifts when the lane is not folded.
+ */
+export function unfoldLane(lanes: SectionLane[], nodes: LaneNodeGeom[], id: string): LaneGrowth & { lanes: SectionLane[] } {
+  const sorted = sortLanes(lanes);
+  const i = sorted.findIndex(l => l.id === id);
+  if (i < 0 || !sorted[i].folded) return { laneShifts: {}, nodeShifts: {}, lanes };
+  const own = new Map((sorted[i].folded as string[]).map(m => [m, i] as [string, number]));
+  const released = sorted.map((l, k) => { if (k !== i) return l; const { folded: _open, ...rest } = l; return rest; });
+  const f = fitLanes(released, nodes, own);
+  return { ...f, lanes: released.map(l => (f.laneShifts[l.id] ? { ...l, y: l.y + f.laneShifts[l.id] } : l)) };
 }
 
 /** Apply `fitLanes` to a canvas. Same reference when nothing moves (no spurious save). */

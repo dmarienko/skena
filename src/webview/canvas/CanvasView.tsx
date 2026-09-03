@@ -55,7 +55,7 @@ import { LabeledEdgeComponent } from './edges/LabeledEdge';
 import { HelperLines } from './HelperLines';
 import { SectionSeparators } from './SectionSeparators';
 import { SectionRail, type RailKernel } from '../rail/SectionRail';
-import { deriveLanes, sortLanes, parkFirstLaneAtOrigin, pruneFoldedIds, sectionTargetHeight, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
+import { deriveLanes, sortLanes, parkFirstLaneAtOrigin, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
 import { useLaneFit, flowGeom } from '../rail/useLaneFit';
 import { CanvasSearch } from './CanvasSearch';
 import { MarksPanel  } from './MarksPanel';
@@ -744,9 +744,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   //   of hidden ids, so a node dropped into a folded lane after the fold stays visible
   const hiddenByFold = useMemo(() => {
     const ids = new Set<string>();
-    for (const l of derivedLanes) for (const id of l.folded ?? []) ids.add(id);
+    for (const l of lanes) for (const id of l.folded ?? []) ids.add(id);
     return ids;
-  }, [derivedLanes]);
+  }, [lanes]);
   const rfNodes = useMemo(
     () => (hiddenByFold.size === 0 ? nodes : nodes.map(n => (hiddenByFold.has(n.id) ? { ...n, hidden: true } : n))),
     [nodes, hiddenByFold],
@@ -763,16 +763,21 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     scheduleSave();
   }, [scheduleSave]);
 
-  // - fit every section to its content: the shifts below may be up or down. No history entry of its
-  //   own — the action that changed the geometry pushed one
-  const applyFit = useCallback((g: LaneGrowth) => {
-    setNodes(nds => nds.map(n => (g.nodeShifts[n.id] ? { ...n, position: { x: n.position.x, y: n.position.y + g.nodeShifts[n.id] } } : n)));
+  // - move nodes by a fit's shifts, in the flow and in the canvas mirror
+  const shiftNodes = useCallback((nodeShifts: Record<string, number>) => {
+    setNodes(nds => nds.map(n => (nodeShifts[n.id] ? { ...n, position: { x: n.position.x, y: n.position.y + nodeShifts[n.id] } } : n)));
     canvasRef.current = {
       ...canvasRef.current,
-      nodes: canvasRef.current.nodes.map(n => (g.nodeShifts[n.id] ? { ...n, y: n.y + g.nodeShifts[n.id] } : n)),
+      nodes: canvasRef.current.nodes.map(n => (nodeShifts[n.id] ? { ...n, y: n.y + nodeShifts[n.id] } : n)),
     };
+  }, [setNodes]);
+
+  // - fit every section to its content: the shifts may be up or down. No history entry of its own —
+  //   the action that changed the geometry pushed one
+  const applyFit = useCallback((g: LaneGrowth) => {
+    shiftNodes(g.nodeShifts);
     commitLanes(lanesRef.current.map(l => (g.laneShifts[l.id] ? { ...l, y: l.y + g.laneShifts[l.id] } : l)));
-  }, [setNodes, commitLanes]);
+  }, [shiftNodes, commitLanes]);
   useLaneFit(nodes, lanes, draggingRef, fromHistoryRef, applyFit);
 
   // - a deleted node must not stay in a fold list: it would pin a lane to an id that no longer exists
@@ -784,15 +789,20 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const handleFoldLane = useCallback((id: string) => {
     const target = derivedLanes.find(l => l.id === id);
     if (!target) return;
+    if (target.folded) {
+      // - unfold grows the range back in the SAME commit that drops the list: release the members
+      //   first and the lane below adopts the ones sitting past its top edge
+      const u = unfoldLane(lanes, nodes.map(flowGeom), id);
+      pushHistory();
+      shiftNodes(u.nodeShifts);
+      commitLanes(u.lanes);
+      return;
+    }
     pushHistory();
-    // - fold pins the visible members and collapses the range (the fit hook moves everything below up);
-    //   unfold releases them and the fit expands the range again
-    commitLanes(lanes.map(l => {
-      if (l.id !== id) return l;
-      if (l.folded) { const { folded: _open, ...rest } = l; return rest; }
-      return { ...l, folded: target.memberIds };
-    }));
-  }, [derivedLanes, lanes, commitLanes, pushHistory]);
+    // - fold lists the members: they are hidden and pinned here, and the fit hook collapses the
+    //   range, moving everything below up
+    commitLanes(lanes.map(l => (l.id === id ? { ...l, folded: target.memberIds } : l)));
+  }, [derivedLanes, lanes, nodes, commitLanes, pushHistory, shiftNodes]);
 
   // - a new lane is APPENDED below the last one, past its content: sections are an append-only stack,
   //   so creating one is the next step in the notebook and never renumbers what already exists. The
@@ -1557,6 +1567,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     ]);
     setEdges(eds => [...eds, ...newEdges.map(toFlowEdge)]);
     canvasRef.current = {
+      ...canvasRef.current,   // - keep metadata/viewport/counter: only nodes and edges changed
       nodes: [...canvasRef.current.nodes, ...newNodes],
       edges: [...canvasRef.current.edges, ...newEdges],
     };
