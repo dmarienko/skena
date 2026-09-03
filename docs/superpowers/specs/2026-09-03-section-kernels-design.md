@@ -49,10 +49,11 @@ record's colour + live LED from `kernelStatus`: idle green / busy / dead grey / 
 legacy kernel nodes if any, then a separator and **New kernel…** and **none**.
 
 **New kernel…** posts `{ type: 'addKernel', forSection: sectionId }`. The host shows the existing
-QuickPick (per server: start a new kernel from a spec, or attach to a running one). On pick it
+QuickPick (per server: start a new kernel from a spec, or attach to a running one). On pick the host
 creates a `KernelRecord` (no node), assigns the next colour, binds the section
-(`lane.kernelId = record.id`), saves, and replies `kernelAdded { sectionId, kernelId }`. Cancel =
-nothing. (`addKernel` without `forSection` keeps creating a node, for the context menu.)
+(`lane.kernelId = record.id`), writes the canvas (self-save suppressed) and then replies
+`kernelAdded { sectionId, kernel }`; the webview mirrors the record and the binding into its state. A
+run on the section resolves at once and a started kernel is never orphaned. Cancel = nothing. (`addKernel` without `forSection` keeps creating a node, for the context menu.)
 
 **Kernel actions** — the `SegmentMenu` gains, when the section has a kernel: Start · Interrupt ·
 Restart · Shutdown (the same `kernelAction` message, whose `kernelNodeId` becomes `kernelRef`).
@@ -76,8 +77,10 @@ No migration. Existing kernel nodes stay nodes; a section bound to a node keeps 
 back to nodes). `metadata.kernels` is created on first New kernel…. The MCP `readCanvas` fix
 (`a280f7d`) already preserves `metadata`.
 
-Deleting a record: from the picker (`Remove kernel…` on a record row, host confirm) — shuts it down
-if live, unbinds every section pointing at it. Not in v1: moving a record between canvases.
+Deleting a record: from the picker (`Remove kernel…` on a record row) — the host confirms, shuts it
+down if live, removes the record, unbinds every section pointing at it, writes, and replies
+`kernelRemoved { kernelRef }`; the webview mirrors it. Only records can be removed this way; a kernel
+node is deleted like any node. Not in v1: moving a record between canvases.
 
 ## 6. Tests
 
