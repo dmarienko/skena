@@ -61,24 +61,8 @@ export const HEATMAP_PALETTE = [
 ] as const;
 export const HEATMAP_GRAY = '140,140,140';   // - isolated (unconnected) nodes
 
-// - per-kernel accent colors, cycled by creation order (kernel node circles + its edges)
-export const KERNEL_PALETTE: string[] = [
-  '#4cc8a0',   // - teal
-  '#d9a23f',   // - amber
-  '#7aa2f7',   // - blue
-  '#e5707a',   // - red
-  '#bb9af7',   // - violet
-  '#9ece6a',   // - green
-];
-
-export function kernelColor(colorIndex: number): string {
-  const n = KERNEL_PALETTE.length;
-  return KERNEL_PALETTE[((colorIndex % n) + n) % n];
-}
-
-export function nextKernelColorIndex(existingKernelCount: number): number {
-  return existingKernelCount % KERNEL_PALETTE.length;
-}
+// - per-kernel accent colors — defined in shared/ so the host can use them too
+export { KERNEL_PALETTE, kernelColor, nextKernelColorIndex } from '../../shared/kernelPalette';
 
 // - neutral chrome tokens (the rail now, the node restyle next). Picked by the VS Code theme kind and
 // - exposed as --sk-* CSS variables on <html> by src/webview/theme.ts

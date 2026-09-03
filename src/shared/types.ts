@@ -551,7 +551,7 @@ export interface MsgRunOutput {
   type:         'runOutput';
   codeNodeId:   string;
   lastStatus:   'ok' | 'error' | 'running';   // - 'running' = a mid-run live delta (UI-only, not persisted)
-  kernelNodeId: string;
+  kernelNodeId: string;   // - a KernelRecord id or a kernel node id
   kernelId?:    string;
   outputNode?:  CellNode;    // - present when the run produced output (upsert by id)
   edge?:        CanvasEdge;  // - present only when the output node was newly created
@@ -560,7 +560,7 @@ export interface MsgRunOutput {
 export interface MsgRunStatus {
   type:         'runStatus';
   cellNodeId:   string;
-  kernelNodeId: string | null;
+  kernelNodeId: string | null;   // - a KernelRecord id or a kernel node id
   state:        'running' | 'ok' | 'error';
   error?:       string;
 }

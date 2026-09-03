@@ -24,7 +24,9 @@ import { getVaults } from './settings';
 import { createLLMClient, CANVAS_TOOLS, ILLMClient } from './llm-client';
 import { buildSystemPrompt, buildStaticSystemPrompt, buildCanvasContext, nodeTitle, nodeContent } from './context-builder';
 import { assignLabel } from '../shared/nodeLabels';
-import { resolveUpstreamChain, resolveCellKernel, resolveKernelCellsInCanvas, cellKernelView } from '../shared/kernelBinding';
+import { kernelById, upstreamCellsForRun, resolveCellKernel, resolveKernelCellsInCanvas, cellKernelView } from '../shared/kernelBinding';
+import type { KernelLike } from '../shared/kernelBinding';
+import { nextKernelColorIndex } from '../shared/kernelPalette';
 import { KernelManager } from './jupyter/manager';
 import { listKernels, startKernel, listKernelSpecs, listSessions } from './jupyter/client';
 import { canvasSessionName } from './llm-adapters/harness';
@@ -41,6 +43,7 @@ import {
   CellNode,
   CodeNode,
   KernelNode,
+  KernelRecord,
   KernelStatusEntry,
   MsgRunCell,
   MsgRunSection,
@@ -54,6 +57,7 @@ import {
   MsgChatMessage,
   MsgAddNodeRequest,
   MsgAddKernel,
+  MsgRemoveKernel,
   MsgMoveToSubCanvas,
   MsgFloatingChatSend,
   MsgFloatingChatPersistHistory,
@@ -489,6 +493,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         case 'runSection':   await this.handleRunSection(msg, manager, panel, document, v => { isSelfSaving = v; }, s => rememberWrite(s)); break;
         case 'addKernel':    await this.handleAddKernel(msg, manager, document, send); break;
         case 'kernelAction': await this.handleKernelAction(msg, manager, document); break;
+        case 'removeKernel': await this.handleRemoveKernel(msg, manager, document, send); break;
         case 'interruptCell': await this.handleInterruptCell(msg, manager, document); break;
         case 'confirmDelete': {
           const yes = await vscode.window.showWarningMessage(msg.reason, { modal: true }, 'Delete');
@@ -799,6 +804,11 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         metadata: {
           ...document.canvas.metadata,
           sections: msg.canvas.metadata?.sections ?? document.canvas.metadata?.sections,
+          // - kernels: the webview owns which records exist and their colour; the host owns the live kernelId
+          kernels: msg.canvas.metadata?.kernels?.map(k => {
+            const live = document.canvas.metadata?.kernels?.find(h => h.id === k.id);
+            return live ? { ...k, kernelId: live.kernelId } : k;
+          }) ?? document.canvas.metadata?.kernels,
         },
       };
       const json = JSON.stringify(canvasToWrite, null, 2);
@@ -1272,7 +1282,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         try { p.webview.postMessage(m); } catch { /* panel disposed */ }
       };
 
-      const kn = c.nodes.find(n => n.id === payload.kernelNodeId && n.type === 'kernel') as KernelNode | undefined;
+      const kn = kernelById(c, payload.kernelNodeId);
       if (kn && payload.kernelId !== kn.kernelId) kn.kernelId = payload.kernelId;   // - reuse this kernel next run
 
       const persist = async () => {
@@ -1369,25 +1379,25 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     ) as CodeNode | undefined;
     if (!codeNode) return 'error';
 
-    // - the cell's kernel: edge-bound kernel, else the kernel bound to the cell's section (kernelBinding.ts)
-    const nodeById = new Map(canvas.nodes.map(n => [n.id, n]));
-    const boundKernelNodeId = resolveCellKernel(codeNode.id, cellKernelView(canvas));
-    const kernelNode = boundKernelNodeId ? nodeById.get(boundKernelNodeId) as KernelNode | undefined : undefined;
-    if (!kernelNode) {
+    // - the cell's kernel: edge-bound kernel, else the kernel bound to the cell's section (kernelBinding.ts).
+    // - The id names a KernelRecord or a kernel node; kernelById answers with whichever it is.
+    const boundKernelId = resolveCellKernel(codeNode.id, cellKernelView(canvas));
+    const kernel: KernelLike | null = boundKernelId ? kernelById(canvas, boundKernelId) : null;
+    if (!kernel) {
       send({ type: 'runStatus', cellNodeId: codeNode.id, kernelNodeId: null, state: 'error', error: 'no kernel bound' });
       return 'error';
     }
 
-    const server = manager.serverByName(kernelNode.server);
+    const server = manager.serverByName(kernel.server);
     if (!server) {
-      send({ type: 'runStatus', cellNodeId: codeNode.id, kernelNodeId: kernelNode.id, state: 'error', error: 'unknown server' });
+      send({ type: 'runStatus', cellNodeId: codeNode.id, kernelNodeId: kernel.id, state: 'error', error: 'unknown server' });
       return 'error';
     }
 
-    send({ type: 'runStatus', cellNodeId: codeNode.id, kernelNodeId: kernelNode.id, state: 'running' });
+    send({ type: 'runStatus', cellNodeId: codeNode.id, kernelNodeId: kernel.id, state: 'running' });
 
     const fail = (error: string) =>
-      send({ type: 'runStatus', cellNodeId: codeNode.id, kernelNodeId: kernelNode.id, state: 'error', error });
+      send({ type: 'runStatus', cellNodeId: codeNode.id, kernelNodeId: kernel.id, state: 'error', error });
 
     // - persist a 'running' marker to disk (self-save suppressed, no reload) so reopening the
     // - canvas — or the kernel finishing after this panel closed — shows the cell in-progress
@@ -1422,8 +1432,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       cn.code       = msg.code;                   // - persist the code that actually ran (edits are debounced)
       cn.lastStatus = status;
       cn.lastRun    = Date.now();
-      const kn = c.nodes.find(n => n.id === kernelNode.id && n.type === 'kernel') as KernelNode | undefined;
-      if (kn && kernelId !== kn.kernelId) kn.kernelId = kernelId;   // - reuse this kernel next run
+      const k = kernelById(c, kernel.id);
+      if (k && kernelId !== k.kernelId) k.kernelId = kernelId;   // - reuse this kernel next run
       let outputNode: CellNode | undefined;
       let edge:       CanvasEdge | undefined;
       if (output) {
@@ -1467,20 +1477,20 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       return { outputNode, edge };
     };
 
-    // - relaunch the SAME environment on a restart via the node's kernelspec. Older kernel nodes
+    // - relaunch the SAME environment on a restart via the kernel's kernelspec. Older kernel nodes
     //   predate `spec`; recover it once by matching the stored displayName against the server's specs
-    //   and heal the node so it persists (else a shutdown+rerun falls back to plain python3).
-    let spec = kernelNode.spec;
-    if (!spec && !kernelNode.kernelId && kernelNode.displayName) {
+    //   and heal the kernel so it persists (else a shutdown+rerun falls back to plain python3).
+    let spec = kernel.spec;
+    if (!spec && !kernel.kernelId && kernel.displayName) {
       try {
         const specs = await listKernelSpecs(server);
-        spec = specs.find(s => s.displayName === kernelNode.displayName || s.name === kernelNode.displayName)?.name;
-        if (spec) kernelNode.spec = spec;
+        spec = specs.find(s => s.displayName === kernel.displayName || s.name === kernel.displayName)?.name;
+        if (spec) kernel.spec = spec;
       } catch { /* - specs unavailable; ensureKernel falls back to python3 */ }
     }
     let kernelId: string;
     try {
-      kernelId = await manager.ensureKernel(server, kernelNode.kernelId, spec);
+      kernelId = await manager.ensureKernel(server, kernel.kernelId, spec);
     } catch (e) {
       fail(`kernel start failed: ${e instanceof Error ? e.message : String(e)}`);
       return 'error';
@@ -1516,7 +1526,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       };
       const edge: CanvasEdge = { id: `e-${liveOutputId}`, fromNode: cn.id, fromSide: 'right', toNode: liveOutputId, toSide: 'left', toEnd: 'arrow' };
       try {
-        send({ type: 'runOutput', codeNodeId: codeNode.id, lastStatus: 'running', kernelNodeId: kernelNode.id, kernelId, outputNode, edge });
+        send({ type: 'runOutput', codeNodeId: codeNode.id, lastStatus: 'running', kernelNodeId: kernel.id, kernelId, outputNode, edge });
       } catch { /* - webview disposed mid-run; disk write at completion still happens */ }
       // - persist the output node to disk ONCE (first creation) so a close+reopen mid-run keeps it —
       // - the live frames are otherwise UI-only. Re-runs already have it on disk, so this is skipped.
@@ -1553,7 +1563,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         const snap = latest as CollectedOutput | null;   // - CFA narrows the closure-assigned `latest` to null; widen it
         const streamed = snap && hasVisibleOutput(snap) ? renderOutput(snap) : null;
         const { outputNode, edge } = await applyAndPersist('error', streamed, liveOutputId);
-        send({ type: 'runOutput', codeNodeId: codeNode.id, lastStatus: 'error', kernelNodeId: kernelNode.id, kernelId, outputNode, edge });
+        send({ type: 'runOutput', codeNodeId: codeNode.id, lastStatus: 'error', kernelNodeId: kernel.id, kernelId, outputNode, edge });
       } catch { /* non-fatal */ }
       fail(`execution failed: ${e instanceof Error ? e.message : String(e)}`);
       return 'error';
@@ -1571,13 +1581,13 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     try {
       const { outputNode, edge } = await applyAndPersist(status, hasOutput ? { format, content } : null, liveOutputId);
       // - targeted update: webview mirrors the output node without a full reload
-      send({ type: 'runOutput', codeNodeId: codeNode.id, lastStatus: status, kernelNodeId: kernelNode.id, kernelId, outputNode, edge });
+      send({ type: 'runOutput', codeNodeId: codeNode.id, lastStatus: status, kernelNodeId: kernel.id, kernelId, outputNode, edge });
     } catch (e) {
       vscode.window.showErrorMessage(`Skena: failed to save run output: ${e}`);
     }
 
     // - stop the running-edge animation (runStatus drives it)
-    send({ type: 'runStatus', cellNodeId: codeNode.id, kernelNodeId: kernelNode.id, state: status, error: out.error });
+    send({ type: 'runStatus', cellNodeId: codeNode.id, kernelNodeId: kernel.id, state: status, error: out.error });
     return status;
   }
 
@@ -1596,13 +1606,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     setLastWritten: (s: string) => void,
   ): Promise<void> {
     const canvas   = document.canvas;
-    const typeOf   = (id: string) => canvas.nodes.find(n => n.id === id)?.type;
-    const upstream = resolveUpstreamChain(
-      msg.cellNodeId,
-      canvas.edges,
-      id => typeOf(id) === 'kernel',
-      id => typeOf(id) === 'code',
-    );
+    const upstream = upstreamCellsForRun(msg.cellNodeId, cellKernelView(canvas));
     // - run upstream cells that need it (clear flag), in order; stop if one errors
     for (const upId of upstream) {
       const up = canvas.nodes.find(n => n.id === upId && n.type === 'code') as CodeNode | undefined;
@@ -1672,14 +1676,13 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const canvas = document.canvas;
     const codeNode = canvas.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code');
     if (!codeNode) return empty();
-    const nodeById = new Map(canvas.nodes.map(n => [n.id, n]));
     const kid = resolveCellKernel(codeNode.id, cellKernelView(canvas));
-    const kernelNode = kid ? nodeById.get(kid) as KernelNode | undefined : undefined;
-    const server = kernelNode ? manager.serverByName(kernelNode.server) : undefined;
-    if (!kernelNode?.kernelId || !server) return empty();
+    const kernel: KernelLike | null = kid ? kernelById(canvas, kid) : null;
+    const server = kernel ? manager.serverByName(kernel.server) : undefined;
+    if (!kernel?.kernelId || !server) return empty();
     try {
       const ids = { msgId: randomUUID(), session: randomUUID(), date: new Date().toISOString() };
-      const r = await manager.complete(server, kernelNode.kernelId, msg.code, msg.cursorPos, ids);
+      const r = await manager.complete(server, kernel.kernelId, msg.code, msg.cursorPos, ids);
       send({ type: 'completeResult', reqId: msg.reqId, matches: r.matches, cursorStart: r.cursorStart, cursorEnd: r.cursorEnd });
     } catch {
       empty();
@@ -1700,14 +1703,13 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const canvas = document.canvas;
     const codeNode = canvas.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code');
     if (!codeNode) return empty();
-    const nodeById = new Map(canvas.nodes.map(n => [n.id, n]));
     const kid = resolveCellKernel(codeNode.id, cellKernelView(canvas));
-    const kernelNode = kid ? nodeById.get(kid) as KernelNode | undefined : undefined;
-    const server = kernelNode ? manager.serverByName(kernelNode.server) : undefined;
-    if (!kernelNode?.kernelId || !server) return empty();
+    const kernel: KernelLike | null = kid ? kernelById(canvas, kid) : null;
+    const server = kernel ? manager.serverByName(kernel.server) : undefined;
+    if (!kernel?.kernelId || !server) return empty();
     try {
       const ids = { msgId: randomUUID(), session: randomUUID(), date: new Date().toISOString() };
-      const r = await manager.inspect(server, kernelNode.kernelId, msg.code, msg.cursorPos, ids);
+      const r = await manager.inspect(server, kernel.kernelId, msg.code, msg.cursorPos, ids);
       send({ type: 'inspectResult', reqId: msg.reqId, found: r.found, text: r.text });
     } catch {
       empty();
@@ -1715,11 +1717,11 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
   }
 
   /**
-   * Restart or shut down the kernel a kernel node points at (its right-click menu).
-   * Shutdown clears the node's kernelId so its LED goes grey and the next run starts
+   * Restart or shut down the kernel an id points at — a KernelRecord or a kernel node (its
+   * right-click menu). Shutdown clears its kernelId so its LED goes grey and the next run starts
    * a fresh kernel; restart keeps the same id (Jupyter wipes the namespace).
    */
-  // - reset run-flags (and the stale kernelId) for kernel nodes whose kernel is no longer live, so
+  // - reset run-flags (and the stale kernelId) for every kernel — node or record — whose kernel is no longer live, so
   // - run-with-upstream re-runs everything against a wiped namespace. Guarded: acts only when the
   // - kernel's SERVER responded to the poll but the kernelId is absent (a fully unreachable server
   // - is ambiguous — a live kernel could just be momentarily unreported — so it's left alone).
@@ -1728,9 +1730,12 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const liveIds          = new Set(kernels.map(k => k.kernelId));
     const reachableServers = new Set(kernels.map(k => k.server));
     let changed = false;
-    for (const kn of canvas.nodes) {
-      if (kn.type !== 'kernel') continue;
-      const k = kn as KernelNode;
+    // - both kinds of kernel: the nodes on the canvas and the records in its metadata
+    const all: KernelLike[] = [
+      ...(canvas.nodes.filter(n => n.type === 'kernel') as unknown as KernelLike[]),
+      ...(canvas.metadata?.kernels ?? []),
+    ];
+    for (const k of all) {
       if (!k.kernelId || !reachableServers.has(k.server) || liveIds.has(k.kernelId)) continue;
       const bound = new Set(resolveKernelCellsInCanvas(k.id, cellKernelView(canvas)));
       for (const n of canvas.nodes) {
@@ -1751,16 +1756,16 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     document: SkenaDocument,
   ): Promise<void> {
     const canvas = document.canvas;
-    const kernelNode = canvas.nodes.find(n => n.id === msg.kernelNodeId && n.type === 'kernel') as KernelNode | undefined;
-    if (!kernelNode) return;
-    const server = manager.serverByName(kernelNode.server);
+    const kernel = kernelById(canvas, msg.kernelNodeId);   // - a record or a kernel node, whichever the id names
+    if (!kernel) return;
+    const server = manager.serverByName(kernel.server);
     if (!server) return;   // - 'start' needs no live kernel; the others are guarded below
-    const name = kernelNode.displayName ?? 'kernel';
+    const name = kernel.displayName ?? 'kernel';
     // - restart/shutdown wipe the kernel namespace → every bound cell is effectively un-run, so clear
     // - their run-flag (lastStatus). Interrupt keeps variables, so it must NOT reset. The plain write
     // - (no self-save suppression) makes the file-watcher soft-reload the cleared flags into the webview.
     const resetBoundCellFlags = async (): Promise<void> => {
-      const bound  = new Set(resolveKernelCellsInCanvas(kernelNode.id, cellKernelView(canvas)));
+      const bound  = new Set(resolveKernelCellsInCanvas(kernel.id, cellKernelView(canvas)));
       for (const n of canvas.nodes) {
         if (n.type === 'code' && bound.has(n.id)) (n as CodeNode).lastStatus = undefined;
       }
@@ -1768,39 +1773,62 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     };
     try {
       if (msg.action === 'start') {
-        if (kernelNode.kernelId) return;   // - already running
-        // - launch a fresh kernel from the node's kernelspec (recover it from displayName for older
-        //   nodes), assign the new id, and plain-write so the webview reload picks up the live kernel
-        let spec = kernelNode.spec;
-        if (!spec && kernelNode.displayName) {
+        if (kernel.kernelId) return;   // - already running
+        // - launch a fresh kernel from the stored kernelspec (recover it from displayName for older
+        //   kernels), assign the new id, and plain-write so the webview reload picks up the live kernel
+        let spec = kernel.spec;
+        if (!spec && kernel.displayName) {
           try {
             const specs = await listKernelSpecs(server);
-            spec = specs.find(s => s.displayName === kernelNode.displayName || s.name === kernelNode.displayName)?.name;
+            spec = specs.find(s => s.displayName === kernel.displayName || s.name === kernel.displayName)?.name;
           } catch { /* - specs unavailable → ensureKernel falls back to python3 */ }
         }
-        kernelNode.kernelId = await manager.ensureKernel(server, undefined, spec);
-        if (spec && kernelNode.spec !== spec) kernelNode.spec = spec;   // - heal older nodes
+        kernel.kernelId = await manager.ensureKernel(server, undefined, spec);
+        if (spec && kernel.spec !== spec) kernel.spec = spec;   // - heal older kernels
         await writeCanvas(document.uri.fsPath, canvas);
         void vscode.window.showInformationMessage(`Skena: started ${name}.`);
         return;
       }
-      if (!kernelNode.kernelId) return;   // - restart / interrupt / shutdown need a live kernel
+      if (!kernel.kernelId) return;   // - restart / interrupt / shutdown need a live kernel
       if (msg.action === 'restart') {
-        await manager.restart(server, kernelNode.kernelId);
+        await manager.restart(server, kernel.kernelId);
         await resetBoundCellFlags();
         void vscode.window.showInformationMessage(`Skena: restarted ${name} — cell run-flags reset.`);
       } else if (msg.action === 'interrupt') {
-        await manager.interrupt(server, kernelNode.kernelId);
+        await manager.interrupt(server, kernel.kernelId);
         void vscode.window.showInformationMessage(`Skena: interrupted ${name}.`);
       } else {
-        await manager.shutdown(server, kernelNode.kernelId);
-        kernelNode.kernelId = undefined;
+        await manager.shutdown(server, kernel.kernelId);
+        kernel.kernelId = undefined;
         await resetBoundCellFlags();   // - also persists the cleared kernelId
         void vscode.window.showInformationMessage(`Skena: shut down ${name} — cell run-flags reset.`);
       }
     } catch (e) {
       void vscode.window.showErrorMessage(`Skena: kernel ${msg.action} failed: ${e instanceof Error ? e.message : String(e)}`);
     }
+  }
+
+  /** Remove a kernel record: confirm, shut the live kernel down if any, tell the webview (it drops the record and unbinds sections). */
+  private async handleRemoveKernel(
+    msg:      MsgRemoveKernel,
+    manager:  KernelManager,
+    document: SkenaDocument,
+    send:     (m: HostToWebview) => void,
+  ): Promise<void> {
+    // - in practice only records are removed this way; if kernelRef names a kernel NODE the webview
+    //   handler just unbinds the sections pointing at it (deleting the node is its own path)
+    const kernel = kernelById(document.canvas, msg.kernelRef);
+    if (!kernel) return;
+    const name = kernel.displayName ?? 'kernel';
+    const yes = await vscode.window.showWarningMessage(
+      `Remove kernel "${name}"? Sections bound to it lose their kernel.`, { modal: true }, 'Remove',
+    );
+    if (yes !== 'Remove') return;
+    const server = manager.serverByName(kernel.server);
+    if (server && kernel.kernelId) {
+      try { await manager.shutdown(server, kernel.kernelId); } catch { /* - already gone */ }
+    }
+    send({ type: 'kernelRemoved', kernelRef: msg.kernelRef });
   }
 
   // - interrupt (SIGINT) the kernel running a specific code cell. Resolves the cell's bound kernel
@@ -1813,11 +1841,10 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const canvas = document.canvas;
     const cell = canvas.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code') as CodeNode | undefined;
     if (!cell) return;
-    const nodeById = new Map(canvas.nodes.map(n => [n.id, n]));
-    const kernelNodeId = resolveCellKernel(cell.id, cellKernelView(canvas));
-    const kernelNode = kernelNodeId ? nodeById.get(kernelNodeId) as KernelNode | undefined : undefined;
-    const server = kernelNode ? manager.serverByName(kernelNode.server) : undefined;
-    if (!kernelNode || !kernelNode.kernelId || !server) {
+    const boundKernelId = resolveCellKernel(cell.id, cellKernelView(canvas));
+    const kernel: KernelLike | null = boundKernelId ? kernelById(canvas, boundKernelId) : null;
+    const server = kernel ? manager.serverByName(kernel.server) : undefined;
+    if (!kernel || !kernel.kernelId || !server) {
       void vscode.window.showWarningMessage('Skena: no running kernel bound to this cell.');
       return;
     }
@@ -1828,7 +1855,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       if (choice !== 'Interrupt') return;
     }
     try {
-      await manager.interrupt(server, kernelNode.kernelId);
+      await manager.interrupt(server, kernel.kernelId);
     } catch (e) {
       void vscode.window.showErrorMessage(`Skena: interrupt failed: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -1838,7 +1865,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
    * "Skena: Add Kernel" — QuickPick over configured Jupyter servers. Two groups:
    * "Start new kernel" lists the server's kernel specs (the environments), and
    * "Running kernels" lists live kernels (named by their session) to attach to.
-   * The chosen kernel becomes a KernelNode delivered via addNodeResult.
+   * The chosen kernel becomes a KernelNode delivered via addNodeResult — or, when the request
+   * names a section (`forSection`), a KernelRecord delivered via kernelAdded.
    */
   private async handleAddKernel(
     msg:      MsgAddKernel,
@@ -1902,6 +1930,23 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       }
     }
 
+    if (!pick.server) return;
+
+    if (msg.forSection) {
+      // - a section's kernel is a record in the canvas file, not a node; the webview stores and binds it
+      const existing = (document.canvas.metadata?.kernels?.length ?? 0) + document.canvas.nodes.filter(n => n.type === 'kernel').length;
+      const kernel: KernelRecord = {
+        id: `k-${Date.now().toString(36)}`,
+        server: pick.server,
+        kernelId,
+        displayName,
+        spec: pick.specName ?? pick.display,
+        colorIndex: nextKernelColorIndex(existing),
+      };
+      send({ type: 'kernelAdded', sectionId: msg.forSection, kernel });
+      return;
+    }
+
     // - place where the webview asked (viewport centre for the command, or the right-click point for
     //   the context menu) so the kernel lands where the user is looking. Fall back to near the last
     //   node only when no position was supplied.
@@ -1919,7 +1964,6 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       }
     }
 
-    if (!pick.server) return;
     const node: KernelNode = {
       id:          `kernel-${Date.now().toString(36)}`,
       type:        'kernel',
