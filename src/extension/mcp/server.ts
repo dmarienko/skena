@@ -413,7 +413,9 @@ async function canvasList(args: Record<string, unknown>): Promise<string> {
   if (d.metadata?.sections?.length) {
     lines.push('', 'Sections:');
     for (const l of deriveLanes(d.nodes, d.metadata.sections)) {
-      const kernel = (l.kernelId && d.nodes.find(n => n.id === l.kernelId)?.nodeLabel) || '-';
+      // - a record has no nodeLabel; a node's displayName is usually unset, so its label is the fallback
+      const kRec  = l.kernelId ? kernelById(d, l.kernelId) : null;
+      const kernel = kRec ? (kRec.displayName ?? (kRec as { nodeLabel?: string }).nodeLabel ?? kRec.id) : '-';
       const title  = l.title ? `"${l.title}"` : `(untitled, ${stampLabel(l.createdAt)})`;
       lines.push(`  ${l.label.padEnd(4)}${`y=${l.top}`.padEnd(8)}${`kernel=${kernel}`.padEnd(11)}${title}`);
     }
@@ -423,7 +425,7 @@ async function canvasList(args: Record<string, unknown>): Promise<string> {
     lines.push('', 'Kernels:');
     for (const k of d.metadata.kernels) {
       const live = k.kernelId ? k.kernelId.slice(0, 8) : '-';
-      lines.push(`  ${k.id.padEnd(11)}${(k.displayName ?? 'kernel').padEnd(12)}${`server=${k.server}`.padEnd(16)}live=${live}`);
+      lines.push(`  ${k.id.padEnd(11)}${(k.displayName ?? '-').padEnd(12)}${`server=${k.server}`.padEnd(16)}live=${live}`);
     }
   }
 
@@ -969,9 +971,10 @@ async function runCellCore(
 
 // - resolve kernelRef against a KernelRecord (by id or displayName) or a kernel node (label or id)
 function kernelByRef(d: CanvasData, ref: string): KernelLike | null {
+  const n = findNode(d, ref);
   return kernelById(d, ref)
-    ?? kernelById(d, d.metadata?.kernels?.find(k => k.displayName === ref)?.id ?? '')
-    ?? (() => { const n = findNode(d, ref); return n?.type === 'kernel' ? kernelById(d, n.id) : null; })();
+    ?? (d.metadata?.kernels?.find(k => k.displayName === ref) ?? null)
+    ?? (n?.type === 'kernel' ? kernelById(d, n.id) : null);
 }
 
 async function canvasRunCell(args: Record<string, unknown>): Promise<string> {
@@ -985,6 +988,7 @@ async function canvasRunCell(args: Record<string, unknown>): Promise<string> {
     // - explicit kernelRef (a kernel record id/name, or a kernel node label/id), else the cell's
     // - kernel: edge-bound kernel, else the kernel bound to the cell's section.
     let kernel: KernelLike | null = args.kernelRef ? kernelByRef(d, args.kernelRef as string) : null;
+    if (args.kernelRef && !kernel) return `error: no kernel matches "${args.kernelRef}" — a record id or display name, or a kernel node label/id`;
     if (!kernel) {
       const kid = resolveCellKernel(cell.id, cellKernelView(d));
       kernel = kid ? kernelById(d, kid) : null;
@@ -994,7 +998,7 @@ async function canvasRunCell(args: Record<string, unknown>): Promise<string> {
     const servers = loadKernelServersFromEnv();
     const server  = servers.find(s => s.name === kernel.server);
     if (!server) return `error: unknown server ${kernel.server}`;
-    if (!kernel.kernelId) return 'error: kernel node has no live kernelId (open the canvas so Skena starts it)';
+    if (!kernel.kernelId) return 'error: kernel has no live kernelId (open the canvas so Skena starts it)';
 
     const kernelId = kernel.kernelId;   // - narrowed to string by the guard above
     const ipc = parseRunIpc(process.env.SKENA_RUN_IPC);
@@ -1017,7 +1021,7 @@ async function canvasRunCell(args: Record<string, unknown>): Promise<string> {
     // - the upstream loop may have re-fitted sections and replaced d.nodes: read the target and kernel again
     const cellNow   = d.nodes.find(n => n.id === cell.id) as CodeNode | undefined;
     const kernelNow = kernelById(d, kernel.id);
-    if (!cellNow || !kernelNow) return 'error: cell or kernel node vanished during the upstream run';
+    if (!cellNow || !kernelNow) return 'error: cell or kernel vanished during the upstream run';
 
     const res    = await runCellCore(d, cellNow, kernelNow, kernelId, server, p, ipc);
     const prefix = ran.length ? `(upstream ${ran.join(', ')}) ` : '';
