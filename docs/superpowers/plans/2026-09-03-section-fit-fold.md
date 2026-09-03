@@ -34,7 +34,7 @@
 - Modify: `src/shared/sectionLanes.ts` (`SectionLane`, new helpers, `deriveLanes`, `memberCodeCellsInRunOrder`, `migrateSections`)
 - Test: `test/section-lanes.mjs`
 
-- [ ] **Step 1: Write the failing tests** — append to `test/section-lanes.mjs` (extend the import line with `laneIndexForNode, pinnedLaneIndex, SECTION_FOLDED_H, SECTION_MIN_H`):
+- [x] **Step 1: Write the failing tests** — append to `test/section-lanes.mjs` (extend the import line with `laneIndexForNode, pinnedLaneIndex, SECTION_FOLDED_H, SECTION_MIN_H`):
 
 ```js
 test('laneIndexForNode: a pinned node belongs to the lane that lists it, whatever its y', () => {
@@ -69,9 +69,9 @@ test('migrateSections: folded: true becomes the member ids by y, once', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify they fail** (import error on `laneIndexForNode`).
+- [x] **Step 2: Run to verify they fail** (import error on `laneIndexForNode`).
 
-- [ ] **Step 3: Implementation**
+- [x] **Step 3: Implementation**
 
 `src/shared/constants.ts`, after `NEW_NODE`:
 
@@ -137,9 +137,9 @@ export function deriveLanes(nodes: LaneNodeGeom[], lanes: SectionLane[]): Derive
 
 `migrateSections`: add `const hasLegacyFold = !!existing?.some(l => (l as { folded?: unknown }).folded === true);` to the early-return condition (`… && !hasLegacyFold`), and when building `stripped`, convert: for a lane with `folded === true`, `folded` = the ids of `canvas.nodes` whose `laneIndexForY(sortedExisting, n.y)` is that lane's index (compute `sortedExisting = sortLanes(existing)` once; ignore `colorIndex` while doing it). The legacy section-node conversion (`if (s.folded) lane.folded = true;`) becomes `if (s.folded) lane.folded = [];` (its members are unknown at that point; an empty list is a folded, empty range — acceptable for a five-month-old format).
 
-- [ ] **Step 4: Run the tests** — 33 + 4 pass (older tests still hold: `folded` was only read as truthy). Fix `test/section-lanes.mjs` if any old test set `folded: true` on a lane — replace with `folded: []`. `npm run typecheck`: `CanvasView.tsx` `{ ...l, folded: !l.folded }` and `RailSegment`/`SegmentMenu` `folded` booleans will now error — expected; they are fixed in Task 4. Note the errors, do not fix them here.
+- [x] **Step 4: Run the tests** — 33 + 4 pass (older tests still hold: `folded` was only read as truthy). Fix `test/section-lanes.mjs` if any old test set `folded: true` on a lane — replace with `folded: []`. `npm run typecheck`: `CanvasView.tsx` `{ ...l, folded: !l.folded }` and `RailSegment`/`SegmentMenu` `folded` booleans will now error — expected; they are fixed in Task 4. Note the errors, do not fix them here.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/shared/constants.ts src/shared/sectionLanes.ts
@@ -154,7 +154,7 @@ git commit -m "feat: pinned membership — a fold lists its hidden members; SECT
 - Modify: `src/shared/sectionLanes.ts` — replace `growLaneForNodes` and `applyLaneGrowth`
 - Test: `test/section-lanes.mjs` — replace the `growLaneForNodes` / `applyLaneGrowth` tests
 
-- [ ] **Step 1: Write the failing tests** — delete every `test('growLaneForNodes…` and `test('applyLaneGrowth…` case and the corresponding imports; add `fitLanes, applyLaneFit, sectionTargetHeight, pinOutputToLane` to the import; append:
+- [x] **Step 1: Write the failing tests** — delete every `test('growLaneForNodes…` and `test('applyLaneGrowth…` case and the corresponding imports; add `fitLanes, applyLaneFit, sectionTargetHeight, pinOutputToLane` to the import; append:
 
 ```js
 test('fitLanes: an empty middle lane grows to SECTION_MIN_H; the last lane never moves', () => {
@@ -210,9 +210,9 @@ test('pinOutputToLane: an output of a pinned cell is pinned too; otherwise untou
 });
 ```
 
-- [ ] **Step 2: Run to verify they fail** (import error).
+- [x] **Step 2: Run to verify they fail** (import error).
 
-- [ ] **Step 3: Implementation** — replace `growLaneForNodes` and `applyLaneGrowth` (keep the `LaneGrowth` interface; update its doc: shifts may be negative) with:
+- [x] **Step 3: Implementation** — replace `growLaneForNodes` and `applyLaneGrowth` (keep the `LaneGrowth` interface; update its doc: shifts may be negative) with:
 
 ```ts
 /** Range a lane wants: one grid when folded; else its visible content plus a gap, never under the minimum. */
@@ -279,9 +279,9 @@ export function pinOutputToLane(lanes: SectionLane[], codeId: string, outId: str
 }
 ```
 
-- [ ] **Step 4: Run the tests** — expect all pass (count: previous minus the removed growth/applyLaneGrowth cases plus 7). `npm run typecheck` will now fail on the callers of the removed functions (MCP, host, hook) — expected; fixed in Task 3.
+- [x] **Step 4: Run the tests** — expect all pass (count: previous minus the removed growth/applyLaneGrowth cases plus 7). `npm run typecheck` will now fail on the callers of the removed functions (MCP, host, hook) — expected; fixed in Task 3.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/shared/sectionLanes.ts
@@ -297,7 +297,7 @@ git commit -m "feat: fitLanes — sections grow and shrink to their content with
 - Modify: `src/webview/canvas/CanvasView.tsx` (`applyGrowth` → `applyFit`, the hook call, the `+` handler)
 - Modify: `src/extension/mcp/server.ts` (5 sites), `src/extension/editor-provider.ts` (3 sites + pinning)
 
-- [ ] **Step 1: the hook** — `git mv src/webview/rail/useLaneGrowth.ts src/webview/rail/useLaneFit.ts`; contents:
+- [x] **Step 1: the hook** — `git mv src/webview/rail/useLaneGrowth.ts src/webview/rail/useLaneFit.ts`; contents:
 
 ```ts
 import { useEffect, type MutableRefObject } from 'react';
@@ -324,15 +324,15 @@ export function useLaneFit(nodes: Node[], lanes: SectionLane[], dragging: Mutabl
 }
 ```
 
-- [ ] **Step 2: CanvasView** — import `useLaneFit` (not `useLaneGrowth`), `fitLanes`-adjacent `sectionTargetHeight`; rename `applyGrowth` → `applyFit` (body unchanged; comment: `// - fit every section to its content: shifts below may be up or down. No history entry of its own — the action that changed the geometry pushed one`); `useLaneFit(nodes, lanes, draggingRef, fromHistoryRef, applyFit)`. The `skena:newSection` handler: `const flowY = last ? last.top + sectionTargetHeight(last, visibleMembersOf(last)) : 0;` where the visible members are `nodes` (mapped through the same `geomOf` shape as `derivedLanes` uses) filtered to `last.memberIds` minus `last.folded ?? []` — write a tiny local helper next to the handler.
+- [x] **Step 2: CanvasView** — import `useLaneFit` (not `useLaneGrowth`), `fitLanes`-adjacent `sectionTargetHeight`; rename `applyGrowth` → `applyFit` (body unchanged; comment: `// - fit every section to its content: shifts below may be up or down. No history entry of its own — the action that changed the geometry pushed one`); `useLaneFit(nodes, lanes, draggingRef, fromHistoryRef, applyFit)`. The `skena:newSection` handler: `const flowY = last ? last.top + sectionTargetHeight(last, visibleMembersOf(last)) : 0;` where the visible members are `nodes` (mapped through the same `geomOf` shape as `derivedLanes` uses) filtered to `last.memberIds` minus `last.folded ?? []` — write a tiny local helper next to the handler.
 
-- [ ] **Step 3: MCP** — `src/extension/mcp/server.ts`: import `applyLaneFit` instead of `applyLaneGrowth`; the five `Object.assign(d, applyLaneGrowth(d, […]))` become `Object.assign(d, applyLaneFit(d));` (the `changed` collection in `canvas_layout` goes; keep the comment's meaning: "every write fits the sections"). In `runCellCore`'s `!hostOwns` output branch and in `canvasPinOutput`, before the fit: `d.metadata = { ...d.metadata, sections: pinOutputToLane(d.metadata?.sections ?? [], cell.id, outId) };` (only when sections exist; use the code cell's id and the new output id).
+- [x] **Step 3: MCP** — `src/extension/mcp/server.ts`: import `applyLaneFit` instead of `applyLaneGrowth`; the five `Object.assign(d, applyLaneGrowth(d, […]))` become `Object.assign(d, applyLaneFit(d));` (the `changed` collection in `canvas_layout` goes; keep the comment's meaning: "every write fits the sections"). In `runCellCore`'s `!hostOwns` output branch and in `canvasPinOutput`, before the fit: `d.metadata = { ...d.metadata, sections: pinOutputToLane(d.metadata?.sections ?? [], cell.id, outId) };` (only when sections exist; use the code cell's id and the new output id).
 
-- [ ] **Step 4: Host** — `src/extension/editor-provider.ts`: import `applyLaneFit, pinOutputToLane`; the three `Object.assign(c, applyLaneGrowth(c, [outputNode.id]))` become: `c.metadata = { ...c.metadata, sections: pinOutputToLane(c.metadata?.sections ?? [], cn.id, outputNode.id) }; Object.assign(c, applyLaneFit(c));` (keep the existing "c IS document.canvas" comments).
+- [x] **Step 4: Host** — `src/extension/editor-provider.ts`: import `applyLaneFit, pinOutputToLane`; the three `Object.assign(c, applyLaneGrowth(c, [outputNode.id]))` become: `c.metadata = { ...c.metadata, sections: pinOutputToLane(c.metadata?.sections ?? [], cn.id, outputNode.id) }; Object.assign(c, applyLaneFit(c));` (keep the existing "c IS document.canvas" comments).
 
-- [ ] **Step 5: Typecheck + build + tests** — `npm run typecheck`: only the `folded` boolean errors in `CanvasView.tsx` / `RailSegment.tsx` / `SegmentMenu.tsx` may remain (Task 4) — list them; everything else clean. `npm run build` may fail on those — if so, do Task 4 before building and commit both together.
+- [x] **Step 5: Typecheck + build + tests** — `npm run typecheck`: only the `folded` boolean errors in `CanvasView.tsx` / `RailSegment.tsx` / `SegmentMenu.tsx` may remain (Task 4) — list them; everything else clean. `npm run build` may fail on those — if so, do Task 4 before building and commit both together.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/webview/rail/useLaneFit.ts src/webview/canvas/CanvasView.tsx src/extension/mcp/server.ts src/extension/editor-provider.ts
@@ -347,7 +347,7 @@ git commit -m "feat: every applier fits sections (grow and shrink) instead of gr
 - Modify: `src/webview/canvas/CanvasView.tsx` (`hiddenByFold`, `handleFoldLane`)
 - Modify: `src/webview/rail/RailSegment.tsx`, `src/webview/rail/SegmentMenu.tsx`, `src/webview/rail/SectionRail.tsx` (folded booleans)
 
-- [ ] **Step 1: CanvasView** — `hiddenByFold`: `for (const l of derivedLanes) for (const id of l.folded ?? []) ids.add(id);` (the list, not `memberIds`). `handleFoldLane`:
+- [x] **Step 1: CanvasView** — `hiddenByFold`: `for (const l of derivedLanes) for (const id of l.folded ?? []) ids.add(id);` (the list, not `memberIds`). `handleFoldLane`:
 
 ```ts
   const handleFoldLane = useCallback((id: string) => {
@@ -362,13 +362,13 @@ git commit -m "feat: every applier fits sections (grow and shrink) instead of gr
 
 (`{ ...l, folded: undefined }` leaves an own key; `JSON.stringify` drops it — same pattern as `kernelId`.)
 
-- [ ] **Step 1b: prune and polish** — in `CanvasView.tsx`'s node-delete path (`onNodesDelete` / the history-free delete that filters `canvasRef.current.nodes`) also drop the deleted ids from every lane's `folded` list via `commitLanes` when any list changes. In `RailSegment.tsx`: the tooltip ends `· right-click for the menu` instead of `· double-click the title to rename`; `onContextMenu` uses the existing `anchor(e)` helper. In `sectionLanes.ts` `migrateSections`: the legacy-fold member scan skips `type: 'section'` nodes.
+- [x] **Step 1b: prune and polish** — in `CanvasView.tsx`'s node-delete path (`onNodesDelete` / the history-free delete that filters `canvasRef.current.nodes`) also drop the deleted ids from every lane's `folded` list via `commitLanes` when any list changes. In `RailSegment.tsx`: the tooltip ends `· right-click for the menu` instead of `· double-click the title to rename`; `onContextMenu` uses the existing `anchor(e)` helper. In `sectionLanes.ts` `migrateSections`: the legacy-fold member scan skips `type: 'section'` nodes.
 
-- [ ] **Step 2: rail files** — wherever `lane.folded` is used as a boolean (`RailSegment.tsx` tooltip/opacity/chevron, `SegmentMenu` `folded` prop from `SectionRail`), use `!!lane.folded`; `Chevron folded={!!lane.folded}` already coerces — check each.
+- [x] **Step 2: rail files** — wherever `lane.folded` is used as a boolean (`RailSegment.tsx` tooltip/opacity/chevron, `SegmentMenu` `folded` prop from `SectionRail`), use `!!lane.folded`; `Chevron folded={!!lane.folded}` already coerces — check each.
 
-- [ ] **Step 3: Typecheck + build** — clean (3 pre-existing). Manual reasoning check: fold S2 → its members hidden and listed; `derivedLanes` gives S2 `bottom = S3.y` still → the hook fits: S2 target = 100 → S3 and below move up by (range − 100); unfold → list cleared → target = content → S3 moves down. Undo of a fold: history restored lanes (list cleared) + nodes → `skipOnce` prevents a re-fit on that render, and the next real change re-fits consistently.
+- [x] **Step 3: Typecheck + build** — clean (3 pre-existing). Manual reasoning check: fold S2 → its members hidden and listed; `derivedLanes` gives S2 `bottom = S3.y` still → the hook fits: S2 target = 100 → S3 and below move up by (range − 100); unfold → list cleared → target = content → S3 moves down. Undo of a fold: history restored lanes (list cleared) + nodes → `skipOnce` prevents a re-fit on that render, and the next real change re-fits consistently.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/webview/canvas/CanvasView.tsx src/webview/rail/RailSegment.tsx src/webview/rail/SegmentMenu.tsx src/webview/rail/SectionRail.tsx
@@ -379,8 +379,8 @@ git commit -m "feat: fold collapses a section to one grid; its members stay hidd
 
 ### Task 5: verification
 
-- [ ] All suites: section-lanes, bounds, kernel-binding, kernel-upstream, rail-geometry → `# fail 0`.
-- [ ] `npm run typecheck` (3 pre-existing), `npm run build`, `npm run package` → `skena-0.17.2.vsix` after bumping `package.json` to `0.17.2` (commit `chore: bump to 0.17.2 (section fit, collapsing fold, rail follow-ups)`).
+- [x] All suites: section-lanes, bounds, kernel-binding, kernel-upstream, rail-geometry → `# fail 0`.
+- [x] `npm run typecheck` (3 pre-existing), `npm run build`, `npm run package` → `skena-0.17.2.vsix` after bumping `package.json` to `0.17.2` (commit `chore: bump to 0.17.2 (section fit, collapsing fold, rail follow-ups)`).
 - [ ] Manual (user): an empty middle section is 800 tall; drag a node down past the edge → grows; drag it back → shrinks after the drop, never under 800; fold → collapses to one grid and everything below moves up; unfold → back; run section on a folded section still runs its cells and their outputs stay hidden; reload → all of it survives; `+` lands the new section right under the previous one's fitted range.
 
 ---
