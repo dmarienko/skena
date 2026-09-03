@@ -80,7 +80,7 @@ export function resolveUpstreamChain(
 
 /** The slice of a canvas the kernel rule needs. CanvasData satisfies it directly; a React Flow store needs a map to {id, type, y: position.y}. */
 export interface CellKernelCanvas {
-  nodes:    { id: string; type: string; y: number }[];
+  nodes:    { id: string; type: string; y: number; x?: number }[];
   edges:    EdgeLike[];
   sections: SectionLane[] | undefined;
   kernels?: { id: string }[];   // - kernel records: valid targets for a section's kernelId
@@ -134,11 +134,53 @@ export function resolveKernelCellsInCanvas(kernelId: string, c: CellKernelCanvas
 }
 
 /** What every kernel consumer reads: a KernelRecord or a KernelNode, by reference (mutations land). */
-export interface KernelLike { id: string; server: string; kernelId?: string; spec?: string; displayName?: string; colorIndex?: number }
+export interface KernelLike {
+  id:           string;
+  server:       string;
+  kernelId?:    string;
+  spec?:        string;
+  displayName?: string;
+  /** - optional only because kernel nodes may lack it; records always carry one */
+  colorIndex?:  number;
+}
 
-export function kernelById(c: { nodes: { id: string; type?: string }[]; metadata?: { kernels?: KernelRecord[] } }, id: string): KernelLike | null {
+export function kernelById(c: Pick<CanvasData, 'nodes' | 'metadata'>, id: string): KernelLike | null {
   const rec = c.metadata?.kernels?.find(k => k.id === id);
   if (rec) return rec;
   const node = c.nodes.find(n => n.id === id && n.type === 'kernel');
-  return node ? (node as unknown as KernelLike) : null;
+  return node ? (node as KernelLike) : null;
+}
+
+/**
+ * The cells to run before `targetId`. With an edge path to a kernel node: the edge chain
+ * (`resolveUpstreamChain`). Otherwise, when the target's section supplies the kernel: the target's
+ * edge-connected code cells that sit above it, top to bottom then left to right — edges drawn by the
+ * user in a section-bound chain have no kernel to orient them, so position does.
+ */
+export function upstreamCellsForRun(targetId: string, c: CellKernelCanvas): string[] {
+  const byId = new Map(c.nodes.map(n => [n.id, n]));
+  const isKernel = (id: string) => byId.get(id)?.type === 'kernel';
+  const isCode = (id: string) => byId.get(id)?.type === 'code';
+  if (resolveBoundKernel(targetId, c.edges, isKernel)) return resolveUpstreamChain(targetId, c.edges, isKernel, isCode);
+  if (!resolveCellKernel(targetId, c)) return [];
+  const target = byId.get(targetId);
+  if (!target) return [];
+  // - the target's connected component, walking through code cells only
+  const seen = new Set<string>([targetId]);
+  const queue = [targetId];
+  while (queue.length) {
+    const cur = queue.shift() as string;
+    for (const e of c.edges) {
+      const nb = e.fromNode === cur ? e.toNode : e.toNode === cur ? e.fromNode : null;
+      if (nb === null || seen.has(nb) || !isCode(nb)) continue;
+      seen.add(nb);
+      queue.push(nb);
+    }
+  }
+  const pos = (id: string) => { const n = byId.get(id); return { y: n?.y ?? 0, x: n?.x ?? 0 }; };
+  const t = pos(targetId);
+  return [...seen]
+    .filter(id => id !== targetId)
+    .filter(id => { const p = pos(id); return p.y < t.y || (p.y === t.y && p.x < t.x); })
+    .sort((a, b) => { const pa = pos(a), pb = pos(b); return pa.y - pb.y || pa.x - pb.x; });
 }

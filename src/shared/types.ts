@@ -404,7 +404,7 @@ export interface MsgInterruptCell { type: 'interruptCell'; cellNodeId: string; c
 // - webview asks the host to confirm a destructive delete (e.g. an active kernel node)
 export interface MsgConfirmDelete { type: 'confirmDelete'; nodeIds: string[]; reason: string; }
 // - webview → host: remove a KernelRecord (no canvas node to delete)
-export interface MsgRemoveKernel { type: 'removeKernel'; kernelId: string; }
+export interface MsgRemoveKernel { type: 'removeKernel'; kernelRef: string; }   // - a KernelRecord id or a kernel node id; kernelId means the live Jupyter id elsewhere
 // - webview asks the host for kernel tab-completion at a cursor (Ctrl+Space in a code cell)
 export interface MsgComplete { type: 'complete'; reqId: string; cellNodeId: string; code: string; cursorPos: number; }
 // - webview asks the host for kernel introspection at a cursor (hover / signature help)
@@ -543,7 +543,7 @@ export interface MsgKernelStatus { type: 'kernelStatus'; kernels: KernelStatusEn
 // - host → webview: a KernelRecord was created (picked or launched) for a section
 export interface MsgKernelAdded { type: 'kernelAdded'; sectionId: string; kernel: KernelRecord; }
 // - host → webview: a KernelRecord (or kernel node) was removed
-export interface MsgKernelRemoved { type: 'kernelRemoved'; kernelId: string; }
+export interface MsgKernelRemoved { type: 'kernelRemoved'; kernelRef: string; }   // - a KernelRecord id or a kernel node id; kernelId means the live Jupyter id elsewhere
 // - host → webview: apply a cell run's output WITHOUT a full canvas reload (which would
 // - re-sync every node → focus jump + position shift). The host already persisted to disk
 // - with self-save suppression; the webview mirrors this into its own state.
