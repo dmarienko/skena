@@ -38,9 +38,11 @@ that took a `KernelNode` takes a `KernelLike` from `kernelById` and reads only `
 `kernelId`, `spec`, `displayName`. Writing back the live `kernelId` after a start (as `runOneCell`
 does on the node today) writes it to the record or the node, whichever the id names.
 
-Sites: `runOneCell`, `handleComplete`, `handleInspect`, `handleInterruptCell`, `handleKernelAction`,
-the dead-kernel sweep, MCP `canvas_run_cell` (`kernelRef` may also be a record id or its
-display name), `canvas_list` (a `Kernels:` block: id, display name, server, live state).
+Sites: `runOneCell`, the agent-run persist relay, `handleComplete`, `handleInspect`,
+`handleInterruptCell`, `handleKernelAction`, the dead-kernel sweep, MCP `canvas_run_cell` (`kernelRef`
+may also be a record id or its display name; an explicit ref that matches nothing is an error),
+`canvas_list` (a `Kernels:` block: id, display name, server, live kernel id — the file holds no
+idle/busy state; and `kernel=<name>` on bound sections).
 
 ## 3. Rail
 
@@ -77,7 +79,7 @@ No migration. Existing kernel nodes stay nodes; a section bound to a node keeps 
 back to nodes). `metadata.kernels` is created on first New kernel…. The MCP `readCanvas` fix
 (`a280f7d`) already preserves `metadata`.
 
-Deleting a record: from the picker (`Remove kernel…` on a record row) — the host confirms, shuts it
+Deleting a record: from the picker (a `✕` on the record's row) — the host confirms, shuts it
 down if live, removes the record, unbinds every section pointing at it, writes, and replies
 `kernelRemoved { kernelRef, unranCells }` (the cells whose run flag it cleared, since its write is
 self-save suppressed and the webview's next save would otherwise write the flags back); the webview

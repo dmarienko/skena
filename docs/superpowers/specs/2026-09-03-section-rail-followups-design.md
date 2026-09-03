@@ -43,7 +43,7 @@ For every lane except the last (the last is unbounded and follows its content):
 
 ```
 content = max(y + height) over the lane's VISIBLE members, or top when there are none
-target  = folded ? max(SECTION_FOLDED_H, visible content, if any) : max(SECTION_MIN_H, content + GRID − top)
+target  = max(folded ? SECTION_FOLDED_H : SECTION_MIN_H, content + GRID − top)   // - content = top when nothing visible
 target  = ceil(target / GRID) · GRID
 delta_i = target − (next.y − top)         // - > 0 grows, < 0 shrinks
 ```
