@@ -65,7 +65,10 @@ caused it). `normalizeCanvasToOrigin` lifts `metadata.sections` together with th
 folded lane's range is `SECTION_FOLDED_H`; its members keep their stored positions, are hidden, and
 stay **pinned** to their lane: membership for a pinned id is the lane that lists it, not its `y`, and
 pinned nodes count for nothing in any lane's `content`. Fold = set the list, fit (lanes below move
-up). Unfold = clear the list, fit (lanes below move down). Members move only when their lane moves.
+up). Unfold = one step that grows the lane to its members while they still belong to it, then
+clears the list (`unfoldLane`; `fitLanes` takes a membership override for that step) — releasing
+the list first would hand the members whose stored `y` lies below the collapsed range to the lane
+below. Members move only when their lane moves.
 Migration: `folded: true` from earlier builds → the member ids by `y` at load.
 
 `deriveLanes`, `fitLanes`, `memberCodeCellsInRunOrder`, `laneTopForNode` (used by `outputCellGeom`) and the
