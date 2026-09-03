@@ -543,7 +543,11 @@ export interface MsgKernelStatus { type: 'kernelStatus'; kernels: KernelStatusEn
 // - host → webview: a KernelRecord was created (picked or launched) for a section
 export interface MsgKernelAdded { type: 'kernelAdded'; sectionId: string; kernel: KernelRecord; }
 // - host → webview: a KernelRecord (or kernel node) was removed
-export interface MsgKernelRemoved { type: 'kernelRemoved'; kernelRef: string; }   // - a KernelRecord id or a kernel node id; kernelId means the live Jupyter id elsewhere
+export interface MsgKernelRemoved {
+  type: 'kernelRemoved';
+  kernelRef: string;      // - a KernelRecord id or a kernel node id; kernelId means the live Jupyter id elsewhere
+  unranCells: string[];   // - cells whose run flag the host cleared; the webview mirrors it so its next save keeps them cleared
+}
 // - host → webview: apply a cell run's output WITHOUT a full canvas reload (which would
 // - re-sync every node → focus jump + position shift). The host already persisted to disk
 // - with self-save suppression; the webview mirrors this into its own state.

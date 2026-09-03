@@ -1831,11 +1831,10 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     setSelfSaving:  (v: boolean) => void,
     setLastWritten: (s: string) => void,
   ): Promise<void> {
-    const canvas = document.canvas;
-    const kernel = canvas.metadata?.kernels?.find(k => k.id === msg.kernelRef);
+    const kernel = document.canvas.metadata?.kernels?.find(k => k.id === msg.kernelRef);
     if (!kernel) {
       // - only records are removed here; a kernel NODE goes through the canvas delete path
-      const isNode = canvas.nodes.some(n => n.id === msg.kernelRef && n.type === 'kernel');
+      const isNode = document.canvas.nodes.some(n => n.id === msg.kernelRef && n.type === 'kernel');
       void vscode.window.showInformationMessage(
         isNode ? 'Skena: that kernel is a node on the canvas — delete the node instead.' : 'Skena: kernel not found.',
       );
@@ -1850,9 +1849,11 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     if (server && kernel.kernelId) {
       try { await manager.shutdown(server, kernel.kernelId); } catch { /* - already gone */ }
     }
+    // - re-read after the awaits: a save may have replaced document.canvas meanwhile
+    const canvas = document.canvas;
     // - its namespace is gone with it: every cell that ran on it is un-run (as handleKernelAction's shutdown does).
     //   Resolved BEFORE the rewrite below, while the lanes still point at this kernel.
-    const bound = new Set(resolveKernelCellsInCanvas(kernel.id, cellKernelView(canvas)));
+    const bound = new Set(resolveKernelCellsInCanvas(msg.kernelRef, cellKernelView(canvas)));
     for (const n of canvas.nodes) {
       if (n.type === 'code' && bound.has(n.id)) (n as CodeNode).lastStatus = undefined;
     }
@@ -1867,7 +1868,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       }),
     };
     await this.persistCanvas(document, setSelfSaving, setLastWritten);
-    send({ type: 'kernelRemoved', kernelRef: msg.kernelRef });
+    send({ type: 'kernelRemoved', kernelRef: msg.kernelRef, unranCells: [...bound] });
   }
 
   // - interrupt (SIGINT) the kernel running a specific code cell. Resolves the cell's bound kernel
@@ -1974,7 +1975,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     if (!pick.server) return;
 
     if (msg.forSection) {
-      // - a section's kernel is a record in the canvas file, not a node
+      // - a section's kernel is a record in the canvas file, not a node.
+      //   Read after the QuickPick/startKernel awaits: a save may have replaced document.canvas meanwhile.
       const canvas   = document.canvas;
       const existing = (canvas.metadata?.kernels?.length ?? 0) + canvas.nodes.filter(n => n.type === 'kernel').length;
       const kernel: KernelRecord = {
