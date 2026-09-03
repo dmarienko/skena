@@ -63,9 +63,11 @@ The dot's tooltip shows `display name · server · state`.
 ## 4. Run-with-upstream on section-bound chains
 
 Today `resolveUpstreamChain` orients edges by distance from a kernel *node*; with no such node it
-returns `[]`. New rule when the target's kernel is not reached through edges: the chain is the
-target's edge-connected component restricted to code cells; upstream = the members ordered by
-`(y, x)` that come **before** the target; run in that order, then the target. Same skip of already-run
+returns `[]`. New rule when the target's kernel is not reached through edges: the chain is the target's
+edge-connected component walked through code cells only (a text node between two cells breaks it),
+keeping only the cells that resolve to the **same kernel** as the target (a cell on another kernel
+would run elsewhere for nothing; one with no kernel would abort the run); upstream = those members
+ordered by `(y, x)` that come **before** the target; run in that order, then the target. Same skip of already-run
 (`lastStatus === 'ok'`) cells as today.
 
 ## 5. Migration and compatibility
