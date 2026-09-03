@@ -1,5 +1,5 @@
 import { laneIndexForNode, pinnedLaneIndex, sortLanes, type SectionLane } from './sectionLanes';
-import type { CanvasData } from './types';
+import type { CanvasData, KernelRecord } from './types';
 
 export interface EdgeLike {
   fromNode: string;
@@ -83,10 +83,11 @@ export interface CellKernelCanvas {
   nodes:    { id: string; type: string; y: number }[];
   edges:    EdgeLike[];
   sections: SectionLane[] | undefined;
+  kernels?: { id: string }[];   // - kernel records: valid targets for a section's kernelId
 }
 
 export function cellKernelView(c: Pick<CanvasData, 'nodes' | 'edges' | 'metadata'>): CellKernelCanvas {
-  return { nodes: c.nodes, edges: c.edges, sections: c.metadata?.sections };
+  return { nodes: c.nodes, edges: c.edges, sections: c.metadata?.sections, kernels: c.metadata?.kernels };
 }
 
 /**
@@ -99,6 +100,7 @@ export function makeCellKernelResolver(c: CellKernelCanvas): (cellId: string) =>
   // - answers are stable for one snapshot; the webview asks once per code node per store change
   const memo = new Map<string, string | null>();
   const isKernel = (id: string) => byId.get(id)?.type === 'kernel';
+  const recordIds = new Set((c.kernels ?? []).map(k => k.id));
   const sorted = sortLanes(c.sections ?? []);
   const pinned = pinnedLaneIndex(sorted);
   return (cellId: string): string | null => {
@@ -112,7 +114,7 @@ export function makeCellKernelResolver(c: CellKernelCanvas): (cellId: string) =>
       out = viaEdge;
     } else if (cell && sorted.length > 0) {
       const lane = sorted[laneIndexForNode(sorted, cell, pinned)];
-      out = lane.kernelId && isKernel(lane.kernelId) ? lane.kernelId : null;
+      out = lane.kernelId && (recordIds.has(lane.kernelId) || isKernel(lane.kernelId)) ? lane.kernelId : null;
     }
     memo.set(cellId, out);
     return out;
@@ -129,4 +131,14 @@ export function resolveCellKernel(cellId: string, c: CellKernelCanvas): string |
 export function resolveKernelCellsInCanvas(kernelId: string, c: CellKernelCanvas): string[] {
   const resolve = makeCellKernelResolver(c);
   return c.nodes.filter(n => n.type === 'code' && resolve(n.id) === kernelId).map(n => n.id);
+}
+
+/** What every kernel consumer reads: a KernelRecord or a KernelNode, by reference (mutations land). */
+export interface KernelLike { id: string; server: string; kernelId?: string; spec?: string; displayName?: string; colorIndex?: number }
+
+export function kernelById(c: { nodes: { id: string; type?: string }[]; metadata?: { kernels?: KernelRecord[] } }, id: string): KernelLike | null {
+  const rec = c.metadata?.kernels?.find(k => k.id === id);
+  if (rec) return rec;
+  const node = c.nodes.find(n => n.id === id && n.type === 'kernel');
+  return node ? (node as unknown as KernelLike) : null;
 }

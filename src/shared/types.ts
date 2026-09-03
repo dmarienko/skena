@@ -135,6 +135,16 @@ export interface KernelNode extends CanvasNodeBase {
   colorIndex?: number;
 }
 
+/** A kernel that lives in the canvas file, not on the canvas: picked or created from a section's rail. */
+export interface KernelRecord {
+  id: string;            // - "k-<base36 time>", stable
+  server: string;        // - a skena.jupyter.kernels[].name
+  spec?: string;         // - kernelspec to (re)launch from; a restart uses the same environment
+  displayName?: string;
+  kernelId?: string;     // - live Jupyter kernel id once started / attached; absent = not running
+  colorIndex: number;    // - into KERNEL_PALETTE, assigned at creation
+}
+
 /** Editable code cell — runs on a bound kernel node, output goes to a linked cell node */
 export interface CodeNode extends CanvasNodeBase {
   type: 'code';
@@ -194,6 +204,8 @@ export interface CanvasData {
     aiModel?: string;
     /** - virtual section lanes, sorted by y; geometry is derived, see sectionLanes.ts */
     sections?: SectionLane[];
+    /** - kernels without a node; a section's kernelId may name one of these */
+    kernels?: KernelRecord[];
   };
 }
 
@@ -376,12 +388,23 @@ export interface MsgPickModel { type: 'pickModel'; }
 export interface MsgRunCell   { type: 'runCell'; cellNodeId: string; code: string; }
 // - run every code cell of a section top to bottom on its resolved kernel; the first error stops it
 export interface MsgRunSection { type: 'runSection'; sectionId: string; }
-export interface MsgAddKernel { type: 'addKernel'; position?: { x: number; y: number }; }
-export interface MsgKernelAction { type: 'kernelAction'; action: 'restart' | 'shutdown' | 'interrupt' | 'start'; kernelNodeId: string; }
+export interface MsgAddKernel {
+  type: 'addKernel';
+  position?: { x: number; y: number };
+  // - forSection → the host answers with a KernelRecord bound to that section instead of a node
+  forSection?: string;
+}
+export interface MsgKernelAction {
+  type: 'kernelAction';
+  action: 'restart' | 'shutdown' | 'interrupt' | 'start';
+  kernelNodeId: string;   // - a KernelRecord id or a kernel node id
+}
 // - interrupt (SIGINT) the kernel running THIS code cell; confirm asks the host for a modal first
 export interface MsgInterruptCell { type: 'interruptCell'; cellNodeId: string; confirm?: boolean; }
 // - webview asks the host to confirm a destructive delete (e.g. an active kernel node)
 export interface MsgConfirmDelete { type: 'confirmDelete'; nodeIds: string[]; reason: string; }
+// - webview → host: remove a KernelRecord (no canvas node to delete)
+export interface MsgRemoveKernel { type: 'removeKernel'; kernelId: string; }
 // - webview asks the host for kernel tab-completion at a cursor (Ctrl+Space in a code cell)
 export interface MsgComplete { type: 'complete'; reqId: string; cellNodeId: string; code: string; cursorPos: number; }
 // - webview asks the host for kernel introspection at a cursor (hover / signature help)
@@ -489,6 +512,8 @@ export type HostToWebview =
   | MsgMarksRestored
   | MsgVerifyPathResult
   | MsgKernelStatus
+  | MsgKernelAdded
+  | MsgKernelRemoved
   | MsgRunStatus
   | MsgRunOutput
   | MsgAddKernelTrigger
@@ -515,6 +540,10 @@ export interface KernelStatusEntry {
   connections?: number;
 }
 export interface MsgKernelStatus { type: 'kernelStatus'; kernels: KernelStatusEntry[]; }
+// - host → webview: a KernelRecord was created (picked or launched) for a section
+export interface MsgKernelAdded { type: 'kernelAdded'; sectionId: string; kernel: KernelRecord; }
+// - host → webview: a KernelRecord (or kernel node) was removed
+export interface MsgKernelRemoved { type: 'kernelRemoved'; kernelId: string; }
 // - host → webview: apply a cell run's output WITHOUT a full canvas reload (which would
 // - re-sync every node → focus jump + position shift). The host already persisted to disk
 // - with self-save suppression; the webview mirrors this into its own state.
@@ -760,6 +789,7 @@ export type WebviewToHost =
   | MsgInterruptCell
   | MsgAddKernel
   | MsgKernelAction
+  | MsgRemoveKernel
   | MsgConfirmDelete
   | MsgComplete
   | MsgInspect;
