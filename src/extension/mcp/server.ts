@@ -29,7 +29,7 @@ import * as crypto   from 'crypto';
 import { CanvasData, CanvasNode, CanvasEdge, CanvasNodeBase, CellNode, CodeNode, KernelNode, AgentRunPersist, AgentRunPersistResult } from '../../shared/types';
 import { assignLabel, ensureLabels } from '../../shared/nodeLabels';
 import { snapGrid } from '../../shared/grid';
-import { applyLaneFit, deriveLanes, outputCellGeom, pinOutputToLane } from '../../shared/sectionLanes';
+import { applyLaneFit, deriveLanes, outputCellGeom, pinOutputToLane, pruneFoldedIds } from '../../shared/sectionLanes';
 import { resolveCellKernel, resolveUpstreamChain, cellKernelView } from '../../shared/kernelBinding';
 import { resolveKernelConfig, type KernelServerConfig } from '../jupyter/config';
 import { executeCell } from '../jupyter/client';
@@ -665,6 +665,8 @@ async function canvasRemoveNode(args: Record<string, unknown>): Promise<string> 
 
   d.nodes = d.nodes.filter(n => !toRemove.has(n.id));
   d.edges = d.edges.filter(e => !toRemove.has(e.fromNode) && !toRemove.has(e.toNode));
+  // - a removed node must not stay in a fold list, pinning its lane to an id that is gone
+  if (d.metadata?.sections) d.metadata = { ...d.metadata, sections: pruneFoldedIds(d.metadata.sections, toRemove) };
   await writeCanvas(p, d);
   return `Removed ${toRemove.size} node(s): ${labels.join(', ')}`;
   }); // - withFileLock
@@ -929,13 +931,15 @@ async function runCellCore(
         d.nodes.push(labeled);
         d.edges.push(outEdge);
         cell.outputNodeId = outId;
+        // - only a NEW output node is pinned (same rule as the host): a re-run must not re-pin an
+        //   output the user has since dragged out of the folded section
+        if (d.metadata?.sections) d.metadata = { ...d.metadata, sections: pinOutputToLane(d.metadata.sections, cell.id, outId) };
         outLabel = labeled.nodeLabel ?? labeled.id;
       }
     }
 
     cell.lastStatus = out.status === 'error' ? 'error' : 'ok';
     cell.lastRun    = Date.now();
-    if (hasOutput && d.metadata?.sections) d.metadata = { ...d.metadata, sections: pinOutputToLane(d.metadata.sections, cell.id, outId) };   // - an output of a folded cell stays folded
     Object.assign(d, applyLaneFit(d));   // - every write fits the sections; d is reused for the next cell of a chain, so a discarded result would be undone by that cell's write
     await writeCanvas(p, d);
 
@@ -995,7 +999,7 @@ async function canvasRunCell(args: Record<string, unknown>): Promise<string> {
       }
     }
 
-    // - the upstream loop may have grown sections and replaced d.nodes: read the target again
+    // - the upstream loop may have re-fitted sections and replaced d.nodes: read the target again
     const cellNow   = d.nodes.find(n => n.id === cell.id) as CodeNode | undefined;
     const kernelNow = d.nodes.find(n => n.id === kernelNode.id) as KernelNode | undefined;
     if (!cellNow || !kernelNow) return 'error: cell or kernel node vanished during the upstream run';
@@ -1072,7 +1076,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_add_node',
-    description: 'Add a new node to the canvas. The node is automatically marked as AI-created (🤖 badge) and assigned a label. Position defaults to the right of all existing nodes. A node placed past its section\'s bottom edge grows that section: every section and node below it moves down by a grid multiple.',
+    description: 'Add a new node to the canvas. The node is automatically marked as AI-created (🤖 badge) and assigned a label. Position defaults to the right of all existing nodes. Sections fit their content: a node placed past its section\'s bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1095,7 +1099,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_update_node',
-    description: 'Update an existing node: content, tags, color, label, and/or move/resize it. Partial — only supplied fields change. Move/resize uses absolute canvas coordinates. A node placed past its section\'s bottom edge grows that section: every section and node below it moves down by a grid multiple.',
+    description: 'Update an existing node: content, tags, color, label, and/or move/resize it. Partial — only supplied fields change. Move/resize uses absolute canvas coordinates. Sections fit their content: a node placed past its section\'s bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1124,7 +1128,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_layout',
-    description: 'Batch move/resize many nodes in one file write. Each item: { ref, x?, y?, width?, height? } (partial, absolute coordinates). A node placed past its section\'s bottom edge grows that section: every section and node below it moves down by a grid multiple.',
+    description: 'Batch move/resize many nodes in one file write. Each item: { ref, x?, y?, width?, height? } (partial, absolute coordinates). Sections fit their content: a node placed past its section\'s bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up.',
     inputSchema: {
       type: 'object',
       properties: {

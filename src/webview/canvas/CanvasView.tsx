@@ -55,8 +55,8 @@ import { LabeledEdgeComponent } from './edges/LabeledEdge';
 import { HelperLines } from './HelperLines';
 import { SectionSeparators } from './SectionSeparators';
 import { SectionRail, type RailKernel } from '../rail/SectionRail';
-import { deriveLanes, sortLanes, parkFirstLaneAtOrigin, sectionTargetHeight, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
-import { useLaneFit } from '../rail/useLaneFit';
+import { deriveLanes, sortLanes, parkFirstLaneAtOrigin, pruneFoldedIds, sectionTargetHeight, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
+import { useLaneFit, flowGeom } from '../rail/useLaneFit';
 import { CanvasSearch } from './CanvasSearch';
 import { MarksPanel  } from './MarksPanel';
 import { LanesContext } from './LanesContext';
@@ -542,7 +542,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   type HistoryEntry = { nodes: CanvasNode[]; edges: CanvasEdge[]; sections: SectionLane[] };
   const undoStackRef = useRef<HistoryEntry[]>([]);
   const redoStackRef = useRef<HistoryEntry[]>([]);
-  // - the next geometry render comes from a restored entry, not a user edit; growth must not re-run
+  // - the next geometry render comes from a restored entry, not a user edit; the fit must not re-run
   const fromHistoryRef = useRef(false);
 
   // - which canvasPath the camera has been initialized for; a reload of the SAME path must not
@@ -738,21 +738,13 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
   // - derived every render from the LIVE node array, so dragging a node moves its lane on the same
   //   frame. Nothing about a lane is stored except its y.
-  const derivedLanes = useMemo(
-    () => deriveLanes(nodes.map(n => ({
-      id: n.id,
-      x: n.position.x,
-      y: n.position.y,
-      width: Number(n.width ?? n.style?.width ?? 0),
-      height: Number(n.height ?? n.style?.height ?? 0),
-    })), lanes),
-    [nodes, lanes],
-  );
+  const derivedLanes = useMemo(() => deriveLanes(nodes.map(flowGeom), lanes), [nodes, lanes]);
 
-  // - fold is derived, never a one-shot mutation, so it survives a reload
+  // - fold is derived, never a one-shot mutation, so it survives a reload: the fold list IS the set
+  //   of hidden ids, so a node dropped into a folded lane after the fold stays visible
   const hiddenByFold = useMemo(() => {
     const ids = new Set<string>();
-    for (const l of derivedLanes) if (l.folded) for (const id of l.memberIds) ids.add(id);
+    for (const l of derivedLanes) for (const id of l.folded ?? []) ids.add(id);
     return ids;
   }, [derivedLanes]);
   const rfNodes = useMemo(
@@ -783,10 +775,24 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   }, [setNodes, commitLanes]);
   useLaneFit(nodes, lanes, draggingRef, fromHistoryRef, applyFit);
 
+  // - a deleted node must not stay in a fold list: it would pin a lane to an id that no longer exists
+  const pruneFolded = useCallback((ids: Set<string>) => {
+    const next = pruneFoldedIds(lanesRef.current, ids);
+    if (next !== lanesRef.current) commitLanes(next);
+  }, [commitLanes]);
+
   const handleFoldLane = useCallback((id: string) => {
+    const target = derivedLanes.find(l => l.id === id);
+    if (!target) return;
     pushHistory();
-    commitLanes(lanes.map(l => (l.id === id ? { ...l, folded: !l.folded } : l)));
-  }, [lanes, commitLanes, pushHistory]);
+    // - fold pins the visible members and collapses the range (the fit hook moves everything below up);
+    //   unfold releases them and the fit expands the range again
+    commitLanes(lanes.map(l => {
+      if (l.id !== id) return l;
+      if (l.folded) { const { folded: _open, ...rest } = l; return rest; }
+      return { ...l, folded: target.memberIds.filter(m => !(l.folded ?? []).includes(m)) };
+    }));
+  }, [derivedLanes, lanes, commitLanes, pushHistory]);
 
   // - a new lane is APPENDED below the last one, past its content: sections are an append-only stack,
   //   so creating one is the next step in the notebook and never renumbers what already exists. The
@@ -796,8 +802,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       if (!rfRef.current) return;
       const last = derivedLanes[derivedLanes.length - 1];
       // - the new lane starts where the last one's fitted range ends (its content, or the minimum)
-      const visible = last ? nodes.filter(n => last.memberIds.includes(n.id) && !(last.folded ?? []).includes(n.id)).map(n => ({ id: n.id, x: n.position.x, y: n.position.y, width: Number(n.width ?? n.style?.width ?? 0), height: Number(n.height ?? n.style?.height ?? 0) })) : [];
-      const flowY = last ? last.top + sectionTargetHeight(last, visible) : 0;
+      const visible = last ? nodes.filter(n => last.memberIds.includes(n.id) && !(last.folded ?? []).includes(n.id)).map(flowGeom) : [];
+      const flowY = last ? snapGrid(last.top + sectionTargetHeight(last, visible)) : 0;
       const now = Date.now();
       pushHistory();
       commitLanes([
@@ -832,7 +838,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       nodes: canvasRef.current.nodes.filter(n => !doomed.has(n.id)),
       edges: canvasRef.current.edges.filter(e => !doomed.has(e.fromNode) && !doomed.has(e.toNode)),
     };
-    commitLanes(parkFirstLaneAtOrigin(lanes.filter(l => l.id !== id)));
+    commitLanes(parkFirstLaneAtOrigin(pruneFoldedIds(lanes.filter(l => l.id !== id), doomed)));
   }, [derivedLanes, lanes, commitLanes, pushHistory, setNodes, setEdges]);
 
   const handleRunLane = useCallback((id: string) => {
@@ -1082,6 +1088,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       edges: canvasRef.current.edges.filter(e => !deletedIds.has(e.fromNode) && !deletedIds.has(e.toNode)),
     };
     canvasRef.current = updated;
+    pruneFolded(deletedIds);
 
     // - #2: deleting a code cell's OUTPUT node → focus its code node (not the nearest node),
     // - and clear the code node's outputNodeId so a re-run creates a fresh output.
@@ -1127,7 +1134,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     }
   // - focusNodeById is a stable useCallback declared below; nodesRef always current
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scheduleSave, pushHistory]);
+  }, [scheduleSave, pushHistory, pruneFolded]);
 
   const onEdgesDelete = useCallback((deleted: Edge[]) => {
     pushHistory();
@@ -1585,6 +1592,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       edges: canvasRef.current.edges.filter(e => !deletedIds.has(e.fromNode) && !deletedIds.has(e.toNode)),
     };
     canvasRef.current = updated;
+    pruneFolded(deletedIds);
 
     // - #2: deleting a code cell's OUTPUT node → focus its code node (same as onNodesDelete),
     // - clearing the code node's outputNodeId so a re-run creates a fresh output.
@@ -1620,7 +1628,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       if (d < bestDist) { bestDist = d; bestId = n.id; }
     }
     if (bestId) { const id = bestId; requestAnimationFrame(() => focusNodeById(id)); }
-  }, [setNodes, setEdges, pushHistory, scheduleSave, focusNodeById]);
+  }, [setNodes, setEdges, pushHistory, scheduleSave, focusNodeById, pruneFolded]);
 
   // - confirm a destructive delete via a host modal; resolves when doDelete arrives
   const confirmResolveRef = useRef<((v: boolean) => void) | null>(null);
@@ -3111,12 +3119,13 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         nodes: [...canvasRef.current.nodes.filter(n => !removedIds.has(n.id)), portalNode],
         edges: canvasRef.current.edges.filter(e => !removedIds.has(e.fromNode) && !removedIds.has(e.toNode)),
       };
+      pruneFolded(removedIds);
       scheduleSave();
       focusNodeById(portalNode.id);
     };
     window.addEventListener('skena:subCanvasCreated', handler);
     return () => window.removeEventListener('skena:subCanvasCreated', handler);
-  }, [setNodes, setEdges, scheduleSave, focusNodeById, pushHistory]);
+  }, [setNodes, setEdges, scheduleSave, focusNodeById, pushHistory, pruneFolded]);
 
   // ─── Alt+I from FloatingChat: restore canvas keyboard focus ───────────────
   //

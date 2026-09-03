@@ -45,11 +45,11 @@ export function RailSegment({ lane, seg, color, kernelName, current, onFold, onR
   const full = `${lane.label}: ${title}`;
   const { items, titleMaxPx } = railItems(seg.height, full.length);
   // - an untitled section already shows its datetime as the title: do not print it twice
-  const tooltip = `${full}${lane.title?.trim() ? ` · ${fmtDateTime(lane.createdAt)}` : ''} · ${kernelName ?? 'no kernel'}${lane.folded ? ' · folded' : ''} · double-click the title to rename`;
+  const tooltip = `${full}${lane.title?.trim() ? ` · ${fmtDateTime(lane.createdAt)}` : ''} · ${kernelName ?? 'no kernel'}${lane.folded ? ' · folded' : ''} · right-click for the menu`;
   const anchor = (e: React.MouseEvent) => (e.currentTarget as HTMLElement).getBoundingClientRect();
 
   return (
-    <div title={tooltip} onContextMenu={e => { e.preventDefault(); onMenu(lane.id, { x: e.clientX, y: e.clientY }, (e.currentTarget as HTMLElement).getBoundingClientRect()); }}
+    <div title={tooltip} onContextMenu={e => { e.preventDefault(); onMenu(lane.id, { x: e.clientX, y: e.clientY }, anchor(e)); }}
       style={{ position: 'absolute', left: 0, right: 0, top: seg.top, height: seg.height, opacity: lane.folded ? 0.55 : 1 }}>
       <div style={{ position: 'absolute', left: 6, top: 0, bottom: 0, width: 4, borderRadius: 2, background: color }} />
       <div style={{ position: 'absolute', left: 10, right: 0, top: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7, paddingTop: 8, overflow: 'hidden', boxSizing: 'border-box' }}>

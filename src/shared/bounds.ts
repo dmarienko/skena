@@ -43,7 +43,8 @@ export function clampCameraToOrigin(x: number, y: number, zoom: number): { x: nu
  * e.g. live-slippage authored near x = -5700. Each negative axis is parked flush at the origin (0);
  * an axis already at or past the origin is left untouched (so a node legitimately at x = 0 never
  * drags the whole canvas on the next load). Returns the same reference when nothing needs shifting
- * (no save). The saved viewport is shifted with the content so the reopened framing is unchanged.
+ * (no save). The saved viewport is shifted with the content so the reopened framing is unchanged,
+ * and every section lane travels with the vertical lift (a lane has no x).
  */
 export function normalizeCanvasToOrigin(canvas: CanvasData): CanvasData {
   if (canvas.nodes.length === 0) return canvas;
@@ -64,5 +65,11 @@ export function normalizeCanvasToOrigin(canvas: CanvasData): CanvasData {
         y: canvas.viewport.y - dy * canvas.viewport.zoom,
       }
     : canvas.viewport;
-  return { ...canvas, nodes, viewport };
+  const sections = canvas.metadata?.sections;
+  // - lanes are pure y, so only the vertical lift applies to them; without it a lifted canvas would
+  //   land its content one lift below the lanes that own it
+  const metadata = dy !== 0 && sections?.length
+    ? { ...canvas.metadata, sections: sections.map(l => ({ ...l, y: l.y + dy })) }
+    : canvas.metadata;
+  return { ...canvas, nodes, viewport, metadata };
 }

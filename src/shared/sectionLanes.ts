@@ -177,6 +177,22 @@ export function applyLaneFit(canvas: CanvasData): CanvasData {
   };
 }
 
+/**
+ * Drop removed node ids from every lane's fold list, so a deleted node cannot keep a lane pinned to
+ * an id that no longer exists. Same reference when no list changed (no spurious save).
+ */
+export function pruneFoldedIds(lanes: SectionLane[], removed: Set<string>): SectionLane[] {
+  let changed = false;
+  const next = lanes.map(l => {
+    if (!l.folded) return l;
+    const kept = l.folded.filter(id => !removed.has(id));
+    if (kept.length === l.folded.length) return l;
+    changed = true;
+    return { ...l, folded: kept };
+  });
+  return changed ? next : lanes;
+}
+
 /** A run's output cell for a pinned (folded) code cell is pinned to the same lane. Same reference otherwise. */
 export function pinOutputToLane(lanes: SectionLane[], codeId: string, outId: string): SectionLane[] {
   const i = lanes.findIndex(l => l.folded?.includes(codeId));
@@ -260,8 +276,11 @@ export function migrateSections(canvas: CanvasData, now: number): CanvasData {
   const stripped = sortedExisting.map((l, i) => {
     const { colorIndex: _drop, ...rest } = l as SectionLane & { colorIndex?: number };
     if ((rest as { folded?: unknown }).folded === true) {
-      // - legacy boolean fold: pin the members it covers by y, this once
-      const memberIds = canvas.nodes.filter(n => laneIndexForY(sortedExisting, n.y) === i).map(n => n.id);
+      // - legacy boolean fold: pin the members it covers by y, this once. Legacy section nodes are
+      //   dropped below, so they must not end up in a fold list.
+      const memberIds = canvas.nodes
+        .filter(n => (n as { type?: string }).type !== 'section' && laneIndexForY(sortedExisting, n.y) === i)
+        .map(n => n.id);
       return { ...rest, folded: memberIds } as SectionLane;
     }
     return rest as SectionLane;

@@ -1,8 +1,9 @@
 import { useEffect, type MutableRefObject } from 'react';
 import type { Node } from '@xyflow/react';
-import { fitLanes, type LaneGrowth, type SectionLane } from '../../shared/sectionLanes';
+import { fitLanes, type LaneGrowth, type LaneNodeGeom, type SectionLane } from '../../shared/sectionLanes';
 
-const geomOf = (n: Node) => ({
+/** A React Flow node as the lane maths sees it: measured size, falling back to the style. */
+export const flowGeom = (n: Node): LaneNodeGeom => ({
   id: n.id, x: n.position.x, y: n.position.y,
   width: Number(n.width ?? n.style?.width ?? 0), height: Number(n.height ?? n.style?.height ?? 0),
 });
@@ -16,7 +17,7 @@ export function useLaneFit(nodes: Node[], lanes: SectionLane[], dragging: Mutabl
   useEffect(() => {
     if (dragging.current || nodes.some(n => n.resizing)) return;   // - mid-gesture: the end state is fitted
     if (skipOnce.current) { skipOnce.current = false; return; }    // - a state restored by undo/redo is taken as is
-    const f = fitLanes(lanes, nodes.map(geomOf));
+    const f = fitLanes(lanes, nodes.map(flowGeom));
     if (Object.keys(f.laneShifts).length) apply(f);
   }, [nodes, lanes, dragging, skipOnce, apply]);
 }
