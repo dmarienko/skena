@@ -80,7 +80,7 @@ export function RailSegment({ lane, seg, color, kernel, current, onFold, onRun, 
               return (
                 <button key={item} data-sk-popover-anchor="" style={{ ...btn, height: DOT_BTN_H }} title={kernelName ? `kernel: ${kernelName}` : 'bind a kernel'} onClick={e => onKernel(lane.id, anchor(e))}>
                   {/* - unbound stays a hollow ring, but in the section's colour: "no kernel yet" without breaking the stripe */}
-                  <span style={{ width: DOT_PX, height: DOT_PX, borderRadius: '50%', background: kernelName ? color : 'transparent', border: kernelName ? 'none' : `1.5px solid ${color}`, display: 'block' }} />
+                  <span style={{ width: DOT_PX, height: DOT_PX, borderRadius: '50%', background: kernel ? color : 'transparent', border: kernel ? 'none' : `1.5px solid ${color}`, display: 'block' }} />
                 </button>
               );
             case 'delete':

@@ -11,6 +11,8 @@ export type LedState = KernelStatusEntry['state'];
 export function useKernelState(server: string, kernelId?: string): LedState {
   const [state, setState] = useState<LedState>('dead');
   useEffect(() => {
+    // - a shutdown clears kernelId: go dead now, instead of holding the last colour until the next poll
+    setState('dead');
     const onStatus = (e: Event) => {
       const kernels = (e as CustomEvent).detail as KernelStatusEntry[];
       // - a node with no kernelId (never started, or just shut down) is dead — do NOT

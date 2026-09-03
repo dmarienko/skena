@@ -938,13 +938,22 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
   useEffect(() => {
     const handler = (e: Event) => {
-      const { kernelRef } = (e as CustomEvent<MsgKernelRemoved>).detail;
+      const { kernelRef, unranCells } = (e as CustomEvent<MsgKernelRemoved>).detail;
       commitKernels(kernelsRef.current.filter(k => k.id !== kernelRef));
       commitLanes(lanesRef.current.map(l => (l.kernelId === kernelRef ? (({ kernelId: _k, ...rest }) => rest)(l) : l)));
+      // - the host cleared these under a suppressed write; mirror it or our next save writes 'ok' back
+      const unran = new Set(unranCells);
+      if (unran.size > 0) {
+        setNodes(nds => nds.map(n => (unran.has(n.id) ? { ...n, data: { ...n.data, lastStatus: undefined } } : n)));
+        canvasRef.current = {
+          ...canvasRef.current,
+          nodes: canvasRef.current.nodes.map(n => (unran.has(n.id) ? { ...n, lastStatus: undefined } as CanvasNode : n)),
+        };
+      }
     };
     window.addEventListener('skena:kernelRemoved', handler);
     return () => window.removeEventListener('skena:kernelRemoved', handler);
-  }, [commitKernels, commitLanes]);
+  }, [commitKernels, commitLanes, setNodes]);
 
   // - restore nodes/edges/sections from a history entry
   const applyHistoryState = useCallback((entry: HistoryEntry) => {
