@@ -491,9 +491,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           break;
         case 'runCell':      await this.handleRunCell(msg, manager, panel, document, v => { isSelfSaving = v; }, s => rememberWrite(s)); break;
         case 'runSection':   await this.handleRunSection(msg, manager, panel, document, v => { isSelfSaving = v; }, s => rememberWrite(s)); break;
-        case 'addKernel':    await this.handleAddKernel(msg, manager, document, send); break;
+        case 'addKernel':    await this.handleAddKernel(msg, manager, document, send, v => { isSelfSaving = v; }, s => rememberWrite(s)); break;
         case 'kernelAction': await this.handleKernelAction(msg, manager, document); break;
-        case 'removeKernel': await this.handleRemoveKernel(msg, manager, document, send); break;
+        case 'removeKernel': await this.handleRemoveKernel(msg, manager, document, send, v => { isSelfSaving = v; }, s => rememberWrite(s)); break;
         case 'interruptCell': await this.handleInterruptCell(msg, manager, document); break;
         case 'confirmDelete': {
           const yes = await vscode.window.showWarningMessage(msg.reason, { modal: true }, 'Delete');
@@ -804,10 +804,10 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         metadata: {
           ...document.canvas.metadata,
           sections: msg.canvas.metadata?.sections ?? document.canvas.metadata?.sections,
-          // - kernels: the webview owns which records exist and their colour; the host owns the live kernelId
+          // - kernels: the webview owns which records exist and their colour; the host owns the live kernelId and the healed spec
           kernels: msg.canvas.metadata?.kernels?.map(k => {
             const live = document.canvas.metadata?.kernels?.find(h => h.id === k.id);
-            return live ? { ...k, kernelId: live.kernelId } : k;
+            return live ? { ...k, kernelId: live.kernelId, spec: live.spec ?? k.spec } : k;
           }) ?? document.canvas.metadata?.kernels,
         },
       };
@@ -1716,11 +1716,20 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     }
   }
 
-  /**
-   * Restart or shut down the kernel an id points at — a KernelRecord or a kernel node (its
-   * right-click menu). Shutdown clears its kernelId so its LED goes grey and the next run starts
-   * a fresh kernel; restart keeps the same id (Jupyter wipes the namespace).
-   */
+  /** Write document.canvas with self-save suppression (no watcher reload), as runOneCell's applyAndPersist does. */
+  private async persistCanvas(
+    document:       SkenaDocument,
+    setSelfSaving:  (v: boolean) => void,
+    setLastWritten: (s: string) => void,
+  ): Promise<void> {
+    const c = document.canvas;
+    setSelfSaving(true);
+    setLastWritten(JSON.stringify(c, null, 2));
+    await writeCanvas(document.uri.fsPath, c);
+    setTimeout(() => setSelfSaving(false), 400);
+  }
+
+  /** Drop the run-flags and the stale kernelId of every kernel whose Jupyter kernel is no longer live. */
   // - reset run-flags (and the stale kernelId) for every kernel — node or record — whose kernel is no longer live, so
   // - run-with-upstream re-runs everything against a wiped namespace. Guarded: acts only when the
   // - kernel's SERVER responded to the poll but the kernelId is absent (a fully unreachable server
@@ -1732,7 +1741,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     let changed = false;
     // - both kinds of kernel: the nodes on the canvas and the records in its metadata
     const all: KernelLike[] = [
-      ...(canvas.nodes.filter(n => n.type === 'kernel') as unknown as KernelLike[]),
+      ...canvas.nodes.filter((n): n is KernelNode => n.type === 'kernel'),
       ...(canvas.metadata?.kernels ?? []),
     ];
     for (const k of all) {
@@ -1750,6 +1759,11 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     if (changed) await writeCanvas(document.uri.fsPath, canvas);
   }
 
+  /**
+   * Restart or shut down the kernel an id points at — a KernelRecord or a kernel node (its
+   * right-click menu). Shutdown clears its kernelId so its LED goes grey and the next run starts
+   * a fresh kernel; restart keeps the same id (Jupyter wipes the namespace).
+   */
   private async handleKernelAction(
     msg:      { action: 'restart' | 'shutdown' | 'interrupt' | 'start'; kernelNodeId: string },
     manager:  KernelManager,
@@ -1808,17 +1822,25 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     }
   }
 
-  /** Remove a kernel record: confirm, shut the live kernel down if any, tell the webview (it drops the record and unbinds sections). */
+  /** Remove a kernel record: confirm, shut the live kernel down, drop the record, unbind its sections, tell the webview. */
   private async handleRemoveKernel(
-    msg:      MsgRemoveKernel,
-    manager:  KernelManager,
-    document: SkenaDocument,
-    send:     (m: HostToWebview) => void,
+    msg:            MsgRemoveKernel,
+    manager:        KernelManager,
+    document:       SkenaDocument,
+    send:           (m: HostToWebview) => void,
+    setSelfSaving:  (v: boolean) => void,
+    setLastWritten: (s: string) => void,
   ): Promise<void> {
-    // - in practice only records are removed this way; if kernelRef names a kernel NODE the webview
-    //   handler just unbinds the sections pointing at it (deleting the node is its own path)
-    const kernel = kernelById(document.canvas, msg.kernelRef);
-    if (!kernel) return;
+    const canvas = document.canvas;
+    const kernel = canvas.metadata?.kernels?.find(k => k.id === msg.kernelRef);
+    if (!kernel) {
+      // - only records are removed here; a kernel NODE goes through the canvas delete path
+      const isNode = canvas.nodes.some(n => n.id === msg.kernelRef && n.type === 'kernel');
+      void vscode.window.showInformationMessage(
+        isNode ? 'Skena: that kernel is a node on the canvas — delete the node instead.' : 'Skena: kernel not found.',
+      );
+      return;
+    }
     const name = kernel.displayName ?? 'kernel';
     const yes = await vscode.window.showWarningMessage(
       `Remove kernel "${name}"? Sections bound to it lose their kernel.`, { modal: true }, 'Remove',
@@ -1828,6 +1850,17 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     if (server && kernel.kernelId) {
       try { await manager.shutdown(server, kernel.kernelId); } catch { /* - already gone */ }
     }
+    canvas.metadata = {
+      ...canvas.metadata,
+      kernels:  canvas.metadata?.kernels?.filter(k => k.id !== msg.kernelRef),
+      // - drop the key entirely rather than persisting `kernelId: undefined` on the lane
+      sections: canvas.metadata?.sections?.map(l => {
+        if (l.kernelId !== msg.kernelRef) return l;
+        const { kernelId: _unbound, ...rest } = l;
+        return rest;
+      }),
+    };
+    await this.persistCanvas(document, setSelfSaving, setLastWritten);
     send({ type: 'kernelRemoved', kernelRef: msg.kernelRef });
   }
 
@@ -1869,10 +1902,12 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
    * names a section (`forSection`), a KernelRecord delivered via kernelAdded.
    */
   private async handleAddKernel(
-    msg:      MsgAddKernel,
-    manager:  KernelManager,
-    document: SkenaDocument,
-    send:     (m: HostToWebview) => void,
+    msg:            MsgAddKernel,
+    manager:        KernelManager,
+    document:       SkenaDocument,
+    send:           (m: HostToWebview) => void,
+    setSelfSaving:  (v: boolean) => void,
+    setLastWritten: (s: string) => void,
   ): Promise<void> {
     const servers = manager.allServers();
     if (!servers.length) {
@@ -1933,8 +1968,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     if (!pick.server) return;
 
     if (msg.forSection) {
-      // - a section's kernel is a record in the canvas file, not a node; the webview stores and binds it
-      const existing = (document.canvas.metadata?.kernels?.length ?? 0) + document.canvas.nodes.filter(n => n.type === 'kernel').length;
+      // - a section's kernel is a record in the canvas file, not a node
+      const canvas   = document.canvas;
+      const existing = (canvas.metadata?.kernels?.length ?? 0) + canvas.nodes.filter(n => n.type === 'kernel').length;
       const kernel: KernelRecord = {
         id: `k-${Date.now().toString(36)}`,
         server: pick.server,
@@ -1943,6 +1979,13 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         spec: pick.specName ?? pick.display,
         colorIndex: nextKernelColorIndex(existing),
       };
+      // - written by the host first: a run on the section can resolve it at once, and a started kernel
+      //   is never orphaned if the webview fails to save
+      canvas.metadata = { ...canvas.metadata, kernels: [...(canvas.metadata?.kernels ?? []), kernel] };
+      // - the lane can be gone (deleted while the QuickPick was open); the record is still kept, unbound
+      const lane = canvas.metadata.sections?.find(l => l.id === msg.forSection);
+      if (lane) lane.kernelId = kernel.id;
+      await this.persistCanvas(document, setSelfSaving, setLastWritten);
       send({ type: 'kernelAdded', sectionId: msg.forSection, kernel });
       return;
     }
