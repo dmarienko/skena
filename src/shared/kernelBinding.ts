@@ -155,16 +155,19 @@ export function kernelById(c: Pick<CanvasData, 'nodes' | 'metadata'>, id: string
  * The cells to run before `targetId`. With an edge path to a kernel node: the edge chain
  * (`resolveUpstreamChain`). Otherwise, when the target's section supplies the kernel: the target's
  * edge-connected code cells that sit above it, top to bottom then left to right — edges drawn by the
- * user in a section-bound chain have no kernel to orient them, so position does.
+ * user in a section-bound chain have no kernel to orient them, so position does. The component is
+ * walked through code cells only (a text node between two cells breaks the chain), and a member
+ * resolving to another kernel, or to none, is left out — it would run in the wrong namespace, or
+ * abort the run.
  */
 export function upstreamCellsForRun(targetId: string, c: CellKernelCanvas): string[] {
   const byId = new Map(c.nodes.map(n => [n.id, n]));
   const isKernel = (id: string) => byId.get(id)?.type === 'kernel';
   const isCode = (id: string) => byId.get(id)?.type === 'code';
   if (resolveBoundKernel(targetId, c.edges, isKernel)) return resolveUpstreamChain(targetId, c.edges, isKernel, isCode);
-  if (!resolveCellKernel(targetId, c)) return [];
-  const target = byId.get(targetId);
-  if (!target) return [];
+  const resolve = makeCellKernelResolver(c);
+  const kernel = resolve(targetId);
+  if (!kernel) return [];
   // - the target's connected component, walking through code cells only
   const seen = new Set<string>([targetId]);
   const queue = [targetId];
@@ -182,5 +185,6 @@ export function upstreamCellsForRun(targetId: string, c: CellKernelCanvas): stri
   return [...seen]
     .filter(id => id !== targetId)
     .filter(id => { const p = pos(id); return p.y < t.y || (p.y === t.y && p.x < t.x); })
+    .filter(id => resolve(id) === kernel)
     .sort((a, b) => { const pa = pos(a), pb = pos(b); return pa.y - pb.y || pa.x - pb.x; });
 }
