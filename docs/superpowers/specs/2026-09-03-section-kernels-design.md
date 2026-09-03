@@ -79,7 +79,9 @@ back to nodes). `metadata.kernels` is created on first New kernel…. The MCP `r
 
 Deleting a record: from the picker (`Remove kernel…` on a record row) — the host confirms, shuts it
 down if live, removes the record, unbinds every section pointing at it, writes, and replies
-`kernelRemoved { kernelRef }`; the webview mirrors it. Only records can be removed this way; a kernel
+`kernelRemoved { kernelRef, unranCells }` (the cells whose run flag it cleared, since its write is
+self-save suppressed and the webview's next save would otherwise write the flags back); the webview
+mirrors all of it. Only records can be removed this way; a kernel
 node is deleted like any node. Not in v1: moving a record between canvases.
 
 ## 6. Tests
