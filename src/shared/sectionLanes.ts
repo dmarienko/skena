@@ -5,8 +5,10 @@
  * and never need to be stored, migrated or kept in sync. Pure; bundled into host and webview.
  */
 
-import { GRID } from './constants';
+import { GRID, SECTION_MIN_H, SECTION_FOLDED_H } from './constants';
 import type { CanvasData, CanvasNode } from './types';
+
+export { SECTION_MIN_H, SECTION_FOLDED_H };
 
 // - how far a lane extends past its lowest node when nothing bounds it from below
 export const LANE_BOTTOM_PAD = GRID;
@@ -18,8 +20,8 @@ export interface SectionLane {
   /** - absent → the rail shows the creation datetime instead */
   title?: string;
   createdAt: number;
-  /** - true → members are hidden; the lane's range is unchanged */
-  folded?: boolean;
+  /** - ids of the members hidden by a fold; present (even empty) → folded, range = SECTION_FOLDED_H */
+  folded?: string[];
   /** - id of a kernel node on this canvas: the section's colour and the fallback kernel of its cells */
   kernelId?: string;
 }
@@ -59,6 +61,18 @@ export function laneIndexForY(lanes: SectionLane[], y: number): number {
   return idx;
 }
 
+/** node id → index of the lane that pins it (its `folded` list). Expects sorted lanes. */
+export function pinnedLaneIndex(sorted: SectionLane[]): Map<string, number> {
+  const m = new Map<string, number>();
+  sorted.forEach((l, i) => { for (const id of l.folded ?? []) m.set(id, i); });
+  return m;
+}
+
+/** The lane owning a node: the one that pins it, else the one whose range holds its top edge. */
+export function laneIndexForNode(sorted: SectionLane[], node: { id: string; y: number }, pinned: Map<string, number>): number {
+  return pinned.get(node.id) ?? laneIndexForY(sorted, node.y);
+}
+
 /**
  * Resolve lanes against the live nodes: membership, bounds and labels. Called from a useMemo on the
  * node array, so dragging a node re-derives on the same frame — that is how a lane tracks its content
@@ -67,28 +81,24 @@ export function laneIndexForY(lanes: SectionLane[], y: number): number {
 export function deriveLanes(nodes: LaneNodeGeom[], lanes: SectionLane[]): DerivedLane[] {
   if (lanes.length === 0) return [];
   const sorted = sortLanes(lanes);
+  const pinned = pinnedLaneIndex(sorted);
   const members: string[][] = sorted.map(() => []);
   const maxY: number[] = sorted.map(() => -Infinity);
 
   for (const n of nodes) {
-    const i = laneIndexForY(sorted, n.y);
+    const i = laneIndexForNode(sorted, n, pinned);
     members[i].push(n.id);
-    if (n.y + n.height > maxY[i]) maxY[i] = n.y + n.height;
+    // - hidden (pinned) members count for nothing in a lane's content
+    if (!pinned.has(n.id) && n.y + n.height > maxY[i]) maxY[i] = n.y + n.height;
   }
 
   return sorted.map((l, i) => {
     const next = sorted[i + 1];
-    const has = members[i].length > 0;
-    // - a bounded lane ends where the next begins; the last lane follows its own content
-    const bottom = next ? next.y : (has ? maxY[i] : l.y) + LANE_BOTTOM_PAD;
-    return {
-      ...l,
-      label: `S${i + 1}`,
-      index: i,
-      memberIds: members[i],
-      top: l.y,
-      bottom,
-    };
+    const has = maxY[i] > -Infinity;
+    // - a bounded lane ends where the next begins; a folded last lane is one grid; otherwise the
+    //   last lane follows its visible content
+    const bottom = next ? next.y : l.folded ? l.y + SECTION_FOLDED_H : (has ? maxY[i] : l.y) + LANE_BOTTOM_PAD;
+    return { ...l, label: `S${i + 1}`, index: i, memberIds: members[i], top: l.y, bottom };
   });
 }
 
@@ -212,19 +222,26 @@ export function migrateSections(canvas: CanvasData, now: number): CanvasData {
   const minLaneY = existing?.length ? Math.min(...existing.map(l => l.y)) : 0;
   const needsLift = minLaneY < 0;
   const hasColor = !!existing?.some(l => (l as { colorIndex?: number }).colorIndex !== undefined);   // - pre-rail canvases stored a stripe colour
-  if (legacy.length === 0 && !hasMembership && !needsSeed && !needsLift && !hasColor) return canvas;
+  const hasLegacyFold = !!existing?.some(l => (l as { folded?: unknown }).folded === true);   // - folded was a boolean before the collapsing fold
+  if (legacy.length === 0 && !hasMembership && !needsSeed && !needsLift && !hasColor && !hasLegacyFold) return canvas;
 
   const converted: SectionLane[] = legacy.map(n => {
     const s = n as CanvasNode & { title?: string; createdAt?: number; folded?: boolean };
     const lane: SectionLane = { id: s.id, y: s.y, createdAt: s.createdAt ?? now };
     // - 'Section' was the old placeholder; drop it so the rail falls back to the datetime
     if (s.title && s.title !== 'Section') lane.title = s.title;
-    if (s.folded) lane.folded = true;
+    if (s.folded) lane.folded = [];   // - members unknown at this point; an empty list is a folded, empty range
     return lane;
   });
 
-  const stripped = (existing ?? []).map(l => {
+  const sortedExisting = sortLanes(existing ?? []);
+  const stripped = sortedExisting.map((l, i) => {
     const { colorIndex: _drop, ...rest } = l as SectionLane & { colorIndex?: number };
+    if ((rest as { folded?: unknown }).folded === true) {
+      // - legacy boolean fold: pin the members it covers by y, this once
+      const memberIds = canvas.nodes.filter(n => laneIndexForY(sortedExisting, n.y) === i).map(n => n.id);
+      return { ...rest, folded: memberIds } as SectionLane;
+    }
     return rest as SectionLane;
   });
   let sections = sortLanes([...stripped, ...converted]);

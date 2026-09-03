@@ -40,6 +40,11 @@ export const NODE_SIZE = {
 //   Ctrl+Shift+hjkl) or by dropping an edge on empty canvas; `gap` = spawn distance from source.
 export const NEW_NODE = { w: 700, h: 300, gap: 100 } as const;
 
+// - a section (except the last) is never shorter than this: room for two default nodes and two gaps
+export const SECTION_MIN_H    = 2 * NODE_SIZE.code.h + 2 * GRID;
+// - a folded section's range
+export const SECTION_FOLDED_H = GRID;
+
 // - generic fallback (kept for back-compat; equals the text-node size)
 export const DEFAULT_NODE_WIDTH  = NODE_SIZE.text.w;
 export const DEFAULT_NODE_HEIGHT = NODE_SIZE.text.h;
