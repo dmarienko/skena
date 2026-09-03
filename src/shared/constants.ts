@@ -42,7 +42,7 @@ export const NEW_NODE = { w: 700, h: 300, gap: 100 } as const;
 
 // - a section (except the last) is never shorter than this: room for two default nodes and two gaps
 export const SECTION_MIN_H    = 2 * NODE_SIZE.code.h + 2 * GRID;
-// - a folded section's range; keep it ≥ GRID — sectionTargetHeight's floor relies on it
+// - a folded section's range; keep it a GRID multiple ≥ GRID: targets are snapped up to GRID anyway
 export const SECTION_FOLDED_H = GRID;
 
 // - generic fallback (kept for back-compat; equals the text-node size)

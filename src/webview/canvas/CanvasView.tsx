@@ -790,8 +790,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     const target = derivedLanes.find(l => l.id === id);
     if (!target) return;
     if (target.folded) {
-      // - unfold grows the range back in the SAME commit that drops the list: release the members
-      //   first and the lane below adopts the ones sitting past its top edge
+      // - unfold grows the range back in the SAME commit that drops the list: if the list were dropped
+      //   first, the lane below would adopt the members sitting past its top edge
       const u = unfoldLane(lanes, nodes.map(flowGeom), id);
       pushHistory();
       shiftNodes(u.nodeShifts);
