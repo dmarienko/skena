@@ -1,8 +1,8 @@
 /**
  * Virtual section lanes. A section is one number — the flow y where its lane starts. Lanes partition
  * the canvas vertically: lane i owns [y_i, y_{i+1}), the last owns [y_n, +inf). A node belongs to the
- * lane whose range contains its top edge, so membership and geometry are pure functions of position
- * and never need to be stored, migrated or kept in sync. Pure; bundled into host and webview.
+ * lane whose range contains its top edge, so membership is a pure function of position, except that
+ * a fold pins its hidden members to their lane (`folded`). Pure; bundled into host and webview.
  */
 
 import { GRID, SECTION_MIN_H, SECTION_FOLDED_H } from './constants';
@@ -83,21 +83,24 @@ export function deriveLanes(nodes: LaneNodeGeom[], lanes: SectionLane[]): Derive
   const sorted = sortLanes(lanes);
   const pinned = pinnedLaneIndex(sorted);
   const members: string[][] = sorted.map(() => []);
+  const visible: LaneNodeGeom[][] = sorted.map(() => []);
   const maxY: number[] = sorted.map(() => -Infinity);
 
   for (const n of nodes) {
     const i = laneIndexForNode(sorted, n, pinned);
     members[i].push(n.id);
     // - hidden (pinned) members count for nothing in a lane's content
-    if (!pinned.has(n.id) && n.y + n.height > maxY[i]) maxY[i] = n.y + n.height;
+    if (pinned.has(n.id)) continue;
+    visible[i].push(n);
+    if (n.y + n.height > maxY[i]) maxY[i] = n.y + n.height;
   }
 
   return sorted.map((l, i) => {
     const next = sorted[i + 1];
     const has = maxY[i] > -Infinity;
-    // - a bounded lane ends where the next begins; a folded last lane is one grid; otherwise the
-    //   last lane follows its visible content
-    const bottom = next ? next.y : l.folded ? l.y + SECTION_FOLDED_H : (has ? maxY[i] : l.y) + LANE_BOTTOM_PAD;
+    // - a bounded lane ends where the next begins; a folded last lane ends where a fit would put it;
+    //   otherwise the last lane follows its visible content
+    const bottom = next ? next.y : l.folded ? l.y + sectionTargetHeight(l, visible[i]) : (has ? maxY[i] : l.y) + LANE_BOTTOM_PAD;
     return { ...l, label: `S${i + 1}`, index: i, memberIds: members[i], top: l.y, bottom };
   });
 }
@@ -109,7 +112,7 @@ export interface LaneGrowth {
   nodeShifts: Record<string, number>;
 }
 
-/** The members a lane's range is measured on: its visible (non-pinned) nodes. */
+/** Bottom edge of a lane's visible content (its top when nothing visible is in it). */
 function visibleContentBottom(l: SectionLane, members: LaneNodeGeom[]): number {
   let bottom = l.y;
   for (const n of members) if (n.y + n.height > bottom) bottom = n.y + n.height;
@@ -117,13 +120,13 @@ function visibleContentBottom(l: SectionLane, members: LaneNodeGeom[]): number {
 }
 
 /**
- * Range a lane wants: one grid when folded, else its visible content plus a gap, never under the
- * minimum. A visible node placed into a folded lane still fits. `members` are the lane's visible
- * (non-pinned) nodes.
+ * A folded lane wants one grid, or its visible content when something visible sits in it; an
+ * unfolded lane wants its content plus a gap, never under the minimum. `members` are the lane's
+ * visible (non-pinned) nodes.
  */
 export function sectionTargetHeight(l: SectionLane, members: LaneNodeGeom[]): number {
   const content = visibleContentBottom(l, members) + GRID - l.y;
-  const raw = l.folded ? Math.max(SECTION_FOLDED_H, members.length ? content : 0) : Math.max(SECTION_MIN_H, content);
+  const raw = Math.max(l.folded ? SECTION_FOLDED_H : SECTION_MIN_H, content);
   return Math.ceil(raw / GRID) * GRID;
 }
 
@@ -156,7 +159,7 @@ export function fitLanes(lanes: SectionLane[], nodes: LaneNodeGeom[]): LaneGrowt
 
   const nodeShifts: Record<string, number> = {};
   for (const n of nodes) {
-    const s = laneShifts[sorted[laneOf.get(n.id) ?? 0].id];
+    const s = laneShifts[sorted[laneOf.get(n.id) as number].id];   // - filled from the same array above
     if (s) nodeShifts[n.id] = s;
   }
   return { laneShifts, nodeShifts };

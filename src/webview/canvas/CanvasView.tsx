@@ -55,8 +55,8 @@ import { LabeledEdgeComponent } from './edges/LabeledEdge';
 import { HelperLines } from './HelperLines';
 import { SectionSeparators } from './SectionSeparators';
 import { SectionRail, type RailKernel } from '../rail/SectionRail';
-import { deriveLanes, sortLanes, parkFirstLaneAtOrigin, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
-import { useLaneGrowth } from '../rail/useLaneGrowth';
+import { deriveLanes, sortLanes, parkFirstLaneAtOrigin, sectionTargetHeight, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
+import { useLaneFit } from '../rail/useLaneFit';
 import { CanvasSearch } from './CanvasSearch';
 import { MarksPanel  } from './MarksPanel';
 import { LanesContext } from './LanesContext';
@@ -771,10 +771,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     scheduleSave();
   }, [scheduleSave]);
 
-  // - a node moved or resized past its section's bottom edge: push every section below it down.
-  //   No history entry of its own — the action that moved the node pushed one before mutating, so
-  //   one undo reverts move and growth together
-  const applyGrowth = useCallback((g: LaneGrowth) => {
+  // - fit every section to its content: the shifts below may be up or down. No history entry of its
+  //   own — the action that changed the geometry pushed one
+  const applyFit = useCallback((g: LaneGrowth) => {
     setNodes(nds => nds.map(n => (g.nodeShifts[n.id] ? { ...n, position: { x: n.position.x, y: n.position.y + g.nodeShifts[n.id] } } : n)));
     canvasRef.current = {
       ...canvasRef.current,
@@ -782,7 +781,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     };
     commitLanes(lanesRef.current.map(l => (g.laneShifts[l.id] ? { ...l, y: l.y + g.laneShifts[l.id] } : l)));
   }, [setNodes, commitLanes]);
-  useLaneGrowth(nodes, lanes, draggingRef, fromHistoryRef, applyGrowth);
+  useLaneFit(nodes, lanes, draggingRef, fromHistoryRef, applyFit);
 
   const handleFoldLane = useCallback((id: string) => {
     pushHistory();
@@ -796,7 +795,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     const handler = () => {
       if (!rfRef.current) return;
       const last = derivedLanes[derivedLanes.length - 1];
-      const flowY = snapGrid(last ? last.bottom : 0);
+      // - the new lane starts where the last one's fitted range ends (its content, or the minimum)
+      const visible = last ? nodes.filter(n => last.memberIds.includes(n.id) && !(last.folded ?? []).includes(n.id)).map(n => ({ id: n.id, x: n.position.x, y: n.position.y, width: Number(n.width ?? n.style?.width ?? 0), height: Number(n.height ?? n.style?.height ?? 0) })) : [];
+      const flowY = last ? last.top + sectionTargetHeight(last, visible) : 0;
       const now = Date.now();
       pushHistory();
       commitLanes([
@@ -809,7 +810,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     };
     window.addEventListener('skena:newSection', handler);
     return () => window.removeEventListener('skena:newSection', handler);
-  }, [lanes, derivedLanes, commitLanes, pushHistory]);
+  }, [lanes, derivedLanes, nodes, commitLanes, pushHistory]);
 
   const handleDeleteLane = useCallback(async (id: string) => {
     const target = derivedLanes.find(l => l.id === id);

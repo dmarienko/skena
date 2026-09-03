@@ -70,7 +70,7 @@ import {
 import { parseNodeRef } from '../shared/nodeRef';
 import { MAX_FILE_FULL_BYTES, MAX_FILE_PREVIEW_BYTES, MAX_NOTEBOOK_BYTES, NODE_SIZE } from '../shared/constants';
 import { normalizeCanvasToOrigin } from '../shared/bounds';
-import { migrateSections, memberCodeCellsInRunOrder, applyLaneGrowth, outputCellGeom } from '../shared/sectionLanes';
+import { migrateSections, memberCodeCellsInRunOrder, applyLaneFit, outputCellGeom, pinOutputToLane } from '../shared/sectionLanes';
 
 // ─── bookmarks file helpers ──────────────────────────────────────────────────
 
@@ -1317,7 +1317,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           };
           outputNode = assignLabel(cellBase, c.nodes) as CellNode;
           c.nodes.push(outputNode);
-          Object.assign(c, applyLaneGrowth(c, [outputNode.id]));   // - c IS document.canvas and persist() captured that reference: assign into it, never reassign c
+          if (c.metadata?.sections) c.metadata = { ...c.metadata, sections: pinOutputToLane(c.metadata.sections, cn.id, outputNode.id) };   // - an output of a folded cell stays folded
+          Object.assign(c, applyLaneFit(c));   // - c IS document.canvas and persist() captured that reference: assign into it, never reassign c
           cn.outputNodeId = outId;
           edge = { id: `e-${outId}`, fromNode: cn.id, fromSide: 'right', toNode: outId, toSide: 'left', toEnd: 'arrow' };
           c.edges.push(edge);
@@ -1451,7 +1452,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           };
           outputNode = assignLabel(cellBase, c.nodes) as CellNode;
           c.nodes.push(outputNode);
-          Object.assign(c, applyLaneGrowth(c, [outputNode.id]));   // - c IS document.canvas and persist() captured that reference: assign into it, never reassign c
+          if (c.metadata?.sections) c.metadata = { ...c.metadata, sections: pinOutputToLane(c.metadata.sections, cn.id, outputNode.id) };   // - an output of a folded cell stays folded
+          Object.assign(c, applyLaneFit(c));   // - c IS document.canvas and persist() captured that reference: assign into it, never reassign c
           edge = { id: `e-${id}`, fromNode: cn.id, fromSide: 'right', toNode: id, toSide: 'left', toEnd: 'arrow' };
           c.edges.push(edge);
           cn.outputNodeId = id;
@@ -1524,7 +1526,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         const cnDisk = c.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code') as CodeNode | undefined;
         if (cnDisk && !cnDisk.outputNodeId) {
           if (!c.nodes.some(n => n.id === outputNode.id)) c.nodes.push(assignLabel(outputNode, c.nodes) as CellNode);
-          Object.assign(c, applyLaneGrowth(c, [outputNode.id]));   // - c IS document.canvas, written below: assign into it, never reassign c
+          if (c.metadata?.sections) c.metadata = { ...c.metadata, sections: pinOutputToLane(c.metadata.sections, cn.id, outputNode.id) };   // - an output of a folded cell stays folded
+          Object.assign(c, applyLaneFit(c));   // - c IS document.canvas, written below: assign into it, never reassign c
           if (!c.edges.some(e => e.id === edge.id)) c.edges.push(edge);
           cnDisk.outputNodeId = outputNode.id;
           setSelfSaving(true);

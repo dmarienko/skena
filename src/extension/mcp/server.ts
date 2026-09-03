@@ -29,7 +29,7 @@ import * as crypto   from 'crypto';
 import { CanvasData, CanvasNode, CanvasEdge, CanvasNodeBase, CellNode, CodeNode, KernelNode, AgentRunPersist, AgentRunPersistResult } from '../../shared/types';
 import { assignLabel, ensureLabels } from '../../shared/nodeLabels';
 import { snapGrid } from '../../shared/grid';
-import { applyLaneGrowth, deriveLanes, outputCellGeom } from '../../shared/sectionLanes';
+import { applyLaneFit, deriveLanes, outputCellGeom, pinOutputToLane } from '../../shared/sectionLanes';
 import { resolveCellKernel, resolveUpstreamChain, cellKernelView } from '../../shared/kernelBinding';
 import { resolveKernelConfig, type KernelServerConfig } from '../jupyter/config';
 import { executeCell } from '../jupyter/client';
@@ -611,7 +611,7 @@ async function canvasAddNode(args: Record<string, unknown>): Promise<string> {
 
   const labeled = assignLabel(newNode, d.nodes);
   d.nodes.push(labeled);
-  Object.assign(d, applyLaneGrowth(d, [labeled.id]));
+  Object.assign(d, applyLaneFit(d));   // - every write fits the sections
   await writeCanvas(p, d);
 
   return `Created node ${labeled.nodeLabel} (id: ${labeled.id})\nType: ${type}\nPosition: (${labeled.x}, ${labeled.y})  Size: ${labeled.width}×${labeled.height}\nCanvas: ${p}`;
@@ -643,7 +643,7 @@ async function canvasUpdateNode(args: Record<string, unknown>): Promise<string> 
   if (args.height !== undefined) updated.height = snapGrid(args.height as number);
 
   d.nodes[idx] = updated;
-  Object.assign(d, applyLaneGrowth(d, [updated.id]));
+  Object.assign(d, applyLaneFit(d));   // - every write fits the sections
   await writeCanvas(p, d);
   return `Updated node ${updated.nodeLabel ?? updated.id}`;
   }); // - withFileLock
@@ -730,19 +730,16 @@ async function canvasLayout(args: Record<string, unknown>): Promise<string> {
     const items = Array.isArray(args.nodes) ? args.nodes as Array<Record<string, unknown>> : [];
     const done: string[] = [];
     const missing: string[] = [];
-    const changed: string[] = [];
     for (const it of items) {
       const n = findNode(d, it.ref as string);
       if (!n) { missing.push(String(it.ref)); continue; }
-      const before = `${n.x},${n.y},${n.width},${n.height}`;
       if (it.x      !== undefined) n.x      = snapGrid(it.x      as number);
       if (it.y      !== undefined) n.y      = snapGrid(it.y      as number);
       if (it.width  !== undefined) n.width  = snapGrid(it.width  as number);
       if (it.height !== undefined) n.height = snapGrid(it.height as number);
-      if (`${n.x},${n.y},${n.width},${n.height}` !== before) changed.push(n.id);
       done.push(n.nodeLabel ?? n.id);
     }
-    Object.assign(d, applyLaneGrowth(d, changed));   // - a laid-out node past its section's bottom edge grows the section, like every other write
+    Object.assign(d, applyLaneFit(d));   // - every write fits the sections
     await writeCanvas(p, d);
     return `Laid out ${done.length} node(s): ${done.join(', ')}` +
       (missing.length ? ` — not found: ${missing.join(', ')}` : '');
@@ -813,7 +810,8 @@ async function canvasPinOutput(args: Record<string, unknown>): Promise<string> {
     edgeId = edge.id;
   }
 
-  Object.assign(d, applyLaneGrowth(d, [labeled.id]));
+  if (sourceNode && d.metadata?.sections) d.metadata = { ...d.metadata, sections: pinOutputToLane(d.metadata.sections, sourceNode.id, labeled.id) };   // - an output of a folded cell stays folded
+  Object.assign(d, applyLaneFit(d));   // - every write fits the sections
   await writeCanvas(p, d);
 
   const lines = [`Pinned output as cell node ${labeled.nodeLabel} (id: ${labeled.id})`];
@@ -937,7 +935,8 @@ async function runCellCore(
 
     cell.lastStatus = out.status === 'error' ? 'error' : 'ok';
     cell.lastRun    = Date.now();
-    Object.assign(d, applyLaneGrowth(d, [outId]));   // - d is reused for the next cell of a chain; a discarded result would be undone by that cell's write
+    if (hasOutput && d.metadata?.sections) d.metadata = { ...d.metadata, sections: pinOutputToLane(d.metadata.sections, cell.id, outId) };   // - an output of a folded cell stays folded
+    Object.assign(d, applyLaneFit(d));   // - every write fits the sections; d is reused for the next cell of a chain, so a discarded result would be undone by that cell's write
     await writeCanvas(p, d);
 
     // - deterministic final frame so the result doesn't depend on the (racy) soft-reload winning
