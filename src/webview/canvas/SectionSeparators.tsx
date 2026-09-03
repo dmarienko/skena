@@ -9,8 +9,8 @@ export function SectionSeparators({ lanes }: { lanes: DerivedLane[] }): JSX.Elem
   const height = useStore(s => s.height);
   return (
     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0 }}>
-      {lanes.map((l, i) => {
-        if (i === lanes.length - 1) return null;   // - the last lane is unbounded: no line below it
+      {lanes.map(l => {
+        // - every lane, the last included: its bottom is its content bottom + LANE_BOTTOM_PAD
         const y = l.bottom * zoom + ty;
         if (height <= 0 || y < 0 || y > height) return null;
         // - centred on the boundary, like the rail's gap

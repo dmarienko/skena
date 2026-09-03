@@ -28,7 +28,7 @@ const btn: React.CSSProperties = {
   width: BTN_H, height: BTN_H, flex: 'none',
 };
 
-export function RailSegment({ lane, seg, color, kernelName, current, onFold, onRun, onDelete, onKernel, onTitle }: {
+export function RailSegment({ lane, seg, color, kernelName, current, onFold, onRun, onDelete, onKernel, onTitle, onMenu }: {
   lane: DerivedLane;
   seg: Seg;
   color: string;
@@ -39,6 +39,7 @@ export function RailSegment({ lane, seg, color, kernelName, current, onFold, onR
   onDelete: (id: string) => void;
   onKernel: (id: string, anchor: DOMRect) => void;
   onTitle: (id: string, anchor: DOMRect) => void;
+  onMenu: (id: string, at: { x: number; y: number }, anchor: DOMRect) => void;
 }): JSX.Element {
   const title = lane.title?.trim() || fmtDateTime(lane.createdAt);
   const full = `${lane.label}: ${title}`;
@@ -48,7 +49,8 @@ export function RailSegment({ lane, seg, color, kernelName, current, onFold, onR
   const anchor = (e: React.MouseEvent) => (e.currentTarget as HTMLElement).getBoundingClientRect();
 
   return (
-    <div title={tooltip} style={{ position: 'absolute', left: 0, right: 0, top: seg.top, height: seg.height, opacity: lane.folded ? 0.55 : 1 }}>
+    <div title={tooltip} onContextMenu={e => { e.preventDefault(); onMenu(lane.id, { x: e.clientX, y: e.clientY }, (e.currentTarget as HTMLElement).getBoundingClientRect()); }}
+      style={{ position: 'absolute', left: 0, right: 0, top: seg.top, height: seg.height, opacity: lane.folded ? 0.55 : 1 }}>
       <div style={{ position: 'absolute', left: 6, top: 0, bottom: 0, width: 4, borderRadius: 2, background: color }} />
       <div style={{ position: 'absolute', left: 10, right: 0, top: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7, paddingTop: 8, overflow: 'hidden', boxSizing: 'border-box' }}>
         {items.map(item => {
@@ -71,7 +73,8 @@ export function RailSegment({ lane, seg, color, kernelName, current, onFold, onR
             case 'kernel':
               return (
                 <button key={item} data-sk-popover-anchor="" style={{ ...btn, height: DOT_BTN_H }} title={kernelName ? `kernel: ${kernelName}` : 'bind a kernel'} onClick={e => onKernel(lane.id, anchor(e))}>
-                  <span style={{ width: DOT_PX, height: DOT_PX, borderRadius: '50%', background: kernelName ? color : 'transparent', border: kernelName ? 'none' : '1.5px solid var(--sk-text3)', display: 'block' }} />
+                  {/* - unbound stays a hollow ring, but in the section's colour: "no kernel yet" without breaking the stripe */}
+                  <span style={{ width: DOT_PX, height: DOT_PX, borderRadius: '50%', background: kernelName ? color : 'transparent', border: kernelName ? 'none' : `1.5px solid ${color}`, display: 'block' }} />
                 </button>
               );
             case 'delete':

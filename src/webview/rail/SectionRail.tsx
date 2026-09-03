@@ -6,6 +6,7 @@ import { railSegments, RAIL_W, PLUS_H } from './railGeometry';
 import { RailSegment } from './RailSegment';
 import { KernelPicker } from './KernelPicker';
 import { TitleEditor } from './TitleEditor';
+import { SegmentMenu } from './SegmentMenu';
 
 /** What the rail needs to know about a kernel node on this canvas. */
 export interface RailKernel {
@@ -15,9 +16,10 @@ export interface RailKernel {
   colorIndex: number;
 }
 
-export function laneColor(lane: { kernelId?: string }, kernels: RailKernel[]): { color: string; kernel: RailKernel | null } {
+// - bound → the kernel's colour; unbound → the palette by stack order, so every section reads distinct
+export function laneColor(lane: { kernelId?: string; index: number }, kernels: RailKernel[]): { color: string; kernel: RailKernel | null } {
   const k = lane.kernelId ? kernels.find(x => x.id === lane.kernelId) ?? null : null;
-  return { color: k ? kernelColor(k.colorIndex) : 'var(--sk-text3)', kernel: k };
+  return { color: kernelColor(k ? k.colorIndex : lane.index), kernel: k };
 }
 
 export function SectionRail({ lanes, kernels, selectedNodeId, onFold, onRun, onDelete, onBindKernel, onRename, onNewSection }: {
@@ -40,12 +42,19 @@ export function SectionRail({ lanes, kernels, selectedNodeId, onFold, onRun, onD
   const byId = new Map(lanes.map(l => [l.id, l]));
   const currentId = selectedNodeId ? lanes.find(l => l.memberIds.includes(selectedNodeId))?.id ?? null : null;
 
-  // - one popover at a time, anchored to the control that opened it
-  const [pop, setPop] = useState<{ kind: 'kernel' | 'title'; laneId: string; anchor: DOMRect } | null>(null);
+  // - one popover at a time, anchored to the control that opened it. The menu also keeps the
+  //   segment's rect, so a picker opened from a menu row still lands beside the segment.
+  const [pop, setPop] = useState<
+    | { kind: 'kernel' | 'title'; laneId: string; anchor: DOMRect }
+    | { kind: 'menu'; laneId: string; at: { x: number; y: number }; anchor: DOMRect }
+    | null
+  >(null);
   const closePop = useCallback(() => setPop(null), []);
   // - a second click on the same anchor closes the popover instead of reopening it
   const openKernel = useCallback((id: string, anchor: DOMRect) => setPop(p => (p?.kind === 'kernel' && p.laneId === id ? null : { kind: 'kernel', laneId: id, anchor })), []);
   const openTitle = useCallback((id: string, anchor: DOMRect) => setPop(p => (p?.kind === 'title' && p.laneId === id ? null : { kind: 'title', laneId: id, anchor })), []);
+  // - a right-click always opens at the new point, so no toggle here
+  const openMenu = useCallback((id: string, at: { x: number; y: number }, anchor: DOMRect) => setPop({ kind: 'menu', laneId: id, at, anchor }), []);
   const popLane = pop ? byId.get(pop.laneId) : undefined;
   // - the lane can go away under an open popover (deleted, or undone)
   useEffect(() => { if (pop && !byId.has(pop.laneId)) setPop(null); }, [pop, lanes]);
@@ -59,7 +68,7 @@ export function SectionRail({ lanes, kernels, selectedNodeId, onFold, onRun, onD
           const { color, kernel } = laneColor(lane, kernels);
           return (
             <RailSegment key={seg.id} lane={lane} seg={seg} color={color} kernelName={kernel ? `${kernel.label} · ${kernel.name}` : null}
-              current={lane.id === currentId} onFold={onFold} onRun={onRun} onDelete={onDelete} onKernel={openKernel} onTitle={openTitle} />
+              current={lane.id === currentId} onFold={onFold} onRun={onRun} onDelete={onDelete} onKernel={openKernel} onTitle={openTitle} onMenu={openMenu} />
           );
         })}
       </div>
@@ -75,6 +84,13 @@ export function SectionRail({ lanes, kernels, selectedNodeId, onFold, onRun, onD
       {pop && popLane && pop.kind === 'title' && (
         <TitleEditor key={pop.laneId} anchor={pop.anchor} initial={popLane.title ?? ''}
           onCommit={t => onRename(popLane.id, t)} onClose={closePop} />
+      )}
+      {pop && popLane && pop.kind === 'menu' && (
+        <SegmentMenu key={pop.laneId} anchor={pop.at} folded={!!popLane.folded}
+          onFold={() => onFold(popLane.id)} onRun={() => onRun(popLane.id)}
+          onKernel={() => setPop({ kind: 'kernel', laneId: popLane.id, anchor: pop.anchor })}
+          onRename={() => setPop({ kind: 'title', laneId: popLane.id, anchor: pop.anchor })}
+          onDelete={() => onDelete(popLane.id)} onClose={closePop} />
       )}
     </div>
   );
