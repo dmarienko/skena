@@ -9,39 +9,15 @@ import React, { useCallback, useEffect, useRef, useState, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { NodeProps, Handle, Position } from '@xyflow/react';
 import { KernelNode } from '../../../shared/types';
-import type { KernelStatusEntry, CanvasNode, CanvasEdge, MsgAddNodeResult } from '../../../shared/types';
+import type { CanvasNode, CanvasEdge, MsgAddNodeResult } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { HANDLE_STYLE } from './nodeShared';
 import { kernelColor } from '../palette';
-
-type LedState = KernelStatusEntry['state'];
+import { useKernelState, LED_COLOR } from '../../hooks/useKernelState';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
 }
-
-function useKernelState(server: string, kernelId?: string): LedState {
-  const [state, setState] = useState<LedState>('dead');
-  useEffect(() => {
-    const onStatus = (e: Event) => {
-      const kernels = (e as CustomEvent).detail as KernelStatusEntry[];
-      // - a node with no kernelId (never started, or just shut down) is dead — do NOT
-      // - fall back to matching some other live kernel on the same server (misleading green)
-      const hit = kernelId ? kernels.find(k => k.server === server && k.kernelId === kernelId) : undefined;
-      setState(hit ? hit.state : 'dead');
-    };
-    window.addEventListener('skena:kernelStatus', onStatus);
-    return () => window.removeEventListener('skena:kernelStatus', onStatus);
-  }, [server, kernelId]);
-  return state;
-}
-
-const LED_COLOR: Record<LedState, string> = {
-  idle:  '#3fbf6f',
-  busy:  '#3fbf6f',
-  dead:  '#6b7280',
-  error: '#e5484d',
-};
 
 function KernelNodeInner({ id, data }: NodeProps): JSX.Element {
   const node = data as unknown as KernelNode;

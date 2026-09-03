@@ -8,12 +8,15 @@ import { KernelPicker } from './KernelPicker';
 import { TitleEditor } from './TitleEditor';
 import { SegmentMenu } from './SegmentMenu';
 
-/** What the rail needs to know about a kernel node on this canvas. */
+/** What the rail needs to know about one kernel: a record in canvas metadata, or a kernel node. */
 export interface RailKernel {
   id: string;
-  label: string;        // - K1 …
-  name: string;         // - displayName or 'kernel'
+  label: string;        // - a node's K1 …; a record's displayName
+  name: string;         // - a node's displayName; a record's server
   colorIndex: number;
+  server: string;
+  kernelId?: string;    // - live Jupyter id, for the LED
+  kind: 'record' | 'node';
 }
 
 // - bound → the kernel's colour; unbound → the palette by stack order, so every section reads distinct
@@ -22,7 +25,7 @@ export function laneColor(lane: { kernelId?: string; index: number }, kernels: R
   return { color: kernelColor(k ? k.colorIndex : lane.index), kernel: k };
 }
 
-export function SectionRail({ lanes, kernels, selectedNodeId, onFold, onRun, onDelete, onBindKernel, onRename, onNewSection }: {
+export function SectionRail({ lanes, kernels, selectedNodeId, onFold, onRun, onDelete, onBindKernel, onRename, onNewSection, onNewKernel, onRemoveKernel, onKernelAction }: {
   lanes: DerivedLane[];
   kernels: RailKernel[];
   selectedNodeId: string | null;
@@ -32,6 +35,9 @@ export function SectionRail({ lanes, kernels, selectedNodeId, onFold, onRun, onD
   onBindKernel: (id: string, kernelId: string | null) => void;
   onRename: (id: string, title: string) => void;
   onNewSection: () => void;
+  onNewKernel: (laneId: string) => void;
+  onRemoveKernel: (kernelRef: string) => void;
+  onKernelAction: (laneId: string, action: 'start' | 'interrupt' | 'restart' | 'shutdown') => void;
 }): JSX.Element {
   const ty = useStore(s => s.transform[1]);
   const zoom = useStore(s => s.transform[2]);
@@ -67,7 +73,7 @@ export function SectionRail({ lanes, kernels, selectedNodeId, onFold, onRun, onD
           if (!lane) return null;
           const { color, kernel } = laneColor(lane, kernels);
           return (
-            <RailSegment key={seg.id} lane={lane} seg={seg} color={color} kernelName={kernel ? `${kernel.label} · ${kernel.name}` : null}
+            <RailSegment key={seg.id} lane={lane} seg={seg} color={color} kernel={kernel}
               current={lane.id === currentId} onFold={onFold} onRun={onRun} onDelete={onDelete} onKernel={openKernel} onTitle={openTitle} onMenu={openMenu} />
           );
         })}
@@ -79,16 +85,17 @@ export function SectionRail({ lanes, kernels, selectedNodeId, onFold, onRun, onD
       </button>
       {pop && popLane && pop.kind === 'kernel' && (
         <KernelPicker key={pop.laneId} anchor={pop.anchor} kernels={kernels} currentId={popLane.kernelId ?? null}
-          onPick={kid => onBindKernel(popLane.id, kid)} onClose={closePop} />
+          onPick={kid => onBindKernel(popLane.id, kid)} onNew={() => onNewKernel(popLane.id)} onRemove={onRemoveKernel} onClose={closePop} />
       )}
       {pop && popLane && pop.kind === 'title' && (
         <TitleEditor key={pop.laneId} anchor={pop.anchor} initial={popLane.title ?? ''}
           onCommit={t => onRename(popLane.id, t)} onClose={closePop} />
       )}
       {pop && popLane && pop.kind === 'menu' && (
-        <SegmentMenu key={pop.laneId} anchor={pop.at} folded={!!popLane.folded}
+        <SegmentMenu key={pop.laneId} anchor={pop.at} folded={!!popLane.folded} kernelBound={!!popLane.kernelId}
           onFold={() => onFold(popLane.id)} onRun={() => onRun(popLane.id)}
           onKernel={() => setPop({ kind: 'kernel', laneId: popLane.id, anchor: pop.anchor })}
+          onKernelAction={a => onKernelAction(popLane.id, a)}
           onRename={() => setPop({ kind: 'title', laneId: popLane.id, anchor: pop.anchor })}
           onDelete={() => onDelete(popLane.id)} onClose={closePop} />
       )}

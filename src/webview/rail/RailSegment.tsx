@@ -1,6 +1,8 @@
 import React from 'react';
 import type { DerivedLane } from '../../shared/sectionLanes';
+import { useKernelState } from '../hooks/useKernelState';
 import { railItems, ICON_PX, BTN_H, DOT_BTN_H, DOT_PX, type RailSegment as Seg } from './railGeometry';
+import type { RailKernel } from './SectionRail';
 
 const FONT = 'system-ui, -apple-system, sans-serif';
 
@@ -28,11 +30,11 @@ const btn: React.CSSProperties = {
   width: BTN_H, height: BTN_H, flex: 'none',
 };
 
-export function RailSegment({ lane, seg, color, kernelName, current, onFold, onRun, onDelete, onKernel, onTitle, onMenu }: {
+export function RailSegment({ lane, seg, color, kernel, current, onFold, onRun, onDelete, onKernel, onTitle, onMenu }: {
   lane: DerivedLane;
   seg: Seg;
   color: string;
-  kernelName: string | null;
+  kernel: RailKernel | null;
   current: boolean;
   onFold: (id: string) => void;
   onRun: (id: string) => void;
@@ -44,6 +46,10 @@ export function RailSegment({ lane, seg, color, kernelName, current, onFold, onR
   const title = lane.title?.trim() || fmtDateTime(lane.createdAt);
   const full = `${lane.label}: ${title}`;
   const { items, titleMaxPx } = railItems(seg.height, full.length);
+  // - the hook is unconditional (rules of hooks); an unbound section passes a server no status ever matches
+  const state = useKernelState(kernel?.server ?? '', kernel?.kernelId);
+  // - a record's live state is worth showing; a kernel node already shows its own LED on the canvas
+  const kernelName = kernel ? (kernel.kind === 'record' ? `${kernel.label} · ${kernel.server} · ${state}` : `${kernel.label} · ${kernel.name}`) : null;
   // - an untitled section already shows its datetime as the title: do not print it twice
   const tooltip = `${full}${lane.title?.trim() ? ` · ${fmtDateTime(lane.createdAt)}` : ''} · ${kernelName ?? 'no kernel'}${lane.folded ? ' · folded' : ''} · right-click for the menu`;
   const anchor = (e: React.MouseEvent) => (e.currentTarget as HTMLElement).getBoundingClientRect();

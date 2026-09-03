@@ -16,7 +16,9 @@ import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './n
 import { DEFAULT_NODE_BORDER_BY_TYPE } from '../palette';
 import { makeCellKernelResolver } from '../../../shared/kernelBinding';
 import type { SectionLane } from '../../../shared/sectionLanes';
+import type { KernelRecord } from '../../../shared/types';
 import { useLanes } from '../LanesContext';
+import { useKernels } from '../KernelsContext';
 import { CodeRenderer } from '../../renderers/CodeRenderer';
 import { ScrollableContent, setScrollPosition } from '../../components/ScrollableContent';
 import { applyVimClipboard, patchVimNewlineAndIndent, patchVimJoin } from './TextNode';
@@ -44,16 +46,17 @@ function overflowWidgetsRoot(): HTMLElement {
 
 // - one resolver per store snapshot: this selector runs once per code node per store change, so the
 //   node index is built once and shared instead of once per node
-let resolverKey: { nodes: unknown; edges: unknown; lanes: unknown } | null = null;
+let resolverKey: { nodes: unknown; edges: unknown; lanes: unknown; kernels: unknown } | null = null;
 let resolverFn: ((cellId: string) => string | null) | null = null;
-function cellKernelResolver(nodes: RFNode[], edges: Edge[], lanes: SectionLane[]): (cellId: string) => string | null {
-  if (!resolverFn || !resolverKey || resolverKey.nodes !== nodes || resolverKey.edges !== edges || resolverKey.lanes !== lanes) {
+function cellKernelResolver(nodes: RFNode[], edges: Edge[], lanes: SectionLane[], kernels: KernelRecord[]): (cellId: string) => string | null {
+  if (!resolverFn || !resolverKey || resolverKey.nodes !== nodes || resolverKey.edges !== edges || resolverKey.lanes !== lanes || resolverKey.kernels !== kernels) {
     resolverFn = makeCellKernelResolver({
-      nodes:    nodes.map(n => ({ id: n.id, type: n.type ?? '', y: n.position.y })),
+      nodes:    nodes.map(n => ({ id: n.id, type: n.type ?? '', y: n.position.y, x: n.position.x })),
       edges:    edges.map(e => ({ fromNode: e.source, toNode: e.target })),
       sections: lanes,
+      kernels,
     });
-    resolverKey = { nodes, edges, lanes };
+    resolverKey = { nodes, edges, lanes, kernels };
   }
   return resolverFn;
 }
@@ -82,8 +85,9 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   useEffect(() => { setCode(node.code ?? ''); }, [node.code]);
 
   const lanes = useLanes();
+  const kernelsCtx = useKernels();
   // - selector returns a primitive (kernel id | null), so default Object.is equality is safe
-  const bound = useStore(s => cellKernelResolver(s.nodes, s.edges, lanes)(id));
+  const bound = useStore(s => cellKernelResolver(s.nodes, s.edges, lanes, kernelsCtx)(id));
 
   const run = useCallback(() => {
     if (!bound) return;

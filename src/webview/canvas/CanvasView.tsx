@@ -30,7 +30,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
-import { CanvasData, CanvasNode, CanvasEdge, CanvasViewport, KernelNode, MsgAddNodeResult, MsgRunOutput, MsgSubCanvasCreated, MsgVerifyPathResult, NodeSide, CanvasMark, ViewportSnapshot } from '../../shared/types';
+import { CanvasData, CanvasNode, CanvasEdge, CanvasViewport, KernelNode, KernelRecord, MsgAddNodeResult, MsgKernelAdded, MsgKernelRemoved, MsgRunOutput, MsgSubCanvasCreated, MsgVerifyPathResult, NodeSide, CanvasMark, ViewportSnapshot } from '../../shared/types';
 import { classifyClipboard } from './paste-classify';
 import { ContextMenu } from './ContextMenu';
 import { CANVAS_COLORS, NODE_SIZE, NEW_NODE } from '../../shared/constants';
@@ -60,6 +60,7 @@ import { useLaneFit, flowGeom } from '../rail/useLaneFit';
 import { CanvasSearch } from './CanvasSearch';
 import { MarksPanel  } from './MarksPanel';
 import { LanesContext } from './LanesContext';
+import { KernelsContext } from './KernelsContext';
 
 const NODE_TYPES: NodeTypes = {
   file:   FileNodeComponent,
@@ -539,6 +540,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
   // ─── undo / redo ──────────────────────────────────────────────────────────────
   const MAX_HISTORY = 50;
+  // - no `kernels`: the records are host-owned (it creates and removes them, and writes the file
+  //   itself), so undo never touches them
   type HistoryEntry = { nodes: CanvasNode[]; edges: CanvasEdge[]; sections: SectionLane[] };
   const undoStackRef = useRef<HistoryEntry[]>([]);
   const redoStackRef = useRef<HistoryEntry[]>([]);
@@ -723,6 +726,13 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const lanesRef = useRef<SectionLane[]>(lanes);
   useEffect(() => { lanesRef.current = lanes; }, [lanes]);
 
+  // - kernels without a node, also in canvas metadata; created and removed by the host, mirrored here
+  //   so the webview's own save carries them
+  const [kernels, setKernels] = useState<KernelRecord[]>(canvas.metadata?.kernels ?? []);
+  useEffect(() => { setKernels(canvas.metadata?.kernels ?? []); }, [canvas]);
+  const kernelsRef = useRef<KernelRecord[]>(kernels);
+  useEffect(() => { kernelsRef.current = kernels; }, [kernels]);
+
   // - snapshot current state BEFORE a mutation so it can be undone
   const pushHistory = useCallback(() => {
     undoStackRef.current = [
@@ -759,6 +769,16 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     canvasRef.current = {
       ...canvasRef.current,
       metadata: { ...canvasRef.current.metadata, sections: sorted },
+    };
+    scheduleSave();
+  }, [scheduleSave]);
+
+  // - persist a kernel-record edit: update local state, mirror into canvasRef, schedule the save
+  const commitKernels = useCallback((next: KernelRecord[]) => {
+    setKernels(next);
+    canvasRef.current = {
+      ...canvasRef.current,
+      metadata: { ...canvasRef.current.metadata, kernels: next },
     };
     scheduleSave();
   }, [scheduleSave]);
@@ -859,13 +879,20 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     window.dispatchEvent(new CustomEvent('skena:newSection'));
   }, []);
 
-  // - kernel nodes on this canvas, for the rail's colours and picker
-  const railKernels = useMemo<RailKernel[]>(() => nodes
-    .filter(n => n.type === 'kernel')
-    .map(n => {
+  // - every kernel the rail can bind: the records in metadata first, then the kernel nodes on the canvas
+  const railKernels = useMemo<RailKernel[]>(() => [
+    ...kernels.map(k => ({
+      id: k.id, label: k.displayName ?? 'kernel', name: k.server, colorIndex: k.colorIndex,
+      server: k.server, kernelId: k.kernelId, kind: 'record' as const,
+    })),
+    ...nodes.filter(n => n.type === 'kernel').map(n => {
       const k = n.data as unknown as KernelNode;
-      return { id: n.id, label: k.nodeLabel ?? 'K?', name: k.displayName ?? 'kernel', colorIndex: k.colorIndex ?? 0 };
-    }), [nodes]);
+      return {
+        id: n.id, label: k.nodeLabel ?? 'K?', name: k.displayName ?? 'kernel', colorIndex: k.colorIndex ?? 0,
+        server: k.server, kernelId: k.kernelId, kind: 'node' as const,
+      };
+    }),
+  ], [nodes, kernels]);
 
   const selectedNodeId = useMemo(() => nodes.find(n => n.selected && !isBandType(n.type))?.id ?? null, [nodes]);
 
@@ -880,6 +907,44 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     pushHistory();
     commitLanes(lanes.map(l => (l.id === id ? { ...l, title: t || undefined } : l)));
   }, [lanes, commitLanes, pushHistory]);
+
+  // - the host picks the server/spec, creates the record, binds the lane and writes the file; the
+  //   webview learns the result from kernelAdded
+  const handleNewKernel = useCallback((laneId: string) => {
+    vscodePostMessage({ type: 'addKernel', forSection: laneId });
+  }, []);
+
+  const handleRemoveKernel = useCallback((kernelRef: string) => {
+    vscodePostMessage({ type: 'removeKernel', kernelRef });
+  }, []);
+
+  const handleKernelActionForLane = useCallback((laneId: string, action: 'start' | 'interrupt' | 'restart' | 'shutdown') => {
+    const l = lanesRef.current.find(x => x.id === laneId);
+    if (l?.kernelId) vscodePostMessage({ type: 'kernelAction', action, kernelNodeId: l.kernelId });
+  }, []);
+
+  // - the host already created the record, bound the lane and wrote the file (self-save suppressed,
+  //   so no reload arrives): mirror both here, or the next webview save would drop them. No history
+  //   entry — a host write is not undoable from here.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { sectionId, kernel } = (e as CustomEvent<MsgKernelAdded>).detail;
+      commitKernels([...kernelsRef.current, kernel]);
+      commitLanes(lanesRef.current.map(l => (l.id === sectionId ? { ...l, kernelId: kernel.id } : l)));
+    };
+    window.addEventListener('skena:kernelAdded', handler);
+    return () => window.removeEventListener('skena:kernelAdded', handler);
+  }, [commitKernels, commitLanes]);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { kernelRef } = (e as CustomEvent<MsgKernelRemoved>).detail;
+      commitKernels(kernelsRef.current.filter(k => k.id !== kernelRef));
+      commitLanes(lanesRef.current.map(l => (l.kernelId === kernelRef ? (({ kernelId: _k, ...rest }) => rest)(l) : l)));
+    };
+    window.addEventListener('skena:kernelRemoved', handler);
+    return () => window.removeEventListener('skena:kernelRemoved', handler);
+  }, [commitKernels, commitLanes]);
 
   // - restore nodes/edges/sections from a history entry
   const applyHistoryState = useCallback((entry: HistoryEntry) => {
@@ -2772,10 +2837,19 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         const edges = d.edge && !cr.edges.some(x => x.id === d.edge!.id) ? [...cr.edges, d.edge] : cr.edges;
         canvasRef.current = { ...cr, nodes, edges };
       }
+      // - the patches above only reach kernel NODES; when the run went to a record, its live id is
+      //   what the host just started or restarted
+      const liveId = d.kernelId;
+      if (liveId) {
+        const rec = kernelsRef.current.find(k => k.id === d.kernelNodeId);
+        if (rec && rec.kernelId !== liveId) {
+          commitKernels(kernelsRef.current.map(k => (k.id === d.kernelNodeId ? { ...k, kernelId: liveId } : k)));
+        }
+      }
     };
     window.addEventListener('skena:runOutput', handler);
     return () => window.removeEventListener('skena:runOutput', handler);
-  }, [setNodes, setEdges]);
+  }, [setNodes, setEdges, commitKernels]);
 
   // - receive add-node result from QuickPick (Ctrl+N / Shift+hjkl)
   useEffect(() => {
@@ -2788,7 +2862,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       let seed = rawNode;
       if (rawNode.type === 'kernel' && rawNode.colorIndex === undefined) {
         const kernelCount = canvasRef.current.nodes.filter(n => n.type === 'kernel').length;
-        seed = { ...rawNode, colorIndex: nextKernelColorIndex(kernelCount) };
+        seed = { ...rawNode, colorIndex: nextKernelColorIndex(kernelCount + kernelsRef.current.length) };
       }
 
       // - assign a reference label (N1, M3 …) if the node doesn't have one yet
@@ -3176,10 +3250,12 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     <HeatmapProvider nodes={nodes} edges={edges} visible={heatmapVisible} toggle={toggleHeatmap}>
     <ZoomLevelProvider>
     <LanesContext.Provider value={lanes}>
+    <KernelsContext.Provider value={kernels}>
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'row' }}>
     <SectionRail lanes={derivedLanes} kernels={railKernels} selectedNodeId={selectedNodeId}
       onFold={handleFoldLane} onRun={handleRunLane} onDelete={handleDeleteLane}
-      onBindKernel={handleBindKernel} onRename={handleRenameLane} onNewSection={handleNewSectionClick} />
+      onBindKernel={handleBindKernel} onRename={handleRenameLane} onNewSection={handleNewSectionClick}
+      onNewKernel={handleNewKernel} onRemoveKernel={handleRemoveKernel} onKernelAction={handleKernelActionForLane} />
     <div ref={wrapperRef} style={{ flex: '1 1 auto', minWidth: 0, position: 'relative' }} onContextMenu={handleContextMenu}>
       <ReactFlow
         proOptions={{ hideAttribution: true }}
@@ -3291,6 +3367,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       )}
     </div>
     </div>
+    </KernelsContext.Provider>
     </LanesContext.Provider>
     </ZoomLevelProvider>
     </HeatmapProvider>

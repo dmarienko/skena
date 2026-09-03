@@ -274,6 +274,12 @@ export function App(): JSX.Element {
         case 'kernelStatus':
           window.dispatchEvent(new CustomEvent('skena:kernelStatus', { detail: msg.kernels }));
           break;
+        case 'kernelAdded':
+          window.dispatchEvent(new CustomEvent('skena:kernelAdded', { detail: msg }));
+          break;
+        case 'kernelRemoved':
+          window.dispatchEvent(new CustomEvent('skena:kernelRemoved', { detail: msg }));
+          break;
         case 'runStatus':
           window.dispatchEvent(new CustomEvent('skena:runStatus', { detail: msg }));
           break;
