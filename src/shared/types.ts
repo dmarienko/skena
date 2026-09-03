@@ -145,7 +145,7 @@ export interface KernelRecord {
   colorIndex: number;    // - into KERNEL_PALETTE, assigned at creation
 }
 
-/** Editable code cell — runs on a bound kernel node, output goes to a linked cell node */
+/** Editable code cell — runs on its kernel (edge-bound node, else the section's), output goes to a linked cell node */
 export interface CodeNode extends CanvasNodeBase {
   type: 'code';
   code: string;

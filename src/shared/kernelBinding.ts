@@ -1,5 +1,5 @@
 import { laneIndexForNode, pinnedLaneIndex, sortLanes, type SectionLane } from './sectionLanes';
-import type { CanvasData, KernelRecord } from './types';
+import type { CanvasData } from './types';
 
 export interface EdgeLike {
   fromNode: string;

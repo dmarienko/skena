@@ -677,6 +677,7 @@ async function canvasRemoveNode(args: Record<string, unknown>): Promise<string> 
   d.edges = d.edges.filter(e => !toRemove.has(e.fromNode) && !toRemove.has(e.toNode));
   // - a removed node must not stay in a fold list, pinning its lane to an id that is gone
   if (d.metadata?.sections) d.metadata = { ...d.metadata, sections: pruneFoldedIds(d.metadata.sections, toRemove) };
+  Object.assign(d, applyLaneFit(d));   // - every write fits the sections
   await writeCanvas(p, d);
   return `Removed ${toRemove.size} node(s): ${labels.join(', ')}`;
   }); // - withFileLock

@@ -22,7 +22,7 @@ export interface SectionLane {
   createdAt: number;
   /** - ids of the members hidden by a fold; present (even empty) → folded, range = SECTION_FOLDED_H */
   folded?: string[];
-  /** - id of a kernel node on this canvas: the section's colour and the fallback kernel of its cells */
+  /** - id of a kernel record or kernel node on this canvas: the section's colour and the fallback kernel of its cells */
   kernelId?: string;
 }
 

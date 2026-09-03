@@ -55,7 +55,7 @@ import { LabeledEdgeComponent } from './edges/LabeledEdge';
 import { HelperLines } from './HelperLines';
 import { SectionSeparators } from './SectionSeparators';
 import { SectionRail, type RailKernel } from '../rail/SectionRail';
-import { deriveLanes, sortLanes, parkFirstLaneAtOrigin, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
+import { deriveLanes, sortLanes, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
 import { useLaneFit, flowGeom } from '../rail/useLaneFit';
 import { CanvasSearch } from './CanvasSearch';
 import { MarksPanel  } from './MarksPanel';
@@ -2817,6 +2817,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         recentOutputRef.current.set(out.id, t);
         recentOutputRef.current.set(d.codeNodeId, t);
       }
+      // - one answer for this delta: the output cell is new to the canvas, not a re-run updating it
+      const isNewOutput = !!out && !canvasRef.current?.nodes.some(n => n.id === out.id);
       setNodes(nds => {
         let next = nds.map(n => {
           if (n.id === d.codeNodeId) return { ...n, data: { ...n.data, lastStatus: d.lastStatus, ...(out ? { outputNodeId: out.id } : {}) } };
@@ -2842,9 +2844,15 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           if (out && n.id === out.id) return { ...n, format: out.format, content: out.content, ...(out.nodeLabel ? { nodeLabel: out.nodeLabel } : {}) } as CanvasNode;
           return n;
         });
-        if (out && !cr.nodes.some(n => n.id === out.id)) nodes = [...nodes, out];
+        if (out && isNewOutput) nodes = [...nodes, out];
         const edges = d.edge && !cr.edges.some(x => x.id === d.edge!.id) ? [...cr.edges, d.edge] : cr.edges;
         canvasRef.current = { ...cr, nodes, edges };
+      }
+      // - the host pinned this output to the folded section under a suppressed write; mirror it, or the
+      //   fit counts the new node as visible content and expands the fold
+      if (out && isNewOutput) {
+        const pinned = pinOutputToLane(lanesRef.current, d.codeNodeId, out.id);
+        if (pinned !== lanesRef.current) commitLanes(pinned);
       }
       // - the patches above only reach kernel NODES; when the run went to a record, its live id is
       //   what the host just started or restarted
@@ -2858,7 +2866,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     };
     window.addEventListener('skena:runOutput', handler);
     return () => window.removeEventListener('skena:runOutput', handler);
-  }, [setNodes, setEdges, commitKernels]);
+  }, [setNodes, setEdges, commitKernels, commitLanes]);
 
   // - receive add-node result from QuickPick (Ctrl+N / Shift+hjkl)
   useEffect(() => {

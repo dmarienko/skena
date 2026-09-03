@@ -1769,8 +1769,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     manager:  KernelManager,
     document: SkenaDocument,
   ): Promise<void> {
-    const canvas = document.canvas;
-    const kernel = kernelById(canvas, msg.kernelNodeId);   // - a record or a kernel node, whichever the id names
+    // - read-only resolution: server, spec, name and the live-kernel guards. Every branch re-resolves
+    //   the kernel from a fresh canvas before it mutates one.
+    const kernel = kernelById(document.canvas, msg.kernelNodeId);   // - a record or a kernel node, whichever the id names
     if (!kernel) return;
     const server = manager.serverByName(kernel.server);
     if (!server) return;   // - 'start' needs no live kernel; the others are guarded below
@@ -1778,12 +1779,11 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     // - restart/shutdown wipe the kernel namespace → every bound cell is effectively un-run, so clear
     // - their run-flag (lastStatus). Interrupt keeps variables, so it must NOT reset. The plain write
     // - (no self-save suppression) makes the file-watcher soft-reload the cleared flags into the webview.
-    const resetBoundCellFlags = async (): Promise<void> => {
-      const bound  = new Set(resolveKernelCellsInCanvas(kernel.id, cellKernelView(canvas)));
+    const resetBoundCellFlags = (canvas: CanvasData): void => {
+      const bound = new Set(resolveKernelCellsInCanvas(msg.kernelNodeId, cellKernelView(canvas)));
       for (const n of canvas.nodes) {
         if (n.type === 'code' && bound.has(n.id)) (n as CodeNode).lastStatus = undefined;
       }
-      await writeCanvas(document.uri.fsPath, canvas);
     };
     try {
       if (msg.action === 'start') {
@@ -1797,8 +1797,13 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             spec = specs.find(s => s.displayName === kernel.displayName || s.name === kernel.displayName)?.name;
           } catch { /* - specs unavailable → ensureKernel falls back to python3 */ }
         }
-        kernel.kernelId = await manager.ensureKernel(server, undefined, spec);
-        if (spec && kernel.spec !== spec) kernel.spec = spec;   // - heal older kernels
+        const liveId = await manager.ensureKernel(server, undefined, spec);
+        // - re-read after the awaits: a save may have replaced document.canvas meanwhile
+        const canvas = document.canvas;
+        const fresh  = kernelById(canvas, msg.kernelNodeId);
+        if (!fresh) return;   // - removed while the kernel was starting
+        fresh.kernelId = liveId;
+        if (spec && fresh.spec !== spec) fresh.spec = spec;   // - heal older kernels
         await writeCanvas(document.uri.fsPath, canvas);
         void vscode.window.showInformationMessage(`Skena: started ${name}.`);
         return;
@@ -1806,15 +1811,22 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       if (!kernel.kernelId) return;   // - restart / interrupt / shutdown need a live kernel
       if (msg.action === 'restart') {
         await manager.restart(server, kernel.kernelId);
-        await resetBoundCellFlags();
+        // - re-read after the awaits: a save may have replaced document.canvas meanwhile
+        const canvas = document.canvas;
+        resetBoundCellFlags(canvas);
+        await writeCanvas(document.uri.fsPath, canvas);
         void vscode.window.showInformationMessage(`Skena: restarted ${name} — cell run-flags reset.`);
       } else if (msg.action === 'interrupt') {
         await manager.interrupt(server, kernel.kernelId);
         void vscode.window.showInformationMessage(`Skena: interrupted ${name}.`);
       } else {
         await manager.shutdown(server, kernel.kernelId);
-        kernel.kernelId = undefined;
-        await resetBoundCellFlags();   // - also persists the cleared kernelId
+        // - re-read after the awaits: a save may have replaced document.canvas meanwhile
+        const canvas = document.canvas;
+        const fresh  = kernelById(canvas, msg.kernelNodeId);
+        if (fresh) fresh.kernelId = undefined;
+        resetBoundCellFlags(canvas);
+        await writeCanvas(document.uri.fsPath, canvas);   // - also persists the cleared kernelId
         void vscode.window.showInformationMessage(`Skena: shut down ${name} — cell run-flags reset.`);
       }
     } catch (e) {

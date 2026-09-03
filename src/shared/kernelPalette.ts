@@ -3,7 +3,7 @@
  * The webview reads them through `canvas/palette.ts`, which re-exports this file.
  */
 
-// - per-kernel accent colors, cycled by creation order (kernel node circles + its edges)
+// - per-kernel accent colors, cycled by creation order (kernel node circles, rail stripes and picker rows)
 export const KERNEL_PALETTE: string[] = [
   '#4cc8a0',   // - teal
   '#d9a23f',   // - amber

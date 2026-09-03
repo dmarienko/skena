@@ -92,7 +92,8 @@ export function SectionRail({ lanes, kernels, selectedNodeId, onFold, onRun, onD
           onCommit={t => onRename(popLane.id, t)} onClose={closePop} />
       )}
       {pop && popLane && pop.kind === 'menu' && (
-        <SegmentMenu key={pop.laneId} anchor={pop.at} folded={!!popLane.folded} kernelBound={!!popLane.kernelId}
+        // - bound only when the lane's kernelId still names a live kernel; a dangling id offers no-op actions
+        <SegmentMenu key={pop.laneId} anchor={pop.at} folded={!!popLane.folded} kernelBound={kernels.some(k => k.id === popLane.kernelId)}
           onFold={() => onFold(popLane.id)} onRun={() => onRun(popLane.id)}
           onKernel={() => setPop({ kind: 'kernel', laneId: popLane.id, anchor: pop.anchor })}
           onKernelAction={a => onKernelAction(popLane.id, a)}

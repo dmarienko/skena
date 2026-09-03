@@ -10,7 +10,8 @@ export function SectionSeparators({ lanes }: { lanes: DerivedLane[] }): JSX.Elem
   return (
     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0 }}>
       {lanes.map(l => {
-        // - every lane, the last included: its bottom is its content bottom + LANE_BOTTOM_PAD
+        // - a bounded lane ends where the next begins; the last lane's bottom is its content bottom +
+        //   LANE_BOTTOM_PAD (one grid when folded)
         const y = l.bottom * zoom + ty;
         if (height <= 0 || y < 0 || y > height) return null;
         // - centred on the boundary, like the rail's gap
