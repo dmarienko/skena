@@ -116,6 +116,8 @@ git commit -m "feat: KernelRecord — kernels in canvas metadata; kernelById rea
 
 ### Task 2: run-with-upstream by position for section-bound chains (pure)
 
+> Also in Task 2 (from Task 1's review): rename `MsgRemoveKernel.kernelId` and `MsgKernelRemoved.kernelId` to `kernelRef` (a record or node id; `kernelId` means the live Jupyter id everywhere else); `kernelById` takes `Pick<CanvasData, 'nodes' | 'metadata'>`; single cast `node as KernelLike`; doc that `KernelLike.colorIndex` is optional only for nodes.
+
 **Files:** `src/shared/kernelBinding.ts`; test `test/kernel-upstream.mjs`
 
 - [ ] **Step 1: failing tests** — append to `test/kernel-upstream.mjs` (extend the import with `upstreamCellsForRun`):
