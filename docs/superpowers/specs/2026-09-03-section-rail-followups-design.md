@@ -54,7 +54,9 @@ allowed), plus `applyLaneFit(canvas)`. It replaces `growLaneForNodes` / `applyLa
 applier — the webview hook (which no longer needs changed ids: it fits after any geometry or lane
 change, still skipping mid-drag, mid-resize and the render after undo/redo), every MCP write, and
 the host's output-cell creation. Idempotent: after one application every non-last lane has
-`range == target`, so a second pass moves nothing. The `+` button appends the new lane at
+`range == target`, so a second pass moves nothing. The webview fits on every settled change, so a canvas
+written by an earlier build is fitted once on its first open and saved (no undo entry: no action
+caused it). `normalizeCanvasToOrigin` lifts `metadata.sections` together with the nodes. The `+` button appends the new lane at
 `last.top + target(last)`.
 
 ## 5. Fold collapses the section
