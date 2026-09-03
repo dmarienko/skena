@@ -1,4 +1,4 @@
-import { laneIndexForY, sortLanes, type SectionLane } from './sectionLanes';
+import { laneIndexForNode, pinnedLaneIndex, sortLanes, type SectionLane } from './sectionLanes';
 import type { CanvasData } from './types';
 
 export interface EdgeLike {
@@ -100,17 +100,18 @@ export function makeCellKernelResolver(c: CellKernelCanvas): (cellId: string) =>
   const memo = new Map<string, string | null>();
   const isKernel = (id: string) => byId.get(id)?.type === 'kernel';
   const sorted = sortLanes(c.sections ?? []);
+  const pinned = pinnedLaneIndex(sorted);
   return (cellId: string): string | null => {
     const hit = memo.get(cellId);
     if (hit !== undefined) return hit;
-    // - an edge-bound kernel wins; else the kernel of the section owning the cell's top edge; else null
+    // - an edge-bound kernel wins; else the kernel of the section owning the cell (pinned or by y); else null
     const viaEdge = resolveBoundKernel(cellId, c.edges, isKernel);
     const cell = byId.get(cellId);
     let out: string | null = null;
     if (viaEdge) {
       out = viaEdge;
     } else if (cell && sorted.length > 0) {
-      const lane = sorted[laneIndexForY(sorted, cell.y)];
+      const lane = sorted[laneIndexForNode(sorted, cell, pinned)];
       out = lane.kernelId && isKernel(lane.kernelId) ? lane.kernelId : null;
     }
     memo.set(cellId, out);

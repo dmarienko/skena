@@ -103,82 +103,101 @@ export function deriveLanes(nodes: LaneNodeGeom[], lanes: SectionLane[]): Derive
 }
 
 export interface LaneGrowth {
-  /** - lane id → how far it moves down, flow units */
+  /** - lane id → how far it moves, flow units; may be negative */
   laneShifts: Record<string, number>;
-  /** - node id → how far it moves down, flow units */
+  /** - node id → how far it moves, flow units; may be negative */
   nodeShifts: Record<string, number>;
 }
 
+/** The members a lane's range is measured on: its visible (non-pinned) nodes. */
+function visibleContentBottom(l: SectionLane, members: LaneNodeGeom[]): number {
+  let bottom = l.y;
+  for (const n of members) if (n.y + n.height > bottom) bottom = n.y + n.height;
+  return bottom;
+}
+
 /**
- * Downward growth. A changed node whose bottom edge plus one GRID crosses into the next lane pushes
- * that lane and everything below it down by a GRID multiple, so membership (by `y`) is unchanged: the
- * boundary moves, the node does not change section. The last lane is unbounded. Pushes accumulate
- * down the stack. Pure; the caller applies the shifts.
+ * Range a lane wants: one grid when folded, else its visible content plus a gap, never under the
+ * minimum. A visible node placed into a folded lane still fits. `members` are the lane's visible
+ * (non-pinned) nodes.
  */
-export function growLaneForNodes(lanes: SectionLane[], nodes: LaneNodeGeom[], changedIds: string[]): LaneGrowth {
+export function sectionTargetHeight(l: SectionLane, members: LaneNodeGeom[]): number {
+  const content = visibleContentBottom(l, members) + GRID - l.y;
+  const raw = l.folded ? Math.max(SECTION_FOLDED_H, members.length ? content : 0) : Math.max(SECTION_MIN_H, content);
+  return Math.ceil(raw / GRID) * GRID;
+}
+
+/**
+ * Fit every lane but the last to its content: a lane taller than its target shrinks, a shorter one
+ * grows; the difference moves every lane below and that lane's members (pinned members travel with
+ * their lane). Pure; the caller applies the shifts. Idempotent after one application.
+ */
+export function fitLanes(lanes: SectionLane[], nodes: LaneNodeGeom[]): LaneGrowth {
   const empty: LaneGrowth = { laneShifts: {}, nodeShifts: {} };
   const sorted = sortLanes(lanes);
-  if (sorted.length < 2 || changedIds.length === 0) return empty;
-
-  const byId = new Map(nodes.map(n => [n.id, n]));
-  const need: number[] = sorted.map(() => 0);   // - need[i] = push of the boundary below lane i
-  for (const id of changedIds) {
-    const n = byId.get(id);
-    if (!n) continue;
-    const i = laneIndexForY(sorted, n.y);
-    if (i >= sorted.length - 1) continue;
-    const overflow = n.y + n.height + GRID - sorted[i + 1].y;
-    if (overflow <= 0) continue;
-    const delta = Math.ceil(overflow / GRID) * GRID;
-    if (delta > need[i]) need[i] = delta;
+  if (sorted.length < 2) return empty;
+  const pinned = pinnedLaneIndex(sorted);
+  const visible: LaneNodeGeom[][] = sorted.map(() => []);
+  const laneOf = new Map<string, number>();
+  for (const n of nodes) {
+    const i = laneIndexForNode(sorted, n, pinned);
+    laneOf.set(n.id, i);
+    if (!pinned.has(n.id)) visible[i].push(n);
   }
 
   const laneShifts: Record<string, number> = {};
   let acc = 0;
-  for (let k = 1; k < sorted.length; k++) {
-    acc += need[k - 1];
-    if (acc > 0) laneShifts[sorted[k].id] = acc;
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const range = sorted[i + 1].y - sorted[i].y;
+    acc += sectionTargetHeight(sorted[i], visible[i]) - range;
+    if (acc !== 0) laneShifts[sorted[i + 1].id] = acc;
   }
-  if (acc === 0) return empty;   // - nothing moved; skip the node scan
+  if (Object.keys(laneShifts).length === 0) return empty;
 
   const nodeShifts: Record<string, number> = {};
   for (const n of nodes) {
-    const s = laneShifts[sorted[laneIndexForY(sorted, n.y)].id];
+    const s = laneShifts[sorted[laneOf.get(n.id) ?? 0].id];
     if (s) nodeShifts[n.id] = s;
   }
   return { laneShifts, nodeShifts };
 }
 
-/** Apply `growLaneForNodes` to a canvas. Same reference when nothing moves (no spurious save). */
-export function applyLaneGrowth(canvas: CanvasData, changedIds: string[]): CanvasData {
+/** Apply `fitLanes` to a canvas. Same reference when nothing moves (no spurious save). */
+export function applyLaneFit(canvas: CanvasData): CanvasData {
   const lanes = canvas.metadata?.sections ?? [];
-  const g = growLaneForNodes(lanes, canvas.nodes, changedIds);
-  if (Object.keys(g.laneShifts).length === 0) return canvas;
+  const f = fitLanes(lanes, canvas.nodes);
+  if (Object.keys(f.laneShifts).length === 0) return canvas;
   return {
     ...canvas,
-    nodes: canvas.nodes.map(n => (g.nodeShifts[n.id] ? { ...n, y: n.y + g.nodeShifts[n.id] } : n)),
-    metadata: {
-      ...canvas.metadata,
-      sections: sortLanes(lanes).map(l => (g.laneShifts[l.id] ? { ...l, y: l.y + g.laneShifts[l.id] } : l)),
-    },
+    nodes: canvas.nodes.map(n => (f.nodeShifts[n.id] ? { ...n, y: n.y + f.nodeShifts[n.id] } : n)),
+    metadata: { ...canvas.metadata, sections: sortLanes(lanes).map(l => (f.laneShifts[l.id] ? { ...l, y: l.y + f.laneShifts[l.id] } : l)) },
   };
 }
 
-/** Top of the lane owning flow y; -Infinity when the canvas has no lanes (nothing to clamp to). */
-export function laneTopForY(lanes: SectionLane[], y: number): number {
+/** A run's output cell for a pinned (folded) code cell is pinned to the same lane. Same reference otherwise. */
+export function pinOutputToLane(lanes: SectionLane[], codeId: string, outId: string): SectionLane[] {
+  const i = lanes.findIndex(l => l.folded?.includes(codeId));
+  if (i < 0 || lanes[i].folded?.includes(outId)) return lanes;
+  return lanes.map((l, k) => (k === i ? { ...l, folded: [...(l.folded ?? []), outId] } : l));
+}
+
+/** Top of the lane owning a node (pinned membership wins over its `y`); -Infinity without lanes. */
+export function laneTopForNode(lanes: SectionLane[], node: { id: string; y: number }): number {
   if (lanes.length === 0) return -Infinity;
   const sorted = sortLanes(lanes);
-  return sorted[laneIndexForY(sorted, y)].y;
+  const pinned = pinnedLaneIndex(sorted);
+  return sorted[laneIndexForNode(sorted, node, pinned)].y;
 }
 
 /**
  * Where a run's output cell goes: to the right of its code cell, vertically centred on it, but never
- * above the code cell's section top — that would make the output a member of the section above.
+ * above the code cell's section top — that would make the output a member of the section above (a
+ * pinned code cell's output floors to that same pinned lane instead).
  * `gap` = horizontal distance from the code cell; runs use 140, a manual pin 60.
  */
-export function outputCellGeom(lanes: SectionLane[], cell: { x: number; y: number; width: number; height: number }, gap = 140): { x: number; y: number; width: number; height: number } {
+export function outputCellGeom(lanes: SectionLane[], cell: { id: string; x: number; y: number; width: number; height: number }, gap = 140): { x: number; y: number; width: number; height: number } {
   const w = 480, h = 320;
-  const y = Math.max(laneTopForY(lanes, cell.y), Math.round(cell.y + (cell.height - h) / 2));
+  const y = Math.max(laneTopForNode(lanes, cell), Math.round(cell.y + (cell.height - h) / 2));
   return { x: Math.round(cell.x + cell.width + gap), y, width: w, height: h };
 }
 
