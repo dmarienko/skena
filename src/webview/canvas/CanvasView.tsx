@@ -790,7 +790,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     commitLanes(lanes.map(l => {
       if (l.id !== id) return l;
       if (l.folded) { const { folded: _open, ...rest } = l; return rest; }
-      return { ...l, folded: target.memberIds.filter(m => !(l.folded ?? []).includes(m)) };
+      return { ...l, folded: target.memberIds };
     }));
   }, [derivedLanes, lanes, commitLanes, pushHistory]);
 
@@ -3116,6 +3116,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       ]);
       setEdges(eds => eds.filter(e => !removedIds.has(e.source) && !removedIds.has(e.target)));
       canvasRef.current = {
+        ...canvasRef.current,   // - keep metadata/viewport/counter: only nodes and edges changed
         nodes: [...canvasRef.current.nodes.filter(n => !removedIds.has(n.id)), portalNode],
         edges: canvasRef.current.edges.filter(e => !removedIds.has(e.fromNode) && !removedIds.has(e.toNode)),
       };
