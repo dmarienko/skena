@@ -74,7 +74,37 @@ import {
 import { parseNodeRef } from '../shared/nodeRef';
 import { MAX_FILE_FULL_BYTES, MAX_FILE_PREVIEW_BYTES, MAX_NOTEBOOK_BYTES, NODE_SIZE } from '../shared/constants';
 import { normalizeCanvasToOrigin } from '../shared/bounds';
-import { migrateSections, memberCodeCellsInRunOrder, applyLaneFit, outputCellGeom, pinOutputToLane } from '../shared/sectionLanes';
+import { migrateSections, memberCodeCellsInRunOrder, applyLaneFit, deriveLanes, outputCellGeom, pinOutputToLane } from '../shared/sectionLanes';
+import { layoutSection, placeOutput, applyPatchesToCanvas, toEngineNodes, type EngineNode, type LayoutOpts } from '../shared/layoutEngine';
+
+// - one section's nodes as the layout engine sees them: the lane holding `nodeId`, its folded
+//   members included, exactly as the webview's `engineNodesOf` slices them. Null when the file has
+//   no sections (written before sections existed) or the node sits in none — the engine lays out ONE
+//   section, so there is nothing for it to work on and the caller leaves the geometry alone.
+function sectionEngineNodes(canvas: CanvasData, nodeId: string): EngineNode[] | null {
+  const lanes = canvas.metadata?.sections ?? [];
+  if (lanes.length === 0) return null;
+  const lane = deriveLanes(canvas.nodes, lanes).find(l => l.memberIds.includes(nodeId));
+  if (!lane) return null;
+  const members = new Set(lane.memberIds);
+  return toEngineNodes(canvas.nodes.filter(n => members.has(n.id)));
+}
+
+// - where a run's output cell goes: its pair's output column, its code cell's y. The fallback covers
+//   a canvas with no sections; a code cell inside one is always in a column, so it cannot miss there.
+function outputGeomFor(canvas: CanvasData, cell: CodeNode, existing?: { width: number; height: number }): { x: number; y: number; width: number; height: number } {
+  const around = sectionEngineNodes(canvas, cell.id);
+  const placed = around && placeOutput(around, cell.id, existing ? { w: existing.width, h: existing.height } : undefined);
+  return placed ?? outputCellGeom(canvas.metadata?.sections ?? [], cell);
+}
+
+// - lay out the section holding `nodeId` and apply what moved. `canvas.nodes` is replaced, `canvas`
+//   itself never is: the document holds that reference. The lane fit runs after, as for every write.
+function layoutAround(canvas: CanvasData, nodeId: string, opts: LayoutOpts): void {
+  const around = sectionEngineNodes(canvas, nodeId);
+  if (!around) return;
+  canvas.nodes = applyPatchesToCanvas(canvas.nodes, layoutSection(around, opts));
+}
 
 // ─── bookmarks file helpers ──────────────────────────────────────────────────
 
@@ -1322,14 +1352,16 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         } else {
           const cellBase: CellNode = {
             id: outId, type: 'cell',
-            ...outputCellGeom(c.metadata?.sections ?? [], cn),
+            ...outputGeomFor(c, cn),
             format: payload.output.format, content: payload.output.content, createdBy: 'ai',
           };
           outputNode = assignLabel(cellBase, c.nodes) as CellNode;
           c.nodes.push(outputNode);
+          cn.outputNodeId = outId;   // - before the engine: the link is what makes the new cell this code cell's output rather than a free node
           if (c.metadata?.sections) c.metadata = { ...c.metadata, sections: pinOutputToLane(c.metadata.sections, cn.id, outputNode.id) };   // - an output of a folded cell stays folded
+          layoutAround(c, outId, { moverIds: [outId] });
           Object.assign(c, applyLaneFit(c, Date.now()));   // - c IS document.canvas and persist() captured that reference: assign into it, never reassign c
-          cn.outputNodeId = outId;
+          outputNode = c.nodes.find(n => n.id === outId) as CellNode;   // - the engine and the fit replace every node they move; the webview creates the node at the geometry this message carries
           edge = { id: `e-${outId}`, fromNode: cn.id, fromSide: 'right', toNode: outId, toSide: 'left', toEnd: 'arrow' };
           c.edges.push(edge);
         }
@@ -1457,16 +1489,18 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           const id = presetId ?? `ai-${Date.now().toString(36)}`;
           const cellBase: CellNode = {
             id, type: 'cell',
-            ...outputCellGeom(c.metadata?.sections ?? [], cn),
+            ...outputGeomFor(c, cn),
             format: output.format, content: output.content, createdBy: 'ai',
           };
           outputNode = assignLabel(cellBase, c.nodes) as CellNode;
           c.nodes.push(outputNode);
+          cn.outputNodeId = id;   // - before the engine: the link is what makes the new cell this code cell's output rather than a free node
           if (c.metadata?.sections) c.metadata = { ...c.metadata, sections: pinOutputToLane(c.metadata.sections, cn.id, outputNode.id) };   // - an output of a folded cell stays folded
+          layoutAround(c, id, { moverIds: [id] });
           Object.assign(c, applyLaneFit(c, Date.now()));   // - c IS document.canvas and persist() captured that reference: assign into it, never reassign c
+          outputNode = c.nodes.find(n => n.id === id) as CellNode;   // - the engine and the fit replace every node they move; the caller sends this node on to the webview
           edge = { id: `e-${id}`, fromNode: cn.id, fromSide: 'right', toNode: id, toSide: 'left', toEnd: 'arrow' };
           c.edges.push(edge);
-          cn.outputNodeId = id;
         }
       }
       setSelfSaving(true);
@@ -1519,9 +1553,10 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       // - (a fresh id would duplicate the persisted output cell); only mint a new id on first run
       if (!liveOutputId) liveOutputId = cn.outputNodeId ?? `ai-${Date.now().toString(36)}`;
       const { format, content } = renderOutput(latest);
+      const liveExisting = document.canvas.nodes.find(n => n.id === liveOutputId && n.type === 'cell');
       const outputNode: CellNode = {
         id: liveOutputId, type: 'cell',
-        ...outputCellGeom(document.canvas.metadata?.sections ?? [], cn),
+        ...outputGeomFor(document.canvas, cn, liveExisting),
         format, content, createdBy: 'ai',
       };
       const edge: CanvasEdge = { id: `e-${liveOutputId}`, fromNode: cn.id, fromSide: 'right', toNode: liveOutputId, toSide: 'left', toEnd: 'arrow' };
@@ -1536,10 +1571,11 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         const cnDisk = c.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code') as CodeNode | undefined;
         if (cnDisk && !cnDisk.outputNodeId) {
           if (!c.nodes.some(n => n.id === outputNode.id)) c.nodes.push(assignLabel(outputNode, c.nodes) as CellNode);
+          cnDisk.outputNodeId = outputNode.id;   // - before the engine: the link is what makes the new cell this code cell's output rather than a free node
           if (c.metadata?.sections) c.metadata = { ...c.metadata, sections: pinOutputToLane(c.metadata.sections, cn.id, outputNode.id) };   // - an output of a folded cell stays folded
+          layoutAround(c, outputNode.id, { moverIds: [outputNode.id] });
           Object.assign(c, applyLaneFit(c, Date.now()));   // - c IS document.canvas, written below: assign into it, never reassign c
           if (!c.edges.some(e => e.id === edge.id)) c.edges.push(edge);
-          cnDisk.outputNodeId = outputNode.id;
           setSelfSaving(true);
           setLastWritten(JSON.stringify(c, null, 2));
           void writeCanvas(document.uri.fsPath, c).finally(() => setTimeout(() => setSelfSaving(false), 400));
