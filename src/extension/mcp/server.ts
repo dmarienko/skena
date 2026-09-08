@@ -30,7 +30,7 @@ import { CanvasData, CanvasNode, CanvasEdge, CanvasNodeBase, CellNode, CodeNode,
 import { assignLabel, ensureLabels } from '../../shared/nodeLabels';
 import { snapGrid } from '../../shared/grid';
 import { clampToOrigin } from '../../shared/bounds';
-import { applyLaneFit, deriveLanes, outputCellGeom, pinOutputToLane, pruneFoldedIds } from '../../shared/sectionLanes';
+import { applyLaneFit, deriveLanes, outputCellGeom, pinOutputToLane, pruneFoldedIds, sectionByRef, insertLaneAt, foldLane, unfoldLane, sectionTargetHeight, parkFirstLaneAtOrigin, type SectionLane } from '../../shared/sectionLanes';
 import { resolveCellKernel, cellKernelView, kernelById, upstreamCellsForRun, type KernelLike } from '../../shared/kernelBinding';
 import { resolveKernelConfig, type KernelServerConfig } from '../jupyter/config';
 import { executeCell } from '../jupyter/client';
@@ -1047,6 +1047,120 @@ async function canvasRunCell(args: Record<string, unknown>): Promise<string> {
   }); // - withFileLock
 }
 
+async function canvasAddSection(args: Record<string, unknown>): Promise<string> {
+  const p = resolvePath(args.canvasPath as string);
+  return withFileLock(p, async () => {
+    const d     = await readCanvasOrEmpty(p);
+    const lanes = d.metadata?.sections ?? [];
+    const now   = Date.now();
+
+    let next: SectionLane[];
+    if (args.y !== undefined) {
+      const y = args.y as number;
+      next = insertLaneAt(lanes, y, now);
+      if (next === lanes) {
+        return y < 0 ? 'error: y must be ≥ 0' : `error: a section already starts at y=${snapGrid(y)}`;
+      }
+    } else {
+      // - append under the last section's fitted range, as the rail's + does
+      const last = deriveLanes(d.nodes, lanes).at(-1);
+      let y = 0;
+      if (last) {
+        const hidden  = new Set(last.folded ?? []);
+        const visible = d.nodes.filter(n => last.memberIds.includes(n.id) && !hidden.has(n.id));
+        y = last.top + sectionTargetHeight(last, visible);
+      }
+      next = insertLaneAt(lanes, y, now);
+      if (next === lanes) return `error: a section already starts at y=${snapGrid(y)}`;
+    }
+
+    const created = next.find(l => !lanes.includes(l));
+    if (created && typeof args.title === 'string' && args.title) created.title = args.title as string;
+    d.metadata = { ...d.metadata, sections: next };
+    Object.assign(d, applyLaneFit(d, now));   // - every write fits the sections
+    await writeCanvas(p, d);
+
+    const shown = deriveLanes(d.nodes, d.metadata?.sections ?? []).find(l => l.id === created?.id);
+    return `Created section ${shown?.label ?? 'S?'} (id ${created?.id}) at y=${shown?.top ?? created?.y}`;
+  }); // - withFileLock
+}
+
+async function canvasRemoveSection(args: Record<string, unknown>): Promise<string> {
+  const p = resolvePath(args.canvasPath as string);
+  return withFileLock(p, async () => {
+    const d     = await readCanvas(p);
+    const lanes = d.metadata?.sections ?? [];
+    const lane  = sectionByRef(lanes, args.ref as string);
+    if (!lane) return `error: no section matches ${args.ref}`;
+
+    const derived = deriveLanes(d.nodes, lanes).find(l => l.id === lane.id);
+    const label   = derived?.label ?? lane.id;
+    // - the pinned members of a fold count too: they are the section's, they go with it
+    const doomed  = new Set(derived?.memberIds ?? []);
+    d.nodes = d.nodes.filter(n => !doomed.has(n.id));
+    d.edges = d.edges.filter(e => !doomed.has(e.fromNode) && !doomed.has(e.toNode));
+    const kept = parkFirstLaneAtOrigin(pruneFoldedIds(lanes.filter(l => l.id !== lane.id), doomed));
+    d.metadata = { ...d.metadata, sections: kept };
+    Object.assign(d, applyLaneFit(d, Date.now()));   // - every write fits the sections
+    await writeCanvas(p, d);
+    return `Removed section ${label} and ${doomed.size} node(s)`;
+  }); // - withFileLock
+}
+
+async function canvasUpdateSection(args: Record<string, unknown>): Promise<string> {
+  const p = resolvePath(args.canvasPath as string);
+  return withFileLock(p, async () => {
+    const d     = await readCanvas(p);
+    let lanes   = d.metadata?.sections ?? [];
+    const lane  = sectionByRef(lanes, args.ref as string);
+    if (!lane) return `error: no section matches ${args.ref}`;
+    const label = deriveLanes(d.nodes, lanes).find(l => l.id === lane.id)?.label ?? lane.id;
+    const changed: string[] = [];
+
+    if (typeof args.title === 'string') {
+      const t = args.title as string;
+      // - an empty title is not stored: the rail shows the creation datetime instead
+      lanes = lanes.map(l => { if (l.id !== lane.id) return l; const { title: _drop, ...rest } = l; return t ? { ...rest, title: t } : rest; });
+      changed.push(t ? `title "${t}"` : 'title cleared');
+    }
+
+    if (args.kernelRef !== undefined) {
+      if (args.kernelRef === null) {
+        lanes = lanes.map(l => { if (l.id !== lane.id) return l; const { kernelId: _unbound, ...rest } = l; return rest; });
+        changed.push('kernel unbound');
+      } else {
+        const k = kernelByRef(d, args.kernelRef as string);
+        if (!k) return `error: no kernel matches "${args.kernelRef}" — a record id or display name, or a kernel node label/id`;
+        lanes = lanes.map(l => (l.id === lane.id ? { ...l, kernelId: k.id } : l));
+        changed.push(`kernel ${k.displayName ?? k.id}`);
+      }
+    }
+
+    if (args.folded !== undefined) {
+      if (args.folded) {
+        const next = foldLane(lanes, d.nodes, lane.id);
+        changed.push(next === lanes ? 'already folded' : `folded (${next.find(l => l.id === lane.id)?.folded?.length ?? 0} node(s) hidden)`);
+        lanes = next;
+      } else {
+        // - grow the lane back before the members are released, or the one below adopts them
+        const u = unfoldLane(lanes, d.nodes, lane.id);
+        if (u.lanes === lanes) changed.push('already unfolded');
+        else {
+          d.nodes = d.nodes.map(n => (u.nodeShifts[n.id] ? { ...n, y: n.y + u.nodeShifts[n.id] } : n));
+          lanes = u.lanes;
+          changed.push('unfolded');
+        }
+      }
+    }
+
+    if (changed.length === 0) return 'error: nothing to update — supply title, kernelRef or folded';
+    d.metadata = { ...d.metadata, sections: lanes };
+    Object.assign(d, applyLaneFit(d, Date.now()));   // - every write fits the sections
+    await writeCanvas(p, d);
+    return `Updated section ${label}: ${changed.join(', ')}`;
+  }); // - withFileLock
+}
+
 // ─── tool definitions ─────────────────────────────────────────────────────────
 
 const TOOLS = [
@@ -1260,6 +1374,46 @@ const TOOLS = [
     },
   },
   {
+    name: 'canvas_add_section',
+    description: 'Add a section (a horizontal lane; a node belongs to the lane whose range holds its top edge). Without y it goes under the last section\'s fitted range, as the rail\'s + does; with y it is snapped to the grid and inserted there, splitting the lane it lands in — nodes stay where they are and membership follows y. Sections then fit their content.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        canvasPath: { type: 'string', description: 'absolute path to the .canvas file' },
+        title:      { type: 'string', description: 'optional: section title; without one the rail shows the creation datetime' },
+        y:          { type: 'number', description: 'optional: canvas y where the section starts (snapped to the grid, must be ≥ 0); default is under the last section' },
+      },
+      required: ['canvasPath'],
+    },
+  },
+  {
+    name: 'canvas_remove_section',
+    description: 'Delete a section: the nodes and edges of the section are deleted with it (including the ones a fold hides). The topmost remaining section re-parks at the canvas origin, fold lists drop the removed ids, and sections fit their content.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        canvasPath: { type: 'string', description: 'absolute path to the .canvas file' },
+        ref:        { type: 'string', description: 'S1, S2 … as printed by canvas_list, or the section id' },
+      },
+      required: ['canvasPath', 'ref'],
+    },
+  },
+  {
+    name: 'canvas_update_section',
+    description: 'Rename a section, bind or unbind its kernel, or fold it. Folding hides its nodes (they stay in the file, pinned to the section); unfolding grows the section back before releasing them, so the section below cannot adopt one. Sections then fit their content.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        canvasPath: { type: 'string', description: 'absolute path to the .canvas file' },
+        ref:        { type: 'string', description: 'S1, S2 … as printed by canvas_list, or the section id' },
+        title:      { type: 'string', description: 'optional: new title; an empty string clears it' },
+        kernelRef:  { type: ['string', 'null'], description: 'optional: a kernel record id or display name, or a kernel node label/id; null unbinds' },
+        folded:     { type: 'boolean', description: 'optional: true folds the section, false unfolds it' },
+      },
+      required: ['canvasPath', 'ref'],
+    },
+  },
+  {
     name: 'canvas_run_cell',
     description: 'Run a code cell node on a Jupyter kernel and write its output to a linked cell node. Resolves the kernel from kernelRef, else the code node\'s bound-kernel edge, else the kernel bound to the node\'s section.',
     inputSchema: {
@@ -1337,6 +1491,9 @@ async function dispatch(msg: JsonRpcMsg): Promise<void> {
         case 'canvas_create':      text = await canvasCreate(args);      break;
         case 'canvas_pin_output':  text = await canvasPinOutput(args);   break;
         case 'canvas_run_cell':    text = await canvasRunCell(args);     break;
+        case 'canvas_add_section':    text = await canvasAddSection(args);    break;
+        case 'canvas_remove_section': text = await canvasRemoveSection(args); break;
+        case 'canvas_update_section': text = await canvasUpdateSection(args); break;
         default: throw new Error(`Unknown tool: ${name}`);
       }
       ok(id, { content: [{ type: 'text', text }] });
