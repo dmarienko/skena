@@ -33,7 +33,7 @@ import '@xyflow/react/dist/style.css';
 import { CanvasData, CanvasNode, CanvasEdge, CanvasViewport, KernelNode, KernelRecord, MsgAddNodeResult, MsgKernelAdded, MsgKernelRemoved, MsgRunOutput, MsgSubCanvasCreated, MsgVerifyPathResult, NodeSide, CanvasMark, ViewportSnapshot } from '../../shared/types';
 import { classifyClipboard } from './paste-classify';
 import { ContextMenu } from './ContextMenu';
-import { CANVAS_COLORS, NODE_SIZE, NEW_NODE } from '../../shared/constants';
+import { CANVAS_COLORS, NODE_SIZE, NEW_NODE, READABLE_ZOOM } from '../../shared/constants';
 import { GRID, snapGrid } from '../../shared/grid';
 import { ORIGIN_GUTTER, clampToOrigin, clampCameraToOrigin } from '../../shared/bounds';
 import { ensureLabels, assignLabel } from './nodeLabels';
@@ -2030,22 +2030,20 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         return;
       }
 
-      // - Alt+Shift+C: center and zoom to focused node at a readable scale.
-      // - Target zoom = fit node into 85% of the viewport, clamped 0.8–1.5 so
-      // - text stays legible without losing too much spatial context.
+      // - Alt+Shift+C: centre the focused node on the pane at READABLE_ZOOM — a code cell's text is
+      // - sized in --vscode-editor-font-size, so zoom 1 reads exactly like the VS Code editor.
       if (!e.ctrlKey && !e.metaKey && e.shiftKey && e.altKey && e.key === 'C') {
         const focused = nodesRef.current.find(n => n.selected && !isBandType(n.type));
         if (focused) {
           e.preventDefault();
+          if (!wrapperRef.current) return;   // - the pane sits right of the rail; without it there is no centre
+          const rect = wrapperRef.current.getBoundingClientRect();
           const nw   = focused.measured?.width  ?? Number(focused.style?.width  ?? 200);
           const nh   = focused.measured?.height ?? Number(focused.style?.height ?? 150);
-          const zoom = Math.max(0.8, Math.min(1.5, Math.min(
-            window.innerWidth  * 0.85 / nw,
-            window.innerHeight * 0.85 / nh,
-          )));
+          const zoom = READABLE_ZOOM;
           const cAltShiftC = clampCam(
-            window.innerWidth  / 2 - (focused.position.x + nw / 2) * zoom,
-            window.innerHeight / 2 - (focused.position.y + nh / 2) * zoom,
+            rect.width  / 2 - (focused.position.x + nw / 2) * zoom,
+            rect.height / 2 - (focused.position.y + nh / 2) * zoom,
             zoom,
           );
           rfRef.current.setViewport({ x: cAltShiftC.x, y: cAltShiftC.y, zoom }, { duration: 350 });
@@ -2058,12 +2056,14 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         const focused = nodesRef.current.find(n => n.selected && !isBandType(n.type));
         if (focused) {
           e.preventDefault();
+          if (!wrapperRef.current) return;
+          const rect = wrapperRef.current.getBoundingClientRect();
           const nw  = Number(focused.style?.width  ?? 200);
           const nh  = Number(focused.style?.height ?? 150);
           const { zoom } = rfRef.current.getViewport();
           const cShiftC = clampCam(
-            window.innerWidth  / 2 - (focused.position.x + nw / 2) * zoom,
-            window.innerHeight / 2 - (focused.position.y + nh / 2) * zoom,
+            rect.width  / 2 - (focused.position.x + nw / 2) * zoom,
+            rect.height / 2 - (focused.position.y + nh / 2) * zoom,
             zoom,
           );
           rfRef.current.setViewport({ x: cShiftC.x, y: cShiftC.y, zoom }, { duration: 250 });

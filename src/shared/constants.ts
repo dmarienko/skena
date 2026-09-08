@@ -20,6 +20,10 @@ export const CANVAS_COLORS: Record<string, string> = {
  */
 export const GRID = 100;
 
+// - zoom at which node text matches the VS Code editor font size: code cells render their text with
+//   --vscode-editor-font-size, so at 1 a canvas cell reads exactly like the editor it came from
+export const READABLE_ZOOM = 1;
+
 /**
  * Node geometry — the single source of truth for how big NEW nodes are created.
  * Every creation path (context menu, directional-add, edge-drop, vim `o`, host add-node,
