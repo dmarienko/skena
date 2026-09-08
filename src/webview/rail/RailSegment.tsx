@@ -30,12 +30,14 @@ const btn: React.CSSProperties = {
   width: BTN_H, height: BTN_H, flex: 'none',
 };
 
-export function RailSegment({ lane, seg, color, kernel, current, onFold, onRun, onDelete, onKernel, onTitle, onMenu }: {
+export function RailSegment({ lane, seg, color, kernel, current, runnable, onFold, onRun, onDelete, onKernel, onTitle, onMenu }: {
   lane: DerivedLane;
   seg: Seg;
   color: string;
   kernel: RailKernel | null;
   current: boolean;
+  /** - the section's kernelId names a kernel that exists; ▶ is dimmed and says so when it does not */
+  runnable: boolean;
   onFold: (id: string) => void;
   onRun: (id: string) => void;
   onDelete: (id: string) => void;
@@ -45,7 +47,7 @@ export function RailSegment({ lane, seg, color, kernel, current, onFold, onRun, 
 }): JSX.Element {
   const title = lane.title?.trim() || fmtDateTime(lane.createdAt);
   const full = `${lane.label}: ${title}`;
-  const { items, titleMaxPx } = railItems(seg.height, full.length);
+  const { items, titleMaxPx } = railItems(seg.height, full.length, !!lane.folded);
   // - the hook is unconditional (rules of hooks); an unbound section passes a server no status ever matches
   const state = useKernelState(kernel?.server ?? '', kernel?.kernelId);
   // - a record's live state is worth showing; a kernel node already shows its own LED on the canvas
@@ -75,7 +77,11 @@ export function RailSegment({ lane, seg, color, kernel, current, onFold, onRun, 
             case 'label':
               return <span key={item} data-sk-popover-anchor="" onDoubleClick={e => onTitle(lane.id, anchor(e))} style={{ fontFamily: FONT, fontWeight: 700, fontSize: 10, color, userSelect: 'none' }}>{lane.label}</span>;
             case 'run':
-              return <button key={item} style={btn} title="run section" onClick={() => onRun(lane.id)}><Play /></button>;
+              return (
+                <button key={item} style={{ ...btn, color: runnable ? 'var(--sk-text1)' : 'var(--sk-text3)' }}
+                  title={runnable ? 'run section' : 'no section kernel — bind one from the dot; cells with a kernel edge still run'}
+                  onClick={() => onRun(lane.id)}><Play /></button>
+              );
             case 'kernel':
               return (
                 <button key={item} data-sk-popover-anchor="" style={{ ...btn, height: DOT_BTN_H }} title={kernelName ? `kernel: ${kernelName}` : 'bind a kernel'} onClick={e => onKernel(lane.id, anchor(e))}>

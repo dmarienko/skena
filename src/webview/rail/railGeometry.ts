@@ -70,14 +70,18 @@ export interface RailLayout {
  * priority order (S#, fold, run, kernel, delete) while they fit; the title is elastic: it replaces the
  * S# label and takes whatever is left, truncated, when that is at least TITLE_MIN_PX.
  *
+ * A folded section takes the chevron first: its range is one grid, so at a low zoom its segment is at
+ * the 28px floor, which holds exactly one 20px button — and without the chevron there is no way to
+ * unfold from the rail.
+ *
  * The heights are the RENDERED boxes (BTN_H, DOT_BTN_H, LABEL_H), not the icons inside them — budget
  * an icon size here and the last control ends up clipped by the column's overflow instead of dropped.
  */
-export function railItems(height: number, titleChars: number): RailLayout {
+export function railItems(height: number, titleChars: number, folded = false): RailLayout {
   const titleH = titleChars > 0 ? Math.ceil(titleChars * TITLE_PX_PER_CHAR) : 0;
-  const fixed: [RailItem, number][] = [
-    ['label', LABEL_H], ['fold', BTN_H], ['run', BTN_H], ['kernel', DOT_BTN_H], ['delete', BTN_H],
-  ];
+  const fixed: [RailItem, number][] = folded
+    ? [['fold', BTN_H], ['label', LABEL_H], ['run', BTN_H], ['kernel', DOT_BTN_H], ['delete', BTN_H]]
+    : [['label', LABEL_H], ['fold', BTN_H], ['run', BTN_H], ['kernel', DOT_BTN_H], ['delete', BTN_H]];
   let budget = height - SEG_PAD_TOP;
   const got = new Set<RailItem>();
   for (const [item, h] of fixed) {

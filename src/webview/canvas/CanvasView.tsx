@@ -55,7 +55,7 @@ import { LabeledEdgeComponent } from './edges/LabeledEdge';
 import { HelperLines } from './HelperLines';
 import { SectionSeparators } from './SectionSeparators';
 import { SectionRail, type RailKernel } from '../rail/SectionRail';
-import { deriveLanes, sortLanes, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
+import { deriveLanes, sortLanes, laneIndexForNode, pinnedLaneIndex, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
 import { useLaneFit, flowGeom } from '../rail/useLaneFit';
 import { CanvasSearch } from './CanvasSearch';
 import { MarksPanel  } from './MarksPanel';
@@ -761,6 +761,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     () => (hiddenByFold.size === 0 ? nodes : nodes.map(n => (hiddenByFold.has(n.id) ? { ...n, hidden: true } : n))),
     [nodes, hiddenByFold],
   );
+  const hiddenByFoldRef = useRef<Set<string>>(hiddenByFold);
+  useEffect(() => { hiddenByFoldRef.current = hiddenByFold; }, [hiddenByFold]);
 
   // - persist a lane edit: update local state, mirror into canvasRef, schedule the save
   const commitLanes = useCallback((next: SectionLane[]) => {
@@ -822,7 +824,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     // - fold lists the members: they are hidden and pinned here, and the fit hook collapses the
     //   range, moving everything below up
     commitLanes(lanes.map(l => (l.id === id ? { ...l, folded: target.memberIds } : l)));
-  }, [derivedLanes, lanes, nodes, commitLanes, pushHistory, shiftNodes]);
+    // - a hidden node must not stay selected: keyboard nav would then start from a node nobody sees
+    setNodes(nds => nds.map(n => (target.memberIds.includes(n.id) ? { ...n, selected: false } : n)));
+  }, [derivedLanes, lanes, nodes, commitLanes, pushHistory, shiftNodes, setNodes]);
 
   // - a new lane is APPENDED below the last one, past its content: sections are an append-only stack,
   //   so creating one is the next step in the notebook and never renumbers what already exists. The
@@ -1799,13 +1803,22 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     });
 
     // - Spatial navigation: find the best node in the given direction.
-    // - Strategy: 45° cone filter first (primary axis must dominate so a node
-    // - that is barely left but mostly below cannot beat a clearly-left node).
-    // - If nothing qualifies in the cone, fall back to full half-space with a
-    // - stronger perpendicular penalty (original behaviour, last-resort only).
+    // - Strategy: cone filter (primary axis must dominate so a node that is barely
+    // - left but mostly below cannot beat a clearly-left node), inside the section
+    // - the current node belongs to, skipping nodes hidden by a fold.
     const findNearest = (from: Node, dir: 'left' | 'right' | 'up' | 'down'): string | null => {
       const fc    = centerOf(from);
       const horiz = dir === 'left' || dir === 'right';
+
+      // - a move stays in one section: the sections are the notebook's chapters, and a node in
+      //   another one is not "over there" in any sense the user meant
+      const sorted   = sortLanes(lanesRef.current);
+      const pinned   = pinnedLaneIndex(sorted);
+      const hidden   = hiddenByFoldRef.current;
+      const fromLane = sorted.length ? laneIndexForNode(sorted, { id: from.id, y: from.position.y }, pinned) : -1;
+      const reachable = (n: Node): boolean =>
+        !hidden.has(n.id) &&
+        (!sorted.length || laneIndexForNode(sorted, { id: n.id, y: n.position.y }, pinned) === fromLane);
 
       const inDir = (dx: number, dy: number): boolean =>
         dir === 'left'  ? dx < 0 :
@@ -1840,7 +1853,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         let sideScore = Infinity;
         for (const nid of sideNeighbours) {
           const n = nodesRef.current.find(x => x.id === nid);
-          if (!n) continue;
+          if (!n || !reachable(n)) continue;
           const nc = centerOf(n);
           const s = score(nc.x - fc.x, nc.y - fc.y);
           if (s < sideScore) { sideScore = s; sideId = nid; }
@@ -1848,21 +1861,17 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         if (sideId) return sideId;
       }
 
-      // - geometry fallback: strict 45° cone (primary axis dominates), then full half-space
-      const gather = (cone: boolean): { id: string; s: number }[] => {
-        const out: { id: string; s: number }[] = [];
-        for (const node of nodesRef.current) {
-          if (node.id === from.id || isBandType(node.type)) continue;
-          const nc = centerOf(node);
-          const dx = nc.x - fc.x;
-          const dy = nc.y - fc.y;
-          if (!inDir(dx, dy) || (cone && !inCone(dx, dy))) continue;
-          out.push({ id: node.id, s: score(dx, dy) });
-        }
-        return out;
-      };
-      let cands = gather(true);
-      if (!cands.length) cands = gather(false);
+      // - cone only, same section only: nothing to the right means nothing happens, it never jumps
+      //   to a far node in another section
+      const cands: { id: string; s: number }[] = [];
+      for (const node of nodesRef.current) {
+        if (node.id === from.id || isBandType(node.type) || !reachable(node)) continue;
+        const nc = centerOf(node);
+        const dx = nc.x - fc.x;
+        const dy = nc.y - fc.y;
+        if (!inDir(dx, dy) || !inCone(dx, dy)) continue;
+        cands.push({ id: node.id, s: score(dx, dy) });
+      }
       if (!cands.length) return null;
       cands.sort((a, b) => a.s - b.s);
       return cands[0].id;
@@ -2882,6 +2891,10 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         seed = { ...rawNode, colorIndex: nextKernelColorIndex(kernelCount + kernelsRef.current.length) };
       }
 
+      // - never off the canvas: the add path centres on the click point, which can sit in the origin margin
+      const c = clampToOrigin(seed.x, seed.y);
+      seed = { ...seed, x: c.x, y: c.y };
+
       // - assign a reference label (N1, M3 …) if the node doesn't have one yet
       const cn = assignLabel(seed, canvasRef.current.nodes);
 
@@ -2901,6 +2914,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         ...canvasRef.current,
         nodes: [...canvasRef.current.nodes, cnWithIdx],
       };
+      // - the first node seeds the first section
+      if (lanesRef.current.length === 0) commitLanes([{ id: `sec-${Date.now().toString(36)}`, y: 0, createdAt: Date.now() }]);
 
       // - add connecting edge if present (Shift+hjkl case)
       if (ce) {
@@ -2934,7 +2949,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
     window.addEventListener('skena:addNodeResult', handler);
     return () => window.removeEventListener('skena:addNodeResult', handler);
-  }, [setNodes, setEdges, scheduleSave, focusNodeById, pushHistory]);
+  }, [setNodes, setEdges, scheduleSave, focusNodeById, pushHistory, clampCam, commitLanes]);
 
   // ─── helper: place a new CellNode at viewport centre ─────────────────────────
 

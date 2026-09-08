@@ -137,11 +137,18 @@ export function sectionTargetHeight(l: SectionLane, members: LaneNodeGeom[]): nu
  * `own` maps node id → lane index for nodes that belong to that lane even where their y says
  * otherwise, but that are still visible and still count for its content: used while a fold is
  * released, so the lane grows back before the lane below can adopt them.
+ *
+ * The first lane is also parked at the origin. It owns everything above it anyway, so a first lane
+ * at y > 0 only leaves a strip of canvas no section can hold and starts the rail below the top. The
+ * park moves the lane record alone — its members keep their positions, and its target height is
+ * measured from y = 0.
  */
 export function fitLanes(lanes: SectionLane[], nodes: LaneNodeGeom[], own?: Map<string, number>): LaneGrowth {
   const empty: LaneGrowth = { laneShifts: {}, nodeShifts: {} };
   const sorted = sortLanes(lanes);
-  if (sorted.length < 2) return empty;
+  if (sorted.length === 0) return empty;
+  const park = sorted[0].y !== 0 ? -sorted[0].y : 0;
+  if (sorted.length < 2) return park ? { laneShifts: { [sorted[0].id]: park }, nodeShifts: {} } : empty;
   const hidden = pinnedLaneIndex(sorted);
   const owner  = new Map([...hidden, ...(own ?? [])]);
   const visible: LaneNodeGeom[][] = sorted.map(() => []);
@@ -152,21 +159,24 @@ export function fitLanes(lanes: SectionLane[], nodes: LaneNodeGeom[], own?: Map<
     if (!hidden.has(n.id)) visible[i].push(n);
   }
 
-  const laneShifts: Record<string, number> = {};
+  // - the shifts of the lanes BELOW the first: these are the ones that carry their members with
+  //   them. The park is added afterwards so lane 0's members are never moved by it.
+  const belowShifts: Record<string, number> = {};
   let acc = 0;
   for (let i = 0; i < sorted.length - 1; i++) {
-    const range = sorted[i + 1].y - sorted[i].y;
-    acc += sectionTargetHeight(sorted[i], visible[i]) - range;
-    if (acc !== 0) laneShifts[sorted[i + 1].id] = acc;
+    const l = i === 0 ? { ...sorted[0], y: 0 } : sorted[i];
+    const range = sorted[i + 1].y - l.y;
+    acc += sectionTargetHeight(l, visible[i]) - range;
+    if (acc !== 0) belowShifts[sorted[i + 1].id] = acc;
   }
-  if (Object.keys(laneShifts).length === 0) return empty;
+  if (park === 0 && Object.keys(belowShifts).length === 0) return empty;
 
   const nodeShifts: Record<string, number> = {};
   for (const n of nodes) {
-    const s = laneShifts[sorted[laneOf.get(n.id) as number].id];   // - filled from the same array above
+    const s = belowShifts[sorted[laneOf.get(n.id) as number].id];   // - filled from the same array above
     if (s) nodeShifts[n.id] = s;
   }
-  return { laneShifts, nodeShifts };
+  return { laneShifts: park ? { [sorted[0].id]: park, ...belowShifts } : belowShifts, nodeShifts };
 }
 
 /**
@@ -184,9 +194,17 @@ export function unfoldLane(lanes: SectionLane[], nodes: LaneNodeGeom[], id: stri
   return { ...f, lanes: released.map(l => (f.laneShifts[l.id] ? { ...l, y: l.y + f.laneShifts[l.id] } : l)) };
 }
 
-/** Apply `fitLanes` to a canvas. Same reference when nothing moves (no spurious save). */
-export function applyLaneFit(canvas: CanvasData): CanvasData {
+/**
+ * Apply `fitLanes` to a canvas, and seed the first section when the canvas has content but no
+ * section at all — so `canvas_add_node` on an empty canvas leaves a section behind, the same way the
+ * webview's own add path does. Same reference when nothing moves (no spurious save).
+ */
+export function applyLaneFit(canvas: CanvasData, now = Date.now()): CanvasData {
   const lanes = canvas.metadata?.sections ?? [];
+  if (lanes.length === 0) {
+    if (canvas.nodes.length === 0) return canvas;
+    return { ...canvas, metadata: { ...canvas.metadata, sections: [{ id: `sec-${now.toString(36)}`, y: 0, createdAt: now }] } };
+  }
   const f = fitLanes(lanes, canvas.nodes);
   if (Object.keys(f.laneShifts).length === 0) return canvas;
   return {
