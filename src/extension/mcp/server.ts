@@ -621,7 +621,7 @@ async function canvasAddNode(args: Record<string, unknown>): Promise<string> {
 
   const labeled = assignLabel(newNode, d.nodes);
   d.nodes.push(labeled);
-  Object.assign(d, applyLaneFit(d));   // - every write fits the sections
+  Object.assign(d, applyLaneFit(d, Date.now()));   // - every write fits the sections
   await writeCanvas(p, d);
 
   return `Created node ${labeled.nodeLabel} (id: ${labeled.id})\nType: ${type}\nPosition: (${labeled.x}, ${labeled.y})  Size: ${labeled.width}×${labeled.height}\nCanvas: ${p}`;
@@ -653,7 +653,7 @@ async function canvasUpdateNode(args: Record<string, unknown>): Promise<string> 
   if (args.height !== undefined) updated.height = snapGrid(args.height as number);
 
   d.nodes[idx] = updated;
-  Object.assign(d, applyLaneFit(d));   // - every write fits the sections
+  Object.assign(d, applyLaneFit(d, Date.now()));   // - every write fits the sections
   await writeCanvas(p, d);
   return `Updated node ${updated.nodeLabel ?? updated.id}`;
   }); // - withFileLock
@@ -677,7 +677,7 @@ async function canvasRemoveNode(args: Record<string, unknown>): Promise<string> 
   d.edges = d.edges.filter(e => !toRemove.has(e.fromNode) && !toRemove.has(e.toNode));
   // - a removed node must not stay in a fold list, pinning its lane to an id that is gone
   if (d.metadata?.sections) d.metadata = { ...d.metadata, sections: pruneFoldedIds(d.metadata.sections, toRemove) };
-  Object.assign(d, applyLaneFit(d));   // - every write fits the sections
+  Object.assign(d, applyLaneFit(d, Date.now()));   // - every write fits the sections
   await writeCanvas(p, d);
   return `Removed ${toRemove.size} node(s): ${labels.join(', ')}`;
   }); // - withFileLock
@@ -752,7 +752,7 @@ async function canvasLayout(args: Record<string, unknown>): Promise<string> {
       if (it.height !== undefined) n.height = snapGrid(it.height as number);
       done.push(n.nodeLabel ?? n.id);
     }
-    Object.assign(d, applyLaneFit(d));   // - every write fits the sections
+    Object.assign(d, applyLaneFit(d, Date.now()));   // - every write fits the sections
     await writeCanvas(p, d);
     return `Laid out ${done.length} node(s): ${done.join(', ')}` +
       (missing.length ? ` — not found: ${missing.join(', ')}` : '');
@@ -824,7 +824,7 @@ async function canvasPinOutput(args: Record<string, unknown>): Promise<string> {
   }
 
   if (sourceNode && d.metadata?.sections) d.metadata = { ...d.metadata, sections: pinOutputToLane(d.metadata.sections, sourceNode.id, labeled.id) };   // - an output of a folded cell stays folded
-  Object.assign(d, applyLaneFit(d));   // - every write fits the sections
+  Object.assign(d, applyLaneFit(d, Date.now()));   // - every write fits the sections
   await writeCanvas(p, d);
 
   const lines = [`Pinned output as cell node ${labeled.nodeLabel} (id: ${labeled.id})`];
@@ -951,7 +951,7 @@ async function runCellCore(
 
     cell.lastStatus = out.status === 'error' ? 'error' : 'ok';
     cell.lastRun    = Date.now();
-    Object.assign(d, applyLaneFit(d));   // - every write fits the sections; d is reused for the next cell of a chain, so a discarded result would be undone by that cell's write
+    Object.assign(d, applyLaneFit(d, Date.now()));   // - every write fits the sections; d is reused for the next cell of a chain, so a discarded result would be undone by that cell's write
     await writeCanvas(p, d);
 
     // - deterministic final frame so the result doesn't depend on the (racy) soft-reload winning

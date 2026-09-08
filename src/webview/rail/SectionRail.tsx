@@ -72,8 +72,8 @@ export function SectionRail({ lanes, kernels, selectedNodeId, onFold, onRun, onD
           const lane = byId.get(seg.id);
           if (!lane) return null;
           const { color, kernel } = laneColor(lane, kernels);
-          // - a dangling kernelId is not runnable either: the record or node it names is gone
-          const runnable = !!lane.kernelId && kernels.some(k => k.id === lane.kernelId);
+          // - a dangling kernelId is not runnable either: laneColor resolved it to null
+          const runnable = kernel !== null;
           return (
             <RailSegment key={seg.id} lane={lane} seg={seg} color={color} kernel={kernel} runnable={runnable}
               current={lane.id === currentId} onFold={onFold} onRun={onRun} onDelete={onDelete} onKernel={openKernel} onTitle={openTitle} onMenu={openMenu} />

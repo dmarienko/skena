@@ -199,7 +199,7 @@ export function unfoldLane(lanes: SectionLane[], nodes: LaneNodeGeom[], id: stri
  * section at all — so `canvas_add_node` on an empty canvas leaves a section behind, the same way the
  * webview's own add path does. Same reference when nothing moves (no spurious save).
  */
-export function applyLaneFit(canvas: CanvasData, now = Date.now()): CanvasData {
+export function applyLaneFit(canvas: CanvasData, now: number): CanvasData {
   const lanes = canvas.metadata?.sections ?? [];
   if (lanes.length === 0) {
     if (canvas.nodes.length === 0) return canvas;

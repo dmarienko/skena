@@ -55,8 +55,9 @@ import { LabeledEdgeComponent } from './edges/LabeledEdge';
 import { HelperLines } from './HelperLines';
 import { SectionSeparators } from './SectionSeparators';
 import { SectionRail, type RailKernel } from '../rail/SectionRail';
-import { deriveLanes, sortLanes, laneIndexForNode, pinnedLaneIndex, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
+import { deriveLanes, sortLanes, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
 import { useLaneFit, flowGeom } from '../rail/useLaneFit';
+import { findNearestNode, revealPan, type NavNode, type Rect } from './spatialNav';
 import { CanvasSearch } from './CanvasSearch';
 import { MarksPanel  } from './MarksPanel';
 import { LanesContext } from './LanesContext';
@@ -96,6 +97,30 @@ function initialViewport(viewport: CanvasViewport | undefined): CanvasViewport {
 const EDGE_TYPES: EdgeTypes = {
   labeled: LabeledEdgeComponent,
 };
+
+/**
+ * The area a focused node has to land in, in PANE pixels: the React Flow pane, minus the AI chat
+ * panel's strip when the panel is expanded enough to occlude AND docked to an edge (a collapsed,
+ * small or mid-floating panel is ignored). The pane sits right of the rail, so it is narrower than
+ * the window; the chat's viewport rect is shifted into pane coordinates before the dock test.
+ */
+function paneArea(el: HTMLElement | null): Rect {
+  const pane = el?.getBoundingClientRect();
+  const w = pane?.width  ?? window.innerWidth;
+  const h = pane?.height ?? window.innerHeight;
+  const area: Rect = { left: 0, top: 0, right: w, bottom: h };
+  const chatEl = document.querySelector('[data-skena-chat]') as HTMLElement | null;
+  if (!chatEl) return area;
+  const r = chatEl.getBoundingClientRect();
+  if (r.width <= 40 || r.height <= 60) return area;
+  const left = r.left - (pane?.left ?? 0), right  = r.right  - (pane?.left ?? 0);
+  const top  = r.top  - (pane?.top  ?? 0), bottom = r.bottom - (pane?.top  ?? 0);
+  if      (right  >= w - 8 && left > w * 0.35) area.right  = left;
+  else if (left   <= 8     && right < w * 0.65) area.left   = right;
+  else if (bottom >= h - 8 && top  > h * 0.35) area.bottom = top;
+  else if (top    <= 8     && bottom < h * 0.65) area.top    = bottom;
+  return area;
+}
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -761,8 +786,6 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     () => (hiddenByFold.size === 0 ? nodes : nodes.map(n => (hiddenByFold.has(n.id) ? { ...n, hidden: true } : n))),
     [nodes, hiddenByFold],
   );
-  const hiddenByFoldRef = useRef<Set<string>>(hiddenByFold);
-  useEffect(() => { hiddenByFoldRef.current = hiddenByFold; }, [hiddenByFold]);
 
   // - persist a lane edit: update local state, mirror into canvasRef, schedule the save
   const commitLanes = useCallback((next: SectionLane[]) => {
@@ -1029,6 +1052,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   // - keep a ref so the stable navigation useEffect can call setCenter / getViewport
   const rfRef = useRef(rfInstance);
   useEffect(() => { rfRef.current = rfInstance; });
+  // - the React Flow pane element: its rect is the usable area for a reveal pan and the origin for
+  //   cursor-centred wheel zoom
+  const wrapperRef = useRef<HTMLDivElement>(null);
 
   // - React Flow's fitView bypasses translateExtent (d3 transform, no constrain), so clamp after it lands
   //   the public fitView promise resolves after fitViewport has landed the transform in the store
@@ -1352,80 +1378,66 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   // ─── shared focus helpers ─────────────────────────────────────────────────
 
   /**
-   * Select + DOM-focus a node by id and pan the viewport to it if it is
-   * off-screen. Also persists the id in lastFocusedNodeId for restoration.
+   * Pan so the node is visible, keeping the zoom: the smallest move that also brings its output cell
+   * in when the node+output pair fits at the current zoom. `forceCenter` (a cross-canvas jump)
+   * centres the pair instead and zooms out to fit it — the only path here that changes the zoom.
+   */
+  const revealNode = useCallback((id: string, forceCenter = false) => {
+    const node = nodesRef.current.find(n => n.id === id);
+    if (!node) return;
+    const nw = (n: Node) => Number(n.style?.width  ?? 200);
+    const nh = (n: Node) => Number(n.style?.height ?? 150);
+    const box = (n: Node) => ({ x1: n.position.x, y1: n.position.y, x2: n.position.x + nw(n), y2: n.position.y + nh(n) });
+    const nodeBox = box(node);
+    const outId = (node.data as { outputNodeId?: string } | undefined)?.outputNodeId;
+    const out = outId ? nodesRef.current.find(n => n.id === outId) : undefined;
+    const outBox = out ? box(out) : null;
+    const pairBox = outBox && {
+      x1: Math.min(nodeBox.x1, outBox.x1), y1: Math.min(nodeBox.y1, outBox.y1),
+      x2: Math.max(nodeBox.x2, outBox.x2), y2: Math.max(nodeBox.y2, outBox.y2),
+    };
+
+    const area = paneArea(wrapperRef.current);
+    const { x: vx, y: vy, zoom } = rfRef.current.getViewport();
+
+    if (forceCenter) {
+      const b = pairBox ?? nodeBox;
+      const fit = pairBox
+        ? Math.max(MIN_ZOOM, Math.min(zoom, Math.min((area.right - area.left) / (b.x2 - b.x1 + 160), (area.bottom - area.top) / (b.y2 - b.y1 + 160))))
+        : zoom;
+      const cForce = clampCam(
+        (area.left + area.right) / 2 - ((b.x1 + b.x2) / 2) * fit,
+        (area.top + area.bottom) / 2 - ((b.y1 + b.y2) / 2) * fit,
+        fit,
+      );
+      rfRef.current.setViewport({ x: cForce.x, y: cForce.y, zoom: fit }, { duration: 250 });
+      return;
+    }
+
+    const p = revealPan(nodeBox, pairBox, area, { x: vx, y: vy, zoom });
+    if (!p) return;
+    const cMin = clampCam(p.x, p.y, zoom);
+    rfRef.current.setViewport({ x: cMin.x, y: cMin.y, zoom }, { duration: 250 });
+  }, [clampCam]); // - nodesRef / rfRef / wrapperRef are always current
+
+  /**
+   * Select + DOM-focus a node by id, reveal it, and persist the id in lastFocusedNodeId for
+   * restoration.
    */
   const focusNodeById = useCallback((id: string, forceCenter = false) => {
     lastFocusedNodeId.set(canvasPath, id);
     setNodes(nds => nds.map(n => ({ ...n, selected: n.id === id })));
     window.dispatchEvent(new CustomEvent('skena:focusNode', { detail: { id } }));
-    const node = nodesRef.current.find(n => n.id === id);
-    if (!node) return;
+    revealNode(id, forceCenter);
+  }, [setNodes, canvasPath, revealNode]);
 
-    // - frame the node — PLUS its output cell when this is a code node that has one — inside the area
-    //   NOT covered by the (draggable, floating) AI chat panel, so focus never lands behind it.
-    const targets: Node[] = [node];
-    const outId = (node.data as { outputNodeId?: string } | undefined)?.outputNodeId;
-    if (outId) { const on = nodesRef.current.find(n => n.id === outId); if (on) targets.push(on); }
-    const nw = (n: Node) => Number(n.style?.width  ?? 200);
-    const nh = (n: Node) => Number(n.style?.height ?? 150);
-    const bx1 = Math.min(...targets.map(n => n.position.x));
-    const by1 = Math.min(...targets.map(n => n.position.y));
-    const bx2 = Math.max(...targets.map(n => n.position.x + nw(n)));
-    const by2 = Math.max(...targets.map(n => n.position.y + nh(n)));
-    const bcx = (bx1 + bx2) / 2, bcy = (by1 + by2) / 2;
-
-    // - usable screen area = window minus the chat's strip, only when it's expanded enough to occlude
-    //   AND docked to an edge (a collapsed/small or mid-floating panel is ignored → full window)
-    const winW = window.innerWidth, winH = window.innerHeight;
-    let vL = 0, vT = 0, vR = winW, vB = winH;
-    const chatEl = document.querySelector('[data-skena-chat]') as HTMLElement | null;
-    if (chatEl) {
-      const r = chatEl.getBoundingClientRect();
-      if (r.width > 40 && r.height > 60) {
-        if      (r.right  >= winW - 8 && r.left   > winW * 0.35) vR = r.left;
-        else if (r.left   <= 8        && r.right  < winW * 0.65) vL = r.right;
-        else if (r.bottom >= winH - 8 && r.top    > winH * 0.35) vB = r.top;
-        else if (r.top    <= 8        && r.bottom < winH * 0.65) vT = r.bottom;
-      }
-    }
-    const availCx = (vL + vR) / 2, availCy = (vT + vB) / 2;
-
-    const { x: vx, y: vy, zoom: curZoom } = rfRef.current.getViewport();
-
-    // - decide whether to move based on the FOCUSED NODE ALONE: if it is already fully visible in the
-    //   usable area, leave the viewport untouched — even if its output cell sits off-screen. A node's
-    //   output is placed far to its right, so judging by the whole node+output box would recenter on
-    //   nearly every focus.
-    const M = 24;
-    const nsx1 = node.position.x * curZoom + vx,              nsy1 = node.position.y * curZoom + vy;
-    const nsx2 = (node.position.x + nw(node)) * curZoom + vx, nsy2 = (node.position.y + nh(node)) * curZoom + vy;
-    const nodeInside = nsx1 >= vL + M && nsy1 >= vT + M && nsx2 <= vR - M && nsy2 <= vB - M;
-
-    if (forceCenter) {
-      // - explicit jump (e.g. a cross-canvas reference): centre the node+output box, zoom out to fit
-      const fit = targets.length > 1
-        ? Math.max(MIN_ZOOM, Math.min(curZoom, Math.min((vR - vL) / (bx2 - bx1 + 160), (vB - vT) / (by2 - by1 + 160))))
-        : curZoom;
-      const cForce = clampCam(availCx - bcx * fit, availCy - bcy * fit, fit);
-      rfRef.current.setViewport({ x: cForce.x, y: cForce.y, zoom: fit }, { duration: 250 });
-    } else if (!nodeInside) {
-      // - MINIMAL pan: move the viewport JUST enough to bring the node (plus its output if the pair
-      //   still fits at the current zoom) fully into the usable area. Keep the zoom — don't centre,
-      //   don't zoom out. If the target is larger than the usable area on an axis, align its top edge.
-      const fitsBox = (bx2 - bx1) * curZoom <= (vR - vL - 2 * M) && (by2 - by1) * curZoom <= (vB - vT - 2 * M);
-      const [tx1, ty1, tx2, ty2] = fitsBox
-        ? [bx1 * curZoom + vx, by1 * curZoom + vy, bx2 * curZoom + vx, by2 * curZoom + vy]
-        : [nsx1, nsy1, nsx2, nsy2];
-      let dx = 0, dy = 0;
-      if (tx1 < vL + M) dx = (vL + M) - tx1; else if (tx2 > vR - M) dx = (vR - M) - tx2;
-      if (ty1 < vT + M) dy = (vT + M) - ty1; else if (ty2 > vB - M) dy = (vB - M) - ty2;
-      if (dx !== 0 || dy !== 0) {
-        const cMin = clampCam(vx + dx, vy + dy, curZoom);
-        rfRef.current.setViewport({ x: cMin.x, y: cMin.y, zoom: curZoom }, { duration: 250 });
-      }
-    }
-  }, [setNodes, canvasPath]); // - nodesRef + rfRef are always current
+  // - a plain click reveals the node it hit, the same pan the keyboard gets. Selection stays React
+  //   Flow's, so a modifier click (add to selection) must not pan; React Flow does not fire this
+  //   after a drag.
+  const onNodeClick = useCallback((e: React.MouseEvent, n: Node) => {
+    if (e.shiftKey || e.ctrlKey || e.metaKey || isBandType(n.type)) return;
+    revealNode(n.id);
+  }, [revealNode]);
 
   /**
    * Returns the id of the non-group node whose center is closest to the
@@ -1797,85 +1809,12 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       }
     };
 
-    const centerOf = (n: Node) => ({
-      x: n.position.x + Number(n.style?.width  ?? 200) / 2,
-      y: n.position.y + Number(n.style?.height ?? 150) / 2,
+    // - band nodes are backdrops, never nav targets; the rest map into the pure finder, which
+    //   derives the folded (hidden) ids from the lanes itself
+    const toNav = (n: Node): NavNode => ({
+      id: n.id, x: n.position.x, y: n.position.y,
+      w: Number(n.style?.width ?? 200), h: Number(n.style?.height ?? 150),
     });
-
-    // - Spatial navigation: find the best node in the given direction.
-    // - Strategy: cone filter (primary axis must dominate so a node that is barely
-    // - left but mostly below cannot beat a clearly-left node), inside the section
-    // - the current node belongs to, skipping nodes hidden by a fold.
-    const findNearest = (from: Node, dir: 'left' | 'right' | 'up' | 'down'): string | null => {
-      const fc    = centerOf(from);
-      const horiz = dir === 'left' || dir === 'right';
-
-      // - a move stays in one section: the sections are the notebook's chapters, and a node in
-      //   another one is not "over there" in any sense the user meant
-      const sorted   = sortLanes(lanesRef.current);
-      const pinned   = pinnedLaneIndex(sorted);
-      const hidden   = hiddenByFoldRef.current;
-      const fromLane = sorted.length ? laneIndexForNode(sorted, { id: from.id, y: from.position.y }, pinned) : -1;
-      const reachable = (n: Node): boolean =>
-        !hidden.has(n.id) &&
-        (!sorted.length || laneIndexForNode(sorted, { id: n.id, y: n.position.y }, pinned) === fromLane);
-
-      const inDir = (dx: number, dy: number): boolean =>
-        dir === 'left'  ? dx < 0 :
-        dir === 'right' ? dx > 0 :
-        dir === 'up'    ? dy < 0 : dy > 0;
-
-      // - directional cone: primary-axis displacement ≥ 0.6× perpendicular (~59° half-cone). Wider
-      //   than a strict 45° so a NEAR node that sits just off the diagonal (e.g. up-and-a-bit-left) is
-      //   still considered — the strict 45° cone would reject it and pick a far but dead-ahead node
-      //   instead. Ranking within the cone still prefers aligned + near (see `score`).
-      const inCone = (dx: number, dy: number): boolean => horiz
-        ? Math.abs(dx) >= Math.abs(dy) * 0.6
-        : Math.abs(dy) >= Math.abs(dx) * 0.6;
-
-      const score = (dx: number, dy: number): number => horiz
-        ? Math.abs(dx) + Math.abs(dy) * 2.5
-        : Math.abs(dy) + Math.abs(dx) * 2.5;
-
-      // - edge-aware nav (highest priority): follow an edge that attaches to `from` on the pressed
-      // - side, so you walk the graph you drew — press left and go to the node wired to your left,
-      // - regardless of raw geometry. Handles are named top/right/bottom/left (map up→top, down→bottom);
-      // - flow edges carry the canvas fromSide/toSide as sourceHandle/targetHandle.
-      const dirSide = dir === 'up' ? 'top' : dir === 'down' ? 'bottom' : dir;
-      const sideNeighbours: string[] = [];
-      for (const e of edgesRef.current) {
-        if (e.source === from.id && e.sourceHandle === dirSide) sideNeighbours.push(e.target);
-        else if (e.target === from.id && e.targetHandle === dirSide) sideNeighbours.push(e.source);
-      }
-      if (sideNeighbours.length) {
-        // - several edges on one side → take the neighbour best aligned with `dir`
-        let sideId: string | null = null;
-        let sideScore = Infinity;
-        for (const nid of sideNeighbours) {
-          const n = nodesRef.current.find(x => x.id === nid);
-          if (!n || !reachable(n)) continue;
-          const nc = centerOf(n);
-          const s = score(nc.x - fc.x, nc.y - fc.y);
-          if (s < sideScore) { sideScore = s; sideId = nid; }
-        }
-        if (sideId) return sideId;
-      }
-
-      // - cone only, same section only: nothing to the right means nothing happens, it never jumps
-      //   to a far node in another section
-      const cands: { id: string; s: number }[] = [];
-      for (const node of nodesRef.current) {
-        if (node.id === from.id || isBandType(node.type) || !reachable(node)) continue;
-        const nc = centerOf(node);
-        const dx = nc.x - fc.x;
-        const dy = nc.y - fc.y;
-        if (!inDir(dx, dy) || !inCone(dx, dy)) continue;
-        cands.push({ id: node.id, s: score(dx, dy) });
-      }
-      if (!cands.length) return null;
-      cands.sort((a, b) => a.s - b.s);
-      return cands[0].id;
-    };
 
     // - add a node off the focused node in the given direction (Alt+X chord target)
     const requestAddNodeInDirection = (key: 'H' | 'J' | 'K' | 'L') => {
@@ -2496,7 +2435,11 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         return;
       }
 
-      const targetId = findNearest(current, dir);
+      const targetId = findNearestNode(toNav(current), dir, {
+        nodes: nodesRef.current.filter(n => !isBandType(n.type)).map(toNav),
+        edges: edgesRef.current,
+        lanes: lanesRef.current,
+      });
       if (!targetId) return;
 
       e.preventDefault();
@@ -2635,8 +2578,6 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   }, [setNodes, scheduleSave, pushHistory]);
 
   // ─── custom wheel zoom (smaller step, cursor-centred) ────────────────────────
-
-  const wrapperRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const el = wrapperRef.current;
@@ -2915,7 +2856,10 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         nodes: [...canvasRef.current.nodes, cnWithIdx],
       };
       // - the first node seeds the first section
-      if (lanesRef.current.length === 0) commitLanes([{ id: `sec-${Date.now().toString(36)}`, y: 0, createdAt: Date.now() }]);
+      if (lanesRef.current.length === 0) {
+        const now = Date.now();
+        commitLanes([{ id: `sec-${now.toString(36)}`, y: 0, createdAt: now }]);
+      }
 
       // - add connecting edge if present (Shift+hjkl case)
       if (ce) {
@@ -3305,6 +3249,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         onBeforeDelete={onBeforeDelete}
         onNodesDelete={onNodesDelete}
         onEdgesDelete={onEdgesDelete}
+        onNodeClick={onNodeClick}
         onNodeDoubleClick={onNodeDoubleClick}
         onEdgeDoubleClick={onEdgeDoubleClick}
         connectionMode={ConnectionMode.Loose}
