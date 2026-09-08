@@ -1636,13 +1636,36 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const pasteInternalClipboard = useCallback(() => {
     pushHistory();
     if (!clipboard) return;
-    const OFFSET = 40;
     const idMap = new Map<string, string>();
     clipboard.nodes.forEach((n, i) => idMap.set(n.id, `node-paste-${Date.now()}-${i}`));
 
+    // - the group moves as a block, so its top-left and size come from its bounding box
+    const minX   = Math.min(...clipboard.nodes.map(n => n.x));
+    const minY   = Math.min(...clipboard.nodes.map(n => n.y));
+    const groupW = Math.max(...clipboard.nodes.map(n => n.x + n.width))  - minX;
+    const groupH = Math.max(...clipboard.nodes.map(n => n.y + n.height)) - minY;
+
+    // - the anchor is the focused node, not the copied one: the copy may sit far away or in
+    // - another section, and the paste has to land where the user is looking
+    const anchor = nodesRef.current.find(n => n.selected && !isBandType(n.type));
+    let target: { x: number; y: number };
+    if (anchor) {
+      const anchorW = Number(anchor.style?.width ?? 400);
+      target = findFreePosition(nodesRef.current, anchor.position.x + anchorW + GRID, anchor.position.y, groupW, groupH, 1, 0);
+    } else {
+      // - no focus: centre on the React Flow pane, which starts right of the rail
+      const rect = wrapperRef.current?.getBoundingClientRect();
+      const { x: vx, y: vy, zoom } = rfRef.current.getViewport();
+      const cx = ((rect?.width  ?? window.innerWidth)  / 2 - vx) / zoom - groupW / 2;
+      const cy = ((rect?.height ?? window.innerHeight) / 2 - vy) / zoom - groupH / 2;
+      target = clampToOrigin(snapGrid(cx), snapGrid(cy));
+    }
+    const dx = target.x - minX;
+    const dy = target.y - minY;
+
     // - pasted nodes get new IDs and fresh labels (copies aren't the same node)
     const rawPasted: CanvasNode[] = clipboard.nodes.map(n => ({
-      ...n, id: idMap.get(n.id)!, x: n.x + OFFSET, y: n.y + OFFSET,
+      ...n, id: idMap.get(n.id)!, x: n.x + dx, y: n.y + dy,
       nodeLabel: undefined, // - strip old label so assignLabel gives a new one
     }));
     const allAfterPaste = [...canvasRef.current.nodes, ...rawPasted];
@@ -1666,7 +1689,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       edges: [...canvasRef.current.edges, ...newEdges],
     };
     scheduleSave();
-  }, [setNodes, setEdges, scheduleSave, pushHistory]);
+    const firstId = newNodes[0]?.id;
+    if (firstId) requestAnimationFrame(() => revealNode(firstId));
+  }, [setNodes, setEdges, scheduleSave, pushHistory, revealNode]);
 
   const handleMoveToSubCanvas = useCallback(() => {
     const selectedNodes = nodesRef.current.filter(n => n.selected && !isBandType(n.type));
