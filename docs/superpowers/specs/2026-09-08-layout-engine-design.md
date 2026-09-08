@@ -1,0 +1,109 @@
+# Layout engine — design
+
+Date: 2026-09-08. Implements §4 ("Layout engine") and the placement parts of §6 of
+`2026-09-01-spatial-notebook-design.md`. Sections and their fit are as in
+`2026-09-03-section-rail-followups-design.md` §4; this spec does not change them.
+
+Decisions taken with the user (visual companion, `.superpowers/brainstorm/3517288-1788875999/`):
+hybrid model (code chains engine-managed, notes free), column-only push, geometry is the truth for
+a column, dynamic output column width, live code-height recompute, existing canvases untouched until
+an explicit Reflow, drag-and-drop reflow deferred to phase 2.
+
+## 1. Where the engine lives and what it sees
+
+- One pure module `src/shared/layoutEngine.ts` (no React), used by the webview, the host
+  (run output) and the MCP server. One function, three callers — parity by construction.
+- Input: one section's nodes as `{ id, type, x, y, w, h, outputNodeId? }` plus the section's
+  range. Output: `{ [id]: { x, y, w?, h? } }` — only the nodes that changed. The caller applies it,
+  pushes history, saves; `fitLanes` runs after, as for every write today.
+- Nothing new in the file format. Derived on every call, never stored:
+  - **column** = the code cells of a section that share a snapped x, ordered by y;
+  - **pair** = a column + its output column: output x = column x + `NODE_SIZE.code.w` + `GRID`;
+    output column width = the widest output cell in the pair, clamped to
+    `[OUTPUT_MIN_W, OUTPUT_MAX_W]` (600, 1400).
+  - Sequence edges (code → code, spec §5) are drawn from the column order; they are a view, not
+    the record.
+- **Managed** = code cells and their output cells. **Free** = every other node type: placed by
+  hand, moved only when a managed node would overlap it.
+- Constants in `src/shared/constants.ts`: `GRID` 100 (already), `NODE_SIZE.code` 700×300
+  (already), `CODE_MAX_H` 900, `OUTPUT_MIN_W` 600, `OUTPUT_MAX_W` 1400, `OUTPUT_MAX_H` 900,
+  `CODE_LINE_PX` 22, `CODE_CHROME_PX` 60.
+
+## 2. Operations
+
+Each row is one engine call, one history entry, section fit after.
+
+| Operation | Engine |
+|---|---|
+| Insert code after cell X (`o`, `Alt+X j`, MCP `after`) | new cell in X's column at X.y + X.h + GRID; the column below pushed down; output column untouched |
+| Fork right / left of X (`Alt+X l` / `h`, MCP `forkOf`) | new column pair: x = right edge of X's pair + GRID (left: X's column x − pair width − GRID, refused below 0); y = X.y; pairs beyond shift sideways if overlapped |
+| Run → output | output cell at (pair's output x, code y); width from content within `[OUTPUT_MIN_W, OUTPUT_MAX_W]`; the pair's output column is re-measured and the pairs to its right shift by the delta; if the output is taller than its code, the column below is pushed |
+| Code height (live, on every new line) | h = `max(NODE_SIZE.code.h, ceil((lines × CODE_LINE_PX + CODE_CHROME_PX) / GRID) × GRID)` capped at `CODE_MAX_H`; grows at grid steps; the column below pushed; shrink pulls the column up |
+| Clear output / delete cell | the column closes the hole (pull up); the output column is re-measured, pairs to the right pull back |
+| Paste (§9 of the follow-ups spec), drop, MCP `canvas_add_node` with x,y | placed at the target; whatever it overlaps is pushed down (column-only for managed, overlap-only for free) |
+| Free node moved or resized | only the nodes it overlaps move, downward |
+
+"Pull up": a column never keeps a hole larger than one gap.
+
+## 3. Push mechanics
+
+One algorithm behind every row of §2, run per section:
+
+1. **Vertical, managed.** Each column is re-packed top → bottom: `y = max(y, prevBottom + GRID)`.
+   Insert / grow pushes down; delete / shrink lets the cells above the hole stay and the cells
+   below pull up to one gap. An output cell has its code cell's y. Nothing outside the column moves
+   in this pass.
+2. **Horizontal, pairs.** Pairs are re-packed left → right: `x = max(x, prevRight + GRID)` where a
+   pair's right edge = column x + 700 + GRID + output column width. A growing output pushes the pairs
+   to its right; a shrinking one lets them pull back to one gap.
+3. **Free nodes.** After 1–2, a free node that a managed node now overlaps moves **down** to the
+   first y that clears it — never sideways, never out of its section. A moved free node can push
+   other free nodes the same way. Managed nodes are never moved by a free one, except by the free
+   node that was itself dropped or resized (§2, last two rows).
+4. **Sections.** The engine works inside one section; `fitLanes` runs after it, so a section that
+   grew pushes the sections below. A push never moves a node across a section boundary.
+5. **Determinism.** Same input → same output; the result holds only the nodes that changed; a second
+   run on the result changes nothing.
+
+## 4. Reflow, MCP, undo, phases
+
+- **Reflow section** — rail segment menu entry and MCP `canvas_reflow_section(ref)`. The only time
+  the engine touches a hand-placed section as a whole: every code cell's x is snapped to the nearest
+  existing column x (its own, snapped, when none lies within half a pair width), then §3 runs.
+  Nothing is automatic on open; H1–H5 stay as they are until asked.
+- **MCP** — `canvas_add_node` gains `after: <cellRef>` and `forkOf: <cellRef>` (engine placement,
+  x/y ignored when given); plain `x, y` still accepted and engine-resolved. `canvas_run_cell` /
+  `canvas_run_section` place outputs through the engine, as does the host's run path.
+  `canvas_update_node` size changes and `canvas_layout` moves go through it. Tool descriptions say
+  what moves.
+- **Undo** — engine moves ride on the history entry of the action that caused them (as lane
+  growth does). Reflow is its own entry.
+- **Phases** — 1: engine core (§1–§3), Reflow, MCP, run output, paste, `o` / `Alt+X` creation.
+  2: drag-and-drop reflow (rules below), if still wanted after phase 1. Out of scope: the edge `+`
+  knob (spec §6), sequence-edge drawing changes.
+- **Phase 2 rules (recorded, not built):** a dropped managed cell snaps to the nearest column x
+  when the drop lands inside that pair's span, else starts a new column at the snapped x (must fit a
+  full pair, else joins the nearest); its y sets its place in the column; the column it left pulls up;
+  its output travels with it; a cell dropped in another section adopts that section's kernel; a free
+  node dropped onto managed cells stays, the overlapped cells are pushed down.
+
+## 5. Files
+
+| File | Change |
+|---|---|
+| `src/shared/constants.ts` | the constants of §1 |
+| `src/shared/layoutEngine.ts` | new: `deriveColumns`, `derivePairs`, `layoutSection(nodes, lane, op)`, `reflowSection`, `codeCellHeight(lines)` |
+| `src/webview/canvas/CanvasView.tsx` | creation (`o`, `Alt+X`), paste, drop, resize, code-height, run-output and delete paths call the engine and apply its result with the action's history entry |
+| `src/webview/rail/SegmentMenu.tsx`, `SectionRail.tsx` | "Reflow section" entry |
+| `src/extension/editor-provider.ts` | run-output placement through the engine (replaces `outputCellGeom`'s free-slot search) |
+| `src/extension/mcp/server.ts` | `after` / `forkOf`, `canvas_reflow_section`, engine on add/update/layout/run |
+| `test/layout-engine.mjs`, `test/mcp-parity.mjs` | §6 |
+
+## 6. Tests
+
+`test/layout-engine.mjs` on the esbuild bundle: insert pushes the column only; delete pulls up to
+one gap; output growth shifts the pairs to the right and shrink pulls them back; a free node is moved
+only when overlapped, downward; a push never crosses a section boundary; idempotence; `codeCellHeight`
+at the grid steps and the cap; Reflow on copies of `test/H1–H5.canvas` under `/tmp` (never the real
+files): no overlap, one-gap columns, every code cell on a column x. `test/mcp-parity.mjs` gains
+`after`, `forkOf`, `canvas_reflow_section` and the engine on `canvas_add_node` with x/y.
