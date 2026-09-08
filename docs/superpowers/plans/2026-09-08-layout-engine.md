@@ -285,6 +285,15 @@ export function placeOutput(nodes: EngineNode[], codeId: string, existing?: { w:
   return { x: pair.outputX, y: snapGrid(code.y), width: existing?.w ?? OUTPUT_MIN_W, height: existing?.h ?? OUTPUT_DEFAULT_H };
 }
 
+/** Apply patches to canvas-shaped nodes; the same array reference when nothing changed. */
+export function applyPatchesToCanvas<T extends { id: string; x: number; y: number; width: number; height: number }>(nodes: T[], p: Patches): T[] {
+  if (Object.keys(p).length === 0) return nodes;
+  return nodes.map(n => {
+    const q = p[n.id];
+    return q ? { ...n, x: q.x, y: q.y, ...(q.w !== undefined ? { width: q.w } : {}), ...(q.h !== undefined ? { height: q.h } : {}) } : n;
+  });
+}
+
 /** Adapter: canvas nodes → engine nodes (the file's `width`/`height` → `w`/`h`). */
 export function toEngineNodes(nodes: { id: string; type: string; x: number; y: number; width: number; height: number; outputNodeId?: string }[]): EngineNode[] {
   return nodes.map(n => ({ id: n.id, type: n.type, x: n.x, y: n.y, w: n.width, h: n.height, ...(n.outputNodeId ? { outputNodeId: n.outputNodeId } : {}) }));
@@ -293,7 +302,7 @@ export function toEngineNodes(nodes: { id: string; type: string; x: number; y: n
 
 - [ ] **Step 3: tests** — `test/layout-engine.mjs` (header comment: `// - run: npx esbuild src/shared/layoutEngine.ts --bundle --format=esm --outfile=test/.build/layoutEngine.mjs && node --test test/layout-engine.mjs`). Fixtures: `code(id, x, y, h = 300, out?)` → `{ id, type: 'code', x, y, w: 700, h, outputNodeId: out }`, `cell(id, x, y, w = 600, h = 300)`, `note(id, x, y, w, h)` (type `text`). Cases, each with exact `assert.deepEqual` on the patches:
 
-1. `codeCellHeight`: 1 → 300, 11 → 300 (302 → ceil 400? compute: 11×22+60 = 302 → 400; so 10 → 280 → 300 and 11 → 400), 40 → 900 (cap), 0 → 300.
+1. `codeCellHeight`: 1 → 300; 10 → 300 (10×22+60 = 280 → 300); 11 → 400 (302 → 400); 40 → 900 (940, capped); 0 → 300.
 2. insert pushes only its column: E1@(1600,400) E2@(1600,800) E3@(1600,1200) fork F1@(3100,800); NEW@(1600,800) as mover → E2 1200, E3 1600, F1 unchanged.
 3. delete pulls up: E1, E3@(1600,1200) with `columnX: 1600` and no mover → E3 → 800.
 4. output rides and is placed: E2 with out C2@(2000,500) (wrong spot) → mover E2 → C2 → (2400, 800).
@@ -309,7 +318,11 @@ export function toEngineNodes(nodes: { id: string; type: string; x: number; y: n
 14. `placeOutput` → `{x: 2400, y: 400, width: 600, height: 300}`; with existing `{w: 1000, h: 500}` → those kept.
 15. Reflow on copies of `test/H1.canvas` … `H5.canvas` (read them with `fs.readFileSync` from `/tmp/skena-engine/*.json` copies made by the test's setup, never the originals): after applying the patches, assert no two managed nodes overlap (the `overlaps` rule) and every code cell's x is one of the column xs. If a fixture has no sections or code cells, skip it with a message.
 
-- [ ] **Step 4: run** the bundle + tests → all pass (15 cases). `npm run typecheck` → 3 pre-existing only.
+16. `applyPatchesToCanvas`: `{}` → same reference; a patch → new array with `x/y` (and `width/height` when given) on that node only.
+
+Known behaviour to keep (not a bug): a hand-placed code cell whose x is off-column (e.g. 1650 → 1700) is its own pair; a regular operation on the column at 1600 pushes it right of that pair. Reflow is what snaps it back onto the column.
+
+- [ ] **Step 4: run** the bundle + tests → all pass (16 cases). `npm run typecheck` → 3 pre-existing only.
 - [ ] **Step 5: commit** `src/shared/constants.ts src/shared/layoutEngine.ts`: `feat: layout engine — columns, pairs, column-only push, free-node settle, reflow, insertAfter/forkOf/placeOutput`
 
 ### Task 2: webview wiring
@@ -325,7 +338,7 @@ export function toEngineNodes(nodes: { id: string; type: string; x: number; y: n
 - [ ] **Step 7: live code height** — `CodeNode.tsx`: in the existing `editorInstance.onDidChangeModelContent` (~171) also dispatch `skena:codeLines { id, lines: model.getLineCount() }` (throttle to once per animation frame). `CanvasView.tsx`: a handler computes `codeCellHeight(lines)`; when it differs from the node's current height: `pushHistory()` once per editing session (keep a ref of the id whose height changed since the last edit commit; simplest: push on the first change after `skena:enterEdit`/focus and not again until blur), set the height (RF node + canvasRef), `runEngine(section, { moverIds: [id] })`, `scheduleSave()`.
 - [ ] **Step 8: run output in the webview** (`skena:runOutput` upsert ~2750-2800): when a NEW output node is created from the message, its geometry comes from the host (Task 3 places it through the engine); after the upsert, `runEngine(section, { moverIds: [outId] })` so pushed neighbours match the host's result. When the host already sent moved neighbours (it does not, in phase 1), nothing changes — the engine is idempotent.
 - [ ] **Step 9: Reflow section** — `SegmentMenu.tsx`: a row `Reflow section` between `Run section` and `Kernel…` calling a new `onReflow`; thread it `SectionRail` → `RailSegment` → menu like `onRun`. `CanvasView.tsx` `handleReflowLane(id)`: `pushHistory(); applyPatches(reflowSection(engineNodesOf(id)));`.
-- [ ] **Step 10: verify** — typecheck (3 pre-existing), build, all suites (layout-engine 15, section-lanes 46, spatial-nav 16, rail-geometry 13, bounds 10, kernel-binding 19, kernel-upstream 12, mcp-parity 11). Manual smoke in the extension host is the user's.
+- [ ] **Step 10: verify** — typecheck (3 pre-existing), build, all suites (layout-engine 16, section-lanes 46, spatial-nav 16, rail-geometry 13, bounds 10, kernel-binding 19, kernel-upstream 12, mcp-parity 11). Manual smoke in the extension host is the user's.
 - [ ] **Step 11: commit** `fix: creation, paste, resize, delete, live code height and run output go through the layout engine; Reflow section in the rail menu`
 
 ### Task 3: host run output + MCP
