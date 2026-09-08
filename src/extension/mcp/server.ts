@@ -29,6 +29,7 @@ import * as crypto   from 'crypto';
 import { CanvasData, CanvasNode, CanvasEdge, CanvasNodeBase, CellNode, CodeNode, AgentRunPersist, AgentRunPersistResult } from '../../shared/types';
 import { assignLabel, ensureLabels } from '../../shared/nodeLabels';
 import { snapGrid } from '../../shared/grid';
+import { clampToOrigin } from '../../shared/bounds';
 import { applyLaneFit, deriveLanes, outputCellGeom, pinOutputToLane, pruneFoldedIds } from '../../shared/sectionLanes';
 import { resolveCellKernel, cellKernelView, kernelById, upstreamCellsForRun, type KernelLike } from '../../shared/kernelBinding';
 import { resolveKernelConfig, type KernelServerConfig } from '../jupyter/config';
@@ -417,7 +418,9 @@ async function canvasList(args: Record<string, unknown>): Promise<string> {
       const kRec  = l.kernelId ? kernelById(d, l.kernelId) : null;
       const kernel = kRec ? (kRec.displayName ?? (kRec as { nodeLabel?: string }).nodeLabel ?? kRec.id) : '-';
       const title  = l.title ? `"${l.title}"` : `(untitled, ${stampLabel(l.createdAt)})`;
-      lines.push(`  ${l.label.padEnd(4)}${`y=${l.top}`.padEnd(8)}${`kernel=${kernel}`.padEnd(11)}${title}`);
+      // - the member count includes the ones a fold hides
+      const fold   = l.folded ? ' folded' : '';
+      lines.push(`  ${l.label.padEnd(4)}${`y=${l.top}`.padEnd(8)}${`kernel=${kernel}`.padEnd(11)}${title}${fold} nodes=${l.memberIds.length}`);
     }
   }
 
@@ -462,7 +465,7 @@ async function canvasRead(args: Record<string, unknown>): Promise<string> {
   if (ext.tags?.length) meta.push(`Tags: [${ext.tags.join(', ')}]`);
   meta.push(`Position: (${n.x}, ${n.y})  Size: ${n.width}×${n.height}`);
   const lane = deriveLanes(d.nodes, d.metadata?.sections ?? []).find(l => l.memberIds.includes(n.id));
-  if (lane) meta.push(`Section: ${lane.label}`);
+  if (lane) meta.push(`Section: ${lane.label}${lane.folded?.includes(n.id) ? ' hidden (folded)' : ''}`);
   if (incoming.length || outgoing.length) {
     meta.push(`Connections: ${[...incoming, ...outgoing].join('  ')}`);
   }
@@ -578,12 +581,15 @@ async function canvasAddNode(args: Record<string, unknown>): Promise<string> {
     ? { x: args.x as number, y: args.y as number }
     : autoPlace(d.nodes, w, h);
 
+  // - never off the canvas, as the webview's creation funnel
+  const at = clampToOrigin(snapGrid(pos.x), snapGrid(pos.y));
+
   // - build the shared base fields for all node types
   const base = {
     id:        uid(),
     type:      type as CanvasNode['type'],
-    x:         snapGrid(pos.x),
-    y:         snapGrid(pos.y),
+    x:         at.x,
+    y:         at.y,
     width:     snapGrid(w),
     height:    snapGrid(h),
     createdBy: 'ai' as const,
@@ -647,8 +653,13 @@ async function canvasUpdateNode(args: Record<string, unknown>): Promise<string> 
   if (args.color !== undefined) updated.color = args.color as CanvasNodeBase['color'];
   if (args.label !== undefined) updated.nodeLabel = args.label as string;
   // - move / resize (absolute coords, partial — only supplied fields change)
-  if (args.x      !== undefined) updated.x      = snapGrid(args.x      as number);
-  if (args.y      !== undefined) updated.y      = snapGrid(args.y      as number);
+  // - never off the canvas, as the webview's creation funnel
+  const at = clampToOrigin(
+    args.x !== undefined ? snapGrid(args.x as number) : updated.x,
+    args.y !== undefined ? snapGrid(args.y as number) : updated.y,
+  );
+  if (args.x      !== undefined) updated.x      = at.x;
+  if (args.y      !== undefined) updated.y      = at.y;
   if (args.width  !== undefined) updated.width  = snapGrid(args.width  as number);
   if (args.height !== undefined) updated.height = snapGrid(args.height as number);
 
@@ -746,8 +757,13 @@ async function canvasLayout(args: Record<string, unknown>): Promise<string> {
     for (const it of items) {
       const n = findNode(d, it.ref as string);
       if (!n) { missing.push(String(it.ref)); continue; }
-      if (it.x      !== undefined) n.x      = snapGrid(it.x      as number);
-      if (it.y      !== undefined) n.y      = snapGrid(it.y      as number);
+      // - never off the canvas, as the webview's creation funnel
+      const at = clampToOrigin(
+        it.x !== undefined ? snapGrid(it.x as number) : n.x,
+        it.y !== undefined ? snapGrid(it.y as number) : n.y,
+      );
+      if (it.x      !== undefined) n.x      = at.x;
+      if (it.y      !== undefined) n.y      = at.y;
       if (it.width  !== undefined) n.width  = snapGrid(it.width  as number);
       if (it.height !== undefined) n.height = snapGrid(it.height as number);
       done.push(n.nodeLabel ?? n.id);
@@ -1096,7 +1112,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_add_node',
-    description: 'Add a new node to the canvas. The node is automatically marked as AI-created (🤖 badge) and assigned a label. Position defaults to the right of all existing nodes. Sections fit their content: a node placed past its section\'s bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up.',
+    description: 'Add a new node to the canvas. The node is automatically marked as AI-created (🤖 badge) and assigned a label. Position defaults to the right of all existing nodes. Sections fit their content: a node placed past its section\'s bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Coordinates are snapped to the grid and clamped to the canvas origin.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1119,7 +1135,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_update_node',
-    description: 'Update an existing node: content, tags, color, label, and/or move/resize it. Partial — only supplied fields change. Move/resize uses absolute canvas coordinates. Sections fit their content: a node placed past its section\'s bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up.',
+    description: 'Update an existing node: content, tags, color, label, and/or move/resize it. Partial — only supplied fields change. Move/resize uses absolute canvas coordinates. Sections fit their content: a node placed past its section\'s bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Coordinates are snapped to the grid and clamped to the canvas origin.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1148,7 +1164,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_layout',
-    description: 'Batch move/resize many nodes in one file write. Each item: { ref, x?, y?, width?, height? } (partial, absolute coordinates). Sections fit their content: a node placed past its section\'s bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up.',
+    description: 'Batch move/resize many nodes in one file write. Each item: { ref, x?, y?, width?, height? } (partial, absolute coordinates). Sections fit their content: a node placed past its section\'s bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Coordinates are snapped to the grid and clamped to the canvas origin.',
     inputSchema: {
       type: 'object',
       properties: {
