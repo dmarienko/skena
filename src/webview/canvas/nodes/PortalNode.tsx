@@ -7,7 +7,6 @@ import React from 'react';
 import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import { PortalNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
-import { useHeatmap } from '../../context/HeatmapContext';
 import { useZoomInvariantBorderWidth } from './nodeShared';
 import { DEFAULT_NODE_BORDER_BY_TYPE } from '../palette';
 
@@ -23,8 +22,6 @@ function canvasBasename(p: string): string {
 
 export function PortalNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as PortalNode & { accentColor?: string };
-  const { visible: hmVisible, nodeGlow } = useHeatmap();
-  const hmNode = hmVisible ? nodeGlow.get(data.id as string) : undefined;
   const borderColor = node.accentColor ?? DEFAULT_NODE_BORDER_BY_TYPE.portal;
   const bw = useZoomInvariantBorderWidth(2);
 
@@ -46,12 +43,6 @@ export function PortalNodeComponent({ data, id, selected }: NodeProps): JSX.Elem
         cursor:         'pointer',
         gap:            4,
         padding:        '12%',             // - keep text clear of the curved edges
-        // - heatmap glow overrides: filter (drop-shadow), borderColor, opacity
-        ...(hmNode ? {
-          filter:      hmNode.glowFilter,
-          border:      `${bw}px solid ${hmNode.borderColor}`,
-          opacity:     hmNode.opacity,
-        } : {}),
       }}
       onClick={open}
     >

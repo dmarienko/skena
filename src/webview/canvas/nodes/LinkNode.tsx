@@ -7,7 +7,6 @@ import React from 'react';
 import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import { LinkNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
-import { useHeatmap } from '../../context/HeatmapContext';
 import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
 import { DEFAULT_NODE_BORDER_BY_TYPE } from '../palette';
 
@@ -30,8 +29,6 @@ function getHostname(url: string): string {
 
 export function LinkNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as LinkNode & { accentColor?: string };
-  const { visible: hmVisible, nodeGlow } = useHeatmap();
-  const hmNode = hmVisible ? nodeGlow.get(data.id as string) : undefined;
   const selectedStyle = useSelectedStyle(selected);
   const bw = useZoomInvariantBorderWidth(1.5);
   const borderColor = node.accentColor ?? DEFAULT_NODE_BORDER_BY_TYPE.link;
@@ -55,12 +52,6 @@ export function LinkNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
         display:       'flex',
         flexDirection: 'column',
         gap:           6,
-        // - heatmap glow overrides: filter (drop-shadow), borderColor, opacity
-        ...(hmNode ? {
-          filter:      hmNode.glowFilter,
-          border:      `${bw}px solid ${hmNode.borderColor}`,
-          opacity:     hmNode.opacity,
-        } : {}),
         // - sci-fi focus ring
         ...selectedStyle,
       }}

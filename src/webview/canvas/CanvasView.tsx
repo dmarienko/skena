@@ -38,7 +38,6 @@ import { GRID, snapGrid } from '../../shared/grid';
 import { ORIGIN_GUTTER, clampToOrigin, clampCameraToOrigin } from '../../shared/bounds';
 import { ensureLabels, assignLabel } from './nodeLabels';
 import { ZoomLevelProvider } from '../context/ZoomLevelContext';
-import { HeatmapProvider } from '../context/HeatmapContext';
 
 import { DEFAULT_EDGE_COLOR, DEFAULT_NODE_BORDER_BY_TYPE, nextKernelColorIndex } from './palette';
 import { FileNodeComponent }  from './nodes/FileNode';
@@ -451,23 +450,6 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   // - OS clipboard text captured at last yy; discriminates internal vs content paste (no clipboard timestamps exist)
   const yySnapshotRef      = useRef<string | null>(null);
   const awaitingYYSnapshot = useRef(false);
-  // - heatmap glow off by default (toggle with `gh`); the drop-shadow was distracting
-  const [heatmapVisible, setHeatmapVisible] = useState(false);
-  const lastGPressRef = useRef<number>(0);
-  const toggleHeatmap = useCallback(() => setHeatmapVisible(v => !v), []);
-
-  // - React Flow memoizes node/edge components by their `data` reference, so they only
-  // - re-render when data/position/selection change — NOT on an external React-context
-  // - change. A `gh` toggle only changes HeatmapContext, so glow wouldn't appear/clear
-  // - until the next viewport move re-rendered nodes via their RF-store zoom subscription.
-  // - Force a re-render on toggle by bumping each node/edge `data` reference (the RF way).
-  // - Skip the initial mount (nothing to refresh yet).
-  const heatmapMounted = useRef(false);
-  useEffect(() => {
-    if (!heatmapMounted.current) { heatmapMounted.current = true; return; }
-    setNodes(nds => nds.map(n => ({ ...n, data: { ...n.data } })));
-    setEdges(eds => eds.map(e => ({ ...e, data: { ...(e.data ?? {}) } })));
-  }, [heatmapVisible, setNodes, setEdges]);
 
   // ─── vim marks (m{x} to set, `{x} to jump, `` for previous position) ────────
   const marksRef       = useRef<Record<string, CanvasMark>>({});
@@ -1202,7 +1184,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     // - purge deleted nodes from the space-pinned set
     for (const id of deletedIds) spaceSelectedRef.current.delete(id);
     const updated: CanvasData = {
-      ...canvasRef.current,                                                                       // - preserve creationCounter, viewport, etc.
+      ...canvasRef.current,                                                                       // - preserve viewport, metadata, etc.
       nodes: canvasRef.current.nodes.filter(n => !deletedIds.has(n.id)),
       edges: canvasRef.current.edges.filter(e => !deletedIds.has(e.fromNode) && !deletedIds.has(e.toNode)),
     };
@@ -1337,10 +1319,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       const labelled: CanvasNode[] = [];
       incoming.forEach(cn => {
         const existing  = [...canvasRef.current.nodes, ...labelled];
-        const labeled   = assignLabel(cn, existing);
-        const nextIdx   = (canvasRef.current.creationCounter ?? 0) + 1;
-        canvasRef.current = { ...canvasRef.current, creationCounter: nextIdx };
-        labelled.push({ ...labeled, creationIndex: nextIdx });
+        labelled.push(assignLabel(cn, existing));
       });
       pushHistory();
       labelled.forEach(cn => {
@@ -1724,7 +1703,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     for (const id of deletedIds) spaceSelectedRef.current.delete(id);
 
     const updated: CanvasData = {
-      ...canvasRef.current,                                                                       // - preserve creationCounter, viewport, etc.
+      ...canvasRef.current,                                                                       // - preserve viewport, metadata, etc.
       nodes: canvasRef.current.nodes.filter(n => !deletedIds.has(n.id)),
       edges: canvasRef.current.edges.filter(e => !deletedIds.has(e.fromNode) && !deletedIds.has(e.toNode)),
     };
@@ -2289,23 +2268,6 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         return;
       }
 
-      // - g key: start a two-key sequence (used for gh = toggle heatmap)
-      if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'g') {
-        lastGPressRef.current = Date.now();
-        return;
-      }
-
-      // - gh (g then h within 400 ms): toggle activity heatmap
-      if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'h') {
-        if (Date.now() - lastGPressRef.current < 400) {
-          lastGPressRef.current = 0;
-          e.preventDefault();
-          toggleHeatmap();
-          return;
-        }
-        // - fall through to normal h (navigate left)
-      }
-
       // - yy (double-tap y within 400 ms): copy selected nodes to canvas clipboard
       if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'y') {
         const now = Date.now();
@@ -2657,11 +2619,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       const { id, text } = (e as CustomEvent<{ id: string; text: string }>).detail;
       const original = canvasRef.current.nodes.find(n => n.id === id);
       if (!original || original.type !== 'text') return;
-      // - stamp editIndex using the shared creationCounter pool so creationIndex
-      // - and editIndex are directly comparable in the heatmap ranking
-      const nextIdx = (canvasRef.current.creationCounter ?? 0) + 1;
-      canvasRef.current = { ...canvasRef.current, creationCounter: nextIdx };
-      const updatedNode = { ...original, text, editIndex: nextIdx };
+      const updatedNode = { ...original, text };
       const updated: CanvasData = {
         ...canvasRef.current,
         nodes: canvasRef.current.nodes.map(n => n.id === id ? updatedNode : n),
@@ -2669,7 +2627,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       canvasRef.current = updated;
       // - update React Flow node data so markdown re-renders immediately
       setNodes(nds => nds.map(n =>
-        n.id === id ? { ...n, data: { ...n.data, text, editIndex: nextIdx } } : n
+        n.id === id ? { ...n, data: { ...n.data, text } } : n
       ));
       scheduleSave();
     };
@@ -2684,18 +2642,15 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       const { id, code } = (e as CustomEvent<{ id: string; code: string }>).detail;
       const original = canvasRef.current.nodes.find(n => n.id === id);
       if (!original || original.type !== 'code') return;
-      // - stamp editIndex from the shared creationCounter pool (see nodeTextEdit)
-      const nextIdx = (canvasRef.current.creationCounter ?? 0) + 1;
-      canvasRef.current = { ...canvasRef.current, creationCounter: nextIdx };
       // - clear the run-flag on edit: an edited cell is "stale" so run-with-upstream re-runs it
-      const updatedNode = { ...original, code, editIndex: nextIdx, lastStatus: undefined };
+      const updatedNode = { ...original, code, lastStatus: undefined };
       const updated: CanvasData = {
         ...canvasRef.current,
         nodes: canvasRef.current.nodes.map(n => n.id === id ? updatedNode : n),
       };
       canvasRef.current = updated;
       setNodes(nds => nds.map(n =>
-        n.id === id ? { ...n, data: { ...n.data, code, editIndex: nextIdx, lastStatus: undefined } } : n
+        n.id === id ? { ...n, data: { ...n.data, code, lastStatus: undefined } } : n
       ));
       scheduleSave();
     };
@@ -2873,23 +2828,18 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       seed = { ...seed, x: c.x, y: c.y };
 
       // - assign a reference label (N1, M3 …) if the node doesn't have one yet
-      const cn = assignLabel(seed, canvasRef.current.nodes);
-
-      // - stamp creation index and increment canvas-level counter
-      const nextIdx = (canvasRef.current.creationCounter ?? 0) + 1;
-      canvasRef.current = { ...canvasRef.current, creationCounter: nextIdx };
-      const cnWithIdx: CanvasNode = { ...cn, creationIndex: nextIdx };
+      const cn: CanvasNode = assignLabel(seed, canvasRef.current.nodes);
 
       // - deselect everything, then add the new node as selected
       setNodes(nds => [
         ...nds.map(n => ({ ...n, selected: false })),
-        { ...toFlowNode(cnWithIdx), selected: true },
+        { ...toFlowNode(cn), selected: true },
       ]);
 
       // - persist node to canvas JSON
       canvasRef.current = {
         ...canvasRef.current,
-        nodes: [...canvasRef.current.nodes, cnWithIdx],
+        nodes: [...canvasRef.current.nodes, cn],
       };
       // - the first node seeds the first section
       if (lanesRef.current.length === 0) {
@@ -2909,11 +2859,11 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       scheduleSave();
 
       // - focus DOM + pan viewport to the new node
-      focusNodeById(cnWithIdx.id);
+      focusNodeById(cn.id);
       const { zoom } = rfRef.current.getViewport();
       const cAddNode = clampCam(
-        window.innerWidth  / 2 - (cnWithIdx.x + cnWithIdx.width  / 2) * zoom,
-        window.innerHeight / 2 - (cnWithIdx.y + cnWithIdx.height / 2) * zoom,
+        window.innerWidth  / 2 - (cn.x + cn.width  / 2) * zoom,
+        window.innerHeight / 2 - (cn.y + cn.height / 2) * zoom,
         zoom,
       );
       rfRef.current.setViewport({ x: cAddNode.x, y: cAddNode.y, zoom }, { duration: 250 });
@@ -2922,7 +2872,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       if (autoEdit) {
         // - short delay to let the TextNodeComponent mount and attach its listener
         setTimeout(() => {
-          window.dispatchEvent(new CustomEvent('skena:enterEdit', { detail: { id: cnWithIdx.id } }));
+          window.dispatchEvent(new CustomEvent('skena:enterEdit', { detail: { id: cn.id } }));
         }, 80);
       }
     };
@@ -2956,13 +2906,10 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     }
 
     const id        = `cell-${Date.now()}`;
-    const labeled   = assignLabel(
+    const newNode: CanvasNode = assignLabel(
       { id, type: 'cell', x, y, width: W, height: H, content, format } as CanvasNode,
       canvasRef.current.nodes,
     );
-    const nextIdx   = (canvasRef.current.creationCounter ?? 0) + 1;
-    canvasRef.current = { ...canvasRef.current, creationCounter: nextIdx };
-    const newNode: CanvasNode = { ...labeled, creationIndex: nextIdx };
 
     // - create connecting edge from the source notebook node if available
     const newEdges: CanvasEdge[] = [];
@@ -3259,7 +3206,6 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   }, [focusNodeById]);
 
   return (
-    <HeatmapProvider nodes={nodes} edges={edges} visible={heatmapVisible} toggle={toggleHeatmap}>
     <ZoomLevelProvider>
     <LanesContext.Provider value={lanes}>
     <KernelsContext.Provider value={kernels}>
@@ -3383,7 +3329,6 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     </KernelsContext.Provider>
     </LanesContext.Provider>
     </ZoomLevelProvider>
-    </HeatmapProvider>
   );
 }
 

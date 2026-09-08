@@ -6,14 +6,11 @@ import React from 'react';
 import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import { ChatNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
-import { useHeatmap } from '../../context/HeatmapContext';
 import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
 import { DEFAULT_NODE_BORDER_BY_TYPE } from '../palette';
 
 export function ChatNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as ChatNode & { accentColor?: string };
-  const { visible: hmVisible, nodeGlow } = useHeatmap();
-  const hmNode = hmVisible ? nodeGlow.get(data.id as string) : undefined;
   const selectedStyle = useSelectedStyle(selected);
   const bw = useZoomInvariantBorderWidth(1.5);
   const borderColor = node.accentColor ?? DEFAULT_NODE_BORDER_BY_TYPE.chat;
@@ -31,12 +28,6 @@ export function ChatNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
         background:    'var(--vscode-editorWidget-background)',
         display:       'flex',
         flexDirection: 'column',
-        // - heatmap glow overrides: filter (drop-shadow), borderColor, opacity
-        ...(hmNode ? {
-          filter:      hmNode.glowFilter,
-          border:      `${bw}px solid ${hmNode.borderColor}`,
-          opacity:     hmNode.opacity,
-        } : {}),
         // - sci-fi focus ring
         ...selectedStyle,
       }}

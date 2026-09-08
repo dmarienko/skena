@@ -1,3 +1,5 @@
+> Removed 2026-09-08 — the feature was judged useless in use.
+
 # Activity Heatmap Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

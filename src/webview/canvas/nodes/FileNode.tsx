@@ -35,7 +35,6 @@ import { CodeRenderer } from '../../renderers/CodeRenderer';
 import { ImageRenderer } from '../../renderers/ImageRenderer';
 import { HtmlShadow } from '../../renderers/HtmlShadow';
 import { useHighlightedHtml } from '../../lib/codeHighlight';
-import { useHeatmap } from '../../context/HeatmapContext';
 import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
 import { DEFAULT_NODE_BORDER_BY_TYPE } from '../palette';
 
@@ -158,8 +157,6 @@ function ZoomGate({ id, status, content, fileType, resourceUri, error, truncated
 
 function FileNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as FileNode & { accentColor?: string };
-  const { visible: hmVisible, nodeGlow } = useHeatmap();
-  const hmNode = hmVisible ? nodeGlow.get(data.id as string) : undefined;
   const selectedStyle = useSelectedStyle(selected);
   const bw = useZoomInvariantBorderWidth(1.5);
   const { status, content, fileType, resourceUri, error, truncated, totalSize, html } = useFileContent(node.file);
@@ -189,12 +186,6 @@ function FileNodeInner({ data, id, selected }: NodeProps): JSX.Element {
         flexDirection: 'column',
         borderRadius:  6,
         overflow:      'hidden',
-        // - heatmap glow overrides: filter (drop-shadow), borderColor, opacity
-        ...(hmNode ? {
-          filter:      hmNode.glowFilter,
-          border:      `${bw}px solid ${hmNode.borderColor}`,
-          opacity:     hmNode.opacity,
-        } : {}),
         // - sci-fi focus ring
         ...selectedStyle,
       }}

@@ -49,18 +49,6 @@ export const CHAT_ASSISTANT_RGB = '167, 139, 250';  // - assistant accent (purpl
 export const CHAT_ERROR_RGB     = '248, 113, 113';  // - error text / banner (red, #F87171)
 export const CHAT_ACCENT_RGB    = '56, 189, 248';   // - input glyph + focused-panel glow (blue)
 
-// ─── activity heatmap (gh) cluster glow palette ─────────────────────────────────
-// - one color per connected thread cluster (cycled); isolated nodes use GRAY.
-export const HEATMAP_PALETTE = [
-  '56,189,248',    // - cyan
-  '251,146,60',    // - orange
-  '167,139,250',   // - purple
-  '52,211,153',    // - green
-  '244,114,182',   // - pink
-  '250,204,21',    // - yellow
-] as const;
-export const HEATMAP_GRAY = '140,140,140';   // - isolated (unconnected) nodes
-
 // - per-kernel accent colors — defined in shared/ so the host can use them too
 export { KERNEL_PALETTE, kernelColor, nextKernelColorIndex } from '../../shared/kernelPalette';
 

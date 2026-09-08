@@ -1,3 +1,5 @@
+> Removed 2026-09-08 — the feature was judged useless in use.
+
 # Activity Heatmap — Design Spec
 
 **Date:** 2026-05-19

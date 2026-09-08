@@ -69,9 +69,6 @@ A floating chat overlay embedded in the canvas itself, not in a side panel. It s
 | ``Alt+` `` | Collapse / expand the chat panel |
 | `Alt+I` | Toggle focus between chat input and canvas |
 
-### Activity heatmap
-Press `gh` to toggle a glow layer over the canvas: nodes and edges light up by **thread cluster** (color) and **recency** (intensity). Recently created or edited threads glow brightest — instantly shows where the work is happening on a large board.
-
 ### Paste anything
 `Ctrl+V` on the canvas turns the clipboard into the right node: screenshots and notebook chart/table outputs become cell nodes, copied files become file nodes, URLs become link nodes, text becomes a text node — all connected to the focused node with an edge. `yy` then `Ctrl+V` still duplicates canvas nodes.
 
@@ -123,7 +120,6 @@ Navigate the canvas without touching the mouse:
 | `Shift+C` | Center viewport on focused node (zoom unchanged) |
 | `Alt+Shift+C` | Center on focused node and zoom to readable scale |
 | `m` `<key>` / `` ` `` `<key>` | Set / jump to mark (`Ctrl+M` opens the marks panel) |
-| `gh` | Toggle activity heatmap |
 | `Ctrl+N` | Add node via fuzzy vault search |
 | `Ctrl+F` or `/` | Search within canvas |
 | `Alt+P` | Pin hovered notebook cell output as a standalone node |

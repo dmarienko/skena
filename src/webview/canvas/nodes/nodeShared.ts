@@ -32,9 +32,9 @@ export const HANDLE_STYLE: React.CSSProperties = {
 /**
  * Hook — node border width scaled by 1/zoom so the border keeps a roughly constant
  * SCREEN width as the canvas zooms. React Flow scales the whole viewport, so a fixed
- * canvas-px border shrinks to near-invisible when zoomed out (obvious with the heatmap
- * glow off). Floored at the base width (never thinner) and capped so it can't explode
- * at extreme zoom-out. Same 1/zoom approach as useSelectedStyle's focus ring.
+ * canvas-px border shrinks to near-invisible when zoomed out. Floored at the base width
+ * (never thinner) and capped so it can't explode at extreme zoom-out. Same 1/zoom
+ * approach as useSelectedStyle's focus ring.
  */
 // - global multiplier for on-screen node border width; bump to make all borders wider
 const BORDER_WIDTH_SCALE = 1.8;

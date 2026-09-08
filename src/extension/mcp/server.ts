@@ -201,7 +201,7 @@ function withFileLock<T>(fsPath: string, fn: () => Promise<T>): Promise<T> {
 async function readCanvas(fsPath: string): Promise<CanvasData> {
   const raw    = await fs.readFile(fsPath, 'utf-8');
   const parsed = JSON.parse(raw) as Partial<CanvasData>;
-  // - spread first: metadata (sections, aiModel), creationCounter and any Obsidian-owned field must
+  // - spread first: metadata (sections, aiModel) and any Obsidian-owned field must
   //   survive the round trip — writeCanvas serialises this object, so a dropped key is a deleted key
   const data: CanvasData = {
     ...(parsed as CanvasData),

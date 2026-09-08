@@ -40,24 +40,9 @@ export interface CanvasNodeBase {
   tags?: string[];
   /**
    * Unix timestamp (ms) of the last time the user focused or the AI touched this node.
-   * Used by the activity heatmap to render recency glow.
    * Ignored by Obsidian.
    */
   lastTouched?: number;
-  /**
-   * Monotonically increasing integer assigned once at node creation.
-   * Higher = created later. Used by the activity heatmap for recency ranking.
-   * Ignored by Obsidian.
-   */
-  creationIndex?: number;
-  /**
-   * Monotonically increasing integer, stamped (re-stamped) every time the node's
-   * content is edited. Shares the same counter pool as creationIndex so the two
-   * values are directly comparable. The heatmap uses max(creationIndex, editIndex)
-   * so a recently edited node glows as brightly as a recently created one.
-   * Ignored by Obsidian.
-   */
-  editIndex?: number;
 }
 
 export interface FileNode extends CanvasNodeBase {
@@ -193,11 +178,6 @@ export interface CanvasData {
   edges:     CanvasEdge[];
   /** - last known viewport; persisted so the canvas reopens at the same position */
   viewport?: CanvasViewport;
-  /**
-   * Monotonically increasing counter; incremented every time a node is created.
-   * Persisted so the sequence survives canvas reopen.
-   */
-  creationCounter?: number;
   /** - canvas-scoped skena metadata (portable in the .canvas file) */
   metadata?: {
     /** - AI model for this canvas's chat; overrides the global skena.ai.model */
@@ -208,37 +188,6 @@ export interface CanvasData {
     kernels?: KernelRecord[];
   };
 }
-
-// ─── Activity heatmap types ────────────────────────────────────────────────────
-
-/**
- * Per-node glow data computed by useActivityHeatmap.
- * color is an RGB triplet string e.g. "56,189,248" — use as rgba(${color},${alpha}).
- */
-export type HeatmapNode = {
-  color:       string;
-  intensity:   number;
-  clusterId:   number | null;
-  glowFilter:  string;   // - CSS filter string, ready to apply
-  borderColor: string;   // - CSS rgba() border color
-  opacity:     number;   // - 1.0 normally, 0.45 for isolated nodes
-};
-
-/**
- * Per-edge glow data computed by useActivityHeatmap.
- * sourceIntensity / targetIntensity drive the gradient direction:
- * the low-intensity end is transparent, the high-intensity end is bright + wide.
- */
-export type EdgeGlow = {
-  color:           string;
-  intensity:       number;   // - max(sourceIntensity, targetIntensity)
-  sourceIntensity: number;   // - intensity at the edge's source handle
-  targetIntensity: number;   // - intensity at the edge's target handle
-  stroke:          string;   // - rgba() for the core line
-  glowFilter:      string;   // - CSS drop-shadow (fallback / node-component use)
-  glowBlur:        number;   // - SVG feGaussianBlur stdDeviation (px, zoom-scaled)
-  glowWidth:       number;   // - wide bloom stroke-width (px, zoom-scaled)
-};
 
 // ─── Vault / file resolution ──────────────────────────────────────────────────
 

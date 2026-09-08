@@ -37,7 +37,6 @@ import { MarkdownRenderer } from '../../renderers/MarkdownRenderer';
 import { useHighlightedHtml } from '../../lib/codeHighlight';
 import { useHostMarkdown } from '../../hooks/useHostMarkdown';
 import { ScrollableContent } from '../../components/ScrollableContent';
-import { useHeatmap } from '../../context/HeatmapContext';
 import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
 import { DEFAULT_NODE_BORDER_BY_TYPE } from '../palette';
 
@@ -262,8 +261,6 @@ window.addEventListener('skena:clipboardContent', (e: Event) => {
 
 export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as TextNode & { accentColor?: string };
-  const { visible: hmVisible, nodeGlow } = useHeatmap();
-  const hmNode = hmVisible ? nodeGlow.get(data.id as string) : undefined;
   const selectedStyle = useSelectedStyle(selected);
   const bw = useZoomInvariantBorderWidth(1.5);
   const [editing, setEditing] = useState(false);
@@ -622,13 +619,7 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
         display:       'flex',
         flexDirection: 'column',
         outline:       'none',
-        // - heatmap glow overrides: filter (drop-shadow), borderColor, opacity
-        ...(hmNode ? {
-          filter:      hmNode.glowFilter,
-          border:      `${bw}px solid ${hmNode.borderColor}`,
-          opacity:     hmNode.opacity,
-        } : {}),
-        // - sci-fi focus ring — box-shadow coexists with heatmap filter
+        // - sci-fi focus ring
         ...selectedStyle,
       }}
       tabIndex={0}

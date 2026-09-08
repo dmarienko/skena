@@ -17,7 +17,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { EdgeProps, BaseEdge, EdgeLabelRenderer, Position, useStore } from '@xyflow/react';
 import { routeOrthogonal, ORTHOGONAL_CORNER_R, NodeRect } from '../routing/orthogonal';
-import { useHeatmap } from '../../context/HeatmapContext';
 import { useZoomInvariantBorderWidth } from '../nodes/nodeShared';
 import { EDGE_FALLBACK_COLOR } from '../palette';
 
@@ -125,16 +124,7 @@ export function LabeledEdgeComponent({
       }
     : { ...style, strokeWidth: sw };
 
-  const { visible: hmVisible, edgeGlow } = useHeatmap();
-  const hmEdge = hmVisible ? edgeGlow.get(id) : undefined;
-
-  // - non-heatmap style (selection highlight or plain)
-  const finalStyle: React.CSSProperties = hmEdge
-    ? { ...activeStyle, stroke: hmEdge.stroke, strokeWidth: Number(activeStyle?.strokeWidth ?? 1.5) }
-    : (activeStyle ?? {});
-
-  // - match label border to cluster color when heatmap is active, or edge stroke otherwise
-  const edgeColor = hmEdge ? `rgb(${hmEdge.color})` : ((finalStyle?.stroke ?? style?.stroke ?? EDGE_FALLBACK_COLOR) as string);
+  const edgeColor = (activeStyle.stroke ?? EDGE_FALLBACK_COLOR) as string;
 
   const labelStyle: React.CSSProperties = {
     position:     'absolute',
@@ -152,51 +142,9 @@ export function LabeledEdgeComponent({
     zIndex:       10,
   };
 
-  // - gradient direction: old-end (low intensity) → new-end (high intensity)
-  // - if source is older, gradient runs source→target; otherwise target→source
-  const gradId = `hm-eg-${id}`;
-  const blurId = `hm-eb-${id}`;
-  const srcIsOld = !hmEdge || hmEdge.sourceIntensity <= hmEdge.targetIntensity;
-  const [oldX, oldY] = srcIsOld ? [sourceX, sourceY] : [targetX, targetY];
-  const [newX, newY] = srcIsOld ? [targetX, targetY] : [sourceX, sourceY];
-
   return (
     <>
-      {hmEdge && (
-        <defs>
-          {/* - gradient from transparent at old-end to the arrival node's intensity at new-end */}
-          <linearGradient id={gradId} gradientUnits="userSpaceOnUse"
-            x1={oldX} y1={oldY} x2={newX} y2={newY}>
-            <stop offset="0%"   stopColor={`rgb(${hmEdge.color})`} stopOpacity="0"                                        />
-            <stop offset="35%"  stopColor={`rgb(${hmEdge.color})`} stopOpacity={(hmEdge.intensity * 0.18).toFixed(2)}     />
-            <stop offset="70%"  stopColor={`rgb(${hmEdge.color})`} stopOpacity={(hmEdge.intensity * 0.60).toFixed(2)}     />
-            <stop offset="100%" stopColor={`rgb(${hmEdge.color})`} stopOpacity={hmEdge.intensity.toFixed(2)}              />
-          </linearGradient>
-          {/* - blur for the outer bloom layer */}
-          <filter id={blurId} x="-100%" y="-100%" width="300%" height="300%">
-            <feGaussianBlur stdDeviation={hmEdge.glowBlur.toFixed(1)} />
-          </filter>
-        </defs>
-      )}
-
-      {hmEdge ? (
-        <>
-          {/* - wide soft bloom — gradient opacity makes it appear only near the new end */}
-          <path d={edgePath} stroke={`url(#${gradId})`}
-            strokeWidth={hmEdge.glowWidth} fill="none"
-            filter={`url(#${blurId})`} />
-          {/* - medium sharp glow — halo that grows toward new end; opacity cap = arrival intensity */}
-          <path d={edgePath} stroke={`url(#${gradId})`}
-            strokeWidth={(hmEdge.glowWidth * 0.35).toFixed(1)} fill="none"
-            opacity={(hmEdge.intensity * 0.85).toFixed(2)} />
-          {/* - thin core line — always visible, carries the arrowhead */}
-          <path d={edgePath} className="react-flow__edge-path"
-            stroke={`rgba(${hmEdge.color},${(hmEdge.intensity * 0.8).toFixed(2)})`} strokeWidth={sw}
-            fill="none" markerEnd={markerEnd} />
-        </>
-      ) : (
-        <BaseEdge id={id} path={edgePath} style={finalStyle} markerEnd={markerEnd} />
-      )}
+      <BaseEdge id={id} path={edgePath} style={activeStyle} markerEnd={markerEnd} />
 
       <EdgeLabelRenderer>
         {editing ? (
