@@ -805,10 +805,13 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   }, [setNodes]);
 
   // - fit every section to its content: the shifts may be up or down. No history entry of its own —
-  //   the action that changed the geometry pushed one
+  //   the action that changed the geometry pushed one. The lanes come from the canvasRef mirror,
+  //   which `commitLanes` writes in the same tick as the change; `lanesRef` only catches up on the
+  //   next render, so rebuilding from it would write back a lane array missing that change (an
+  //   output just pinned to a folded section would lose its pin).
   const applyFit = useCallback((g: LaneGrowth) => {
     shiftNodes(g.nodeShifts);
-    commitLanes(lanesRef.current.map(l => (g.laneShifts[l.id] ? { ...l, y: l.y + g.laneShifts[l.id] } : l)));
+    commitLanes((canvasRef.current.metadata?.sections ?? []).map(l => (g.laneShifts[l.id] ? { ...l, y: l.y + g.laneShifts[l.id] } : l)));
   }, [shiftNodes, commitLanes]);
   useLaneFit(nodes, lanes, draggingRef, fromHistoryRef, applyFit);
 
@@ -854,7 +857,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     const own = sectionMembership(canvasRef.current.nodes, canvasRef.current.metadata?.sections ?? [], anchor);
     opts.beforeApply?.();
     applyPatches(patches);
-    const fit = fitLanes(lanesRef.current, canvasRef.current.nodes, own);
+    const fit = fitLanes(canvasRef.current.metadata?.sections ?? [], canvasRef.current.nodes, own);
     if (Object.keys(fit.laneShifts).length) applyFit(fit);
     scheduleSave();
   }, [engineNodesOf, applyPatches, applyFit, scheduleSave]);

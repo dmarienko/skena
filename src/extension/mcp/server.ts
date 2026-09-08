@@ -931,14 +931,19 @@ async function canvasPinOutput(args: Record<string, unknown>): Promise<string> {
   const content = (args.content as string | undefined) ?? '';
   const W = 480, H = 320;
 
-  // - a pin onto a code cell is that cell's output: same slot as a run, so the engine keeps the pair
-  //   together. Off a code cell (or with no source at all) it stays a free node, placed as before.
+  // - a pin onto a code cell with no output yet IS that cell's output: same slot as a run, so the
+  //   engine keeps the pair together. Off a code cell, or onto one whose output already fills that
+  //   slot, it stays a free node placed by the old free-slot search — the engine would otherwise put
+  //   it exactly on the existing output, and nothing moves it off (the mover is skipped by the free
+  //   settle, and an output cell is not something a free node pushes).
   let geom = { x: 0, y: 0, width: W, height: H };
   let sourceNode: CanvasNode | undefined;
   if (args.sourceRef) {
     sourceNode = findNode(d, args.sourceRef as string);
     if (sourceNode) {
-      const around = sourceNode.type === 'code' ? sectionEngineNodes(d.nodes, d.metadata?.sections ?? [], sourceNode.id) : null;
+      const around = sourceNode.type === 'code' && !sourceNode.outputNodeId
+        ? sectionEngineNodes(d.nodes, d.metadata?.sections ?? [], sourceNode.id)
+        : null;
       const slot   = around && placeOutput(around, sourceNode.id);
       geom = slot ?? { ...outputCellGeom(d.metadata?.sections ?? [], sourceNode, 60), width: W, height: H };   // - W/H match outputCellGeom's 480x320; a manual pin keeps its 60px gap
     }
@@ -974,12 +979,15 @@ async function canvasPinOutput(args: Record<string, unknown>): Promise<string> {
     edgeId = edge.id;
   }
 
-  // - a code cell with no output yet adopts the pinned node as its output, so the engine keeps the
-  //   two together in the pair. One that already has an output keeps it; the pin stays a free node
-  //   and settles below it.
-  if (sourceNode?.type === 'code' && !sourceNode.outputNodeId) sourceNode.outputNodeId = labeled.id;
+  // - the cell adopts the pinned node as its output, which is what keeps the two in one pair. A cell
+  //   that already has an output keeps it, and the pin stays a free node.
+  const adopted = sourceNode?.type === 'code' && !sourceNode.outputNodeId;
+  if (adopted) (sourceNode as CodeNode).outputNodeId = labeled.id;
   if (sourceNode && d.metadata?.sections) d.metadata = { ...d.metadata, sections: pinOutputToLane(d.metadata.sections, sourceNode.id, labeled.id) };   // - an output of a folded cell stays folded
-  const own = applyEngine(d, [labeled.id]);
+  // - an adopted pin is the mover, as a run's output is. A free one is NOT: it starts beside a code
+  //   cell that already has an output, so it has to be the node the settle pushes down and clear,
+  //   not the one that stays put — the code cell is what the engine is asked to lay out around.
+  const own = applyEngine(d, [adopted || !sourceNode ? labeled.id : sourceNode.id]);
   Object.assign(d, applyLaneFit(d, Date.now(), own));   // - every write fits the sections
   const moved = movedLabels(d, before, [labeled.id]);
   await writeCanvas(p, d);
