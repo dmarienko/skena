@@ -33,7 +33,7 @@ import '@xyflow/react/dist/style.css';
 import { CanvasData, CanvasNode, CanvasEdge, CanvasViewport, KernelNode, KernelRecord, MsgAddNodeResult, MsgKernelAdded, MsgKernelRemoved, MsgRunOutput, MsgSubCanvasCreated, MsgVerifyPathResult, NodeSide, CanvasMark, ViewportSnapshot } from '../../shared/types';
 import { classifyClipboard } from './paste-classify';
 import { ContextMenu } from './ContextMenu';
-import { CANVAS_COLORS, NODE_SIZE, NEW_NODE, READABLE_ZOOM } from '../../shared/constants';
+import { CANVAS_COLORS, NODE_SIZE, NEW_NODE, OUTPUT_MAX_W, OUTPUT_MAX_H, READABLE_ZOOM } from '../../shared/constants';
 import { GRID, snapGrid } from '../../shared/grid';
 import { ORIGIN_GUTTER, clampToOrigin, clampCameraToOrigin } from '../../shared/bounds';
 import { ensureLabels, assignLabel } from './nodeLabels';
@@ -55,7 +55,7 @@ import { HelperLines } from './HelperLines';
 import { SectionSeparators } from './SectionSeparators';
 import { SectionRail, type RailKernel } from '../rail/SectionRail';
 import { deriveLanes, fitLanes, sortLanes, insertLaneAt, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
-import { applyPatchesToCanvas, codeCellHeight, forkOf, insertAfter, layoutSection, reflowSection, sectionEngineNodes, sectionMembership, type EngineNode, type LayoutOpts, type Patches } from '../../shared/layoutEngine';
+import { applyPatchesToCanvas, codeCellHeight, columnsOfDeleted as columnsOfDeletedIn, forkOf, insertAfter, layoutSection, reflowSection, sectionEngineNodes, sectionMembership, type EngineNode, type LayoutOpts, type Patches } from '../../shared/layoutEngine';
 import { useLaneFit, flowGeom } from '../rail/useLaneFit';
 import { findNearestNode, revealPan, type NavNode, type Rect } from './spatialNav';
 import { CanvasSearch } from './CanvasSearch';
@@ -745,14 +745,16 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const kernelsRef = useRef<KernelRecord[]>(kernels);
   useEffect(() => { kernelsRef.current = kernels; }, [kernels]);
 
-  // - snapshot current state BEFORE a mutation so it can be undone
+  // - snapshot current state BEFORE a mutation so it can be undone. The lanes come from the canvasRef
+  //   mirror, which `commitLanes` writes in the same tick as the change; `lanesRef` only catches up on
+  //   the next render, so a snapshot taken from it would carry a lane array missing that change.
   const pushHistory = useCallback(() => {
     undoStackRef.current = [
       ...undoStackRef.current.slice(-(MAX_HISTORY - 1)),
-      { nodes: [...canvasRef.current.nodes], edges: [...canvasRef.current.edges], sections: [...lanesRef.current] },
+      { nodes: [...canvasRef.current.nodes], edges: [...canvasRef.current.edges], sections: [...(canvasRef.current.metadata?.sections ?? [])] },
     ];
     redoStackRef.current = []; // - new action clears redo
-  }, []); // - canvasRef / lanesRef are refs, always current
+  }, []); // - canvasRef is a ref, always current
   // - every viewport write goes through here; the rule itself lives in bounds.ts and is tested there
   const clampCam = useCallback((x: number, y: number, zoom: number) => clampCameraToOrigin(x, y, zoom), []);
   // - assigned once confirmDeleteViaHost exists (declared further down); see handleDeleteLane
@@ -828,13 +830,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const applyPatches = useCallback((p: Patches) => {
     setNodes(nds => nds.map(n => {
       const q = p[n.id];
-      if (!q) return n;
-      const size = q.w !== undefined || q.h !== undefined
-        ? { width: q.w ?? Number(n.style?.width ?? n.width ?? 0), height: q.h ?? Number(n.style?.height ?? n.height ?? 0) }
-        : null;
-      return size
-        ? { ...n, position: { x: q.x, y: q.y }, style: { ...n.style, ...size }, ...size }
-        : { ...n, position: { x: q.x, y: q.y } };
+      // - a patch carries x/y only: no engine function emits a size (`Patch.w`/`.h` are reserved for
+      //   content measurement), so there is no size to write here
+      return q ? { ...n, position: { x: q.x, y: q.y } } : n;
     }));
     canvasRef.current = { ...canvasRef.current, nodes: applyPatchesToCanvas(canvasRef.current.nodes, p) };
   }, [setNodes]);
@@ -863,26 +861,10 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   }, [engineNodesOf, applyPatches, applyFit, scheduleSave]);
 
   // - a delete leaves a hole nothing moved into: read, BEFORE the removal, which column of which
-  //   section each doomed cell sat in (an output cell counts for its code cell's column) so the
-  //   engine can close it after. One entry per column.
-  const columnsOfDeleted = useCallback((deletedIds: Set<string>): { sectionId: string; columnX: number }[] => {
-    const cn = canvasRef.current.nodes;
-    const derived = deriveLanes(cn, canvasRef.current.metadata?.sections ?? []);
-    const seen = new Set<string>();
-    const cols: { sectionId: string; columnX: number }[] = [];
-    for (const n of cn) {
-      if (!deletedIds.has(n.id)) continue;
-      const code = n.type === 'code' ? n : cn.find(c => c.type === 'code' && c.outputNodeId === n.id && !deletedIds.has(c.id));
-      if (!code) continue;
-      const lane = derived.find(l => l.memberIds.includes(code.id));
-      if (!lane) continue;
-      const key = `${lane.id}|${snapGrid(code.x)}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      cols.push({ sectionId: lane.id, columnX: snapGrid(code.x) });
-    }
-    return cols;
-  }, []); // - canvasRef is a ref, always current
+  //   section each doomed cell sat in so the engine can close it after
+  const columnsOfDeleted = useCallback((deletedIds: Set<string>) =>
+    columnsOfDeletedIn(canvasRef.current.nodes, canvasRef.current.metadata?.sections ?? [], deletedIds),
+  []); // - canvasRef is a ref, always current
 
   // - a deleted node must not stay in a fold list: it would pin a lane to an id that no longer exists
   const pruneFolded = useCallback((ids: Set<string>) => {
@@ -2297,53 +2279,22 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         return;
       }
 
-      // - w / Shift+W: widen / narrow the focused node by 10%, both edges move 5% (centre fixed)
-      if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'w' || e.key === 'W')) {
+      // - w / W and e / E resize the focused node by ONE grid cell, the left / top edge fixed, and go
+      //   out through the same event the mouse resizer fires: that handler owns the history entry, the
+      //   snap, the output clamp and the engine run, so the keyboard cannot bypass any of them.
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'w' || e.key === 'W' || e.key === 'e' || e.key === 'E')) {
         const cur = nodesRef.current.find(nd => nd.selected && !isBandType(nd.type));
         if (!cur) return;
         e.preventDefault();
-        pushHistory();
-        // - grow/shrink by ONE grid cell, snapped to the grid; LEFT edge (x) stays fixed so only the
-        //   RIGHT edge moves. min one cell.
-        const dirW = e.key === 'w' ? 1 : -1;
-        const oldW = Number(cur.style?.width ?? cur.width ?? NODE_SIZE.text.w);
-        const newW = Math.max(GRID, snapGrid(oldW) + dirW * GRID);
-        setNodes(nds => nds.map(nd =>
-          nd.id !== cur.id ? nd
-            : { ...nd, style: { ...nd.style, width: newW }, width: newW },
-        ));
-        canvasRef.current = {
-          ...canvasRef.current,
-          nodes: canvasRef.current.nodes.map(cn =>
-            cn.id !== cur.id ? cn : { ...cn, width: newW },
-          ),
-        };
-        scheduleSave();
-        return;
-      }
-
-      // - e / Shift+E: expand / shrink the focused node height by 10%, top edge stays fixed
-      if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'e' || e.key === 'E')) {
-        const cur = nodesRef.current.find(nd => nd.selected && !isBandType(nd.type));
-        if (!cur) return;
-        e.preventDefault();
-        pushHistory();
-        // - grow/shrink by ONE grid cell, snapped to the grid; TOP edge (y) stays fixed so only the
-        //   bottom edge moves. min one cell.
-        const dirH = e.key === 'e' ? 1 : -1;
+        const wide = e.key === 'w' || e.key === 'W';
+        const dir = e.key === 'w' || e.key === 'e' ? 1 : -1;
+        const oldW = Number(cur.style?.width  ?? cur.width  ?? NODE_SIZE.text.w);
         const oldH = Number(cur.style?.height ?? cur.height ?? NODE_SIZE.text.h);
-        const newH = Math.max(GRID, snapGrid(oldH) + dirH * GRID);
-        setNodes(nds => nds.map(nd =>
-          nd.id !== cur.id ? nd
-            : { ...nd, style: { ...nd.style, height: newH }, height: newH },
-        ));
-        canvasRef.current = {
-          ...canvasRef.current,
-          nodes: canvasRef.current.nodes.map(cn =>
-            cn.id !== cur.id ? cn : { ...cn, height: newH },
-          ),
-        };
-        scheduleSave();
+        const width  = wide ? Math.max(GRID, snapGrid(oldW) + dir * GRID) : oldW;
+        const height = wide ? oldH : Math.max(GRID, snapGrid(oldH) + dir * GRID);
+        window.dispatchEvent(new CustomEvent('skena:nodeResize', {
+          detail: { id: cur.id, x: cur.position.x, y: cur.position.y, width, height },
+        }));
         return;
       }
 
@@ -2662,7 +2613,10 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       // - snap the resized box to the grid so width/height land on whole cells (vertical = whole lines)
       const id = d.id;
       const x = snapGrid(d.x), y = snapGrid(d.y);
-      const width = snapGrid(d.width), height = snapGrid(d.height);
+      // - an output cell's column is the pair's, so an oversized one would overlap the pair to its right
+      const isOutput = canvasRef.current.nodes.some(o => o.type === 'code' && o.outputNodeId === id);
+      const width  = isOutput ? Math.min(snapGrid(d.width),  OUTPUT_MAX_W) : snapGrid(d.width);
+      const height = isOutput ? Math.min(snapGrid(d.height), OUTPUT_MAX_H) : snapGrid(d.height);
       // - sync RF node state so in-memory dimensions match the resized size
       // - (RF's NodeResizer updates its own internal store, but we must also
       // -  update width/height on the node object for focusNodeById calculations)
@@ -2810,20 +2764,21 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   }, [setNodes]);
 
   // - vim `o` on a code cell → the next cell of its column, one gap below it; the cells under it are
-  // - pushed down by the engine once the node is in (the addNodeResult funnel). Same width, edit-ready.
+  // - pushed down by the engine once the node is in (the addNodeResult funnel). Edit-ready.
   useEffect(() => {
     const handler = (e: Event) => {
       const { sourceId } = (e as CustomEvent<{ sourceId: string }>).detail;
       const src = nodesRef.current.find(n => n.id === sourceId);
       if (!src) return;
-      const nw = Number(src.style?.width ?? NODE_SIZE.code.w);
       const sh = Number(src.style?.height ?? NODE_SIZE.code.h);
       const section = engineNodesOf({ nodeId: sourceId });
       const slot = section && insertAfter(section, sourceId);
-      // - no section (or not a code cell): the old free-slot search, gap = the shared NEW_NODE gap
-      const { x, y } = slot ?? findFreePosition(nodesRef.current, src.position.x, src.position.y + sh + NEW_NODE_GAP, nw, NODE_SIZE.code.h, 0, 1);
+      // - no section (or not a code cell): the old free-slot search, gap = the shared NEW_NODE gap.
+      //   Either way the slot is snapped, so the new cell lands on its column and not half a grid off.
+      const at = slot ?? findFreePosition(nodesRef.current, src.position.x, src.position.y + sh + NEW_NODE_GAP, NODE_SIZE.code.w, NODE_SIZE.code.h, 0, 1);
+      const x = snapGrid(at.x), y = snapGrid(at.y);
       const newId = `code-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-      const newNode: CanvasNode = { id: newId, type: 'code', code: '', language: 'python', x, y, width: nw, height: NODE_SIZE.code.h };
+      const newNode: CanvasNode = { id: newId, type: 'code', code: '', language: 'python', x, y, width: NODE_SIZE.code.w, height: NODE_SIZE.code.h };
       const newEdge: CanvasEdge = { id: `${sourceId}-${newId}-${Date.now()}`, fromNode: sourceId, fromSide: 'bottom', toNode: newId, toSide: 'top', toEnd: 'arrow' };
       window.dispatchEvent(new CustomEvent('skena:addNodeResult', {
         detail: { type: 'addNodeResult', node: newNode, edge: newEdge, autoEdit: true } satisfies MsgAddNodeResult,
@@ -2929,7 +2884,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         if (pinned !== lanesRef.current) commitLanes(pinned);
         // - a first output is a new box in the section: the engine puts it in its pair's output column
         //   and pushes the neighbours out of its way. A re-run only rewrites content, so nothing moves
-        //   then. The host still places it by its own free-slot search; Task 3 makes the two agree.
+        //   then. The pushes are part of the run, so they ride on the run's own history entry.
+        pushHistory();
         runEngine({ nodeId: out.id }, { moverIds: [out.id] });
       }
       // - the patches above only reach kernel NODES; when the run went to a record, its live id is
@@ -2944,7 +2900,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     };
     window.addEventListener('skena:runOutput', handler);
     return () => window.removeEventListener('skena:runOutput', handler);
-  }, [setNodes, setEdges, commitKernels, commitLanes, runEngine]);
+  }, [setNodes, setEdges, commitKernels, commitLanes, pushHistory, runEngine]);
 
   // - receive add-node result from QuickPick (Ctrl+N / Shift+hjkl)
   useEffect(() => {

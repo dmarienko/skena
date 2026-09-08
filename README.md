@@ -105,11 +105,12 @@ Navigate the canvas without touching the mouse:
 |---|---|
 | `h` / `j` / `k` / `l` | Move focus to nearest node in direction |
 | `Enter` / `Ctrl+Enter` | Open focused file in editor (beside / maximized) |
-| `Alt+X` then `h/j/k/l` | Add node from vault search, connected in direction |
+| `Alt+X` then `h/j/k/l` | Add node from vault search, connected in direction — on a code cell, `h` / `j` / `l` mean fork left / insert below / fork right in its section's column grid |
 | `Ctrl+Shift+H/J/K/L` or arrows | Add connected empty text node in direction and start editing it |
 | `Space` | Pin node for group movement or edge connection |
 | `Shift+H/J/K/L` | Move pinned nodes one grid step — or scroll focused node's content if nothing is pinned |
 | `c` | Toggle edge between pinned node and focused node (connect / disconnect) |
+| `o` | New node below the focused one — on a code cell a new code cell in the same column, with the cells under it pushed down |
 | `yy` / `dd` / `p` | Copy / delete / paste nodes (canvas clipboard) |
 | `u` / `r` | Undo / redo (50-entry canvas history) |
 | `Ctrl+U` / `Ctrl+D` | Scroll focused node's content up / down (vim half-page) |
@@ -126,6 +127,17 @@ Navigate the canvas without touching the mouse:
 | `Ctrl+Shift+V` | Paste clipboard as a cell node |
 | `Ctrl+V` | Paste clipboard as node — image/table → cell node, file → file node, URL → link node, text → text node; after `yy` pastes the copied nodes |
 | ``Alt+` `` / `Alt+I` | AI chat: collapse/expand · focus toggle |
+
+### Sections
+Sections are horizontal lanes running down the canvas — a node belongs to the lane whose range holds its top edge. The **rail** is the vertical strip on the left: one segment per section, in that section's colour, carrying its label and title.
+
+- **Segment controls** — the chevron folds / unfolds the section (folded members are hidden, not moved), ▶ runs its code cells in order, the dot binds a Jupyter kernel (hollow ring = none bound), ✕ deletes the section and its nodes after a confirm. Double-click the title to rename it.
+- **Right-click a segment** for the full menu: **Fold** / **Unfold**, **Run section**, **Reflow section**, **Kernel…**, **Rename…**, **Delete section** — plus **Start / Interrupt / Restart / Shutdown kernel** when a kernel is bound.
+- **Reflow section** snaps every code cell onto the nearest column, closes the holes in each column, sits the column pairs one gap apart left to right, and moves the notes a cell covers down out of the way. It is the only whole-section move — every other edit touches one column.
+- **`+`** at the bottom of the rail adds a new section under the last one.
+- Sections fit their content: a node placed past a section's bottom edge grows that section, slack shrinks it (never below the minimum), and the sections and nodes below move by the same amount.
+
+**From MCP** — `canvas_add_node` takes `after` (a code cell: the new code cell goes under it in the same column) and `forkOf` with `side` (`right` by default, or `left`: a new column pair beside that cell's pair); both place the node themselves and ignore `x`/`y`. `canvas_reflow_section` runs the same reflow as the rail menu. Every MCP write follows the same engine rules as the UI — the touched column is packed, the column pairs to its right are pushed clear, covered notes move down, no node crosses a section boundary, and the sections re-fit afterwards.
 
 ### Monaco text editor inside nodes
 Double-click any text node to edit it inline — full Monaco editor with vim keybindings, markdown syntax highlighting, and VS Code theme integration.

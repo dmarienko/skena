@@ -34,7 +34,7 @@ import { NODE_SIZE, OUTPUT_MAX_W, OUTPUT_MAX_H } from '../../shared/constants';
 import { clampToOrigin } from '../../shared/bounds';
 import { applyLaneFit, deriveLanes, outputCellGeom, pinOutputToLane, pruneFoldedIds, sectionByRef, insertLaneAt, foldLane, unfoldLane, sectionTargetHeight, parkFirstLaneAtOrigin, memberCodeCellsInRunOrder, type SectionLane } from '../../shared/sectionLanes';
 import { resolveCellKernel, cellKernelView, kernelById, upstreamCellsForRun, resolveKernelCellsInCanvas, type KernelLike } from '../../shared/kernelBinding';
-import { layoutSection, reflowSection, insertAfter, forkOf, placeOutput, applyPatchesToCanvas, sectionEngineNodes, sectionMembership, toEngineNodes } from '../../shared/layoutEngine';
+import { layoutSection, reflowSection, insertAfter, forkOf, placeOutput, applyPatchesToCanvas, columnsOfDeleted, sectionEngineNodes, sectionMembership, toEngineNodes } from '../../shared/layoutEngine';
 import { resolveKernelConfig, type KernelServerConfig } from '../jupyter/config';
 import { executeCell, startKernel, shutdownKernel } from '../jupyter/client';
 import { renderOutput, hasVisibleOutput } from '../jupyter/output';
@@ -371,28 +371,6 @@ function movedLabels(d: CanvasData, before: Map<string, string>, exclude: string
   return d.nodes
     .filter(n => !exclude.includes(n.id) && before.has(n.id) && before.get(n.id) !== `${n.x},${n.y}`)
     .map(n => n.nodeLabel ?? n.id);
-}
-
-// - the columns a delete leaves a hole in, read BEFORE the removal: an output cell counts for its
-//   code cell's column, and a code cell going with its output leaves one entry, not two
-function columnsOfDeleted(d: CanvasData, doomed: Set<string>): { sectionId: string; columnX: number }[] {
-  const lanes = d.metadata?.sections ?? [];
-  if (lanes.length === 0) return [];
-  const derived = deriveLanes(d.nodes, lanes);
-  const seen = new Set<string>();
-  const cols: { sectionId: string; columnX: number }[] = [];
-  for (const n of d.nodes) {
-    if (!doomed.has(n.id)) continue;
-    const code = n.type === 'code' ? n : d.nodes.find(c => c.type === 'code' && c.outputNodeId === n.id && !doomed.has(c.id));
-    if (!code) continue;
-    const lane = derived.find(l => l.memberIds.includes(code.id));
-    if (!lane) continue;
-    const key = `${lane.id}|${snapGrid(code.x)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    cols.push({ sectionId: lane.id, columnX: snapGrid(code.x) });
-  }
-  return cols;
 }
 
 // - default dimensions per node type
@@ -813,7 +791,7 @@ async function canvasRemoveNode(args: Record<string, unknown>): Promise<string> 
   if (toRemove.size === 0) return `No nodes found for: ${refs.join(', ')}`;
 
   // - read the holes while the doomed nodes are still there; the engine closes them after
-  const holes  = columnsOfDeleted(d, toRemove);
+  const holes  = columnsOfDeleted(d.nodes, d.metadata?.sections ?? [], toRemove);
   const before = geomOf(d);
   d.nodes = d.nodes.filter(n => !toRemove.has(n.id));
   d.edges = d.edges.filter(e => !toRemove.has(e.fromNode) && !toRemove.has(e.toNode));
@@ -1557,7 +1535,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_update_node',
-    description: 'Update an existing node: content, tags, color, label, and/or move/resize it. Partial — only supplied fields change. Move/resize uses absolute canvas coordinates and runs the layout engine: the node\'s column is packed, the column pairs to its right are pushed clear, and the notes it covers move down. Sections fit their content: a node placed past its section\'s bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Supplied coordinates are snapped to the grid and clamped to the canvas origin.',
+    description: 'Update an existing node: content, tags, color, label, and/or move/resize it. Partial — only supplied fields change. Move/resize uses absolute canvas coordinates and runs the layout engine: the node\'s column is packed, the column pairs to its right are pushed clear, and the notes it covers move down. An output cell is clamped to 1400 wide by 900 high so it cannot overlap the pair to its right. Sections fit their content: a node placed past its section\'s bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Supplied coordinates are snapped to the grid and clamped to the canvas origin.',
     inputSchema: {
       type: 'object',
       properties: {

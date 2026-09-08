@@ -10,6 +10,8 @@ import { deriveLanes, type SectionLane } from './sectionLanes';
  */
 
 export interface EngineNode { id: string; type: string; x: number; y: number; w: number; h: number; outputNodeId?: string }
+// - `w`/`h` are reserved for content measurement: no engine function emits a size yet, so every
+//   patch a caller receives today carries only x/y.
 export interface Patch { x: number; y: number; w?: number; h?: number }
 export type Patches = Record<string, Patch>;
 export interface Column { x: number; codeW: number; cellIds: string[] }
@@ -87,16 +89,16 @@ function overlaps(a: { x: number; y: number; w: number; h: number }, b: { x: num
 
 // - pack one column tight top → bottom; outputs follow their code (same y, output x of the pair).
 //   `minY` holds cells a dropped free node pushed down: they keep that y, the pack closes below them.
-function packColumn(pair: Pair, map: Map<string, EngineNode>, out: Patches, minY?: Map<string, number>): void {
+function packColumn(pair: Pair, map: Map<string, EngineNode>, out?: Patches, minY?: Map<string, number>): void {
   let prevBottom: number | null = null;
   for (const id of pair.column.cellIds) {
     const cell = map.get(id)!;
     const tight = prevBottom === null ? snapGrid(cell.y) : prevBottom + GRID;
     const y = Math.max(tight, minY?.get(id) ?? 0);
     const x = pair.column.x;
-    if (x !== cell.x || y !== cell.y) { out[id] = { x, y }; cell.x = x; cell.y = y; }
+    if (x !== cell.x || y !== cell.y) { if (out) out[id] = { x, y }; cell.x = x; cell.y = y; }
     const o = map.get(cell.outputNodeId ?? '');
-    if (o && (o.x !== pair.outputX || o.y !== y)) { out[o.id] = { x: pair.outputX, y }; o.x = pair.outputX; o.y = y; }
+    if (o && (o.x !== pair.outputX || o.y !== y)) { if (out) out[o.id] = { x: pair.outputX, y }; o.x = pair.outputX; o.y = y; }
     prevBottom = rowBottom(cell, map);
   }
 }
@@ -123,7 +125,7 @@ function pushPairsRight(pairs: Pair[], fromIndex: number, map: Map<string, Engin
 //   cell is left alone (spec §3.3: the ones a managed node NOW overlaps); a reflow passes none and
 //   settles against everything. Once a free node has moved it must clear every managed node — the
 //   push can carry it onto one this call never touched — and every free node moved before it.
-function settleFree(nodes: EngineNode[], owners: Map<string, string>, movers: Set<string>, out: Patches, inWayIds?: Set<string>): void {
+function settleFree(nodes: EngineNode[], owners: Map<string, string>, movers: Set<string>, out?: Patches, inWayIds?: Set<string>): void {
   const managed = nodes.filter(n => n.type === 'code' || owners.has(n.id));
   const free = nodes.filter(n => n.type !== 'code' && !owners.has(n.id)).sort((a, b) => a.y - b.y || a.x - b.x);
   // - a dropped free node stays put and is in the way from the start, wherever it sits in the order
@@ -136,7 +138,7 @@ function settleFree(nodes: EngineNode[], owners: Map<string, string>, movers: Se
     for (let again = true; again;) {
       again = false;
       for (const p of moved ? mustClear : canPush) {
-        if (overlaps(f, p)) { f.y = p.y + p.h + GRID; out[f.id] = { x: f.x, y: f.y }; again = true; moved = true; }
+        if (overlaps(f, p)) { f.y = p.y + p.h + GRID; if (out) out[f.id] = { x: f.x, y: f.y }; again = true; moved = true; }
       }
     }
     if (moved || !inWayIds) { canPush.push(f); mustClear.push(f); }
@@ -228,8 +230,7 @@ export function reflowSection(input: EngineNode[]): Patches {
   }
   const columns = deriveColumns(nodes);
   const pairs = derivePairs(nodes, columns);
-  const out: Patches = {};
-  for (const pair of pairs) packColumn(pair, map, out);
+  for (const pair of pairs) packColumn(pair, map);
   // - pairs tight left → right (the first keeps its x); outputs re-measured after the packs
   const tight = derivePairs(nodes, deriveColumns(nodes));
   for (let i = 1; i < tight.length; i++) {
@@ -237,12 +238,12 @@ export function reflowSection(input: EngineNode[]): Patches {
     const dx = want - tight[i].column.x;
     if (dx === 0) continue;
     for (const id of tight[i].column.cellIds) {
-      const cell = map.get(id)!; cell.x += dx; out[id] = { x: cell.x, y: cell.y };
-      const o = map.get(cell.outputNodeId ?? ''); if (o) { o.x += dx; out[o.id] = { x: o.x, y: o.y }; }
+      const cell = map.get(id)!; cell.x += dx;
+      const o = map.get(cell.outputNodeId ?? ''); if (o) o.x += dx;
     }
     tight[i].column.x += dx; tight[i].outputX += dx; tight[i].right += dx;
   }
-  settleFree(nodes, owners, new Set(), out);
+  settleFree(nodes, owners, new Set());
   return diff(input, nodes);
 }
 
@@ -277,7 +278,10 @@ export function placeOutput(nodes: EngineNode[], codeId: string, existing?: { w:
   return { x: pair.outputX, y: snapGrid(code.y), width: existing?.w ?? OUTPUT_MIN_W, height: existing?.h ?? OUTPUT_DEFAULT_H };
 }
 
-/** Apply patches to canvas-shaped nodes; the same array reference when nothing changed. */
+/**
+ * Apply patches to canvas-shaped nodes; the same array reference when nothing changed. The `w`/`h`
+ * branch is kept for content measurement: no engine function emits a size yet.
+ */
 export function applyPatchesToCanvas<T extends { id: string; x: number; y: number; width: number; height: number }>(nodes: T[], p: Patches): T[] {
   if (Object.keys(p).length === 0) return nodes;
   return nodes.map(n => {
@@ -323,6 +327,30 @@ export function sectionEngineNodes(nodes: CanvasShapedNode[], sections: SectionL
 export function sectionMembership(nodes: CanvasShapedNode[], sections: SectionLane[], anchor: SectionAnchor): Map<string, number> {
   const lane = anchorLane(nodes, sections, anchor);
   return new Map(lane ? lane.memberIds.map(id => [id, lane.index] as const) : []);
+}
+
+/**
+ * The columns a delete leaves a hole in, read BEFORE the removal so the engine can close them after:
+ * an output cell counts for its code cell's column, and a code cell going with its output leaves one
+ * entry, not two. One entry per column; empty when the canvas has no sections.
+ */
+export function columnsOfDeleted(nodes: CanvasShapedNode[], sections: SectionLane[], deletedIds: Set<string>): { sectionId: string; columnX: number }[] {
+  if (sections.length === 0) return [];
+  const derived = deriveLanes(nodes, sections);
+  const seen = new Set<string>();
+  const cols: { sectionId: string; columnX: number }[] = [];
+  for (const n of nodes) {
+    if (!deletedIds.has(n.id)) continue;
+    const code = n.type === 'code' ? n : nodes.find(c => c.type === 'code' && c.outputNodeId === n.id && !deletedIds.has(c.id));
+    if (!code) continue;
+    const lane = derived.find(l => l.memberIds.includes(code.id));
+    if (!lane) continue;
+    const key = `${lane.id}|${snapGrid(code.x)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    cols.push({ sectionId: lane.id, columnX: snapGrid(code.x) });
+  }
+  return cols;
 }
 
 /** Adapter: canvas nodes → engine nodes (the file's `width`/`height` → `w`/`h`). */
