@@ -83,3 +83,18 @@ cells. Deleting a folded lane deletes its pinned members too.
 snapped up; slack → negative shift, snapped down; last lane never shifts; folded lane → `SECTION_FOLDED_H`
 with its pinned members ignored and moved with the lane; idempotent after one pass; `+` placement.
 `migrateSections`: `folded: true` → member ids. `laneIndexForNode`: pinned beats `y`.
+
+## 7. From the 0.17.3 smoke (2026-09-08)
+
+- A folded segment lists its controls fold-first (`railItems(height, chars, folded)`): at the 28px
+  floor exactly the chevron fits, so a folded section can always be unfolded from the rail.
+- The first lane is always at the origin: `fitLanes` parks lane 0 at `y = 0` (no node moves).
+- `▶` is drawn bright when the section binds a resolvable kernel, dim otherwise (tooltip says so;
+  cells with a kernel edge still run through it).
+- Spatial navigation (`hjkl`): candidates are the **visible nodes of the same section**, cone only —
+  nothing in that direction means nothing happens; it never falls back to a far node or another
+  section. Edge-following keeps its priority, with the same exclusions. Folding the section that
+  holds the selected node clears the selection.
+- A new node is clamped to the canvas (`clampToOrigin`) at the single creation funnel, and the first
+  node added to an empty canvas seeds the first section at `y = 0` (webview and `applyLaneFit`, so MCP
+  `canvas_add_node` does the same).
