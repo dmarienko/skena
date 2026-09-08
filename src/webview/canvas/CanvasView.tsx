@@ -103,18 +103,18 @@ const EDGE_TYPES: EdgeTypes = {
  * panel's strip when the panel is expanded enough to occlude AND docked to an edge (a collapsed,
  * small or mid-floating panel is ignored). The pane sits right of the rail, so it is narrower than
  * the window; the chat's viewport rect is shifted into pane coordinates before the dock test.
+ * Takes the pane element: without it there are no pane coordinates, and the caller does not pan.
  */
-function paneArea(el: HTMLElement | null): Rect {
-  const pane = el?.getBoundingClientRect();
-  const w = pane?.width  ?? window.innerWidth;
-  const h = pane?.height ?? window.innerHeight;
+function paneArea(el: HTMLElement): Rect {
+  const pane = el.getBoundingClientRect();
+  const w = pane.width, h = pane.height;
   const area: Rect = { left: 0, top: 0, right: w, bottom: h };
   const chatEl = document.querySelector('[data-skena-chat]') as HTMLElement | null;
   if (!chatEl) return area;
   const r = chatEl.getBoundingClientRect();
   if (r.width <= 40 || r.height <= 60) return area;
-  const left = r.left - (pane?.left ?? 0), right  = r.right  - (pane?.left ?? 0);
-  const top  = r.top  - (pane?.top  ?? 0), bottom = r.bottom - (pane?.top  ?? 0);
+  const left = r.left - pane.left, right  = r.right  - pane.left;
+  const top  = r.top  - pane.top,  bottom = r.bottom - pane.top;
   if      (right  >= w - 8 && left > w * 0.35) area.right  = left;
   else if (left   <= 8     && right < w * 0.65) area.left   = right;
   else if (bottom >= h - 8 && top  > h * 0.35) area.bottom = top;
@@ -1397,6 +1397,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       x2: Math.max(nodeBox.x2, outBox.x2), y2: Math.max(nodeBox.y2, outBox.y2),
     };
 
+    if (!wrapperRef.current) return;   // - before the pane mounts there is nothing to pan into
     const area = paneArea(wrapperRef.current);
     const { x: vx, y: vy, zoom } = rfRef.current.getViewport();
 
@@ -1433,11 +1434,14 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
   // - a plain click reveals the node it hit, the same pan the keyboard gets. Selection stays React
   //   Flow's, so a modifier click (add to selection) must not pan; React Flow does not fire this
-  //   after a drag.
+  //   after a drag. An already-selected node does not pan either: a double-click to enter the editor
+  //   delivers two clicks first, and the second would pan under the cursor.
   const onNodeClick = useCallback((e: React.MouseEvent, n: Node) => {
     if (e.shiftKey || e.ctrlKey || e.metaKey || isBandType(n.type)) return;
+    lastFocusedNodeId.set(canvasPath, n.id);   // - a reload restores the node last clicked, not last keyed
+    if (n.selected) return;
     revealNode(n.id);
-  }, [revealNode]);
+  }, [revealNode, canvasPath]);
 
   /**
    * Returns the id of the non-group node whose center is closest to the

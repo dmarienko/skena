@@ -399,12 +399,14 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
         </div>
         {editing ? (
           /* - nodrag/nowheel: let Monaco own pointer + wheel (React Flow otherwise pans/zooms
-             and never gives the editor focus); stopPropagation keeps RF hotkeys off while typing */
+             and never gives the editor focus); stopPropagation keeps RF hotkeys off while typing and
+             a click on the code out of onNodeClick, which would pan the canvas */
           <div
             className="nodrag nowheel"
             style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
             onMouseDown={e => e.stopPropagation()}
             onPointerDown={e => e.stopPropagation()}
+            onClick={e => e.stopPropagation()}
             onKeyDown={e => e.stopPropagation()}
           >
             <Editor

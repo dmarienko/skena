@@ -77,7 +77,7 @@ export const REVEAL_MARGIN = 24;
 /**
  * The smallest pan that shows `node` — or `pair` (node + output) when that box fits inside `area`
  * at the current zoom — with `margin` px kept clear. Null when nothing has to move. Zoom is kept;
- * a box wider/taller than the area is aligned on its left/top edge.
+ * a box wider/taller than the area is aligned on the edge it overflows.
  * `node`/`pair` are flow coordinates; `area` and the result are pane pixels.
  */
 export function revealPan(node: Box, pair: Box | null, area: Rect, vp: Viewport, margin = REVEAL_MARGIN): { x: number; y: number } | null {

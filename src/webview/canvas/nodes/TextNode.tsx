@@ -659,11 +659,13 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
       />
       {editing ? (
         // - block React Flow from stealing pointer AND keyboard events while Monaco is active
-        // - (space = pan, arrow keys = nudge, delete = delete node, etc.)
+        // - (space = pan, arrow keys = nudge, delete = delete node, etc.); the click is stopped too,
+        // - or placing the cursor would run onNodeClick's reveal pan
         <div
           style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
           onMouseDown={e => e.stopPropagation()}
           onPointerDown={e => e.stopPropagation()}
+          onClick={e => e.stopPropagation()}
           onKeyDown={e => e.stopPropagation()}
         >
           <div style={{ flex: 1 }}>
