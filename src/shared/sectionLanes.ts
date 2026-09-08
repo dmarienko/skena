@@ -6,6 +6,7 @@
  */
 
 import { GRID, SECTION_MIN_H, SECTION_FOLDED_H } from './constants';
+import { snapGrid } from './grid';
 import type { CanvasData, CanvasNode } from './types';
 
 export { SECTION_MIN_H, SECTION_FOLDED_H };
@@ -230,12 +231,15 @@ export function pruneFoldedIds(lanes: SectionLane[], removed: Set<string>): Sect
   return changed ? next : lanes;
 }
 
-/** A section by its printed label (S1… in stack order, case-insensitive) or its id. */
+/** A section by its id, or by its printed label (S1… in stack order, case-insensitive). */
 export function sectionByRef(lanes: SectionLane[], ref: string): SectionLane | null {
+  const r = ref.trim();
   const sorted = sortLanes(lanes);
-  const m = /^s(\d+)$/i.exec(ref.trim());
-  if (m) return sorted[Number(m[1]) - 1] ?? null;
-  return sorted.find(l => l.id === ref) ?? null;
+  // - an id shaped like a label belongs to the lane that carries it, not to the stack position
+  const byId = sorted.find(l => l.id === r);
+  if (byId) return byId;
+  const m = /^s(\d+)$/i.exec(r);
+  return m ? sorted[Number(m[1]) - 1] ?? null : null;
 }
 
 /**
@@ -244,8 +248,9 @@ export function sectionByRef(lanes: SectionLane[], ref: string): SectionLane | n
  * the origin.
  */
 export function insertLaneAt(lanes: SectionLane[], y: number, now: number, id = `sec-${now.toString(36)}`): SectionLane[] {
-  const at = Math.round(y / GRID) * GRID;
-  if (at < 0 || lanes.some(l => l.y === at)) return lanes;
+  const at = snapGrid(y);
+  // - the raw argument decides: snapGrid(-40) is -0, which passes every `< 0` test
+  if (y < 0 || lanes.some(l => l.y === at)) return lanes;
   return sortLanes([...lanes, { id, y: at, createdAt: now }]);
 }
 

@@ -1112,7 +1112,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_add_node',
-    description: 'Add a new node to the canvas. The node is automatically marked as AI-created (🤖 badge) and assigned a label. Position defaults to the right of all existing nodes. Sections fit their content: a node placed past its section\'s bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Coordinates are snapped to the grid and clamped to the canvas origin.',
+    description: 'Add a new node to the canvas. The node is automatically marked as AI-created (🤖 badge) and assigned a label. Position defaults to the right of all existing nodes. Sections fit their content: a node placed past its section\'s bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Supplied coordinates are snapped to the grid and clamped to the canvas origin.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1135,7 +1135,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_update_node',
-    description: 'Update an existing node: content, tags, color, label, and/or move/resize it. Partial — only supplied fields change. Move/resize uses absolute canvas coordinates. Sections fit their content: a node placed past its section\'s bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Coordinates are snapped to the grid and clamped to the canvas origin.',
+    description: 'Update an existing node: content, tags, color, label, and/or move/resize it. Partial — only supplied fields change. Move/resize uses absolute canvas coordinates. Sections fit their content: a node placed past its section\'s bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Supplied coordinates are snapped to the grid and clamped to the canvas origin.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1164,7 +1164,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_layout',
-    description: 'Batch move/resize many nodes in one file write. Each item: { ref, x?, y?, width?, height? } (partial, absolute coordinates). Sections fit their content: a node placed past its section\'s bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Coordinates are snapped to the grid and clamped to the canvas origin.',
+    description: 'Batch move/resize many nodes in one file write. Each item: { ref, x?, y?, width?, height? } (partial, absolute coordinates). Sections fit their content: a node placed past its section\'s bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Supplied coordinates are snapped to the grid and clamped to the canvas origin.',
     inputSchema: {
       type: 'object',
       properties: {
