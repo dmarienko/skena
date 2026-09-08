@@ -55,6 +55,7 @@ import { HelperLines } from './HelperLines';
 import { SectionSeparators } from './SectionSeparators';
 import { SectionRail, type RailKernel } from '../rail/SectionRail';
 import { deriveLanes, sortLanes, insertLaneAt, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
+import { applyPatchesToCanvas, codeCellHeight, forkOf, insertAfter, layoutSection, reflowSection, toEngineNodes, type EngineNode, type LayoutOpts, type Patches } from '../../shared/layoutEngine';
 import { useLaneFit, flowGeom } from '../rail/useLaneFit';
 import { findNearestNode, revealPan, type NavNode, type Rect } from './spatialNav';
 import { CanvasSearch } from './CanvasSearch';
@@ -811,6 +812,74 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   }, [shiftNodes, commitLanes]);
   useLaneFit(nodes, lanes, draggingRef, fromHistoryRef, applyFit);
 
+  // - one section's nodes as the layout engine sees them, read from canvasRef and NOT from the React
+  //   Flow array: an action mirrors into canvasRef synchronously, while `nodes` only catches up on the
+  //   next render, so a node just added would be missing. Folded members are in, as deriveLanes lists
+  //   them. Null when there is no such section (no lanes yet, or the node sits in none).
+  const engineNodesOf = useCallback((anchor: { nodeId?: string; sectionId?: string }): EngineNode[] | null => {
+    const cn = canvasRef.current.nodes;
+    const derived = deriveLanes(cn, lanesRef.current);
+    const lane = anchor.sectionId !== undefined
+      ? derived.find(l => l.id === anchor.sectionId)
+      : derived.find(l => anchor.nodeId !== undefined && l.memberIds.includes(anchor.nodeId));
+    if (!lane) return null;
+    const members = new Set(lane.memberIds);
+    return toEngineNodes(cn.filter(n => members.has(n.id)));
+  }, []); // - canvasRef / lanesRef are refs, always current
+
+  // - move/resize nodes by an engine patch, in the flow and in the canvas mirror. No history entry of
+  //   its own: the action that caused the layout pushed one (Reflow pushes through `beforeApply`).
+  const applyPatches = useCallback((p: Patches) => {
+    setNodes(nds => nds.map(n => {
+      const q = p[n.id];
+      if (!q) return n;
+      const size = q.w !== undefined || q.h !== undefined
+        ? { width: q.w ?? Number(n.style?.width ?? n.width ?? 0), height: q.h ?? Number(n.style?.height ?? n.height ?? 0) }
+        : null;
+      return size
+        ? { ...n, position: { x: q.x, y: q.y }, style: { ...n.style, ...size }, ...size }
+        : { ...n, position: { x: q.x, y: q.y } };
+    }));
+    canvasRef.current = { ...canvasRef.current, nodes: applyPatchesToCanvas(canvasRef.current.nodes, p) };
+  }, [setNodes]);
+
+  /**
+   * The single entry point to the layout engine: lay out the section holding `anchor.nodeId` (or the
+   * section `anchor.sectionId`), apply what moved and save. `reflow` packs the whole section instead
+   * of the touched column; `beforeApply` runs only when something actually moves.
+   */
+  const runEngine = useCallback((anchor: { nodeId?: string; sectionId?: string }, opts: LayoutOpts & { reflow?: boolean; beforeApply?: () => void } = {}) => {
+    const engineNodes = engineNodesOf(anchor);
+    if (!engineNodes) return;
+    const patches = opts.reflow ? reflowSection(engineNodes) : layoutSection(engineNodes, opts);
+    if (Object.keys(patches).length === 0) return;
+    opts.beforeApply?.();
+    applyPatches(patches);
+    scheduleSave();
+  }, [engineNodesOf, applyPatches, scheduleSave]);
+
+  // - a delete leaves a hole nothing moved into: read, BEFORE the removal, which column of which
+  //   section each doomed cell sat in (an output cell counts for its code cell's column) so the
+  //   engine can close it after. One entry per column.
+  const columnsOfDeleted = useCallback((deletedIds: Set<string>): { sectionId: string; columnX: number }[] => {
+    const cn = canvasRef.current.nodes;
+    const derived = deriveLanes(cn, lanesRef.current);
+    const seen = new Set<string>();
+    const cols: { sectionId: string; columnX: number }[] = [];
+    for (const n of cn) {
+      if (!deletedIds.has(n.id)) continue;
+      const code = n.type === 'code' ? n : cn.find(c => c.type === 'code' && c.outputNodeId === n.id && !deletedIds.has(c.id));
+      if (!code) continue;
+      const lane = derived.find(l => l.memberIds.includes(code.id));
+      if (!lane) continue;
+      const key = `${lane.id}|${snapGrid(code.x)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      cols.push({ sectionId: lane.id, columnX: snapGrid(code.x) });
+    }
+    return cols;
+  }, []); // - canvasRef / lanesRef are refs, always current
+
   // - a deleted node must not stay in a fold list: it would pin a lane to an id that no longer exists
   const pruneFolded = useCallback((ids: Set<string>) => {
     const next = pruneFoldedIds(lanesRef.current, ids);
@@ -888,6 +957,12 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const handleRunLane = useCallback((id: string) => {
     vscodePostMessage({ type: 'runSection', sectionId: id });
   }, []);
+
+  // - the only whole-section move: pack the columns and pairs tight and settle the notes. Its own
+  //   history entry, pushed only if the pack actually moves something.
+  const handleReflowLane = useCallback((id: string) => {
+    runEngine({ sectionId: id }, { reflow: true, beforeApply: pushHistory });
+  }, [runEngine, pushHistory]);
 
   const handleNewSectionClick = useCallback(() => {
     window.dispatchEvent(new CustomEvent('skena:newSection'));
@@ -1183,6 +1258,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     const deletedIds = new Set(deleted.map(n => n.id));
     // - purge deleted nodes from the space-pinned set
     for (const id of deletedIds) spaceSelectedRef.current.delete(id);
+    const holes = columnsOfDeleted(deletedIds);
     const updated: CanvasData = {
       ...canvasRef.current,                                                                       // - preserve viewport, metadata, etc.
       nodes: canvasRef.current.nodes.filter(n => !deletedIds.has(n.id)),
@@ -1204,10 +1280,13 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       };
       setNodes(nds => nds.map(n => n.id === id ? { ...n, data: { ...n.data, outputNodeId: undefined } } : n));
       scheduleSave();
+      for (const h of holes) runEngine({ sectionId: h.sectionId }, { columnX: h.columnX });
       requestAnimationFrame(() => focusNodeById(id));
       return;
     }
     scheduleSave();
+    // - the column closes the hole the delete left; nothing else moves
+    for (const h of holes) runEngine({ sectionId: h.sectionId }, { columnX: h.columnX });
 
     // - auto-focus nearest surviving node so spatial navigation resumes immediately
     const nonGroupDeleted = deleted.filter(n => !isBandType(n.type));
@@ -1235,7 +1314,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     }
   // - focusNodeById is a stable useCallback declared below; nodesRef always current
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scheduleSave, pushHistory, pruneFolded]);
+  }, [scheduleSave, pushHistory, pruneFolded, runEngine, columnsOfDeleted]);
 
   const onEdgesDelete = useCallback((deleted: Edge[]) => {
     pushHistory();
@@ -1676,8 +1755,11 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     scheduleSave();
     // - clipboard order is arbitrary; the top-left node is the one the eye starts from
     const topLeft = newNodes.reduce<CanvasNode | undefined>((a, b) => !a || b.y < a.y || (b.y === a.y && b.x < a.x) ? b : a, undefined);
+    // - the whole paste is the mover: it stays where it landed and pushes what it covers. A paste
+    //   spanning two sections is laid out in the top-left one's — the engine takes one section.
+    if (topLeft) runEngine({ nodeId: topLeft.id }, { moverIds: newNodes.map(n => n.id) });
     if (topLeft) requestAnimationFrame(() => revealNode(topLeft.id));
-  }, [setNodes, setEdges, scheduleSave, pushHistory, revealNode]);
+  }, [setNodes, setEdges, scheduleSave, pushHistory, revealNode, runEngine]);
 
   const handleMoveToSubCanvas = useCallback(() => {
     const selectedNodes = nodesRef.current.filter(n => n.selected && !isBandType(n.type));
@@ -1701,6 +1783,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     pushHistory();
     const deletedIds = new Set(toDelete.map(n => n.id));
     for (const id of deletedIds) spaceSelectedRef.current.delete(id);
+    const holes = columnsOfDeleted(deletedIds);
 
     const updated: CanvasData = {
       ...canvasRef.current,                                                                       // - preserve viewport, metadata, etc.
@@ -1724,12 +1807,15 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       setNodes(nds => nds.filter(n => !deletedIds.has(n.id)).map(n => n.id === id ? { ...n, data: { ...n.data, outputNodeId: undefined } } : n));
       setEdges(eds => eds.filter(e => !deletedIds.has(e.source) && !deletedIds.has(e.target)));
       scheduleSave();
+      for (const h of holes) runEngine({ sectionId: h.sectionId }, { columnX: h.columnX });
       requestAnimationFrame(() => focusNodeById(id));
       return;
     }
     setNodes(nds => nds.filter(n => !deletedIds.has(n.id)));
     setEdges(eds => eds.filter(e => !deletedIds.has(e.source) && !deletedIds.has(e.target)));
     scheduleSave();
+    // - the column closes the hole the delete left; nothing else moves
+    for (const h of holes) runEngine({ sectionId: h.sectionId }, { columnX: h.columnX });
 
     // - focus nearest surviving node (same logic as onNodesDelete)
     const cx = toDelete.reduce((s, n) => s + n.position.x + Number(n.style?.width  ?? 200) / 2, 0) / toDelete.length;
@@ -1744,7 +1830,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       if (d < bestDist) { bestDist = d; bestId = n.id; }
     }
     if (bestId) { const id = bestId; requestAnimationFrame(() => focusNodeById(id)); }
-  }, [setNodes, setEdges, pushHistory, scheduleSave, focusNodeById, pruneFolded]);
+  }, [setNodes, setEdges, pushHistory, scheduleSave, focusNodeById, pruneFolded, runEngine, columnsOfDeleted]);
 
   // - confirm a destructive delete via a host modal; resolves when doDelete arrives
   const confirmResolveRef = useRef<((v: boolean) => void) | null>(null);
@@ -1846,10 +1932,25 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         K: { dx: 0,         dy: -nh - GAP, pushX:  0, pushY: -1, fromSide: 'top',    toSide: 'bottom' },
       };
       const { dx, dy, pushX, pushY, fromSide, toSide } = dirMap[key];
-      const { x, y } = findFreePosition(nodesRef.current, current.position.x + dx, current.position.y + dy, nw, nh, pushX, pushY);
+      // - off a code cell the engine owns the spot: L / H open a new column pair right / left of its
+      //   pair, J is the next cell of its own column. K keeps the free-slot search — there is no
+      //   "insert above" rule. A left fork with no room before the origin is refused: nothing is added.
+      const section = current.type === 'code' ? engineNodesOf({ nodeId: current.id }) : null;
+      let slot: { x: number; y: number } | null = null;
+      if (section) {
+        if (key === 'L' || key === 'H') {
+          slot = forkOf(section, current.id, key === 'L' ? 'right' : 'left', NODE_SIZE.code.w);
+          if (!slot) return;
+        } else if (key === 'J') {
+          slot = insertAfter(section, current.id);
+        }
+      }
+      const { x, y } = slot ?? findFreePosition(nodesRef.current, current.position.x + dx, current.position.y + dy, nw, nh, pushX, pushY);
+      const w = slot ? NODE_SIZE.code.w : nw;
+      const h = slot ? NODE_SIZE.code.h : nh;
       // - go through the host so the "New text note / New URL / vault / workspace" picker opens (choose
       //   what to add); pass width/height so the chosen node gets the directional-add size.
-      vscodePostMessage({ type: 'addNodeRequest', position: { x, y }, width: nw, height: nh, fromNodeId: current.id, fromSide, toSide });
+      vscodePostMessage({ type: 'addNodeRequest', position: { x, y }, width: w, height: h, fromNodeId: current.id, fromSide, toSide });
     };
 
     // - scroll the focused node's content (Shift+hjkl); returns false if nothing scrollable
@@ -2482,7 +2583,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       window.removeEventListener('keydown', handler);
       window.removeEventListener('keydown', panCapture, { capture: true });
     };
-  }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToMark]); // - nodesRef + spaceSelectedRef carry live state
+  }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToMark, engineNodesOf]); // - nodesRef + spaceSelectedRef carry live state
 
   // - expose a viewport snapshot for the AI companion (what the user actually sees:
   // - zoom, on-screen node labels, scroll position within the focused node)
@@ -2570,10 +2671,13 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       };
       canvasRef.current = updated;
       scheduleSave();
+      // - a taller code cell pushes its column down, a wider output pushes the pairs right of it; a
+      //   resized free node pushes only what it now covers
+      runEngine({ nodeId: id }, { moverIds: [id] });
     };
     window.addEventListener('skena:nodeResize', handler);
     return () => window.removeEventListener('skena:nodeResize', handler);
-  }, [setNodes, scheduleSave, pushHistory]);
+  }, [setNodes, scheduleSave, pushHistory, runEngine]);
 
   // ─── custom wheel zoom (smaller step, cursor-centred) ────────────────────────
 
@@ -2658,6 +2762,28 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     return () => window.removeEventListener('skena:nodeCodeEdit', handler);
   }, [setNodes, scheduleSave, pushHistory]);
 
+  // - a code cell is as tall as its content: the engine's step of the line count, and its column
+  // - closes up or opens under it. No history entry of its own — the keystroke that changed the line
+  // - count went through skena:nodeCodeEdit above, which pushed one for the same edit.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { id, lines } = (e as CustomEvent<{ id: string; lines: number }>).detail;
+      const cur = canvasRef.current.nodes.find(n => n.id === id);
+      if (!cur || cur.type !== 'code') return;
+      const height = codeCellHeight(lines);
+      if (height === cur.height) return;
+      canvasRef.current = {
+        ...canvasRef.current,
+        nodes: canvasRef.current.nodes.map(n => n.id === id ? { ...n, height } : n),
+      };
+      setNodes(nds => nds.map(n => n.id === id ? { ...n, style: { ...n.style, height }, height } : n));
+      runEngine({ nodeId: id }, { moverIds: [id] });
+      scheduleSave();
+    };
+    window.addEventListener('skena:codeLines', handler);
+    return () => window.removeEventListener('skena:codeLines', handler);
+  }, [setNodes, scheduleSave, runEngine]);
+
   // - transient run status from the host: drive the code node's status glyph and
   // - animate the code↔kernel edge while running. This is UI-only — it must NOT
   // - touch canvasRef or schedule a save (the persisted lastStatus arrives via the
@@ -2678,8 +2804,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     return () => window.removeEventListener('skena:runStatus', handler);
   }, [setNodes]);
 
-  // - vim `o` on a code cell → create a chained code cell below at a NON-overlapping spot
-  // - (findFreePosition pushes down past any node already there), same width, edit-ready.
+  // - vim `o` on a code cell → the next cell of its column, one gap below it; the cells under it are
+  // - pushed down by the engine once the node is in (the addNodeResult funnel). Same width, edit-ready.
   useEffect(() => {
     const handler = (e: Event) => {
       const { sourceId } = (e as CustomEvent<{ sourceId: string }>).detail;
@@ -2687,8 +2813,10 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       if (!src) return;
       const nw = Number(src.style?.width ?? NODE_SIZE.code.w);
       const sh = Number(src.style?.height ?? NODE_SIZE.code.h);
-      // - gap below the source's bottom = the shared NEW_NODE gap (one knob for all new-node spacing)
-      const { x, y } = findFreePosition(nodesRef.current, src.position.x, src.position.y + sh + NEW_NODE_GAP, nw, NODE_SIZE.code.h, 0, 1);
+      const section = engineNodesOf({ nodeId: sourceId });
+      const slot = section && insertAfter(section, sourceId);
+      // - no section (or not a code cell): the old free-slot search, gap = the shared NEW_NODE gap
+      const { x, y } = slot ?? findFreePosition(nodesRef.current, src.position.x, src.position.y + sh + NEW_NODE_GAP, nw, NODE_SIZE.code.h, 0, 1);
       const newId = `code-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
       const newNode: CanvasNode = { id: newId, type: 'code', code: '', language: 'python', x, y, width: nw, height: NODE_SIZE.code.h };
       const newEdge: CanvasEdge = { id: `${sourceId}-${newId}-${Date.now()}`, fromNode: sourceId, fromSide: 'bottom', toNode: newId, toSide: 'top', toEnd: 'arrow' };
@@ -2698,7 +2826,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     };
     window.addEventListener('skena:addCodeBelow', handler);
     return () => window.removeEventListener('skena:addCodeBelow', handler);
-  }, []);
+  }, [engineNodesOf]);
 
   // - animate the edges from each running cell to its kernel, derived from lastStatus so it
   // - survives reopen. Cheap when nothing runs (early-return + same-ref no-op).
@@ -2794,6 +2922,10 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       if (out && isNewOutput) {
         const pinned = pinOutputToLane(lanesRef.current, d.codeNodeId, out.id);
         if (pinned !== lanesRef.current) commitLanes(pinned);
+        // - a first output is a new box in the section: its pair's neighbours move out of its way.
+        //   A re-run only rewrites content, so nothing there moves. The host places the output
+        //   through the same engine, so this normally patches nothing.
+        runEngine({ nodeId: out.id }, { moverIds: [out.id] });
       }
       // - the patches above only reach kernel NODES; when the run went to a record, its live id is
       //   what the host just started or restarted
@@ -2807,7 +2939,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     };
     window.addEventListener('skena:runOutput', handler);
     return () => window.removeEventListener('skena:runOutput', handler);
-  }, [setNodes, setEdges, commitKernels, commitLanes]);
+  }, [setNodes, setEdges, commitKernels, commitLanes, runEngine]);
 
   // - receive add-node result from QuickPick (Ctrl+N / Shift+hjkl)
   useEffect(() => {
@@ -2858,12 +2990,17 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
       scheduleSave();
 
-      // - focus DOM + pan viewport to the new node
+      // - every creation path ends here (`o`, Alt+X, context menu, edge drop, host QuickPick, kernel
+      //   node), so this is the one place the layout engine has to see a new node
+      runEngine({ nodeId: cn.id }, { moverIds: [cn.id] });
+
+      // - focus DOM + pan viewport to the new node, at the position the engine settled it on
       focusNodeById(cn.id);
+      const placed = canvasRef.current.nodes.find(n => n.id === cn.id) ?? cn;
       const { zoom } = rfRef.current.getViewport();
       const cAddNode = clampCam(
-        window.innerWidth  / 2 - (cn.x + cn.width  / 2) * zoom,
-        window.innerHeight / 2 - (cn.y + cn.height / 2) * zoom,
+        window.innerWidth  / 2 - (placed.x + placed.width  / 2) * zoom,
+        window.innerHeight / 2 - (placed.y + placed.height / 2) * zoom,
         zoom,
       );
       rfRef.current.setViewport({ x: cAddNode.x, y: cAddNode.y, zoom }, { duration: 250 });
@@ -2879,7 +3016,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
     window.addEventListener('skena:addNodeResult', handler);
     return () => window.removeEventListener('skena:addNodeResult', handler);
-  }, [setNodes, setEdges, scheduleSave, focusNodeById, pushHistory, clampCam, commitLanes]);
+  }, [setNodes, setEdges, scheduleSave, focusNodeById, pushHistory, clampCam, commitLanes, runEngine]);
 
   // ─── helper: place a new CellNode at viewport centre ─────────────────────────
 
@@ -3211,7 +3348,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     <KernelsContext.Provider value={kernels}>
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'row' }}>
     <SectionRail lanes={derivedLanes} kernels={railKernels} selectedNodeId={selectedNodeId}
-      onFold={handleFoldLane} onRun={handleRunLane} onDelete={handleDeleteLane}
+      onFold={handleFoldLane} onRun={handleRunLane} onReflow={handleReflowLane} onDelete={handleDeleteLane}
       onBindKernel={handleBindKernel} onRename={handleRenameLane} onNewSection={handleNewSectionClick}
       onNewKernel={handleNewKernel} onRemoveKernel={handleRemoveKernel} onKernelAction={handleKernelActionForLane} />
     <div ref={wrapperRef} style={{ flex: '1 1 auto', minWidth: 0, position: 'relative' }} onContextMenu={handleContextMenu}>

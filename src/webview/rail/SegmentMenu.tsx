@@ -8,12 +8,13 @@ const ROW_PX = 26;   // - one row's height, as in KernelPicker
  * Right-click menu for one rail segment: every segment control in one list, so a segment squeezed
  * down to its 28px floor still reaches the controls its column had to drop.
  */
-export function SegmentMenu({ anchor, folded, kernelBound, onFold, onRun, onKernel, onKernelAction, onRename, onDelete, onClose }: {
+export function SegmentMenu({ anchor, folded, kernelBound, onFold, onRun, onReflow, onKernel, onKernelAction, onRename, onDelete, onClose }: {
   anchor: { x: number; y: number };   // - screen point of the right-click
   folded: boolean;
   kernelBound: boolean;
   onFold: () => void;
   onRun: () => void;
+  onReflow: () => void;
   onKernel: () => void;
   onKernelAction: (action: 'start' | 'interrupt' | 'restart' | 'shutdown') => void;
   onRename: () => void;
@@ -38,7 +39,7 @@ export function SegmentMenu({ anchor, folded, kernelBound, onFold, onRun, onKern
 
   const row: React.CSSProperties = { display: 'flex', alignItems: 'center', height: ROW_PX, padding: '0 10px', cursor: 'pointer', fontFamily: FONT, fontSize: 12, color: 'var(--sk-text1)', userSelect: 'none' };
   // - keep the box on screen: the rows plus the separator; a bound section adds the four kernel actions
-  const rows = kernelBound ? 10 : 6;
+  const rows = kernelBound ? 11 : 7;
   const top = Math.max(4, Math.min(anchor.y + 4, window.innerHeight - rows * ROW_PX - 8));
 
   return createPortal(
@@ -46,6 +47,7 @@ export function SegmentMenu({ anchor, folded, kernelBound, onFold, onRun, onKern
       style={{ position: 'fixed', left: anchor.x + 4, top, zIndex: 1000, minWidth: 160, background: 'var(--sk-bg2)', border: '1px solid var(--sk-border)', borderRadius: 10, padding: '4px 0', boxShadow: '0 4px 16px rgba(0,0,0,0.25)' }}>
       <div style={row} onClick={() => { onFold(); onClose(); }}>{folded ? 'Unfold' : 'Fold'}</div>
       <div style={row} onClick={() => { onRun(); onClose(); }}>Run section</div>
+      <div style={row} onClick={() => { onReflow(); onClose(); }}>Reflow section</div>
       {/* - Kernel… and Rename… hand over to another popover: closing here would take that popover down with the menu */}
       <div style={row} onClick={onKernel}>Kernel…</div>
       {kernelBound && (['start', 'interrupt', 'restart', 'shutdown'] as const).map(a => (
