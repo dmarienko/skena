@@ -121,7 +121,7 @@ export function foldLane(lanes: SectionLane[], nodes: LaneNodeGeom[], id: string
 **Files:** `test/mcp-parity.mjs` (gitignored), `package.json`
 
 - [ ] Write `test/mcp-parity.mjs`: spawns `node dist/mcp-server.js` with stdio JSON-RPC (mirror the approach the Task 4 kernels implementer used), creates scratch canvases under `test/.scratch/`, and asserts the written files after: add_section (append + at y), update_section (rename, bind a record, fold → lists members and shrinks, unfold → round trip), remove_section, add_node at (-403, -99) → clamped to (0, 0) and a section seeded, layout past a bottom edge → sections below shift, add_kernel with `start: false` (no server needed) + bind, remove_kernel → unbound + run flags cleared. Run: `node --test test/mcp-parity.mjs`.
-- [ ] All suites; typecheck; build; bump `package.json` to `0.17.4`; `npm run package`; commit `chore: bump to 0.17.4 (smoke fixes batch 1, MCP section parity)`.
+- [ ] All suites; typecheck; build; bump `package.json`; `npm run package`; commit the bump. Done as `0.17.7` (`8298e4a`).
 
 ---
 

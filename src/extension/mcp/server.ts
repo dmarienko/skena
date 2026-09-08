@@ -1109,7 +1109,9 @@ async function canvasRemoveSection(args: Record<string, unknown>): Promise<strin
     d.nodes = d.nodes.filter(n => !doomed.has(n.id));
     d.edges = d.edges.filter(e => !doomed.has(e.fromNode) && !doomed.has(e.toNode));
     const kept = parkFirstLaneAtOrigin(pruneFoldedIds(lanes.filter(l => l.id !== lane.id), doomed));
-    d.metadata = { ...d.metadata, sections: kept };
+    // - the last section gone: drop the key rather than persisting an empty list
+    if (kept.length) d.metadata = { ...d.metadata, sections: kept };
+    else { const { sections: _none, ...rest } = d.metadata ?? {}; d.metadata = rest; }
     Object.assign(d, applyLaneFit(d, Date.now()));   // - every write fits the sections
     await writeCanvas(p, d);
     return `Removed section ${label} and ${doomed.size} node(s)`;
@@ -1145,15 +1147,18 @@ async function canvasUpdateSection(args: Record<string, unknown>): Promise<strin
       }
     }
 
+    let foldNoop = false;
     if (args.folded !== undefined) {
       if (args.folded) {
         const next = foldLane(lanes, d.nodes, lane.id);
-        changed.push(next === lanes ? 'already folded' : `folded (${next.find(l => l.id === lane.id)?.folded?.length ?? 0} node(s) hidden)`);
+        foldNoop = next === lanes;
+        changed.push(foldNoop ? 'already folded' : `folded (${next.find(l => l.id === lane.id)?.folded?.length ?? 0} node(s) hidden)`);
         lanes = next;
       } else {
         // - grow the lane back before the members are released, or the one below adopts them
         const u = unfoldLane(lanes, d.nodes, lane.id);
-        if (u.lanes === lanes) changed.push('already unfolded');
+        foldNoop = u.lanes === lanes;
+        if (foldNoop) changed.push('already unfolded');
         else {
           d.nodes = d.nodes.map(n => (u.nodeShifts[n.id] ? { ...n, y: n.y + u.nodeShifts[n.id] } : n));
           lanes = u.lanes;
@@ -1163,6 +1168,8 @@ async function canvasUpdateSection(args: Record<string, unknown>): Promise<strin
     }
 
     if (changed.length === 0) return 'error: nothing to update — supply title, kernelRef or folded';
+    // - the section is already in the state asked for and nothing else changed: no file write
+    if (foldNoop && changed.length === 1) return `Section ${label}: ${changed[0]}`;
     d.metadata = { ...d.metadata, sections: lanes };
     Object.assign(d, applyLaneFit(d, Date.now()));   // - every write fits the sections
     await writeCanvas(p, d);
@@ -1233,6 +1240,7 @@ async function canvasAddKernel(args: Record<string, unknown>): Promise<string> {
     }
 
     d.metadata = { ...d.metadata, kernels: [...(d.metadata?.kernels ?? []), record], ...(sections ? { sections } : {}) };
+    Object.assign(d, applyLaneFit(d, Date.now()));   // - every write fits the sections
     await writeCanvas(p, d);
     return `Added kernel ${record.id} (${record.displayName}) on ${server.name}, live id ${kernelId ?? '(not started)'}${bound}`;
   }); // - withFileLock
@@ -1266,6 +1274,7 @@ async function canvasRemoveKernel(args: Record<string, unknown>): Promise<string
       // - drop the key rather than persisting `kernelId: undefined` on the lane
       sections: d.metadata?.sections?.map(l => { if (l.kernelId !== rec.id) return l; const { kernelId: _unbound, ...rest } = l; return rest; }),
     };
+    Object.assign(d, applyLaneFit(d, Date.now()));   // - every write fits the sections
     await writeCanvas(p, d);
     return `Removed kernel ${rec.id} (${rec.displayName ?? 'kernel'}); ${bound.size} cell(s) un-run`;
   }); // - withFileLock
@@ -1525,7 +1534,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_add_section',
-    description: 'Add a section (a horizontal lane; a node belongs to the lane whose range holds its top edge). Without y it goes under the last section\'s fitted range, as the rail\'s + does; with y it is snapped to the grid and inserted there, splitting the lane it lands in — nodes stay where they are and membership follows y. Sections then fit their content.',
+    description: 'Add a section (a horizontal lane; a node belongs to the lane whose range holds its top edge). Without y it goes under the last section\'s fitted range, as the rail\'s + does; with y it is snapped to the grid and inserted there, splitting the lane it lands in — nodes stay where they are and membership follows y. The section is fitted like every other write: a y inside the empty part of the section above is pulled up to that section\'s content, and the nodes below move with it; the returned y is the final one.',
     inputSchema: {
       type: 'object',
       properties: {
