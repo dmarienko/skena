@@ -85,13 +85,13 @@ function overlaps(a: { x: number; y: number; w: number; h: number }, b: { x: num
 }
 
 // - pack one column tight top → bottom; outputs follow their code (same y, output x of the pair).
-//   `floors` holds cells a dropped free node pushed down: they keep that y, the pack closes below them.
-function packColumn(pair: Pair, map: Map<string, EngineNode>, out: Patches, floors?: Map<string, number>): void {
+//   `minY` holds cells a dropped free node pushed down: they keep that y, the pack closes below them.
+function packColumn(pair: Pair, map: Map<string, EngineNode>, out: Patches, minY?: Map<string, number>): void {
   let prevBottom: number | null = null;
   for (const id of pair.column.cellIds) {
     const cell = map.get(id)!;
     const tight = prevBottom === null ? snapGrid(cell.y) : prevBottom + GRID;
-    const y = Math.max(tight, floors?.get(id) ?? tight);
+    const y = Math.max(tight, minY?.get(id) ?? 0);
     const x = pair.column.x;
     if (x !== cell.x || y !== cell.y) { out[id] = { x, y }; cell.x = x; cell.y = y; }
     const o = map.get(cell.outputNodeId ?? '');
@@ -117,26 +117,28 @@ function pushPairsRight(pairs: Pair[], fromIndex: number, map: Map<string, Engin
   }
 }
 
-// - free nodes move down out of the way, never sideways. `barriers` is what counts as in the way:
+// - free nodes move down out of the way, never sideways. `inWayIds` is what may START one moving:
 //   in a regular call only the ids this call moved, so a note the user parked on top of an untouched
 //   cell is left alone (spec §3.3: the ones a managed node NOW overlaps); a reflow passes none and
-//   settles against everything. A free node that moved becomes a barrier for the ones below it.
-function settleFree(nodes: EngineNode[], owners: Map<string, string>, movers: Set<string>, out: Patches, barriers?: Set<string>): void {
-  const inWay = (n: EngineNode) => !barriers || barriers.has(n.id);
+//   settles against everything. Once a free node has moved it must clear every managed node — the
+//   push can carry it onto one this call never touched — and every free node moved before it.
+function settleFree(nodes: EngineNode[], owners: Map<string, string>, movers: Set<string>, out: Patches, inWayIds?: Set<string>): void {
   const managed = nodes.filter(n => n.type === 'code' || owners.has(n.id));
   const free = nodes.filter(n => n.type !== 'code' && !owners.has(n.id)).sort((a, b) => a.y - b.y || a.x - b.x);
   // - a dropped free node stays put and is in the way from the start, wherever it sits in the order
-  const placed: EngineNode[] = [...managed.filter(inWay), ...free.filter(f => movers.has(f.id))];
+  const stayPut = free.filter(f => movers.has(f.id));
+  const canPush: EngineNode[] = [...managed.filter(n => !inWayIds || inWayIds.has(n.id)), ...stayPut];
+  const mustClear: EngineNode[] = [...managed, ...stayPut];
   for (const f of free) {
     if (movers.has(f.id)) continue;
     let moved = false;
     for (let again = true; again;) {
       again = false;
-      for (const p of placed) {
+      for (const p of moved ? mustClear : canPush) {
         if (overlaps(f, p)) { f.y = p.y + p.h + GRID; out[f.id] = { x: f.x, y: f.y }; again = true; moved = true; }
       }
     }
-    if (moved || !barriers) placed.push(f);
+    if (moved || !inWayIds) { canPush.push(f); mustClear.push(f); }
   }
 }
 
@@ -150,23 +152,22 @@ function freeMoverPushes(map: Map<string, EngineNode>, owners: Map<string, strin
   }
   if (dropped.length === 0) return;
   for (const pair of pairs) {
-    const floors = new Map<string, number>();
+    const minY = new Map<string, number>();
     for (const cid of pair.column.cellIds) {
       const cell = map.get(cid)!;
       for (const f of dropped) {
-        if (overlaps(f, cell)) { cell.y = f.y + f.h + GRID; floors.set(cid, cell.y); out[cid] = { x: cell.x, y: cell.y }; }
+        if (overlaps(f, cell)) { cell.y = f.y + f.h + GRID; minY.set(cid, cell.y); out[cid] = { x: cell.x, y: cell.y }; }
       }
     }
-    if (floors.size > 0) packColumn(pair, map, out, floors);
+    if (minY.size > 0) packColumn(pair, map, out, minY);
   }
 }
 
 function clone(nodes: EngineNode[]): EngineNode[] { return nodes.map(n => ({ ...n })); }
-function diff(before: EngineNode[], after: EngineNode[], out: Patches): Patches {
+function diff(before: EngineNode[], after: EngineNode[]): Patches {
   const b = byId(before);
   const res: Patches = {};
   for (const n of after) { const o = b.get(n.id)!; if (o.x !== n.x || o.y !== n.y) res[n.id] = { x: n.x, y: n.y }; }
-  for (const [id, p] of Object.entries(out)) if (!(id in res)) { const o = b.get(id); if (o && (o.x !== p.x || o.y !== p.y)) res[id] = p; }
   return res;
 }
 
@@ -198,12 +199,12 @@ export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patch
   let firstTouched = pairs.length;
   pairs.forEach((pair, i) => { if (touched.has(pair.column.x)) { packColumn(pair, map, out); firstTouched = Math.min(firstTouched, i); } });
   // - re-measure after the pack (an output moved with its code) and push the pairs to the right
-  const repaired = derivePairs(nodes, deriveColumns(nodes, movers));
-  if (firstTouched < repaired.length) pushPairsRight(repaired, firstTouched, map, out);
-  freeMoverPushes(map, owners, movers, repaired, out);
+  const remeasured = derivePairs(nodes, deriveColumns(nodes, movers));
+  if (firstTouched < remeasured.length) pushPairsRight(remeasured, firstTouched, map, out);
+  freeMoverPushes(map, owners, movers, remeasured, out);
   // - only what this call moved (plus the movers) can push a free node
   settleFree(nodes, owners, movers, out, new Set([...movers, ...Object.keys(out)]));
-  return diff(input, nodes, out);
+  return diff(input, nodes);
 }
 
 /** Whole-section pack: every code cell snapped to its column, every column and pair tight, free nodes settled. */
@@ -241,7 +242,7 @@ export function reflowSection(input: EngineNode[]): Patches {
     tight[i].column.x += dx; tight[i].outputX += dx; tight[i].right += dx;
   }
   settleFree(nodes, owners, new Set(), out);
-  return diff(input, nodes, out);
+  return diff(input, nodes);
 }
 
 /** Where a new code cell goes after `afterId`: its column, one gap below. Null when `afterId` is not a code cell. */
