@@ -127,3 +127,13 @@ coordinates before the dock test.
 **8.5 Pure helpers.** `src/webview/canvas/spatialNav.ts`: `findNearestNode(from, dir, { nodes,
 edges, lanes })` and `revealPan(node, pair, area, viewport)` — no React, tested in
 `test/spatial-nav.mjs`. `CanvasView` only maps its state into them.
+
+## 9. Paste lands at the focused node (2026-09-08, from the 0.17.6 smoke)
+
+`yy` → `p` and Ctrl+V of copied nodes place the pasted group **right of the focused node**: the
+group keeps its relative layout; its top-left goes to `(focused.x + focused.w + GRID, focused.y)`,
+pushed right to the next free slot (`findFreePosition`, push +x). No focused node → the group is
+centred on the React Flow pane's centre, snapped to the grid and clamped to the origin. The nodes
+belong to the section they land in (this is the copy/paste section move of the rail spec) and the
+sections fit as usual. The pasted group is selected and revealed (§8.2). Today's rule — each pasted
+node at the copied node's own x/y + 40 px — is gone.
