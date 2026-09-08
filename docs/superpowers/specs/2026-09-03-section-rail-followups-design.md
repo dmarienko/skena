@@ -98,3 +98,30 @@ with its pinned members ignored and moved with the lane; idempotent after one pa
 - A new node is clamped to the canvas (`clampToOrigin`) at the single creation funnel, and the first
   node added to an empty canvas seeds the first section at `y = 0` (webview and `applyLaneFit`, so MCP
   `canvas_add_node` does the same).
+
+## 8. From the 0.17.4 smoke (2026-09-08): focus reveals the output; `j`/`k` cross sections
+
+**8.1 `j`/`k` may leave the section.** Candidates for `j`/`k` are all visible nodes (in no fold list)
+inside the cone below/above, in any section. `h`/`l` stay in the section. A folded section has no
+visible nodes, so it is passed over: `j` from the last row of S1 lands in S2 when S2 is open, else in
+the next open section; nothing visible below → no move. Edge-following keeps its priority under the
+same exclusions per direction: an edge into a folded node is never followed; an edge into another
+section is followed for `j`/`k`, not for `h`/`l`.
+
+**8.2 Focus shows the output when it fits.** Pair = the focused code node + the node named by its
+`outputNodeId` (when it exists). If the pair box fits inside the usable area at the current zoom
+(24 px margin), both the move test and the minimal pan use the pair box: a visible node whose output
+is off-screen pans just enough to show both. If the pair does not fit, the node alone decides, as in
+0.16.16/0.16.17. Zoom never changes; only `forceCenter` (cross-canvas jumps) centres and zooms.
+
+**8.3 The same pan on a mouse click.** A plain click on a node (no Shift/Ctrl/Meta; React Flow does
+not fire `onNodeClick` after a drag) runs the same reveal pan. Selection stays React Flow's; the click
+does not touch it.
+
+**8.4 Usable area = the React Flow pane.** The pane sits right of the 44 px rail (`wrapperRef`), so
+the pan uses the pane's rect, not `window.innerWidth`; the chat panel's rect is converted into pane
+coordinates before the dock test.
+
+**8.5 Pure helpers.** `src/webview/canvas/spatialNav.ts`: `findNearestNode(from, dir, { nodes,
+edges, lanes })` and `revealPan(node, pair, area, viewport)` — no React, tested in
+`test/spatial-nav.mjs`. `CanvasView` only maps its state into them.
