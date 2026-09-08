@@ -230,6 +230,32 @@ export function pruneFoldedIds(lanes: SectionLane[], removed: Set<string>): Sect
   return changed ? next : lanes;
 }
 
+/** A section by its printed label (S1… in stack order, case-insensitive) or its id. */
+export function sectionByRef(lanes: SectionLane[], ref: string): SectionLane | null {
+  const sorted = sortLanes(lanes);
+  const m = /^s(\d+)$/i.exec(ref.trim());
+  if (m) return sorted[Number(m[1]) - 1] ?? null;
+  return sorted.find(l => l.id === ref) ?? null;
+}
+
+/**
+ * Insert a lane starting at `y` (snapped to the grid): the lane it lands in is split, nodes stay where
+ * they are and membership follows `y`. Same reference when a lane already starts there or `y` is above
+ * the origin.
+ */
+export function insertLaneAt(lanes: SectionLane[], y: number, now: number, id = `sec-${now.toString(36)}`): SectionLane[] {
+  const at = Math.round(y / GRID) * GRID;
+  if (at < 0 || lanes.some(l => l.y === at)) return lanes;
+  return sortLanes([...lanes, { id, y: at, createdAt: now }]);
+}
+
+/** Fold a section: pin its visible members. Same reference when it is already folded or unknown. */
+export function foldLane(lanes: SectionLane[], nodes: LaneNodeGeom[], id: string): SectionLane[] {
+  const target = deriveLanes(nodes, lanes).find(l => l.id === id);
+  if (!target || target.folded) return lanes;
+  return lanes.map(l => (l.id === id ? { ...l, folded: target.memberIds } : l));
+}
+
 /** A run's output cell for a pinned (folded) code cell is pinned to the same lane. Same reference otherwise. */
 export function pinOutputToLane(lanes: SectionLane[], codeId: string, outId: string): SectionLane[] {
   const i = lanes.findIndex(l => l.folded?.includes(codeId));
