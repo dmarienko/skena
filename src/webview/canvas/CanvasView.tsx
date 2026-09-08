@@ -379,6 +379,8 @@ function findFreePosition(
     return { x: Math.round(c.x), y: Math.round(c.y) };
   }
 
+  const startX = x;
+  let free = false;
   for (let iter = 0; iter < 40; iter++) {
     const hit = existingNodes.find(n => {
       if (isBandType(n.type)) return false;
@@ -389,7 +391,7 @@ function findFreePosition(
              y         < n.position.y + nh + gap  &&
              y + newH  > n.position.y - gap;
     });
-    if (!hit) break;
+    if (!hit) { free = true; break; }
 
     // - jump past the hit node in the push direction
     const nw = Number(hit.style?.width  ?? 200);
@@ -399,7 +401,9 @@ function findFreePosition(
     if (pushY > 0) y = hit.position.y + nh + gap;
     if (pushY < 0) y = hit.position.y - newH - gap;
   }
-  const c = clampToOrigin(x, y);
+
+  // - still blocked after 40 pushes: a free slot below beats the overlapping one the search reached
+  const c = free ? clampToOrigin(x, y) : clampToOrigin(startX, y + newH + gap);
   return { x: Math.round(c.x), y: Math.round(c.y) };
 }
 
@@ -1634,7 +1638,6 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
   // - paste the internal node clipboard (filled by yy/copy); inline nodes+edges with fresh ids
   const pasteInternalClipboard = useCallback(() => {
-    pushHistory();
     if (!clipboard) return;
     const idMap = new Map<string, string>();
     clipboard.nodes.forEach((n, i) => idMap.set(n.id, `node-paste-${Date.now()}-${i}`));
@@ -1650,18 +1653,20 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     const anchor = nodesRef.current.find(n => n.selected && !isBandType(n.type));
     let target: { x: number; y: number };
     if (anchor) {
-      const anchorW = Number(anchor.style?.width ?? 400);
+      const anchorW = Number(anchor.style?.width ?? 200);
       target = findFreePosition(nodesRef.current, anchor.position.x + anchorW + GRID, anchor.position.y, groupW, groupH, 1, 0);
     } else {
       // - no focus: centre on the React Flow pane, which starts right of the rail
-      const rect = wrapperRef.current?.getBoundingClientRect();
+      if (!wrapperRef.current) return;   // - before the pane mounts there is nowhere to centre on
+      const rect = wrapperRef.current.getBoundingClientRect();
       const { x: vx, y: vy, zoom } = rfRef.current.getViewport();
-      const cx = ((rect?.width  ?? window.innerWidth)  / 2 - vx) / zoom - groupW / 2;
-      const cy = ((rect?.height ?? window.innerHeight) / 2 - vy) / zoom - groupH / 2;
+      const cx = (rect.width  / 2 - vx) / zoom - groupW / 2;
+      const cy = (rect.height / 2 - vy) / zoom - groupH / 2;
       target = clampToOrigin(snapGrid(cx), snapGrid(cy));
     }
     const dx = target.x - minX;
     const dy = target.y - minY;
+    pushHistory();
 
     // - pasted nodes get new IDs and fresh labels (copies aren't the same node)
     const rawPasted: CanvasNode[] = clipboard.nodes.map(n => ({
@@ -1689,8 +1694,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       edges: [...canvasRef.current.edges, ...newEdges],
     };
     scheduleSave();
-    const firstId = newNodes[0]?.id;
-    if (firstId) requestAnimationFrame(() => revealNode(firstId));
+    // - clipboard order is arbitrary; the top-left node is the one the eye starts from
+    const topLeft = newNodes.reduce<CanvasNode | undefined>((a, b) => !a || b.y < a.y || (b.y === a.y && b.x < a.x) ? b : a, undefined);
+    if (topLeft) requestAnimationFrame(() => revealNode(topLeft.id));
   }, [setNodes, setEdges, scheduleSave, pushHistory, revealNode]);
 
   const handleMoveToSubCanvas = useCallback(() => {
