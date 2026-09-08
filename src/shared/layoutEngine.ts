@@ -1,5 +1,6 @@
 import { GRID, NODE_SIZE, CODE_MAX_H, OUTPUT_MIN_W, OUTPUT_DEFAULT_H, CODE_LINE_PX, CODE_CHROME_PX } from './constants';
 import { snapGrid } from './grid';
+import { deriveLanes, type SectionLane } from './sectionLanes';
 
 /**
  * The layout engine of one section (spec 2026-09-08-layout-engine-design.md).
@@ -254,7 +255,7 @@ export function insertAfter(nodes: EngineNode[], afterId: string): { x: number; 
 }
 
 /** Where a fork of `cellId` starts: a new pair right of its pair, or left of its column; null when refused. */
-export function forkOf(nodes: EngineNode[], cellId: string, side: 'right' | 'left', w = NODE_SIZE.code.w): { x: number; y: number } | null {
+export function forkOf(nodes: EngineNode[], cellId: string, side: 'right' | 'left', w: number = NODE_SIZE.code.w): { x: number; y: number } | null {
   const cell = nodes.find(n => n.id === cellId);
   if (!cell || cell.type !== 'code') return null;
   const pairs = derivePairs(nodes, deriveColumns(nodes));
@@ -285,7 +286,46 @@ export function applyPatchesToCanvas<T extends { id: string; x: number; y: numbe
   });
 }
 
+/** A node as the file holds it — what every caller of the section helpers below has in hand. */
+export interface CanvasShapedNode { id: string; type: string; x: number; y: number; width: number; height: number; outputNodeId?: string }
+
+/** Which section to slice: a node id, or `{ nodeId }` / `{ sectionId }` when the caller has one. */
+export type SectionAnchor = string | { nodeId?: string; sectionId?: string };
+
+// - the derived lane an anchor names
+function anchorLane(nodes: CanvasShapedNode[], sections: SectionLane[], anchor: SectionAnchor) {
+  const nodeId = typeof anchor === 'string' ? anchor : anchor.nodeId;
+  const derived = deriveLanes(nodes, sections);
+  return typeof anchor !== 'string' && anchor.sectionId !== undefined
+    ? derived.find(l => l.id === anchor.sectionId)
+    : derived.find(l => nodeId !== undefined && l.memberIds.includes(nodeId));
+}
+
+/**
+ * One section's nodes as the engine sees them: the lane the anchor names, its folded members
+ * included (deriveLanes lists them). Null when the canvas has no sections — a file written before
+ * they existed — or the anchor sits in none: the engine lays out ONE section, so there is nothing
+ * for it to work on and the caller leaves the geometry alone.
+ */
+export function sectionEngineNodes(nodes: CanvasShapedNode[], sections: SectionLane[], anchor: SectionAnchor): EngineNode[] | null {
+  const lane = anchorLane(nodes, sections, anchor);
+  if (!lane) return null;
+  const members = new Set(lane.memberIds);
+  return toEngineNodes(nodes.filter(n => members.has(n.id)));
+}
+
+/**
+ * That same section's members as `fitLanes`' `own`: node id → the section's lane index. A cell the
+ * engine pushed past the section's bottom edge still counts for THAT section, so the section grows
+ * and the ones below move down, instead of the one below adopting the cell and leaving the overlap.
+ * Read it BEFORE the engine runs; empty when the anchor names no section.
+ */
+export function sectionMembership(nodes: CanvasShapedNode[], sections: SectionLane[], anchor: SectionAnchor): Map<string, number> {
+  const lane = anchorLane(nodes, sections, anchor);
+  return new Map(lane ? lane.memberIds.map(id => [id, lane.index] as const) : []);
+}
+
 /** Adapter: canvas nodes → engine nodes (the file's `width`/`height` → `w`/`h`). */
-export function toEngineNodes(nodes: { id: string; type: string; x: number; y: number; width: number; height: number; outputNodeId?: string }[]): EngineNode[] {
+export function toEngineNodes(nodes: CanvasShapedNode[]): EngineNode[] {
   return nodes.map(n => ({ id: n.id, type: n.type, x: n.x, y: n.y, w: n.width, h: n.height, ...(n.outputNodeId ? { outputNodeId: n.outputNodeId } : {}) }));
 }

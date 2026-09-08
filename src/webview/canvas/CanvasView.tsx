@@ -54,8 +54,8 @@ import { LabeledEdgeComponent } from './edges/LabeledEdge';
 import { HelperLines } from './HelperLines';
 import { SectionSeparators } from './SectionSeparators';
 import { SectionRail, type RailKernel } from '../rail/SectionRail';
-import { deriveLanes, sortLanes, insertLaneAt, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
-import { applyPatchesToCanvas, codeCellHeight, forkOf, insertAfter, layoutSection, reflowSection, toEngineNodes, type EngineNode, type LayoutOpts, type Patches } from '../../shared/layoutEngine';
+import { deriveLanes, fitLanes, sortLanes, insertLaneAt, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
+import { applyPatchesToCanvas, codeCellHeight, forkOf, insertAfter, layoutSection, reflowSection, sectionEngineNodes, sectionMembership, type EngineNode, type LayoutOpts, type Patches } from '../../shared/layoutEngine';
 import { useLaneFit, flowGeom } from '../rail/useLaneFit';
 import { findNearestNode, revealPan, type NavNode, type Rect } from './spatialNav';
 import { CanvasSearch } from './CanvasSearch';
@@ -815,18 +815,10 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   // - one section's nodes as the layout engine sees them, nodes AND lanes read from canvasRef and not
   //   from the React state: an action mirrors into canvasRef synchronously, while `nodes` / `lanes`
   //   only catch up on the next render, so a node just added or a lane just committed (the first-node
-  //   seed, an output just pinned to a folded section) would be missing. Folded members are in, as
-  //   deriveLanes lists them. Null when there is no such section (no lanes, or the node sits in none).
-  const engineNodesOf = useCallback((anchor: { nodeId?: string; sectionId?: string }): EngineNode[] | null => {
-    const cn = canvasRef.current.nodes;
-    const derived = deriveLanes(cn, canvasRef.current.metadata?.sections ?? []);
-    const lane = anchor.sectionId !== undefined
-      ? derived.find(l => l.id === anchor.sectionId)
-      : derived.find(l => anchor.nodeId !== undefined && l.memberIds.includes(anchor.nodeId));
-    if (!lane) return null;
-    const members = new Set(lane.memberIds);
-    return toEngineNodes(cn.filter(n => members.has(n.id)));
-  }, []); // - canvasRef is a ref, always current
+  //   seed, an output just pinned to a folded section) would be missing.
+  const engineNodesOf = useCallback((anchor: { nodeId?: string; sectionId?: string }): EngineNode[] | null =>
+    sectionEngineNodes(canvasRef.current.nodes, canvasRef.current.metadata?.sections ?? [], anchor),
+  []); // - canvasRef is a ref, always current
 
   // - move/resize nodes by an engine patch, in the flow and in the canvas mirror. No history entry of
   //   its own: the action that caused the layout pushed one (Reflow pushes through `beforeApply`).
@@ -848,16 +840,24 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
    * The single entry point to the layout engine: lay out the section holding `anchor.nodeId` (or the
    * section `anchor.sectionId`), apply what moved and save. `reflow` packs the whole section instead
    * of the touched column; `beforeApply` runs only when something actually moves.
+   *
+   * The fit runs here, with the section's membership as it stood before the pack: a cell the pack
+   * pushed past the section's bottom edge grows that section and moves the ones below, instead of
+   * dropping into the section below and overlapping what is there. `useLaneFit`'s own pass then
+   * finds nothing left to move.
    */
   const runEngine = useCallback((anchor: { nodeId?: string; sectionId?: string }, opts: LayoutOpts & { reflow?: boolean; beforeApply?: () => void } = {}) => {
     const engineNodes = engineNodesOf(anchor);
     if (!engineNodes) return;
     const patches = opts.reflow ? reflowSection(engineNodes) : layoutSection(engineNodes, opts);
     if (Object.keys(patches).length === 0) return;
+    const own = sectionMembership(canvasRef.current.nodes, canvasRef.current.metadata?.sections ?? [], anchor);
     opts.beforeApply?.();
     applyPatches(patches);
+    const fit = fitLanes(lanesRef.current, canvasRef.current.nodes, own);
+    if (Object.keys(fit.laneShifts).length) applyFit(fit);
     scheduleSave();
-  }, [engineNodesOf, applyPatches, scheduleSave]);
+  }, [engineNodesOf, applyPatches, applyFit, scheduleSave]);
 
   // - a delete leaves a hole nothing moved into: read, BEFORE the removal, which column of which
   //   section each doomed cell sat in (an output cell counts for its code cell's column) so the

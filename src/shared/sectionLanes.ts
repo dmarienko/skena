@@ -199,14 +199,16 @@ export function unfoldLane(lanes: SectionLane[], nodes: LaneNodeGeom[], id: stri
  * Apply `fitLanes` to a canvas, and seed the first section when the canvas has content but no
  * section at all — so `canvas_add_node` on an empty canvas leaves a section behind, the same way the
  * webview's own add path does. Same reference when nothing moves (no spurious save).
+ * `own` reaches `fitLanes` unchanged: a node the caller has just moved past its section's bottom
+ * edge still counts for that section, so the section grows instead of the one below adopting it.
  */
-export function applyLaneFit(canvas: CanvasData, now: number): CanvasData {
+export function applyLaneFit(canvas: CanvasData, now: number, own?: Map<string, number>): CanvasData {
   const lanes = canvas.metadata?.sections ?? [];
   if (lanes.length === 0) {
     if (canvas.nodes.length === 0) return canvas;
     return { ...canvas, metadata: { ...canvas.metadata, sections: [{ id: `sec-${now.toString(36)}`, y: 0, createdAt: now }] } };
   }
-  const f = fitLanes(lanes, canvas.nodes);
+  const f = fitLanes(lanes, canvas.nodes, own);
   if (Object.keys(f.laneShifts).length === 0) return canvas;
   return {
     ...canvas,

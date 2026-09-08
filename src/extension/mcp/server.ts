@@ -30,10 +30,11 @@ import { CanvasData, CanvasNode, CanvasEdge, CanvasNodeBase, CellNode, CodeNode,
 import { nextKernelColorIndex } from '../../shared/kernelPalette';
 import { assignLabel, ensureLabels } from '../../shared/nodeLabels';
 import { snapGrid } from '../../shared/grid';
+import { NODE_SIZE, OUTPUT_MAX_W, OUTPUT_MAX_H } from '../../shared/constants';
 import { clampToOrigin } from '../../shared/bounds';
 import { applyLaneFit, deriveLanes, outputCellGeom, pinOutputToLane, pruneFoldedIds, sectionByRef, insertLaneAt, foldLane, unfoldLane, sectionTargetHeight, parkFirstLaneAtOrigin, memberCodeCellsInRunOrder, type SectionLane } from '../../shared/sectionLanes';
 import { resolveCellKernel, cellKernelView, kernelById, upstreamCellsForRun, resolveKernelCellsInCanvas, type KernelLike } from '../../shared/kernelBinding';
-import { layoutSection, reflowSection, insertAfter, forkOf, placeOutput, applyPatchesToCanvas, toEngineNodes, type EngineNode } from '../../shared/layoutEngine';
+import { layoutSection, reflowSection, insertAfter, forkOf, placeOutput, applyPatchesToCanvas, sectionEngineNodes, sectionMembership, toEngineNodes } from '../../shared/layoutEngine';
 import { resolveKernelConfig, type KernelServerConfig } from '../jupyter/config';
 import { executeCell, startKernel, shutdownKernel } from '../jupyter/client';
 import { renderOutput, hasVisibleOutput } from '../jupyter/output';
@@ -318,30 +319,29 @@ function autoPlace(nodes: CanvasNode[], w: number, h: number): { x: number; y: n
   return { x: Math.round(rightmost + GAP), y: Math.round(midY - h / 2) };
 }
 
-// - one section's nodes as the layout engine sees them: the lane holding `nodeId`, its folded
-//   members included, the same slice the webview and the host take. Null when the file has no
-//   sections (a canvas written before sections existed) or the node sits in none — the engine lays
-//   out ONE section, so there is nothing for it to work on and the write leaves the geometry alone.
-function sectionEngineNodes(d: CanvasData, nodeId: string): EngineNode[] | null {
-  const lanes = d.metadata?.sections ?? [];
-  if (lanes.length === 0) return null;
-  const lane = deriveLanes(d.nodes, lanes).find(l => l.memberIds.includes(nodeId));
-  if (!lane) return null;
-  const members = new Set(lane.memberIds);
-  return toEngineNodes(d.nodes.filter(n => members.has(n.id)));
-}
-
 /**
- * Run the layout engine over the sections a write touched and apply what it moved; the lane fit
- * follows, as for every write. `movers` are the nodes the write added, moved or resized; `holes`
- * name a section plus the snapped x of a column a removed cell left a gap in. Returns the ids the
- * engine moved. One call per section: a push never crosses a section boundary.
+ * Run the layout engine over the sections a write touched and apply what it moved. `movers` are the
+ * nodes the write added, moved or resized; `holes` name a section plus the snapped x of a column a
+ * removed cell left a gap in. One call per section: a push never crosses a section boundary.
+ *
+ * Returns the touched sections' membership as it stood BEFORE any job ran, for `applyLaneFit`'s
+ * `own`: a cell a pack pushed past its section's bottom edge still counts for that section, so the
+ * section grows and the ones below move down instead of adopting it. Every job's member list is
+ * read from that same pre-engine derivation, so job N cannot change job N+1's slice.
  */
-function applyEngine(d: CanvasData, movers: string[], holes: { sectionId: string; columnX: number }[] = []): string[] {
+function applyEngine(d: CanvasData, movers: string[], holes: { sectionId: string; columnX: number }[] = []): Map<string, number> {
+  const own = new Map<string, number>();
   const lanes = d.metadata?.sections ?? [];
-  if (lanes.length === 0) return [];
+  if (lanes.length === 0) return own;
   const derived = deriveLanes(d.nodes, lanes);
-  const jobs: { sectionId: string; moverIds?: string[]; columnX?: number }[] = [];
+  const jobs: { members: Set<string>; moverIds?: string[]; columnX?: number }[] = [];
+  const take = (laneId: string) => {
+    const lane = derived.find(l => l.id === laneId);
+    if (!lane) return null;
+    for (const id of lane.memberIds) own.set(id, lane.index);
+    return new Set(lane.memberIds);
+  };
+
   const byLane = new Map<string, string[]>();
   for (const id of movers) {
     const lane = derived.find(l => l.memberIds.includes(id));
@@ -349,28 +349,28 @@ function applyEngine(d: CanvasData, movers: string[], holes: { sectionId: string
     const list = byLane.get(lane.id);
     if (list) list.push(id); else byLane.set(lane.id, [id]);
   }
-  for (const [sectionId, moverIds] of byLane) jobs.push({ sectionId, moverIds });
-  for (const h of holes) jobs.push({ sectionId: h.sectionId, columnX: h.columnX });
+  for (const [laneId, moverIds] of byLane) { const members = take(laneId); if (members) jobs.push({ members, moverIds }); }
+  for (const h of holes) { const members = take(h.sectionId); if (members) jobs.push({ members, columnX: h.columnX }); }
 
-  const moved = new Set<string>();
   for (const job of jobs) {
-    // - a previous job replaced the nodes it moved, so read the lane again
-    const lane = deriveLanes(d.nodes, d.metadata?.sections ?? []).find(l => l.id === job.sectionId);
-    if (!lane) continue;
-    const members = new Set(lane.memberIds);
-    const patches = layoutSection(toEngineNodes(d.nodes.filter(n => members.has(n.id))), { moverIds: job.moverIds, columnX: job.columnX });
-    const ids = Object.keys(patches);
-    if (ids.length === 0) continue;
+    const patches = layoutSection(toEngineNodes(d.nodes.filter(n => job.members.has(n.id))), { moverIds: job.moverIds, columnX: job.columnX });
+    if (Object.keys(patches).length === 0) continue;
     d.nodes = applyPatchesToCanvas(d.nodes, patches);
-    for (const id of ids) moved.add(id);
   }
-  return [...moved];
+  return own;
 }
 
-// - the labels of the nodes the engine moved, in file order, without the ones the write itself named
-function movedLabels(d: CanvasData, ids: string[], exclude: string[] = []): string[] {
-  const set = new Set(ids.filter(id => !exclude.includes(id)));
-  return d.nodes.filter(n => set.has(n.id)).map(n => n.nodeLabel ?? n.id);
+// - x,y of every node, to diff a write against afterwards
+function geomOf(d: CanvasData): Map<string, string> {
+  return new Map(d.nodes.map(n => [n.id, `${n.x},${n.y}`] as const));
+}
+
+// - the labels of the nodes a write moved, in file order, without the ones the caller itself named.
+//   Read it AFTER the lane fit: the fit's shifts are moves the caller should hear about too.
+function movedLabels(d: CanvasData, before: Map<string, string>, exclude: string[] = []): string[] {
+  return d.nodes
+    .filter(n => !exclude.includes(n.id) && before.has(n.id) && before.get(n.id) !== `${n.x},${n.y}`)
+    .map(n => n.nodeLabel ?? n.id);
 }
 
 // - the columns a delete leaves a hole in, read BEFORE the removal: an output cell counts for its
@@ -400,6 +400,7 @@ function defaultDims(type: string): { w: number; h: number } {
   const map: Record<string, { w: number; h: number }> = {
     text:   { w: 400, h: 300 },
     cell:   { w: 480, h: 320 },
+    code:   { w: NODE_SIZE.code.w, h: NODE_SIZE.code.h },   // - the size the webview gives a code cell, so both build the same column
     file:   { w: 400, h: 400 },
     link:   { w: 240, h: 80  },
     portal: { w: 200, h: 120 },
@@ -667,10 +668,10 @@ async function canvasAddNode(args: Record<string, unknown>): Promise<string> {
   if (anchor) {
     if (anchor.type !== 'code') return `${args.after !== undefined ? 'after' : 'forkOf'} must be a code cell`;
     // - the anchor's own section; a canvas that has no sections yet still gets a position out of this
-    const around = sectionEngineNodes(d, anchor.id) ?? toEngineNodes(d.nodes);
+    const around = sectionEngineNodes(d.nodes, d.metadata?.sections ?? [], anchor.id) ?? toEngineNodes(d.nodes);
     placed = args.after !== undefined
       ? insertAfter(around, anchor.id)
-      : forkOf(around, anchor.id, (args.side as 'right' | 'left' | undefined) ?? 'right');   // - the pair width the engine assumes, as the webview's Alt+X fork does; a wider cell is pushed clear by the layout call below
+      : forkOf(around, anchor.id, (args.side as 'right' | 'left' | undefined) ?? 'right', snapGrid(w));
     // - the anchor is a code cell in a column, so the only refusal left is a left fork off the edge
     if (!placed) return 'a left fork does not fit before the origin';
   }
@@ -724,9 +725,14 @@ async function canvasAddNode(args: Record<string, unknown>): Promise<string> {
   }
 
   const labeled = assignLabel(newNode, d.nodes);
+  const before  = geomOf(d);
   d.nodes.push(labeled);
-  const moved = movedLabels(d, applyEngine(d, [labeled.id]), [labeled.id]);
-  Object.assign(d, applyLaneFit(d, Date.now()));   // - every write fits the sections
+  // - a cell inserted into a FOLDED section is a hidden member of it, like a run's output: it stays
+  //   pinned to that lane until the user unfolds, rather than being adopted by the lane below
+  if (anchor && d.metadata?.sections) d.metadata = { ...d.metadata, sections: pinOutputToLane(d.metadata.sections, anchor.id, labeled.id) };
+  const own = applyEngine(d, [labeled.id]);
+  Object.assign(d, applyLaneFit(d, Date.now(), own));   // - every write fits the sections
+  const moved = movedLabels(d, before, [labeled.id]);
   await writeCanvas(p, d);
 
   // - the engine and the fit may both have moved the new node: report where the file has it
@@ -772,13 +778,23 @@ async function canvasUpdateNode(args: Record<string, unknown>): Promise<string> 
   if (args.width  !== undefined) updated.width  = snapGrid(args.width  as number);
   if (args.height !== undefined) updated.height = snapGrid(args.height as number);
 
+  // - an output cell's column is the pair's, so an oversized one would overlap the pair to its right
+  const isOutput = d.nodes.some(o => o.type === 'code' && o.outputNodeId === n.id);
+  const clamped: string[] = [];
+  if (isOutput && updated.width  > OUTPUT_MAX_W) { updated.width  = OUTPUT_MAX_W; clamped.push(`width to ${OUTPUT_MAX_W}`); }
+  if (isOutput && updated.height > OUTPUT_MAX_H) { updated.height = OUTPUT_MAX_H; clamped.push(`height to ${OUTPUT_MAX_H}`); }
+
+  const before = geomOf(d);
   d.nodes[idx] = updated;
   // - a move or a resize re-packs the node's column and pushes the pairs to its right
-  const geom  = args.x !== undefined || args.y !== undefined || args.width !== undefined || args.height !== undefined;
-  const moved = geom ? movedLabels(d, applyEngine(d, [updated.id]), [updated.id]) : [];
-  Object.assign(d, applyLaneFit(d, Date.now()));   // - every write fits the sections
+  const geom = args.x !== undefined || args.y !== undefined || args.width !== undefined || args.height !== undefined;
+  const own  = geom ? applyEngine(d, [updated.id]) : new Map<string, number>();
+  Object.assign(d, applyLaneFit(d, Date.now(), own));   // - every write fits the sections
+  const moved = geom ? movedLabels(d, before, [updated.id]) : [];
   await writeCanvas(p, d);
-  return `Updated node ${updated.nodeLabel ?? updated.id}` + (moved.length ? ` — moved ${moved.join(', ')}` : '');
+  return `Updated node ${updated.nodeLabel ?? updated.id}`
+    + (clamped.length ? ` — output cell clamped: ${clamped.join(', ')}` : '')
+    + (moved.length ? ` — moved ${moved.join(', ')}` : '');
   }); // - withFileLock
 }
 
@@ -797,13 +813,15 @@ async function canvasRemoveNode(args: Record<string, unknown>): Promise<string> 
   if (toRemove.size === 0) return `No nodes found for: ${refs.join(', ')}`;
 
   // - read the holes while the doomed nodes are still there; the engine closes them after
-  const holes = columnsOfDeleted(d, toRemove);
+  const holes  = columnsOfDeleted(d, toRemove);
+  const before = geomOf(d);
   d.nodes = d.nodes.filter(n => !toRemove.has(n.id));
   d.edges = d.edges.filter(e => !toRemove.has(e.fromNode) && !toRemove.has(e.toNode));
   // - a removed node must not stay in a fold list, pinning its lane to an id that is gone
   if (d.metadata?.sections) d.metadata = { ...d.metadata, sections: pruneFoldedIds(d.metadata.sections, toRemove) };
-  const moved = movedLabels(d, applyEngine(d, [], holes));
-  Object.assign(d, applyLaneFit(d, Date.now()));   // - every write fits the sections
+  const own = applyEngine(d, [], holes);
+  Object.assign(d, applyLaneFit(d, Date.now(), own));   // - every write fits the sections
+  const moved = movedLabels(d, before);
   await writeCanvas(p, d);
   return `Removed ${toRemove.size} node(s): ${labels.join(', ')}` + (moved.length ? ` — moved ${moved.join(', ')}` : '');
   }); // - withFileLock
@@ -870,6 +888,7 @@ async function canvasLayout(args: Record<string, unknown>): Promise<string> {
     const done: string[] = [];
     const missing: string[] = [];
     const movers: string[] = [];
+    const before = geomOf(d);
     for (const it of items) {
       const n = findNode(d, it.ref as string);
       if (!n) { missing.push(String(it.ref)); continue; }
@@ -885,8 +904,8 @@ async function canvasLayout(args: Record<string, unknown>): Promise<string> {
       if (it.x !== undefined || it.y !== undefined || it.width !== undefined || it.height !== undefined) movers.push(n.id);
       done.push(n.nodeLabel ?? n.id);
     }
-    const moved = movedLabels(d, applyEngine(d, movers), movers);
-    Object.assign(d, applyLaneFit(d, Date.now()));   // - every write fits the sections
+    Object.assign(d, applyLaneFit(d, Date.now(), applyEngine(d, movers)));   // - every write fits the sections
+    const moved = movedLabels(d, before, movers);
     await writeCanvas(p, d);
     return `Laid out ${done.length} node(s): ${done.join(', ')}` +
       (moved.length ? ` — moved ${moved.join(', ')}` : '') +
@@ -912,28 +931,24 @@ async function canvasPinOutput(args: Record<string, unknown>): Promise<string> {
   const content = (args.content as string | undefined) ?? '';
   const W = 480, H = 320;
 
-  // - place to the right of source node if specified
-  let x: number, y: number;
+  // - a pin onto a code cell is that cell's output: same slot as a run, so the engine keeps the pair
+  //   together. Off a code cell (or with no source at all) it stays a free node, placed as before.
+  let geom = { x: 0, y: 0, width: W, height: H };
   let sourceNode: CanvasNode | undefined;
   if (args.sourceRef) {
     sourceNode = findNode(d, args.sourceRef as string);
     if (sourceNode) {
-      ({ x, y } = outputCellGeom(d.metadata?.sections ?? [], sourceNode, 60));   // - W/H match outputCellGeom's 480x320; a manual pin keeps its 60px gap
-    } else {
-      const pos = autoPlace(d.nodes, W, H);
-      x = pos.x; y = pos.y;
+      const around = sourceNode.type === 'code' ? sectionEngineNodes(d.nodes, d.metadata?.sections ?? [], sourceNode.id) : null;
+      const slot   = around && placeOutput(around, sourceNode.id);
+      geom = slot ?? { ...outputCellGeom(d.metadata?.sections ?? [], sourceNode, 60), width: W, height: H };   // - W/H match outputCellGeom's 480x320; a manual pin keeps its 60px gap
     }
-  } else {
-    const pos = autoPlace(d.nodes, W, H);
-    x = pos.x; y = pos.y;
   }
+  if (!sourceNode) geom = { ...autoPlace(d.nodes, W, H), width: W, height: H };
 
   const cell: CanvasNode = {
     id:        uid(),
     type:      'cell',
-    x, y,
-    width:     W,
-    height:    H,
+    ...geom,
     format,
     content,
     createdBy: 'ai',
@@ -941,6 +956,7 @@ async function canvasPinOutput(args: Record<string, unknown>): Promise<string> {
   } as CanvasNode;
 
   const labeled = assignLabel(cell, d.nodes);
+  const before  = geomOf(d);
   d.nodes.push(labeled);
 
   let edgeId = '';
@@ -958,12 +974,19 @@ async function canvasPinOutput(args: Record<string, unknown>): Promise<string> {
     edgeId = edge.id;
   }
 
+  // - a code cell with no output yet adopts the pinned node as its output, so the engine keeps the
+  //   two together in the pair. One that already has an output keeps it; the pin stays a free node
+  //   and settles below it.
+  if (sourceNode?.type === 'code' && !sourceNode.outputNodeId) sourceNode.outputNodeId = labeled.id;
   if (sourceNode && d.metadata?.sections) d.metadata = { ...d.metadata, sections: pinOutputToLane(d.metadata.sections, sourceNode.id, labeled.id) };   // - an output of a folded cell stays folded
-  Object.assign(d, applyLaneFit(d, Date.now()));   // - every write fits the sections
+  const own = applyEngine(d, [labeled.id]);
+  Object.assign(d, applyLaneFit(d, Date.now(), own));   // - every write fits the sections
+  const moved = movedLabels(d, before, [labeled.id]);
   await writeCanvas(p, d);
 
   const lines = [`Pinned output as cell node ${labeled.nodeLabel} (id: ${labeled.id})`];
   if (sourceNode) lines.push(`Connected from ${sourceNode.nodeLabel ?? sourceNode.id} with edge "${d.edges.find(e => e.id === edgeId)?.label}"`);
+  if (moved.length) lines.push(`Moved: ${moved.join(', ')}`);
   lines.push(`Canvas: ${p}`);
   return lines.join('\n');
   }); // - withFileLock
@@ -989,7 +1012,7 @@ async function runCellCore(
   server: KernelServerConfig,
   p:      string,
   ipc:    { port: number; token: string } | null,
-): Promise<{ status: 'ok' | 'error'; outLabel: string; streamText: string; error?: string }> {
+): Promise<{ status: 'ok' | 'error'; outLabel: string; streamText: string; moved: string[]; error?: string }> {
   // - single-writer: when a panel is open the host owns the .canvas write (no MCP write → no
   // - watcher reload race). It returns the authoritative output-node id. No panel → hostOwns is
   // - false and the MCP writes the file itself, as before.
@@ -1000,7 +1023,7 @@ async function runCellCore(
 
   // - the engine's slot for this cell's output: its pair's output column, the cell's y. The fallback
   //   covers a canvas with no sections; a code cell inside one is always in a column.
-  const around  = sectionEngineNodes(d, cell.id);
+  const around  = sectionEngineNodes(d.nodes, d.metadata?.sections ?? [], cell.id);
   const outPrev = d.nodes.find(n => n.id === outId && n.type === 'cell');
   const outGeom = (around && placeOutput(around, cell.id, outPrev ? { w: outPrev.width, h: outPrev.height } : undefined))
     ?? outputCellGeom(d.metadata?.sections ?? [], cell);
@@ -1043,12 +1066,13 @@ async function runCellCore(
       cell.lastRun    = Date.now();
       await writeCanvas(p, d);
     }
-    return { status: 'error', outLabel: '(error)', streamText: '', error: e instanceof Error ? e.message : String(e) };
+    return { status: 'error', outLabel: '(error)', streamText: '', moved: [], error: e instanceof Error ? e.message : String(e) };
   }
 
   const { format, content } = renderOutput(out);
   const hasOutput = hasVisibleOutput(out);
   let outLabel = '(no output)';
+  let moved: string[] = [];
 
   if (hostOwns) {
     // - host is the single writer: it applies the output node, writes with self-save suppression,
@@ -1068,6 +1092,8 @@ async function runCellCore(
     // - before the engine: it replaces every node it moves, and this cell may be one of them
     cell.lastStatus = out.status === 'error' ? 'error' : 'ok';
     cell.lastRun    = Date.now();
+    const before = geomOf(d);
+    let own = new Map<string, number>();
     if (hasOutput) {
       // - persist to the SAME node id the live frames streamed to (outId), so a re-run updates in place
       const existing = d.nodes.find(n => n.id === outId && n.type === 'cell') as CellNode | undefined;
@@ -1088,12 +1114,13 @@ async function runCellCore(
         // - only a NEW output node is pinned (same rule as the host): a re-run must not re-pin an
         //   output the user has since dragged out of the folded section
         if (d.metadata?.sections) d.metadata = { ...d.metadata, sections: pinOutputToLane(d.metadata.sections, cell.id, outId) };
-        applyEngine(d, [outId]);
+        own = applyEngine(d, [outId]);
         outLabel = labeled.nodeLabel ?? labeled.id;
       }
     }
 
-    Object.assign(d, applyLaneFit(d, Date.now()));   // - every write fits the sections; d is reused for the next cell of a chain, so a discarded result would be undone by that cell's write
+    Object.assign(d, applyLaneFit(d, Date.now(), own));   // - every write fits the sections; d is reused for the next cell of a chain, so a discarded result would be undone by that cell's write
+    moved = movedLabels(d, before);
     await writeCanvas(p, d);
 
     // - deterministic final frame so the result doesn't depend on the (racy) soft-reload winning
@@ -1109,7 +1136,7 @@ async function runCellCore(
     }
   }
 
-  return { status: cell.lastStatus, outLabel, streamText: out.streamText, error: out.error };
+  return { status: cell.lastStatus, outLabel, moved, streamText: out.streamText, error: out.error };
 }
 
 // - resolve kernelRef against a KernelRecord (by id or displayName) or a kernel node (label or id)
@@ -1177,6 +1204,7 @@ async function canvasRunCell(args: Record<string, unknown>): Promise<string> {
     const res    = await runCellCore(d, cellNow, kernelNow, kernelId, server, p, ipc);
     const prefix = ran.length ? `(upstream ${ran.join(', ')}) ` : '';
     return `${prefix}ran ${cellNow.nodeLabel ?? cellNow.id} on ${kernelNow.server} → ${res.outLabel}: ${res.status}` +
+      `${res.moved.length ? ` — moved ${res.moved.join(', ')}` : ''}` +
       `${res.error ? ' — ' + res.error : ''}\n${res.streamText.slice(0, 500)}`;
   }); // - withFileLock
 }
@@ -1317,8 +1345,9 @@ async function canvasReflowSection(args: Record<string, unknown>): Promise<strin
     const count   = Object.keys(patches).length;
     // - nothing moved: no write, so a reflow of a packed section leaves the file's mtime alone
     if (count === 0) return `Reflowed ${label}: nothing moved`;
+    const own = sectionMembership(d.nodes, lanes, { sectionId: lane.id });
     d.nodes = applyPatchesToCanvas(d.nodes, patches);
-    Object.assign(d, applyLaneFit(d, Date.now()));   // - every write fits the sections
+    Object.assign(d, applyLaneFit(d, Date.now(), own));   // - every write fits the sections
     await writeCanvas(p, d);
     return `Reflowed ${label}: ${count} node(s) moved`;
   }); // - withFileLock
@@ -1337,6 +1366,7 @@ async function canvasRunSection(args: Record<string, unknown>): Promise<string> 
     if (order.length === 0) return `error: no code cells in ${label}`;
 
     const ran: string[] = [];
+    const moved: string[] = [];
     for (const cellId of order) {
       // - a previous cell's run re-fits the sections and replaces d.nodes: read this one again
       const cell = d.nodes.find(n => n.id === cellId && n.type === 'code') as CodeNode | undefined;
@@ -1345,9 +1375,10 @@ async function canvasRunSection(args: Record<string, unknown>): Promise<string> 
       if (typeof prep === 'string') return `${prep}${ran.length ? ` (ran ${ran.join(', ')})` : ''}`;
       const r = await runCellCore(d, cell, prep.kernel, prep.kernelId, prep.server, p, prep.ipc);
       ran.push(`${cell.nodeLabel ?? cell.id}:${r.status}`);
+      for (const m of r.moved) if (!moved.includes(m)) moved.push(m);
       if (r.status === 'error') return `error: ${cell.nodeLabel ?? cell.id} failed — ${r.error ?? ''} (ran ${ran.join(', ')})`;
     }
-    return `ran ${ran.join(', ')}`;
+    return `ran ${ran.join(', ')}` + (moved.length ? ` — moved ${moved.join(', ')}` : '');
   }); // - withFileLock
 }
 
@@ -1628,7 +1659,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_pin_output',
-    description: 'Pin a content snippet (analysis result, notebook output, HTML table, image) as a CellNode on the canvas. Automatically links it to a source node if specified.',
+    description: 'Pin a content snippet (analysis result, notebook output, HTML table, image) as a CellNode on the canvas. Automatically links it to a source node if specified. Pinned onto a code cell it becomes that cell\'s output: it is placed in the pair\'s output column and the column below and the pairs to the right may move.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1644,7 +1675,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_run_section',
-    description: 'Run every code cell of a section in run order (top to bottom, then left to right), each on its own resolved kernel, stopping at the first error. Needs a live kernel, as canvas_run_cell does.',
+    description: 'Run every code cell of a section in run order (top to bottom, then left to right), each on its own resolved kernel, stopping at the first error. Needs a live kernel, as canvas_run_cell does. A new output is placed in its pair\'s output column; the column below and the pairs to the right may move.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1736,7 +1767,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_run_cell',
-    description: 'Run a code cell node on a Jupyter kernel and write its output to a linked cell node. Resolves the kernel from kernelRef, else the code node\'s bound-kernel edge, else the kernel bound to the node\'s section.',
+    description: 'Run a code cell node on a Jupyter kernel and write its output to a linked cell node. Resolves the kernel from kernelRef, else the code node\'s bound-kernel edge, else the kernel bound to the node\'s section. A new output is placed in its pair\'s output column; the column below and the pairs to the right may move.',
     inputSchema: {
       type: 'object',
       properties: {
