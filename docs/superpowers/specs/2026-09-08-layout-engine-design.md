@@ -49,13 +49,16 @@ Each row is one engine call, one history entry, section fit after.
 
 One algorithm behind every row of §2, run per section:
 
-1. **Vertical, managed.** Each column is re-packed top → bottom: `y = max(y, prevBottom + GRID)`.
-   Insert / grow pushes down; delete / shrink lets the cells above the hole stay and the cells
-   below pull up to one gap. An output cell has its code cell's y. Nothing outside the column moves
+1. **Vertical, managed.** Each column is packed tight top → bottom: the first cell keeps its y,
+   every next cell gets `y = prevBottom + GRID`. Cells are ordered by their current y; the mover
+   (`moverId`, the node the operation inserted, moved or resized) wins a tie, so an inserted cell
+   placed at the next cell's y lands above it. Insert / grow pushes down; delete / shrink pulls the
+   cells below up to one gap. An output cell has its code cell's y. Nothing outside the column moves
    in this pass.
-2. **Horizontal, pairs.** Pairs are re-packed left → right: `x = max(x, prevRight + GRID)` where a
-   pair's right edge = column x + 700 + GRID + output column width. A growing output pushes the pairs
-   to its right; a shrinking one lets them pull back to one gap.
+2. **Horizontal, pairs.** Pairs are packed tight left → right: the first pair keeps its x, every
+   next pair gets `x = prevRight + GRID`, where a pair's right edge = column x + 700 + GRID + output
+   column width. A growing output pushes the pairs to its right; a shrinking one pulls them back to
+   one gap. (The engine owns a managed cell's x: a fork column dragged further right comes back.)
 3. **Free nodes.** After 1–2, a free node that a managed node now overlaps moves **down** to the
    first y that clears it — never sideways, never out of its section. A moved free node can push
    other free nodes the same way. Managed nodes are never moved by a free one, except by the free
@@ -92,7 +95,7 @@ One algorithm behind every row of §2, run per section:
 | File | Change |
 |---|---|
 | `src/shared/constants.ts` | the constants of §1 |
-| `src/shared/layoutEngine.ts` | new: `deriveColumns`, `derivePairs`, `layoutSection(nodes, lane, op)`, `reflowSection`, `codeCellHeight(lines)` |
+| `src/shared/layoutEngine.ts` | new: `deriveColumns`, `derivePairs`, `layoutSection(nodes, lane, { moverId? })`, `reflowSection`, `codeCellHeight(lines)` |
 | `src/webview/canvas/CanvasView.tsx` | creation (`o`, `Alt+X`), paste, drop, resize, code-height, run-output and delete paths call the engine and apply its result with the action's history entry |
 | `src/webview/rail/SegmentMenu.tsx`, `SectionRail.tsx` | "Reflow section" entry |
 | `src/extension/editor-provider.ts` | run-output placement through the engine (replaces `outputCellGeom`'s free-slot search) |
