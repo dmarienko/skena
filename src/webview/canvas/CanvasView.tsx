@@ -55,7 +55,7 @@ import { LabeledEdgeComponent } from './edges/LabeledEdge';
 import { HelperLines } from './HelperLines';
 import { SectionSeparators } from './SectionSeparators';
 import { SectionRail, type RailKernel } from '../rail/SectionRail';
-import { deriveLanes, sortLanes, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
+import { deriveLanes, sortLanes, insertLaneAt, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
 import { useLaneFit, flowGeom } from '../rail/useLaneFit';
 import { findNearestNode, revealPan, type NavNode, type Rect } from './spatialNav';
 import { CanvasSearch } from './CanvasSearch';
@@ -866,11 +866,12 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       const visible = last ? nodes.filter(n => last.memberIds.includes(n.id) && !(last.folded ?? []).includes(n.id)).map(flowGeom) : [];
       const flowY = last ? snapGrid(last.top + sectionTargetHeight(last, visible)) : 0;
       const now = Date.now();
+      // - the shared insert snaps the y, refuses one a lane already sits on and keeps the id unique
+      //   against a lane seeded in the same millisecond; same reference = nothing was added
+      const next = insertLaneAt(lanesRef.current, flowY, now);
+      if (next === lanesRef.current) return;
       pushHistory();
-      commitLanes([
-        ...lanes,
-        { id: `sec-${now.toString(36)}`, y: flowY, createdAt: now },
-      ]);
+      commitLanes(next);
       const { x, zoom } = rfRef.current.getViewport();
       const c = clampCam(x, -flowY * zoom, zoom);
       rfRef.current.setViewport({ x: c.x, y: c.y, zoom }, { duration: 250 });
