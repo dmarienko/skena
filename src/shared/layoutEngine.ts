@@ -1,4 +1,4 @@
-import { GRID, NODE_SIZE, CODE_MAX_H, OUTPUT_MIN_W, OUTPUT_MAX_W, OUTPUT_DEFAULT_H, CODE_LINE_PX, CODE_CHROME_PX } from './constants';
+import { GRID, NODE_SIZE, CODE_MAX_H, OUTPUT_MIN_W, OUTPUT_DEFAULT_H, CODE_LINE_PX, CODE_CHROME_PX } from './constants';
 import { snapGrid } from './grid';
 
 /**
@@ -53,14 +53,18 @@ export function deriveColumns(nodes: EngineNode[], movers = new Set<string>()): 
     });
 }
 
-/** Pairs = columns with their output column: x right of the code, width = widest output, min OUTPUT_MIN_W. */
+/**
+ * Pairs = columns with their output column: x one gap right of the code, width = the widest output
+ * the column holds, at its REAL width (never clamped: a wide output must not overlap the pair to its
+ * right — OUTPUT_MAX_W is for the callers that create or resize an output), floored at OUTPUT_MIN_W.
+ */
 export function derivePairs(nodes: EngineNode[], columns: Column[]): Pair[] {
   const map = byId(nodes);
   return columns.map(column => {
     let outputW = OUTPUT_MIN_W;
     for (const id of column.cellIds) {
       const out = map.get(map.get(id)?.outputNodeId ?? '');
-      if (out) outputW = Math.max(outputW, Math.min(OUTPUT_MAX_W, out.w));
+      if (out) outputW = Math.max(outputW, out.w);
     }
     const outputX = column.x + column.codeW + GRID;
     return { column, outputX, outputW, right: outputX + outputW };
@@ -113,21 +117,26 @@ function pushPairsRight(pairs: Pair[], fromIndex: number, map: Map<string, Engin
   }
 }
 
-// - free nodes that a managed node (or an earlier free node) now overlaps move down, never sideways
-function settleFree(nodes: EngineNode[], owners: Map<string, string>, movers: Set<string>, out: Patches): void {
+// - free nodes move down out of the way, never sideways. `barriers` is what counts as in the way:
+//   in a regular call only the ids this call moved, so a note the user parked on top of an untouched
+//   cell is left alone (spec §3.3: the ones a managed node NOW overlaps); a reflow passes none and
+//   settles against everything. A free node that moved becomes a barrier for the ones below it.
+function settleFree(nodes: EngineNode[], owners: Map<string, string>, movers: Set<string>, out: Patches, barriers?: Set<string>): void {
+  const inWay = (n: EngineNode) => !barriers || barriers.has(n.id);
   const managed = nodes.filter(n => n.type === 'code' || owners.has(n.id));
   const free = nodes.filter(n => n.type !== 'code' && !owners.has(n.id)).sort((a, b) => a.y - b.y || a.x - b.x);
-  const placed: EngineNode[] = [...managed];
+  // - a dropped free node stays put and is in the way from the start, wherever it sits in the order
+  const placed: EngineNode[] = [...managed.filter(inWay), ...free.filter(f => movers.has(f.id))];
   for (const f of free) {
-    if (movers.has(f.id)) { placed.push(f); continue; }   // - the dropped/resized free node stays put
-    let moved = true;
-    while (moved) {
-      moved = false;
+    if (movers.has(f.id)) continue;
+    let moved = false;
+    for (let again = true; again;) {
+      again = false;
       for (const p of placed) {
-        if (overlaps(f, p)) { f.y = p.y + p.h + GRID; out[f.id] = { x: f.x, y: f.y }; moved = true; }
+        if (overlaps(f, p)) { f.y = p.y + p.h + GRID; out[f.id] = { x: f.x, y: f.y }; again = true; moved = true; }
       }
     }
-    placed.push(f);
+    if (moved || !barriers) placed.push(f);
   }
 }
 
@@ -165,7 +174,8 @@ function diff(before: EngineNode[], after: EngineNode[], out: Patches): Patches 
  * Lay out one section after an operation. `moverIds` = the nodes the operation inserted, moved or
  * resized (they win ties and, when free, push what they cover); `columnX` = the column to pack when
  * nothing moved (a delete). Only the touched column is packed; pairs right of it are pushed, not
- * pulled; free nodes settle downward. Same input → same output; a second call changes nothing.
+ * pulled; a free node moves down only out of the way of what this call moved. Same input → same
+ * output; a second call changes nothing.
  */
 export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patches {
   const nodes = clone(input);
@@ -191,7 +201,8 @@ export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patch
   const repaired = derivePairs(nodes, deriveColumns(nodes, movers));
   if (firstTouched < repaired.length) pushPairsRight(repaired, firstTouched, map, out);
   freeMoverPushes(map, owners, movers, repaired, out);
-  settleFree(nodes, owners, movers, out);
+  // - only what this call moved (plus the movers) can push a free node
+  settleFree(nodes, owners, movers, out, new Set([...movers, ...Object.keys(out)]));
   return diff(input, nodes, out);
 }
 
