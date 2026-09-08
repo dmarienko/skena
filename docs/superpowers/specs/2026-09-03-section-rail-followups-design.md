@@ -114,9 +114,11 @@ section is followed for `j`/`k`, not for `h`/`l`.
 is off-screen pans just enough to show both. If the pair does not fit, the node alone decides, as in
 0.16.16/0.16.17. Zoom never changes; only `forceCenter` (cross-canvas jumps) centres and zooms.
 
-**8.3 The same pan on a mouse click.** A plain click on a node (no Shift/Ctrl/Meta; React Flow does
-not fire `onNodeClick` after a drag) runs the same reveal pan. Selection stays React Flow's; the click
-does not touch it.
+**8.3 The same pan on a mouse click.** A plain click on a node that is not yet selected (no
+Shift/Ctrl/Meta; React Flow does not fire `onNodeClick` after a drag) runs the same reveal pan. A click
+on the already-selected node does nothing (the second click of a double-click must not pan). A click
+inside an open editor never reaches the node. Selection stays React Flow's; the click does not touch
+it, but it is remembered as the last focus.
 
 **8.4 Usable area = the React Flow pane.** The pane sits right of the 44 px rail (`wrapperRef`), so
 the pan uses the pane's rect, not `window.innerWidth`; the chat panel's rect is converted into pane
