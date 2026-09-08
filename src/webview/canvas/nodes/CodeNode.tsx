@@ -169,19 +169,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
       }
       magicDecoRef.current = editorInstance.deltaDecorations(magicDecoRef.current, decos);
     };
-    // - the layout engine sizes a code cell by its line count; one dispatch per frame, not per
-    // - keystroke. Not fired on mount: opening an editor must not resize a hand-placed cell.
-    let linesFrame = 0;
-    const postLines = () => {
-      if (linesFrame) return;
-      linesFrame = requestAnimationFrame(() => {
-        linesFrame = 0;
-        const model = editorInstance.getModel();
-        if (model) window.dispatchEvent(new CustomEvent('skena:codeLines', { detail: { id, lines: model.getLineCount() } }));
-      });
-    };
-    editorInstance.onDidDispose(() => { if (linesFrame) cancelAnimationFrame(linesFrame); });
-    editorInstance.onDidChangeModelContent(() => { refreshMagic(); postLines(); });
+    editorInstance.onDidChangeModelContent(refreshMagic);
     refreshMagic();
     // - run bindings (per-instance, safe): fire from ANY vim mode and do NOT change it,
     // - so you can type in insert mode, run, and keep typing. Shift+Enter / Ctrl+Enter /
@@ -434,6 +422,10 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
                 const next = v ?? '';
                 setCode(next);
                 window.dispatchEvent(new CustomEvent('skena:nodeCodeEdit', { detail: { id, code: next } }));
+                // - the layout engine sizes a code cell by its line count. Fired from onChange, not
+                // - from onDidChangeModelContent: the latter also fires when the editor takes in a
+                // - `value` written elsewhere (MCP, a disk reload, undo), which must resize nothing.
+                window.dispatchEvent(new CustomEvent('skena:codeLines', { detail: { id, lines: next.split('\n').length } }));
               }}
               options={{
                 minimap:              { enabled: false },

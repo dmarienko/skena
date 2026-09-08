@@ -812,20 +812,21 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   }, [shiftNodes, commitLanes]);
   useLaneFit(nodes, lanes, draggingRef, fromHistoryRef, applyFit);
 
-  // - one section's nodes as the layout engine sees them, read from canvasRef and NOT from the React
-  //   Flow array: an action mirrors into canvasRef synchronously, while `nodes` only catches up on the
-  //   next render, so a node just added would be missing. Folded members are in, as deriveLanes lists
-  //   them. Null when there is no such section (no lanes yet, or the node sits in none).
+  // - one section's nodes as the layout engine sees them, nodes AND lanes read from canvasRef and not
+  //   from the React state: an action mirrors into canvasRef synchronously, while `nodes` / `lanes`
+  //   only catch up on the next render, so a node just added or a lane just committed (the first-node
+  //   seed, an output just pinned to a folded section) would be missing. Folded members are in, as
+  //   deriveLanes lists them. Null when there is no such section (no lanes, or the node sits in none).
   const engineNodesOf = useCallback((anchor: { nodeId?: string; sectionId?: string }): EngineNode[] | null => {
     const cn = canvasRef.current.nodes;
-    const derived = deriveLanes(cn, lanesRef.current);
+    const derived = deriveLanes(cn, canvasRef.current.metadata?.sections ?? []);
     const lane = anchor.sectionId !== undefined
       ? derived.find(l => l.id === anchor.sectionId)
       : derived.find(l => anchor.nodeId !== undefined && l.memberIds.includes(anchor.nodeId));
     if (!lane) return null;
     const members = new Set(lane.memberIds);
     return toEngineNodes(cn.filter(n => members.has(n.id)));
-  }, []); // - canvasRef / lanesRef are refs, always current
+  }, []); // - canvasRef is a ref, always current
 
   // - move/resize nodes by an engine patch, in the flow and in the canvas mirror. No history entry of
   //   its own: the action that caused the layout pushed one (Reflow pushes through `beforeApply`).
@@ -863,7 +864,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   //   engine can close it after. One entry per column.
   const columnsOfDeleted = useCallback((deletedIds: Set<string>): { sectionId: string; columnX: number }[] => {
     const cn = canvasRef.current.nodes;
-    const derived = deriveLanes(cn, lanesRef.current);
+    const derived = deriveLanes(cn, canvasRef.current.metadata?.sections ?? []);
     const seen = new Set<string>();
     const cols: { sectionId: string; columnX: number }[] = [];
     for (const n of cn) {
@@ -878,7 +879,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       cols.push({ sectionId: lane.id, columnX: snapGrid(code.x) });
     }
     return cols;
-  }, []); // - canvasRef / lanesRef are refs, always current
+  }, []); // - canvasRef is a ref, always current
 
   // - a deleted node must not stay in a fold list: it would pin a lane to an id that no longer exists
   const pruneFolded = useCallback((ids: Set<string>) => {
@@ -1755,8 +1756,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     scheduleSave();
     // - clipboard order is arbitrary; the top-left node is the one the eye starts from
     const topLeft = newNodes.reduce<CanvasNode | undefined>((a, b) => !a || b.y < a.y || (b.y === a.y && b.x < a.x) ? b : a, undefined);
-    // - the whole paste is the mover: it stays where it landed and pushes what it covers. A paste
-    //   spanning two sections is laid out in the top-left one's — the engine takes one section.
+    // - the whole paste is the mover: it stays where it landed and pushes what it covers. The engine
+    //   takes one section, so a paste spanning two lays out the top-left node's only; the other is
+    //   left to Reflow.
     if (topLeft) runEngine({ nodeId: topLeft.id }, { moverIds: newNodes.map(n => n.id) });
     if (topLeft) requestAnimationFrame(() => revealNode(topLeft.id));
   }, [setNodes, setEdges, scheduleSave, pushHistory, revealNode, runEngine]);
@@ -2922,9 +2924,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       if (out && isNewOutput) {
         const pinned = pinOutputToLane(lanesRef.current, d.codeNodeId, out.id);
         if (pinned !== lanesRef.current) commitLanes(pinned);
-        // - a first output is a new box in the section: its pair's neighbours move out of its way.
-        //   A re-run only rewrites content, so nothing there moves. The host places the output
-        //   through the same engine, so this normally patches nothing.
+        // - a first output is a new box in the section: the engine puts it in its pair's output column
+        //   and pushes the neighbours out of its way. A re-run only rewrites content, so nothing moves
+        //   then. The host still places it by its own free-slot search; Task 3 makes the two agree.
         runEngine({ nodeId: out.id }, { moverIds: [out.id] });
       }
       // - the patches above only reach kernel NODES; when the run went to a record, its live id is
