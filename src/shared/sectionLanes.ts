@@ -251,7 +251,11 @@ export function insertLaneAt(lanes: SectionLane[], y: number, now: number, id = 
   const at = snapGrid(y);
   // - the raw argument decides: snapGrid(-40) is -0, which passes every `< 0` test
   if (y < 0 || lanes.some(l => l.y === at)) return lanes;
-  return sortLanes([...lanes, { id, y: at, createdAt: now }]);
+  // - the default id is the millisecond, so a lane added in the same one as the last would reuse it,
+  //   and every id lookup (sectionByRef, a fold, a kernel binding) would land on the wrong lane
+  let unique = id;
+  for (let n = 2; lanes.some(l => l.id === unique); n++) unique = `${id}-${n}`;
+  return sortLanes([...lanes, { id: unique, y: at, createdAt: now }]);
 }
 
 /** Fold a section: pin its visible members. Same reference when it is already folded or unknown. */
