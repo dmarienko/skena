@@ -18,9 +18,10 @@ an explicit Reflow, drag-and-drop reflow deferred to phase 2.
   pushes history, saves; `fitLanes` runs after, as for every write today.
 - Nothing new in the file format. Derived on every call, never stored:
   - **column** = the code cells of a section that share a snapped x, ordered by y;
-  - **pair** = a column + its output column: output x = column x + `NODE_SIZE.code.w` + `GRID`;
-    output column width = the widest output cell in the pair, clamped to
-    `[OUTPUT_MIN_W, OUTPUT_MAX_W]` (600, 1400).
+  - **pair** = a column + its output column: output x = column x + the column's widest code cell +
+    `GRID`; output column width = the widest output cell's real width, never under `OUTPUT_MIN_W`
+    (600). `OUTPUT_MAX_W` (1400) caps an output when it is created or resized, not when measured, so
+    a wider output can never overlap the next pair.
   - Sequence edges (code → code, spec §5) are drawn from the column order; they are a view, not
     the record.
 - **Managed** = code cells and their output cells. **Free** = every other node type: placed by
@@ -59,12 +60,15 @@ One algorithm behind every row of §2, run per section:
    next pair gets `x = prevRight + GRID`, where a pair's right edge = column x + 700 + GRID + output
    column width. A growing output pushes the pairs to its right; a shrinking one pulls them back to
    one gap. (The engine owns a managed cell's x: a fork column dragged further right comes back.)
-3. **Free nodes.** After 1–2, a free node that a managed node now overlaps moves **down** to the
-   first y that clears it — never sideways, never out of its section. A moved free node can push
+3. **Free nodes.** After 1–2, a free node that a node moved by this call (or the mover) now overlaps
+   moves **down** to the first y that clears every managed node — never sideways, never out of its
+   section. An overlap that existed before the call and involves no moved node is left alone (§4:
+   nothing automatic on a hand-placed section; Reflow settles everything). A moved free node can push
    other free nodes the same way. Managed nodes are never moved by a free one, except by the free
    node that was itself dropped or resized (§2, last two rows).
-4. **Sections.** The engine works inside one section; `fitLanes` runs after it, so a section that
-   grew pushes the sections below. A push never moves a node across a section boundary.
+4. **Sections.** The engine works inside one section: the caller hands it that section's nodes and
+   nothing else, which is how a push never moves a node across a section boundary (the engine takes
+   no lane range). `fitLanes` runs after it, so a section that grew pushes the sections below.
 5. **Determinism.** Same input → same output; the result holds only the nodes that changed; a second
    run on the result changes nothing.
 
