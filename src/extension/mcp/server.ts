@@ -26,14 +26,15 @@ import * as os       from 'os';
 import * as readline from 'readline';
 import * as crypto   from 'crypto';
 
-import { CanvasData, CanvasNode, CanvasEdge, CanvasNodeBase, CellNode, CodeNode, AgentRunPersist, AgentRunPersistResult } from '../../shared/types';
+import { CanvasData, CanvasNode, CanvasEdge, CanvasNodeBase, CellNode, CodeNode, KernelRecord, AgentRunPersist, AgentRunPersistResult } from '../../shared/types';
+import { nextKernelColorIndex } from '../../shared/kernelPalette';
 import { assignLabel, ensureLabels } from '../../shared/nodeLabels';
 import { snapGrid } from '../../shared/grid';
 import { clampToOrigin } from '../../shared/bounds';
-import { applyLaneFit, deriveLanes, outputCellGeom, pinOutputToLane, pruneFoldedIds, sectionByRef, insertLaneAt, foldLane, unfoldLane, sectionTargetHeight, parkFirstLaneAtOrigin, type SectionLane } from '../../shared/sectionLanes';
-import { resolveCellKernel, cellKernelView, kernelById, upstreamCellsForRun, type KernelLike } from '../../shared/kernelBinding';
+import { applyLaneFit, deriveLanes, outputCellGeom, pinOutputToLane, pruneFoldedIds, sectionByRef, insertLaneAt, foldLane, unfoldLane, sectionTargetHeight, parkFirstLaneAtOrigin, memberCodeCellsInRunOrder, type SectionLane } from '../../shared/sectionLanes';
+import { resolveCellKernel, cellKernelView, kernelById, upstreamCellsForRun, resolveKernelCellsInCanvas, type KernelLike } from '../../shared/kernelBinding';
 import { resolveKernelConfig, type KernelServerConfig } from '../jupyter/config';
-import { executeCell } from '../jupyter/client';
+import { executeCell, startKernel, shutdownKernel } from '../jupyter/client';
 import { renderOutput, hasVisibleOutput } from '../jupyter/output';
 import type { CollectedOutput } from '../jupyter/protocol';
 
@@ -994,6 +995,28 @@ function kernelByRef(d: CanvasData, ref: string): KernelLike | null {
     ?? (n?.type === 'kernel' ? kernelById(d, n.id) : null);
 }
 
+interface RunContext { kernel: KernelLike; kernelId: string; server: KernelServerConfig; ipc: { port: number; token: string } | null }
+
+// - everything one run needs, or the error text explaining why it cannot start: an explicit kernelRef
+// - (a kernel record id/name, or a kernel node label/id), else the cell's kernel — edge-bound kernel,
+// - else the kernel bound to the cell's section.
+function prepareRun(d: CanvasData, cell: CanvasNode, kernelRef?: string): RunContext | string {
+  let kernel: KernelLike | null = kernelRef ? kernelByRef(d, kernelRef) : null;
+  if (kernelRef && !kernel) return `error: no kernel matches "${kernelRef}" — a record id or display name, or a kernel node label/id`;
+  if (!kernel) {
+    const kid = resolveCellKernel(cell.id, cellKernelView(d));
+    kernel = kid ? kernelById(d, kid) : null;
+  }
+  if (!kernel) return 'error: no kernel bound to this cell — connect it to a kernel node, or bind a kernel to its section from the rail';
+
+  const servers = loadKernelServersFromEnv();
+  const server  = servers.find(s => s.name === kernel.server);
+  if (!server) return `error: unknown server ${kernel.server}`;
+  if (!kernel.kernelId) return 'error: kernel has no live kernelId (open the canvas so Skena starts it)';
+
+  return { kernel, kernelId: kernel.kernelId, server, ipc: parseRunIpc(process.env.SKENA_RUN_IPC) };
+}
+
 async function canvasRunCell(args: Record<string, unknown>): Promise<string> {
   const p = resolvePath(args.canvasPath as string);
   return withFileLock(p, async () => {
@@ -1002,23 +1025,9 @@ async function canvasRunCell(args: Record<string, unknown>): Promise<string> {
     const cell = findNode(d, args.cellRef as string);
     if (!cell || cell.type !== 'code') return `error: ${args.cellRef} is not a code node`;
 
-    // - explicit kernelRef (a kernel record id/name, or a kernel node label/id), else the cell's
-    // - kernel: edge-bound kernel, else the kernel bound to the cell's section.
-    let kernel: KernelLike | null = args.kernelRef ? kernelByRef(d, args.kernelRef as string) : null;
-    if (args.kernelRef && !kernel) return `error: no kernel matches "${args.kernelRef}" — a record id or display name, or a kernel node label/id`;
-    if (!kernel) {
-      const kid = resolveCellKernel(cell.id, cellKernelView(d));
-      kernel = kid ? kernelById(d, kid) : null;
-    }
-    if (!kernel) return 'error: no kernel bound to this cell — connect it to a kernel node, or bind a kernel to its section from the rail';
-
-    const servers = loadKernelServersFromEnv();
-    const server  = servers.find(s => s.name === kernel.server);
-    if (!server) return `error: unknown server ${kernel.server}`;
-    if (!kernel.kernelId) return 'error: kernel has no live kernelId (open the canvas so Skena starts it)';
-
-    const kernelId = kernel.kernelId;   // - narrowed to string by the guard above
-    const ipc = parseRunIpc(process.env.SKENA_RUN_IPC);
+    const prep = prepareRun(d, cell, args.kernelRef as string | undefined);
+    if (typeof prep === 'string') return prep;
+    const { kernel, kernelId, server, ipc } = prep;
 
     // - run-with-upstream: run each upstream cell (closer to the kernel) whose flag is clear, in
     // - dependency order, then the requested cell. Already-run ('ok') cells are skipped; a failed
@@ -1158,6 +1167,107 @@ async function canvasUpdateSection(args: Record<string, unknown>): Promise<strin
     Object.assign(d, applyLaneFit(d, Date.now()));   // - every write fits the sections
     await writeCanvas(p, d);
     return `Updated section ${label}: ${changed.join(', ')}`;
+  }); // - withFileLock
+}
+
+async function canvasRunSection(args: Record<string, unknown>): Promise<string> {
+  const p = resolvePath(args.canvasPath as string);
+  return withFileLock(p, async () => {
+    const d     = await readCanvas(p);
+    const lanes = d.metadata?.sections ?? [];
+    const lane  = sectionByRef(lanes, args.ref as string);
+    if (!lane) return `error: no section matches ${args.ref}`;
+    const label = deriveLanes(d.nodes, lanes).find(l => l.id === lane.id)?.label ?? lane.id;
+
+    const order = memberCodeCellsInRunOrder(d.nodes as (CanvasNode & { type: string })[], lanes, lane.id);
+    if (order.length === 0) return `error: no code cells in ${label}`;
+
+    const ran: string[] = [];
+    for (const cellId of order) {
+      // - a previous cell's run re-fits the sections and replaces d.nodes: read this one again
+      const cell = d.nodes.find(n => n.id === cellId && n.type === 'code') as CodeNode | undefined;
+      if (!cell) continue;
+      const prep = prepareRun(d, cell);
+      if (typeof prep === 'string') return `${prep}${ran.length ? ` (ran ${ran.join(', ')})` : ''}`;
+      const r = await runCellCore(d, cell, prep.kernel, prep.kernelId, prep.server, p, prep.ipc);
+      ran.push(`${cell.nodeLabel ?? cell.id}:${r.status}`);
+      if (r.status === 'error') return `error: ${cell.nodeLabel ?? cell.id} failed — ${r.error ?? ''} (ran ${ran.join(', ')})`;
+    }
+    return `ran ${ran.join(', ')}`;
+  }); // - withFileLock
+}
+
+async function canvasAddKernel(args: Record<string, unknown>): Promise<string> {
+  const p = resolvePath(args.canvasPath as string);
+  return withFileLock(p, async () => {
+    const d       = await readCanvas(p);
+    const servers = loadKernelServersFromEnv();
+    const server  = servers.find(s => s.name === args.server);
+    if (!server) return `error: unknown server ${args.server} — known: ${servers.map(s => s.name).join(', ') || '(none configured)'}`;
+
+    const spec = args.spec as string | undefined;
+    let kernelId: string | undefined;
+    if (args.start !== false) {
+      try { kernelId = (await startKernel(server, spec ?? 'python3')).id; }
+      catch (e) { return `error: failed to start kernel on ${server.name}: ${e instanceof Error ? e.message : String(e)}`; }
+    }
+
+    // - a kernel node and a kernel record share the palette, so both count towards the next colour
+    const existing = (d.metadata?.kernels?.length ?? 0) + d.nodes.filter(n => n.type === 'kernel').length;
+    const record: KernelRecord = {
+      id:          `k-${Date.now().toString(36)}`,
+      server:      server.name,
+      ...(spec ? { spec } : {}),
+      displayName: (args.displayName as string | undefined) ?? spec ?? 'kernel',
+      ...(kernelId ? { kernelId } : {}),
+      colorIndex:  nextKernelColorIndex(existing),
+    };
+
+    let bound = '';
+    let sections = d.metadata?.sections;
+    if (args.bindSection !== undefined) {
+      const lane = sectionByRef(sections ?? [], args.bindSection as string);
+      if (!lane) return `error: no section matches ${args.bindSection}`;
+      sections = (sections ?? []).map(l => (l.id === lane.id ? { ...l, kernelId: record.id } : l));
+      bound = `, bound to ${deriveLanes(d.nodes, sections).find(l => l.id === lane.id)?.label ?? lane.id}`;
+    }
+
+    d.metadata = { ...d.metadata, kernels: [...(d.metadata?.kernels ?? []), record], ...(sections ? { sections } : {}) };
+    await writeCanvas(p, d);
+    return `Added kernel ${record.id} (${record.displayName}) on ${server.name}, live id ${kernelId ?? '(not started)'}${bound}`;
+  }); // - withFileLock
+}
+
+async function canvasRemoveKernel(args: Record<string, unknown>): Promise<string> {
+  const p = resolvePath(args.canvasPath as string);
+  return withFileLock(p, async () => {
+    const d   = await readCanvas(p);
+    const ref = args.ref as string;
+    const rec = d.metadata?.kernels?.find(k => k.id === ref || k.displayName === ref);
+    if (!rec) {
+      const n = findNode(d, ref);
+      if (n?.type === 'kernel') return `error: ${ref} is a kernel node; remove it with canvas_remove_node`;
+      return `error: no kernel record matches ${ref} — a record id or display name`;
+    }
+
+    const server = loadKernelServersFromEnv().find(s => s.name === rec.server);
+    if (server && rec.kernelId) {
+      try { await shutdownKernel(server, rec.kernelId); } catch { /* - already gone */ }
+    }
+    // - its namespace dies with it, so every cell that ran on it is un-run. Resolved BEFORE the
+    //   rewrite below, while the lanes still name this kernel.
+    const bound = new Set(resolveKernelCellsInCanvas(rec.id, cellKernelView(d)));
+    for (const n of d.nodes) {
+      if (n.type === 'code' && bound.has(n.id)) (n as CodeNode).lastStatus = undefined;
+    }
+    d.metadata = {
+      ...d.metadata,
+      kernels:  d.metadata?.kernels?.filter(k => k.id !== rec.id),
+      // - drop the key rather than persisting `kernelId: undefined` on the lane
+      sections: d.metadata?.sections?.map(l => { if (l.kernelId !== rec.id) return l; const { kernelId: _unbound, ...rest } = l; return rest; }),
+    };
+    await writeCanvas(p, d);
+    return `Removed kernel ${rec.id} (${rec.displayName ?? 'kernel'}); ${bound.size} cell(s) un-run`;
   }); // - withFileLock
 }
 
@@ -1374,6 +1484,46 @@ const TOOLS = [
     },
   },
   {
+    name: 'canvas_run_section',
+    description: 'Run every code cell of a section in run order (top to bottom, then left to right), each on its own resolved kernel, stopping at the first error. Needs a live kernel, as canvas_run_cell does.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        canvasPath: { type: 'string', description: 'absolute path to the .canvas file' },
+        ref:        { type: 'string', description: 'S1, S2 … as printed by canvas_list, or the section id' },
+      },
+      required: ['canvasPath', 'ref'],
+    },
+  },
+  {
+    name: 'canvas_add_kernel',
+    description: 'Add a kernel record to the canvas (the kind a section binds, not a kernel node). By default it starts the kernel on the Jupyter server at once, as the rail\'s "New kernel…" does, so cells can run on it immediately.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        canvasPath:  { type: 'string', description: 'absolute path to the .canvas file' },
+        server:      { type: 'string', description: 'a configured Jupyter server name (skena.jupyter.kernels[].name)' },
+        spec:        { type: 'string', description: 'optional: kernelspec to launch, default python3; remembered so a restart reuses the same environment' },
+        displayName: { type: 'string', description: 'optional: name shown in the rail; defaults to the spec' },
+        bindSection: { type: 'string', description: 'optional: section to bind it to (S1, S2 … or the section id)' },
+        start:       { type: 'boolean', description: 'optional: start the kernel now, default true' },
+      },
+      required: ['canvasPath', 'server'],
+    },
+  },
+  {
+    name: 'canvas_remove_kernel',
+    description: 'Remove a kernel record: shut it down if live, unbind every section that named it, and un-run the cells that ran on it (its namespace is gone with it). A kernel NODE is removed with canvas_remove_node instead.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        canvasPath: { type: 'string', description: 'absolute path to the .canvas file' },
+        ref:        { type: 'string', description: 'kernel record id or display name' },
+      },
+      required: ['canvasPath', 'ref'],
+    },
+  },
+  {
     name: 'canvas_add_section',
     description: 'Add a section (a horizontal lane; a node belongs to the lane whose range holds its top edge). Without y it goes under the last section\'s fitted range, as the rail\'s + does; with y it is snapped to the grid and inserted there, splitting the lane it lands in — nodes stay where they are and membership follows y. Sections then fit their content.',
     inputSchema: {
@@ -1494,6 +1644,9 @@ async function dispatch(msg: JsonRpcMsg): Promise<void> {
         case 'canvas_add_section':    text = await canvasAddSection(args);    break;
         case 'canvas_remove_section': text = await canvasRemoveSection(args); break;
         case 'canvas_update_section': text = await canvasUpdateSection(args); break;
+        case 'canvas_run_section':    text = await canvasRunSection(args);    break;
+        case 'canvas_add_kernel':     text = await canvasAddKernel(args);     break;
+        case 'canvas_remove_kernel':  text = await canvasRemoveKernel(args);  break;
         default: throw new Error(`Unknown tool: ${name}`);
       }
       ok(id, { content: [{ type: 'text', text }] });
