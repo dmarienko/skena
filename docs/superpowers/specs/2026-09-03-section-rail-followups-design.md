@@ -93,7 +93,7 @@ with its pinned members ignored and moved with the lane; idempotent after one pa
   cells with a kernel edge still run through it).
 - Spatial navigation (`hjkl`): candidates are the **visible nodes of the same section**, cone only —
   nothing in that direction means nothing happens; it never falls back to a far node or another
-  section. Edge-following keeps its priority, with the same exclusions. Folding the section that
+  section. A wired node is one more candidate (see §8.1). Folding the section that
   holds the selected node clears the selection.
 - A new node is clamped to the canvas (`clampToOrigin`) at the single creation funnel, and the first
   node added to an empty canvas seeds the first section at `y = 0` (webview and `applyLaneFit`, so MCP
