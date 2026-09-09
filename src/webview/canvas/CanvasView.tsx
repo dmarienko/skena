@@ -856,7 +856,11 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const runEngine = useCallback((anchor: { nodeId?: string; sectionId?: string }, opts: LayoutOpts & { reflow?: boolean; beforeApply?: () => void; extraIds?: string[] } = {}) => {
     const engineNodes = engineNodesOf(anchor, opts.extraIds);
     if (!engineNodes) return;
-    const patches = opts.reflow ? reflowSection(engineNodes) : layoutSection(engineNodes, opts);
+    // - a section too dense for the bump walk to clear leaves overlaps behind: say so, as the MCP
+    //   replies do, rather than leaving the user to find them
+    const report: { capped?: boolean } = {};
+    const patches = opts.reflow ? reflowSection(engineNodes) : layoutSection(engineNodes, { ...opts, report });
+    if (report.capped) vscodePostMessage({ type: 'notify', text: 'Some nodes could not be laid out without overlapping — use Reflow section' });
     const moved   = Object.keys(patches).length > 0;
     if (!moved && !opts.extraIds?.length) return;
     const own = sectionMembership(canvasRef.current.nodes, canvasRef.current.metadata?.sections ?? [], anchor, opts.extraIds);
@@ -1072,8 +1076,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const undo = useCallback(() => {
     if (undoStackRef.current.length === 0) return;
     const prev = undoStackRef.current[undoStackRef.current.length - 1];
-    // - sections from the canvasRef mirror, like pushHistory: `lanesRef` only catches up on the next
-    //   render, so a snapshot taken from it would miss a lane change made in this tick
+    // - same-tick mirror, see pushHistory
     redoStackRef.current = [
       { nodes: [...canvasRef.current.nodes], edges: [...canvasRef.current.edges], sections: [...(canvasRef.current.metadata?.sections ?? [])] },
       ...redoStackRef.current.slice(0, MAX_HISTORY - 1),
@@ -1085,8 +1088,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const redo = useCallback(() => {
     if (redoStackRef.current.length === 0) return;
     const next = redoStackRef.current[0];
-    // - sections from the canvasRef mirror, like pushHistory: `lanesRef` only catches up on the next
-    //   render, so a snapshot taken from it would miss a lane change made in this tick
+    // - same-tick mirror, see pushHistory
     undoStackRef.current = [
       ...undoStackRef.current.slice(-(MAX_HISTORY - 1)),
       { nodes: [...canvasRef.current.nodes], edges: [...canvasRef.current.edges], sections: [...(canvasRef.current.metadata?.sections ?? [])] },
@@ -2249,29 +2251,40 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
             J: { x: 0, y: GRID },  K: { x: 0, y: -GRID },
           };
           const delta = dirMap[e.key];
-          // - an output steps with the code cell it belongs to, same as on a drag, unless it is
-          //   pinned itself and already stepping
-          const movers = new Set(spaceSelectedRef.current);
-          for (const cn of canvasRef.current.nodes) {
-            if (cn.type === 'code' && cn.outputNodeId && movers.has(cn.id)) movers.add(cn.outputNodeId);
-          }
           // - clamp each pinned node to the origin so a keyboard move can't push it into negative
           //   space, mirroring the drag/creation clamp (the bounded-canvas invariant)
+          const pinnedIds = new Set(spaceSelectedRef.current);
+          const at = new Map<string, { x: number; y: number }>();
+          for (const cn of canvasRef.current.nodes) {
+            if (pinnedIds.has(cn.id)) at.set(cn.id, clampToOrigin(cn.x + delta.x, cn.y + delta.y));
+          }
+          // - an output steps with the code cell it belongs to, same as on a drag, by the cell's
+          //   POST-clamp delta: at the origin wall the cell moves less than a grid (or not at all),
+          //   and an output clamped on its own would creep toward it, one step per key press. An
+          //   output pinned itself is stepping already.
+          for (const cn of canvasRef.current.nodes) {
+            if (cn.type !== 'code' || !cn.outputNodeId || !pinnedIds.has(cn.id) || pinnedIds.has(cn.outputNodeId)) continue;
+            const out = canvasRef.current.nodes.find(o => o.id === cn.outputNodeId);
+            const p = at.get(cn.id);
+            if (!out || !p) continue;
+            const dx = p.x - cn.x, dy = p.y - cn.y;
+            if (dx === 0 && dy === 0) continue;
+            at.set(out.id, clampToOrigin(out.x + dx, out.y + dy));
+          }
           setNodes(nds => nds.map(n => {
-            if (!movers.has(n.id)) return n;
-            return { ...n, position: clampToOrigin(n.position.x + delta.x, n.position.y + delta.y) };
+            const p = at.get(n.id);
+            return p ? { ...n, position: p } : n;
           }));
           canvasRef.current = {
             ...canvasRef.current,
             nodes: canvasRef.current.nodes.map(cn => {
-              if (!movers.has(cn.id)) return cn;
-              const p = clampToOrigin(cn.x + delta.x, cn.y + delta.y);
-              return { ...cn, x: p.x, y: p.y };
+              const p = at.get(cn.id);
+              return p ? { ...cn, x: p.x, y: p.y } : cn;
             }),
           };
           scheduleSave();
           // - same as a mouse drop: the step may land on another node, and the engine clears it
-          runEngineAfterMove(movers);
+          runEngineAfterMove(new Set(at.keys()));
           return;
         }
 
@@ -2952,8 +2965,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       // - the host pinned this output to the folded section under a suppressed write; mirror it, or the
       //   fit counts the new node as visible content and expands the fold
       if (out && isNewOutput) {
-        const pinned = pinOutputToLane(lanesRef.current, d.codeNodeId, out.id);
-        if (pinned !== lanesRef.current) commitLanes(pinned);
+        const sections = canvasRef.current.metadata?.sections ?? [];   // - same-tick mirror, see pushHistory
+        const pinned = pinOutputToLane(sections, d.codeNodeId, out.id);
+        if (pinned !== sections) commitLanes(pinned);
         // - a first output is a new box in the section: the engine puts it in its pair's output column
         //   and pushes the neighbours out of its way. A re-run only rewrites content, so nothing moves
         //   then. The pushes are part of the run, so they ride on the run's own history entry.

@@ -17,8 +17,9 @@ export type Patches = Record<string, Patch>;
 export interface Column { x: number; codeW: number; cellIds: string[] }
 export interface Pair { column: Column; outputX: number; outputW: number; right: number }
 // - `report` is filled in by the call: `capped` says the bump walk stopped with overlaps still
-//   there (a dense section), so the caller can tell the user to reflow
-export interface LayoutOpts { moverIds?: Iterable<string>; columnX?: number; report?: { capped?: boolean } }
+//   there (a dense section), so the caller can tell the user to reflow. `maxSteps` overrides how
+//   many steps that walk gets (default `nodes.length * 4 + 32`), which is how the cap is tested.
+export interface LayoutOpts { moverIds?: Iterable<string>; columnX?: number; report?: { capped?: boolean }; maxSteps?: number }
 
 const byId = (nodes: EngineNode[]) => new Map(nodes.map(n => [n.id, n] as const));
 
@@ -94,10 +95,8 @@ function overlaps(a: { x: number; y: number; w: number; h: number }, b: { x: num
 
 // - pack one column tight top → bottom; outputs take their code cell's y. `toSlot` decides whether
 //   an output also goes back to the pair's x slot: Reflow (the explicit tidy) takes every one of
-//   them, a regular call only the ones whose pair the operation itself broke. An output that stays
-//   keeps its own x unless it sits LEFT of the slot, which is where it would be sitting on its code
-//   cell: a hand-placed output overlaps nothing where the user put it, and dragging it left is what
-//   starts a bump the section never needed.
+//   them, a regular call only the ones whose pair the operation itself broke. An output the user
+//   parked overlaps nothing where it is, so pulling it left starts a bump the section never needed.
 function packColumn(pair: Pair, map: Map<string, EngineNode>, out?: Patches, toSlot: (cellId: string, output: EngineNode, wasY: number) => boolean = () => true): void {
   let prevBottom: number | null = null;
   for (const id of pair.column.cellIds) {
@@ -177,13 +176,13 @@ function nextBump(nodes: EngineNode[], owners: Map<string, string>, pinned: Set<
  * does not actually reach is left alone. `report.capped` is set when the walk ran out of steps with
  * overlaps still on the section.
  */
-function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, pinned: Set<string>, placed: Set<string>, active: Set<string>, report?: { capped?: boolean }): void {
+function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, pinned: Set<string>, placed: Set<string>, active: Set<string>, opts: { report?: { capped?: boolean }; maxSteps?: number } = {}): void {
   const map = byId(nodes);
   const before = nodes.map(n => ({ node: n, x: n.x, y: n.y }));
   // - the cap is a real limit, not a formality: a dense section (a diagonal staircase, a tight grid)
   //   holds more overlaps than this many steps resolve, and the walk then stops with some of them
   //   still there. `capped` tells the caller, who can offer a Reflow.
-  for (let guard = nodes.length * 4 + 32; guard > 0; guard--) {
+  for (let guard = opts.maxSteps ?? nodes.length * 4 + 32; guard > 0; guard--) {
     const hit = nextBump(nodes, owners, pinned, active);
     if (!hit) return;
     const { mover, other } = hit;
@@ -209,11 +208,14 @@ function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, pinned: 
     else if (yields) for (const n of bumpGroup(mover, nodes, owners, map, true)) { n.y += drop; active.add(n.id); }
     else for (const n of bumpGroup(other, nodes, owners, map, true)) { if (!pinned.has(n.id)) { n.y += dy; active.add(n.id); } }
   }
+  // - the last allowed step may be the one that cleared the section: out of steps is not out of
+  //   overlaps, so ask once more before undoing anything
+  if (!nextBump(nodes, owners, pinned, active)) return;
   // - out of steps with overlaps still there: undo the walk. A half-bumped section can hold MORE
   //   overlaps than it started with, and the user's hand-placed layout is not ours to shuffle for
   //   nothing — the caller says to run Reflow instead.
   for (const b of before) { b.node.x = b.x; b.node.y = b.y; }
-  if (report) report.capped = true;
+  if (opts.report) opts.report.capped = true;
 }
 
 function clone(nodes: EngineNode[]): EngineNode[] { return nodes.map(n => ({ ...n })); }
@@ -264,7 +266,7 @@ export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patch
     //   two never fight over the same cell and the next call packs it to the same place
     for (const id of pair.column.cellIds) { pinned.add(id); const outId = map.get(id)!.outputNodeId; if (outId) pinned.add(outId); }
   }
-  resolveBumps(nodes, owners, pinned, placed, new Set([...movers, ...Object.keys(packed)]), opts.report);
+  resolveBumps(nodes, owners, pinned, placed, new Set([...movers, ...Object.keys(packed)]), { report: opts.report, maxSteps: opts.maxSteps });
   return diff(input, nodes);
 }
 

@@ -319,6 +319,9 @@ function autoPlace(nodes: CanvasNode[], w: number, h: number): { x: number; y: n
   return { x: Math.round(rightmost + GAP), y: Math.round(midY - h / 2) };
 }
 
+// - what every reply says when the bump walk ran out of steps with overlaps still on the section
+const CAPPED_NOTE = 'some overlaps could not be resolved; run canvas_reflow_section';
+
 /**
  * Run the layout engine over the sections a write touched and apply what it moved. `movers` are the
  * nodes the write added, moved or resized; `holes` name a section plus the snapped x of a column a
@@ -718,7 +721,8 @@ async function canvasAddNode(args: Record<string, unknown>): Promise<string> {
   // - a cell inserted into a FOLDED section is a hidden member of it, like a run's output: it stays
   //   pinned to that lane until the user unfolds, rather than being adopted by the lane below
   if (anchor && d.metadata?.sections) d.metadata = { ...d.metadata, sections: pinOutputToLane(d.metadata.sections, anchor.id, labeled.id) };
-  const own = applyEngine(d, [labeled.id], [], undefined, anchor ? { id: anchor.id, joining: [labeled.id] } : undefined);
+  const report: { capped?: boolean } = {};
+  const own = applyEngine(d, [labeled.id], [], report, anchor ? { id: anchor.id, joining: [labeled.id] } : undefined);
   Object.assign(d, applyLaneFit(d, Date.now(), own));   // - every write fits the sections
   const moved = movedLabels(d, before, [labeled.id]);
   await writeCanvas(p, d);
@@ -732,6 +736,7 @@ async function canvasAddNode(args: Record<string, unknown>): Promise<string> {
   ];
   if (anchor && (args.x !== undefined || args.y !== undefined)) lines.push(`x/y ignored: placed ${args.after !== undefined ? 'after' : 'as a fork of'} ${anchor.nodeLabel ?? anchor.id}`);
   if (moved.length) lines.push(`Moved: ${moved.join(', ')}`);
+  if (report.capped) lines.push(CAPPED_NOTE);
   lines.push(`Canvas: ${p}`);
   return lines.join('\n');
   }); // - withFileLock
@@ -785,7 +790,7 @@ async function canvasUpdateNode(args: Record<string, unknown>): Promise<string> 
   return `Updated node ${updated.nodeLabel ?? updated.id}`
     + (clamped.length ? ` — output cell clamped: ${clamped.join(', ')}` : '')
     + (moved.length ? ` — moved ${moved.join(', ')}` : '')
-    + (report.capped ? ' — some overlaps could not be resolved; run canvas_reflow_section' : '');
+    + (report.capped ? ` — ${CAPPED_NOTE}` : '');
   }); // - withFileLock
 }
 
@@ -810,11 +815,14 @@ async function canvasRemoveNode(args: Record<string, unknown>): Promise<string> 
   d.edges = d.edges.filter(e => !toRemove.has(e.fromNode) && !toRemove.has(e.toNode));
   // - a removed node must not stay in a fold list, pinning its lane to an id that is gone
   if (d.metadata?.sections) d.metadata = { ...d.metadata, sections: pruneFoldedIds(d.metadata.sections, toRemove) };
-  const own = applyEngine(d, [], holes);
+  const report: { capped?: boolean } = {};
+  const own = applyEngine(d, [], holes, report);
   Object.assign(d, applyLaneFit(d, Date.now(), own));   // - every write fits the sections
   const moved = movedLabels(d, before);
   await writeCanvas(p, d);
-  return `Removed ${toRemove.size} node(s): ${labels.join(', ')}` + (moved.length ? ` — moved ${moved.join(', ')}` : '');
+  return `Removed ${toRemove.size} node(s): ${labels.join(', ')}`
+    + (moved.length ? ` — moved ${moved.join(', ')}` : '')
+    + (report.capped ? ` — ${CAPPED_NOTE}` : '');
   }); // - withFileLock
 }
 
@@ -895,12 +903,14 @@ async function canvasLayout(args: Record<string, unknown>): Promise<string> {
       if (it.x !== undefined || it.y !== undefined || it.width !== undefined || it.height !== undefined) movers.push(n.id);
       done.push(n.nodeLabel ?? n.id);
     }
-    Object.assign(d, applyLaneFit(d, Date.now(), applyEngine(d, movers)));   // - every write fits the sections
+    const report: { capped?: boolean } = {};
+    Object.assign(d, applyLaneFit(d, Date.now(), applyEngine(d, movers, [], report)));   // - every write fits the sections
     const moved = movedLabels(d, before, movers);
     await writeCanvas(p, d);
     return `Laid out ${done.length} node(s): ${done.join(', ')}` +
       (moved.length ? ` — moved ${moved.join(', ')}` : '') +
-      (missing.length ? ` — not found: ${missing.join(', ')}` : '');
+      (missing.length ? ` — not found: ${missing.join(', ')}` : '') +
+      (report.capped ? ` — ${CAPPED_NOTE}` : '');
   }); // - withFileLock
 }
 
@@ -978,7 +988,8 @@ async function canvasPinOutput(args: Record<string, unknown>): Promise<string> {
   // - an adopted pin is the mover, as a run's output is. A free one is NOT: it starts beside a code
   //   cell that already has an output, so it has to be the node the settle pushes down and clear,
   //   not the one that stays put — the code cell is what the engine is asked to lay out around.
-  const own = applyEngine(d, [adopted || !sourceNode ? labeled.id : sourceNode.id], [], undefined, sourceNode ? { id: sourceNode.id, joining: [labeled.id] } : undefined);
+  const report: { capped?: boolean } = {};
+  const own = applyEngine(d, [adopted || !sourceNode ? labeled.id : sourceNode.id], [], report, sourceNode ? { id: sourceNode.id, joining: [labeled.id] } : undefined);
   Object.assign(d, applyLaneFit(d, Date.now(), own));   // - every write fits the sections
   const moved = movedLabels(d, before, [labeled.id]);
   await writeCanvas(p, d);
@@ -986,6 +997,7 @@ async function canvasPinOutput(args: Record<string, unknown>): Promise<string> {
   const lines = [`Pinned output as cell node ${labeled.nodeLabel} (id: ${labeled.id})`];
   if (sourceNode) lines.push(`Connected from ${sourceNode.nodeLabel ?? sourceNode.id} with edge "${d.edges.find(e => e.id === edgeId)?.label}"`);
   if (moved.length) lines.push(`Moved: ${moved.join(', ')}`);
+  if (report.capped) lines.push(CAPPED_NOTE);
   lines.push(`Canvas: ${p}`);
   return lines.join('\n');
   }); // - withFileLock
@@ -1011,7 +1023,7 @@ async function runCellCore(
   server: KernelServerConfig,
   p:      string,
   ipc:    { port: number; token: string } | null,
-): Promise<{ status: 'ok' | 'error'; outLabel: string; streamText: string; moved: string[]; error?: string }> {
+): Promise<{ status: 'ok' | 'error'; outLabel: string; streamText: string; moved: string[]; capped: boolean; error?: string }> {
   // - single-writer: when a panel is open the host owns the .canvas write (no MCP write → no
   // - watcher reload race). It returns the authoritative output-node id. No panel → hostOwns is
   // - false and the MCP writes the file itself, as before.
@@ -1065,13 +1077,14 @@ async function runCellCore(
       cell.lastRun    = Date.now();
       await writeCanvas(p, d);
     }
-    return { status: 'error', outLabel: '(error)', streamText: '', moved: [], error: e instanceof Error ? e.message : String(e) };
+    return { status: 'error', outLabel: '(error)', streamText: '', moved: [], capped: false, error: e instanceof Error ? e.message : String(e) };
   }
 
   const { format, content } = renderOutput(out);
   const hasOutput = hasVisibleOutput(out);
   let outLabel = '(no output)';
   let moved: string[] = [];
+  const report: { capped?: boolean } = {};
 
   if (hostOwns) {
     // - host is the single writer: it applies the output node, writes with self-save suppression,
@@ -1113,7 +1126,7 @@ async function runCellCore(
         // - only a NEW output node is pinned (same rule as the host): a re-run must not re-pin an
         //   output the user has since dragged out of the folded section
         if (d.metadata?.sections) d.metadata = { ...d.metadata, sections: pinOutputToLane(d.metadata.sections, cell.id, outId) };
-        own = applyEngine(d, [outId], [], undefined, { id: cell.id, joining: [outId] });
+        own = applyEngine(d, [outId], [], report, { id: cell.id, joining: [outId] });
         outLabel = labeled.nodeLabel ?? labeled.id;
       }
     }
@@ -1135,7 +1148,7 @@ async function runCellCore(
     }
   }
 
-  return { status: cell.lastStatus, outLabel, moved, streamText: out.streamText, error: out.error };
+  return { status: cell.lastStatus, outLabel, moved, capped: report.capped === true, streamText: out.streamText, error: out.error };
 }
 
 // - resolve kernelRef against a KernelRecord (by id or displayName) or a kernel node (label or id)
@@ -1204,6 +1217,7 @@ async function canvasRunCell(args: Record<string, unknown>): Promise<string> {
     const prefix = ran.length ? `(upstream ${ran.join(', ')}) ` : '';
     return `${prefix}ran ${cellNow.nodeLabel ?? cellNow.id} on ${kernelNow.server} → ${res.outLabel}: ${res.status}` +
       `${res.moved.length ? ` — moved ${res.moved.join(', ')}` : ''}` +
+      `${res.capped ? ` — ${CAPPED_NOTE}` : ''}` +
       `${res.error ? ' — ' + res.error : ''}\n${res.streamText.slice(0, 500)}`;
   }); // - withFileLock
 }
@@ -1366,6 +1380,7 @@ async function canvasRunSection(args: Record<string, unknown>): Promise<string> 
 
     const ran: string[] = [];
     const moved: string[] = [];
+    let capped = false;
     for (const cellId of order) {
       // - a previous cell's run re-fits the sections and replaces d.nodes: read this one again
       const cell = d.nodes.find(n => n.id === cellId && n.type === 'code') as CodeNode | undefined;
@@ -1375,9 +1390,12 @@ async function canvasRunSection(args: Record<string, unknown>): Promise<string> 
       const r = await runCellCore(d, cell, prep.kernel, prep.kernelId, prep.server, p, prep.ipc);
       ran.push(`${cell.nodeLabel ?? cell.id}:${r.status}`);
       for (const m of r.moved) if (!moved.includes(m)) moved.push(m);
+      capped ||= r.capped;
       if (r.status === 'error') return `error: ${cell.nodeLabel ?? cell.id} failed — ${r.error ?? ''} (ran ${ran.join(', ')})`;
     }
-    return `ran ${ran.join(', ')}` + (moved.length ? ` — moved ${moved.join(', ')}` : '');
+    return `ran ${ran.join(', ')}`
+      + (moved.length ? ` — moved ${moved.join(', ')}` : '')
+      + (capped ? ` — ${CAPPED_NOTE}` : '');
   }); // - withFileLock
 }
 

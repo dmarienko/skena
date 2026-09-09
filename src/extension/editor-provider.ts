@@ -516,6 +516,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         case 'showWarning':
           vscode.window.showWarningMessage(msg.text);
           break;
+        case 'notify':
+          void vscode.window.showInformationMessage(msg.text);
+          break;
         case 'runCell':      await this.handleRunCell(msg, manager, panel, document, v => { isSelfSaving = v; }, s => rememberWrite(s)); break;
         case 'runSection':   await this.handleRunSection(msg, manager, panel, document, v => { isSelfSaving = v; }, s => rememberWrite(s)); break;
         case 'addKernel':    await this.handleAddKernel(msg, manager, document, send, v => { isSelfSaving = v; }, s => rememberWrite(s)); break;

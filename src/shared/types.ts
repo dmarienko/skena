@@ -617,6 +617,12 @@ export interface MsgShowWarning {
   text: string;
 }
 
+/** - webview → host: show a VS Code information toast (a notice, not a problem) */
+export interface MsgNotify {
+  type: 'notify';
+  text: string;
+}
+
 /** - webview → host: request system clipboard text (navigator.clipboard is sandboxed) */
 export interface MsgRequestClipboardRead {
   type: 'requestClipboardRead';
@@ -736,6 +742,7 @@ export type WebviewToHost =
   | MsgVerifyPath
   | MsgRenderMarkdown
   | MsgShowWarning
+  | MsgNotify
   | MsgPickModel
   | MsgRunCell
   | MsgRunSection
