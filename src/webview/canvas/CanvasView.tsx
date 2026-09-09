@@ -884,8 +884,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     }
     for (const moverIds of groups.values()) {
       // - the grabbed node names its own section; the other groups are named by any mover in them
-      const anchorId = grabbedId !== undefined && moverIds.includes(grabbedId) ? grabbedId : moverIds[0];
-      runEngine({ nodeId: anchorId }, { moverIds });
+      const grabbed = grabbedId !== undefined && moverIds.includes(grabbedId) ? grabbedId : moverIds[0];
+      runEngine({ nodeId: grabbed }, { moverIds });
     }
   }, [runEngine]);
 
@@ -1072,8 +1072,10 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const undo = useCallback(() => {
     if (undoStackRef.current.length === 0) return;
     const prev = undoStackRef.current[undoStackRef.current.length - 1];
+    // - sections from the canvasRef mirror, like pushHistory: `lanesRef` only catches up on the next
+    //   render, so a snapshot taken from it would miss a lane change made in this tick
     redoStackRef.current = [
-      { nodes: [...canvasRef.current.nodes], edges: [...canvasRef.current.edges], sections: [...lanesRef.current] },
+      { nodes: [...canvasRef.current.nodes], edges: [...canvasRef.current.edges], sections: [...(canvasRef.current.metadata?.sections ?? [])] },
       ...redoStackRef.current.slice(0, MAX_HISTORY - 1),
     ];
     undoStackRef.current = undoStackRef.current.slice(0, -1);
@@ -1083,9 +1085,11 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const redo = useCallback(() => {
     if (redoStackRef.current.length === 0) return;
     const next = redoStackRef.current[0];
+    // - sections from the canvasRef mirror, like pushHistory: `lanesRef` only catches up on the next
+    //   render, so a snapshot taken from it would miss a lane change made in this tick
     undoStackRef.current = [
       ...undoStackRef.current.slice(-(MAX_HISTORY - 1)),
-      { nodes: [...canvasRef.current.nodes], edges: [...canvasRef.current.edges], sections: [...lanesRef.current] },
+      { nodes: [...canvasRef.current.nodes], edges: [...canvasRef.current.edges], sections: [...(canvasRef.current.metadata?.sections ?? [])] },
     ];
     redoStackRef.current = redoStackRef.current.slice(1);
     applyHistoryState(next);
@@ -1109,19 +1113,44 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     const rfById = new Map(nodesRef.current.map(n => [n.id, n]));
     rfById.set(node.id, node);
     const moved = new Set<string>([node.id, ...nodesRef.current.filter(n => n.selected).map(n => n.id)]);
+    const before = new Map(canvasRef.current.nodes.map(n => [n.id, n]));
+    const patched = canvasRef.current.nodes.map(n => {
+      const rf = moved.has(n.id) ? rfById.get(n.id) : undefined;
+      return rf ? patchCanvasNode(n, rf, nodesRef.current) : n;
+    });
+    // - an output is part of the cell it belongs to: a dragged code cell carries it by the same
+    //   delta, so a drag into another column does not leave the output behind. An output dragged in
+    //   the same gesture keeps where the user put it.
+    const followers = new Map<string, { x: number; y: number }>();
+    for (const n of patched) {
+      if (n.type !== 'code' || !n.outputNodeId || !moved.has(n.id) || moved.has(n.outputNodeId)) continue;
+      const was = before.get(n.id);
+      const out = before.get(n.outputNodeId);
+      if (!was || !out) continue;
+      const dx = n.x - was.x, dy = n.y - was.y;
+      if (dx === 0 && dy === 0) continue;
+      const c = clampToOrigin(out.x + dx, out.y + dy);
+      followers.set(out.id, { x: Math.round(c.x), y: Math.round(c.y) });
+    }
     const updated: CanvasData = {
       ...canvasRef.current,
-      nodes: canvasRef.current.nodes.map(n => {
-        const rf = moved.has(n.id) ? rfById.get(n.id) : undefined;
-        return rf ? patchCanvasNode(n, rf, nodesRef.current) : n;
+      nodes: followers.size === 0 ? patched : patched.map(n => {
+        const p = followers.get(n.id);
+        return p ? { ...n, x: p.x, y: p.y } : n;
       }),
     };
     canvasRef.current = updated;
+    if (followers.size > 0) {
+      setNodes(nds => nds.map(n => {
+        const p = followers.get(n.id);
+        return p ? { ...n, position: p } : n;
+      }));
+    }
     scheduleSave();
     // - the drop may land on another node: the engine clears the overlap, in the section the drop
     //   position falls in
-    runEngineAfterMove(moved, node.id);
-  }, [scheduleSave, runEngineAfterMove]);
+    runEngineAfterMove(followers.size === 0 ? moved : new Set([...moved, ...followers.keys()]), node.id);
+  }, [scheduleSave, runEngineAfterMove, setNodes]);
 
   const onNodeDragStart = useCallback(() => {
     pushHistory();
@@ -2220,23 +2249,29 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
             J: { x: 0, y: GRID },  K: { x: 0, y: -GRID },
           };
           const delta = dirMap[e.key];
+          // - an output steps with the code cell it belongs to, same as on a drag, unless it is
+          //   pinned itself and already stepping
+          const movers = new Set(spaceSelectedRef.current);
+          for (const cn of canvasRef.current.nodes) {
+            if (cn.type === 'code' && cn.outputNodeId && movers.has(cn.id)) movers.add(cn.outputNodeId);
+          }
           // - clamp each pinned node to the origin so a keyboard move can't push it into negative
           //   space, mirroring the drag/creation clamp (the bounded-canvas invariant)
           setNodes(nds => nds.map(n => {
-            if (!spaceSelectedRef.current.has(n.id)) return n;
+            if (!movers.has(n.id)) return n;
             return { ...n, position: clampToOrigin(n.position.x + delta.x, n.position.y + delta.y) };
           }));
           canvasRef.current = {
             ...canvasRef.current,
             nodes: canvasRef.current.nodes.map(cn => {
-              if (!spaceSelectedRef.current.has(cn.id)) return cn;
+              if (!movers.has(cn.id)) return cn;
               const p = clampToOrigin(cn.x + delta.x, cn.y + delta.y);
               return { ...cn, x: p.x, y: p.y };
             }),
           };
           scheduleSave();
           // - same as a mouse drop: the step may land on another node, and the engine clears it
-          runEngineAfterMove(spaceSelectedRef.current);
+          runEngineAfterMove(movers);
           return;
         }
 
@@ -3033,15 +3068,17 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     format: 'html' | 'markdown' | 'image' | 'plotly',
     sourceNodeId?: string,
   ) => {
-    pushHistory();
-    const W = 480, H = 320, GAP = 60;
+    const W = 480, H = 320;
 
     // - if pinned from a notebook node, place to the right of it; else viewport centre
     let x: number, y: number;
     const src = sourceNodeId ? canvasRef.current.nodes.find(n => n.id === sourceNodeId) : undefined;
     if (src) {
-      x = Math.round(src.x + src.width + GAP);
-      y = Math.round(src.y + (src.height - H) / 2);
+      x = Math.round(src.x + src.width + GRID);
+      // - centred on the source, but never above its row: a taller cell would start a column above
+      //   the node it was pinned from and the engine would push the whole row down to clear it
+      const centred = Math.round(src.y + (src.height - H) / 2);
+      y = Math.max(centred, src.y);
     } else {
       const { x: vx, y: vy, zoom } = rfRef.current.getViewport();
       const cx = (-vx + window.innerWidth  / 2) / zoom;
@@ -3050,36 +3087,28 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       y = Math.round(cy - H / 2);
     }
 
-    const id        = `cell-${Date.now()}`;
-    const newNode: CanvasNode = assignLabel(
-      { id, type: 'cell', x, y, width: W, height: H, content, format } as CanvasNode,
-      canvasRef.current.nodes,
-    );
+    const id = `cell-${Date.now()}`;
+    const node = { id, type: 'cell', x, y, width: W, height: H, content, format } as CanvasNode;
 
     // - create connecting edge from the source notebook node if available
-    const newEdges: CanvasEdge[] = [];
-    if (src) {
-      newEdges.push({
-        id:       `edge-pin-${Date.now()}`,
-        fromNode: src.id,
-        fromSide: 'right',
-        toNode:   id,
-        toSide:   'left',
-        toEnd:    'arrow',
-        label:    nowLabel(),
-      });
-    }
+    const edge: CanvasEdge | undefined = src
+      ? {
+          id:       `edge-pin-${Date.now()}`,
+          fromNode: src.id,
+          fromSide: 'right',
+          toNode:   id,
+          toSide:   'left',
+          toEnd:    'arrow',
+          label:    nowLabel(),
+        }
+      : undefined;
 
-    setNodes(nds => [...nds.map(n => ({ ...n, selected: false })), { ...toFlowNode(newNode), selected: true }]);
-    if (newEdges.length > 0) setEdges(eds => [...eds, ...newEdges.map(toFlowEdge)]);
-    canvasRef.current = {
-      ...canvasRef.current,
-      nodes: [...canvasRef.current.nodes, newNode],
-      edges: [...canvasRef.current.edges, ...newEdges],
-    };
-    scheduleSave();
-    requestAnimationFrame(() => focusNodeById(id));
-  }, [pushHistory, scheduleSave, focusNodeById, setEdges]);
+    // - reuse the addNodeResult event handler: handles labels/history/save/focus, and puts the new
+    //   cell in the source's section rather than the one its y falls in
+    window.dispatchEvent(new CustomEvent('skena:addNodeResult', {
+      detail: { type: 'addNodeResult', node, edge, ...(src ? { anchorId: src.id } : {}) } satisfies MsgAddNodeResult,
+    }));
+  }, []); // - no deps: reads refs, not state
 
   // - insert a pasted node right of the focused node (edge) or at viewport centre (no edge).
   // - offsetIndex spreads same-tick batch inserts vertically (nodesRef can't see siblings yet)
@@ -3087,16 +3116,15 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     const focused = nodesRef.current.find(n => n.selected && !isBandType(n.type));
     // - link nodes are compact (matches editor-provider link node size); noderef is a small diamond
     const [nw, nh] = partial.type === 'link' ? [320, 80] : partial.type === 'noderef' ? [200, 120] : [400, 300];
-    const GAP = 40;
     let x: number, y: number;
     if (focused) {
       const cw = Number(focused.style?.width ?? 400);
-      const pos = findFreePosition(nodesRef.current, focused.position.x + cw + GAP, focused.position.y + offsetIndex * (nh + GAP), nw, nh, 1, 0);
+      const pos = findFreePosition(nodesRef.current, focused.position.x + cw + GRID, focused.position.y + offsetIndex * (nh + GRID), nw, nh, 1, 0);
       x = pos.x; y = pos.y;
     } else {
       const { x: vx, y: vy, zoom } = rfRef.current.getViewport();
       x = Math.round((-vx + window.innerWidth / 2) / zoom - nw / 2);
-      y = Math.round((-vy + window.innerHeight / 2) / zoom - nh / 2) + offsetIndex * (nh + GAP);
+      y = Math.round((-vy + window.innerHeight / 2) / zoom - nh / 2) + offsetIndex * (nh + GRID);
     }
     const id = `paste-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
     const node: CanvasNode = { ...partial, id, x, y, width: nw, height: nh };
