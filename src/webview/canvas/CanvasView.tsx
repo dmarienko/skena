@@ -126,6 +126,11 @@ function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
 }
 
+// - one engine run per key press: a held keyboard move on a section the bump walk cannot clear
+//   raises the capped notice on every repeat, so the same section is told once per this window
+const CAPPED_NOTICE_MS = 5000;
+let lastCappedNotice: { sectionId: string; at: number } | null = null;
+
 // - convert JSON Canvas color code to hex
 function resolveColor(code?: string): string | undefined {
   if (!code) return undefined;
@@ -860,7 +865,15 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     //   replies do, rather than leaving the user to find them
     const report: { capped?: boolean } = {};
     const patches = opts.reflow ? reflowSection(engineNodes) : layoutSection(engineNodes, { ...opts, report });
-    if (report.capped) vscodePostMessage({ type: 'notify', text: 'Some nodes could not be laid out without overlapping — use Reflow section' });
+    if (report.capped) {
+      const sectionId = anchor.sectionId ?? deriveLanes(canvasRef.current.nodes, canvasRef.current.metadata?.sections ?? [])
+        .find(l => anchor.nodeId !== undefined && l.memberIds.includes(anchor.nodeId))?.id ?? '';
+      const now = Date.now();
+      if (lastCappedNotice?.sectionId !== sectionId || now - lastCappedNotice.at >= CAPPED_NOTICE_MS) {
+        lastCappedNotice = { sectionId, at: now };
+        vscodePostMessage({ type: 'notify', text: 'Some nodes could not be laid out without overlapping — use Reflow section' });
+      }
+    }
     const moved   = Object.keys(patches).length > 0;
     if (!moved && !opts.extraIds?.length) return;
     const own = sectionMembership(canvasRef.current.nodes, canvasRef.current.metadata?.sections ?? [], anchor, opts.extraIds);
