@@ -4381,10 +4381,10 @@ function nextBump(nodes, owners, pinned, active) {
   }
   return null;
 }
-function resolveBumps(nodes, owners, pinned, placed, active, report) {
+function resolveBumps(nodes, owners, pinned, placed, active, opts = {}) {
   const map = byId(nodes);
   const before = nodes.map((n) => ({ node: n, x: n.x, y: n.y }));
-  for (let guard = nodes.length * 4 + 32; guard > 0; guard--) {
+  for (let guard = opts.maxSteps ?? nodes.length * 4 + 32; guard > 0; guard--) {
     const hit = nextBump(nodes, owners, pinned, active);
     if (!hit)
       return;
@@ -4414,12 +4414,14 @@ function resolveBumps(nodes, owners, pinned, placed, active, report) {
         }
       }
   }
+  if (!nextBump(nodes, owners, pinned, active))
+    return;
   for (const b of before) {
     b.node.x = b.x;
     b.node.y = b.y;
   }
-  if (report)
-    report.capped = true;
+  if (opts.report)
+    opts.report.capped = true;
 }
 function clone(nodes) {
   return nodes.map((n) => ({ ...n }));
@@ -4468,7 +4470,7 @@ function layoutSection(input, opts = {}) {
           pinned.add(outId);
       }
     }
-  resolveBumps(nodes, owners, pinned, placed, /* @__PURE__ */ new Set([...movers, ...Object.keys(packed)]), opts.report);
+  resolveBumps(nodes, owners, pinned, placed, /* @__PURE__ */ new Set([...movers, ...Object.keys(packed)]), { report: opts.report, maxSteps: opts.maxSteps });
   return diff(input, nodes);
 }
 function reflowSection(input) {
@@ -5277,6 +5279,7 @@ function autoPlace(nodes, w, h) {
   const midY = (Math.min(...nodes.map((n) => n.y)) + Math.max(...nodes.map((n) => n.y + n.height))) / 2;
   return { x: Math.round(rightmost + GAP), y: Math.round(midY - h / 2) };
 }
+var CAPPED_NOTE = "some overlaps could not be resolved; run canvas_reflow_section";
 function applyEngine(d, movers, holes = [], report, anchor) {
   const own = /* @__PURE__ */ new Map();
   const lanes = d.metadata?.sections ?? [];
@@ -5649,7 +5652,8 @@ async function canvasAddNode(args) {
     d.nodes.push(labeled);
     if (anchor && d.metadata?.sections)
       d.metadata = { ...d.metadata, sections: pinOutputToLane(d.metadata.sections, anchor.id, labeled.id) };
-    const own = applyEngine(d, [labeled.id], [], void 0, anchor ? { id: anchor.id, joining: [labeled.id] } : void 0);
+    const report = {};
+    const own = applyEngine(d, [labeled.id], [], report, anchor ? { id: anchor.id, joining: [labeled.id] } : void 0);
     Object.assign(d, applyLaneFit(d, Date.now(), own));
     const moved = movedLabels(d, before, [labeled.id]);
     await writeCanvas(p, d);
@@ -5663,6 +5667,8 @@ async function canvasAddNode(args) {
       lines.push(`x/y ignored: placed ${args.after !== void 0 ? "after" : "as a fork of"} ${anchor.nodeLabel ?? anchor.id}`);
     if (moved.length)
       lines.push(`Moved: ${moved.join(", ")}`);
+    if (report.capped)
+      lines.push(CAPPED_NOTE);
     lines.push(`Canvas: ${p}`);
     return lines.join("\n");
   });
@@ -5720,7 +5726,7 @@ async function canvasUpdateNode(args) {
     Object.assign(d, applyLaneFit(d, Date.now(), own));
     const moved = geom ? movedLabels(d, before, [updated.id]) : [];
     await writeCanvas(p, d);
-    return `Updated node ${updated.nodeLabel ?? updated.id}` + (clamped.length ? ` \u2014 output cell clamped: ${clamped.join(", ")}` : "") + (moved.length ? ` \u2014 moved ${moved.join(", ")}` : "") + (report.capped ? " \u2014 some overlaps could not be resolved; run canvas_reflow_section" : "");
+    return `Updated node ${updated.nodeLabel ?? updated.id}` + (clamped.length ? ` \u2014 output cell clamped: ${clamped.join(", ")}` : "") + (moved.length ? ` \u2014 moved ${moved.join(", ")}` : "") + (report.capped ? ` \u2014 ${CAPPED_NOTE}` : "");
   });
 }
 async function canvasRemoveNode(args) {
@@ -5745,11 +5751,12 @@ async function canvasRemoveNode(args) {
     d.edges = d.edges.filter((e) => !toRemove.has(e.fromNode) && !toRemove.has(e.toNode));
     if (d.metadata?.sections)
       d.metadata = { ...d.metadata, sections: pruneFoldedIds(d.metadata.sections, toRemove) };
-    const own = applyEngine(d, [], holes);
+    const report = {};
+    const own = applyEngine(d, [], holes, report);
     Object.assign(d, applyLaneFit(d, Date.now(), own));
     const moved = movedLabels(d, before);
     await writeCanvas(p, d);
-    return `Removed ${toRemove.size} node(s): ${labels.join(", ")}` + (moved.length ? ` \u2014 moved ${moved.join(", ")}` : "");
+    return `Removed ${toRemove.size} node(s): ${labels.join(", ")}` + (moved.length ? ` \u2014 moved ${moved.join(", ")}` : "") + (report.capped ? ` \u2014 ${CAPPED_NOTE}` : "");
   });
 }
 async function canvasAddEdge(args) {
@@ -5839,10 +5846,11 @@ async function canvasLayout(args) {
         movers.push(n.id);
       done.push(n.nodeLabel ?? n.id);
     }
-    Object.assign(d, applyLaneFit(d, Date.now(), applyEngine(d, movers)));
+    const report = {};
+    Object.assign(d, applyLaneFit(d, Date.now(), applyEngine(d, movers, [], report)));
     const moved = movedLabels(d, before, movers);
     await writeCanvas(p, d);
-    return `Laid out ${done.length} node(s): ${done.join(", ")}` + (moved.length ? ` \u2014 moved ${moved.join(", ")}` : "") + (missing.length ? ` \u2014 not found: ${missing.join(", ")}` : "");
+    return `Laid out ${done.length} node(s): ${done.join(", ")}` + (moved.length ? ` \u2014 moved ${moved.join(", ")}` : "") + (missing.length ? ` \u2014 not found: ${missing.join(", ")}` : "") + (report.capped ? ` \u2014 ${CAPPED_NOTE}` : "");
   });
 }
 async function canvasCreate(args) {
@@ -5908,7 +5916,8 @@ async function canvasPinOutput(args) {
       sourceNode.outputNodeId = labeled.id;
     if (sourceNode && d.metadata?.sections)
       d.metadata = { ...d.metadata, sections: pinOutputToLane(d.metadata.sections, sourceNode.id, labeled.id) };
-    const own = applyEngine(d, [adopted || !sourceNode ? labeled.id : sourceNode.id], [], void 0, sourceNode ? { id: sourceNode.id, joining: [labeled.id] } : void 0);
+    const report = {};
+    const own = applyEngine(d, [adopted || !sourceNode ? labeled.id : sourceNode.id], [], report, sourceNode ? { id: sourceNode.id, joining: [labeled.id] } : void 0);
     Object.assign(d, applyLaneFit(d, Date.now(), own));
     const moved = movedLabels(d, before, [labeled.id]);
     await writeCanvas(p, d);
@@ -5917,6 +5926,8 @@ async function canvasPinOutput(args) {
       lines.push(`Connected from ${sourceNode.nodeLabel ?? sourceNode.id} with edge "${d.edges.find((e) => e.id === edgeId)?.label}"`);
     if (moved.length)
       lines.push(`Moved: ${moved.join(", ")}`);
+    if (report.capped)
+      lines.push(CAPPED_NOTE);
     lines.push(`Canvas: ${p}`);
     return lines.join("\n");
   });
@@ -5986,12 +5997,13 @@ async function runCellCore(d, cell, kernel, kernelId, server, p, ipc) {
       cell.lastRun = Date.now();
       await writeCanvas(p, d);
     }
-    return { status: "error", outLabel: "(error)", streamText: "", moved: [], error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", outLabel: "(error)", streamText: "", moved: [], capped: false, error: e instanceof Error ? e.message : String(e) };
   }
   const { format, content } = renderOutput(out);
   const hasOutput = hasVisibleOutput(out);
   let outLabel = "(no output)";
   let moved = [];
+  const report = {};
   if (hostOwns) {
     await persistViaHost(ipc, p, {
       phase: "done",
@@ -6028,7 +6040,7 @@ async function runCellCore(d, cell, kernel, kernelId, server, p, ipc) {
         cell.outputNodeId = outId;
         if (d.metadata?.sections)
           d.metadata = { ...d.metadata, sections: pinOutputToLane(d.metadata.sections, cell.id, outId) };
-        own = applyEngine(d, [outId], [], void 0, { id: cell.id, joining: [outId] });
+        own = applyEngine(d, [outId], [], report, { id: cell.id, joining: [outId] });
         outLabel = labeled.nodeLabel ?? labeled.id;
       }
     }
@@ -6045,7 +6057,7 @@ async function runCellCore(d, cell, kernel, kernelId, server, p, ipc) {
       });
     }
   }
-  return { status: cell.lastStatus, outLabel, moved, streamText: out.streamText, error: out.error };
+  return { status: cell.lastStatus, outLabel, moved, capped: report.capped === true, streamText: out.streamText, error: out.error };
 }
 function kernelByRef(d, ref) {
   const n = findNode(d, ref);
@@ -6098,7 +6110,7 @@ async function canvasRunCell(args) {
       return "error: cell or kernel vanished during the upstream run";
     const res = await runCellCore(d, cellNow, kernelNow, kernelId, server, p, ipc);
     const prefix = ran.length ? `(upstream ${ran.join(", ")}) ` : "";
-    return `${prefix}ran ${cellNow.nodeLabel ?? cellNow.id} on ${kernelNow.server} \u2192 ${res.outLabel}: ${res.status}${res.moved.length ? ` \u2014 moved ${res.moved.join(", ")}` : ""}${res.error ? " \u2014 " + res.error : ""}
+    return `${prefix}ran ${cellNow.nodeLabel ?? cellNow.id} on ${kernelNow.server} \u2192 ${res.outLabel}: ${res.status}${res.moved.length ? ` \u2014 moved ${res.moved.join(", ")}` : ""}${res.capped ? ` \u2014 ${CAPPED_NOTE}` : ""}${res.error ? " \u2014 " + res.error : ""}
 ${res.streamText.slice(0, 500)}`;
   });
 }
@@ -6264,6 +6276,7 @@ async function canvasRunSection(args) {
       return `error: no code cells in ${label}`;
     const ran = [];
     const moved = [];
+    let capped = false;
     for (const cellId of order) {
       const cell = d.nodes.find((n) => n.id === cellId && n.type === "code");
       if (!cell)
@@ -6276,10 +6289,11 @@ async function canvasRunSection(args) {
       for (const m of r.moved)
         if (!moved.includes(m))
           moved.push(m);
+      capped ||= r.capped;
       if (r.status === "error")
         return `error: ${cell.nodeLabel ?? cell.id} failed \u2014 ${r.error ?? ""} (ran ${ran.join(", ")})`;
     }
-    return `ran ${ran.join(", ")}` + (moved.length ? ` \u2014 moved ${moved.join(", ")}` : "");
+    return `ran ${ran.join(", ")}` + (moved.length ? ` \u2014 moved ${moved.join(", ")}` : "") + (capped ? ` \u2014 ${CAPPED_NOTE}` : "");
   });
 }
 async function canvasAddKernel(args) {
