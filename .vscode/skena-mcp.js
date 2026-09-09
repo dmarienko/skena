@@ -4290,13 +4290,16 @@ function derivePairs(nodes, columns) {
   const map = byId(nodes);
   return columns.map((column) => {
     let outputW = OUTPUT_MIN_W;
+    let parked = 0;
     for (const id of column.cellIds) {
       const out = map.get(map.get(id)?.outputNodeId ?? "");
-      if (out)
+      if (out) {
         outputW = Math.max(outputW, out.w);
+        parked = Math.max(parked, out.x + out.w);
+      }
     }
     const outputX = column.x + column.codeW + GRID;
-    return { column, outputX, outputW, right: outputX + outputW };
+    return { column, outputX, outputW, right: Math.max(outputX + outputW, parked) };
   });
 }
 function rowBottom(cell, map) {
@@ -4308,10 +4311,11 @@ function overlaps(a, b) {
   const sepY = a.y + a.h + GRID <= b.y || b.y + b.h + GRID <= a.y;
   return !(sepX || sepY);
 }
-function packColumn(pair, map, out) {
+function packColumn(pair, map, out, toSlot = () => true) {
   let prevBottom = null;
   for (const id of pair.column.cellIds) {
     const cell = map.get(id);
+    const wasY = cell.y;
     const y = prevBottom === null ? snapGrid(cell.y) : prevBottom + GRID;
     const x = pair.column.x;
     if (x !== cell.x || y !== cell.y) {
@@ -4321,10 +4325,11 @@ function packColumn(pair, map, out) {
       cell.y = y;
     }
     const o = map.get(cell.outputNodeId ?? "");
-    if (o && (o.x !== pair.outputX || o.y !== y)) {
+    const ox = o ? toSlot(id, o, wasY) ? pair.outputX : Math.max(o.x, pair.outputX) : 0;
+    if (o && (o.x !== ox || o.y !== y)) {
       if (out)
-        out[o.id] = { x: pair.outputX, y };
-      o.x = pair.outputX;
+        out[o.id] = { x: ox, y };
+      o.x = ox;
       o.y = y;
     }
     prevBottom = rowBottom(cell, map);
@@ -4378,6 +4383,7 @@ function nextBump(nodes, owners, pinned, active) {
 }
 function resolveBumps(nodes, owners, pinned, placed, active, report) {
   const map = byId(nodes);
+  const before = nodes.map((n) => ({ node: n, x: n.x, y: n.y }));
   for (let guard = nodes.length * 4 + 32; guard > 0; guard--) {
     const hit = nextBump(nodes, owners, pinned, active);
     if (!hit)
@@ -4407,6 +4413,10 @@ function resolveBumps(nodes, owners, pinned, placed, active, report) {
           active.add(n.id);
         }
       }
+  }
+  for (const b of before) {
+    b.node.x = b.x;
+    b.node.y = b.y;
   }
   if (report)
     report.capped = true;
@@ -4450,7 +4460,7 @@ function layoutSection(input, opts = {}) {
   const placed = new Set(pinned);
   for (const pair of pairs)
     if (touched.has(pair.column.x)) {
-      packColumn(pair, map, packed);
+      packColumn(pair, map, packed, (id, o, wasY) => movers.has(id) && o.y !== wasY);
       for (const id of pair.column.cellIds) {
         pinned.add(id);
         const outId = map.get(id).outputNodeId;
