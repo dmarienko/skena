@@ -866,6 +866,29 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     scheduleSave();
   }, [engineNodesOf, applyPatches, applyFit, scheduleSave]);
 
+  /**
+   * The end of a node move — a mouse drop or a keyboard step. The moved nodes are the movers, and
+   * the engine runs in the section their NEW y puts them in: a node moved into another section
+   * changes section on purpose, so nothing pins it to the one it left.
+   * A moved set spanning two sections runs the engine once per section, each with its own movers.
+   * No history entry here: the drag start / the key press already pushed one for the whole move.
+   */
+  const runEngineAfterMove = useCallback((movedIds: Iterable<string>, grabbedId?: string) => {
+    const lanes = deriveLanes(canvasRef.current.nodes, canvasRef.current.metadata?.sections ?? []);
+    const groups = new Map<string, string[]>();
+    for (const id of movedIds) {
+      const lane = lanes.find(l => l.memberIds.includes(id));
+      if (!lane) continue;   // - a band, or a canvas with no sections: nothing for the engine to lay out
+      const g = groups.get(lane.id);
+      if (g) g.push(id); else groups.set(lane.id, [id]);
+    }
+    for (const moverIds of groups.values()) {
+      // - the grabbed node names its own section; the other groups are named by any mover in them
+      const anchorId = grabbedId !== undefined && moverIds.includes(grabbedId) ? grabbedId : moverIds[0];
+      runEngine({ nodeId: anchorId }, { moverIds });
+    }
+  }, [runEngine]);
+
   // - a delete leaves a hole nothing moved into: read, BEFORE the removal, which column of which
   //   section each doomed cell sat in so the engine can close it after
   const columnsOfDeleted = useCallback((deletedIds: Set<string>) =>
@@ -1095,7 +1118,10 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     };
     canvasRef.current = updated;
     scheduleSave();
-  }, [scheduleSave]);
+    // - the drop may land on another node: the engine clears the overlap, in the section the drop
+    //   position falls in
+    runEngineAfterMove(moved, node.id);
+  }, [scheduleSave, runEngineAfterMove]);
 
   const onNodeDragStart = useCallback(() => {
     pushHistory();
@@ -2209,6 +2235,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
             }),
           };
           scheduleSave();
+          // - same as a mouse drop: the step may land on another node, and the engine clears it
+          runEngineAfterMove(spaceSelectedRef.current);
           return;
         }
 
@@ -2548,7 +2576,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       window.removeEventListener('keydown', handler);
       window.removeEventListener('keydown', panCapture, { capture: true });
     };
-  }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToMark, engineNodesOf]); // - nodesRef + spaceSelectedRef carry live state
+  }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToMark, engineNodesOf, runEngineAfterMove]); // - nodesRef + spaceSelectedRef carry live state
 
   // - expose a viewport snapshot for the AI companion (what the user actually sees:
   // - zoom, on-screen node labels, scroll position within the focused node)
