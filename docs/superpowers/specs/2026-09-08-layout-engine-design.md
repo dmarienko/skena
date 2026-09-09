@@ -55,9 +55,10 @@ One algorithm behind every row of §2, run per section:
    (`moverId`, the node the operation inserted, moved or resized) wins a tie, so an inserted cell
    placed at the next cell's y lands above it. Insert / grow pushes down; delete / shrink pulls the
    cells below up to one gap. An output cell has its code cell's y, and the pair's output x when it
-   sits left of that — an output the user parked further right keeps its x, so the pack never drags
-   it into something. Reflow puts every output back on the slot. Nothing outside the column moves in
-   this pass.
+   sits left of that or when the operation moved its code cell off the row the output is on — a cell
+   the user dragged takes its output with it. An output the user parked further right of a cell that
+   did not move keeps its x, so the pack never drags it into something. Reflow puts every output back
+   on the slot. Nothing outside the column moves in this pass.
 2. **Bumps — one rule for everything the touched column did not already pack.** After step 1, the
    engine looks for real overlaps (two boxes less than one grid gap apart on both axes) between a
    node this call moved (or the mover) and any other node. Each one is resolved by moving the OTHER

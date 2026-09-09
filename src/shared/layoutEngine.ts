@@ -92,20 +92,22 @@ function overlaps(a: { x: number; y: number; w: number; h: number }, b: { x: num
   return !(sepX || sepY);
 }
 
-// - pack one column tight top → bottom; outputs take their code cell's y. An output keeps its own x
-//   when it sits right of the pair's slot: it is where the user put it, it overlaps nothing there,
-//   and dragging it left is what starts a bump the section never needed. It moves only when it sits
-//   left of the slot, which is where it would be on its code cell. `toSlot` (Reflow, the explicit
-//   tidy) puts every output back on the slot.
-function packColumn(pair: Pair, map: Map<string, EngineNode>, out?: Patches, toSlot = false): void {
+// - pack one column tight top → bottom; outputs take their code cell's y. `toSlot` decides whether
+//   an output also goes back to the pair's x slot: Reflow (the explicit tidy) takes every one of
+//   them, a regular call only the ones whose pair the operation itself broke. An output that stays
+//   keeps its own x unless it sits LEFT of the slot, which is where it would be sitting on its code
+//   cell: a hand-placed output overlaps nothing where the user put it, and dragging it left is what
+//   starts a bump the section never needed.
+function packColumn(pair: Pair, map: Map<string, EngineNode>, out?: Patches, toSlot: (cellId: string, output: EngineNode, wasY: number) => boolean = () => true): void {
   let prevBottom: number | null = null;
   for (const id of pair.column.cellIds) {
     const cell = map.get(id)!;
+    const wasY = cell.y;
     const y = prevBottom === null ? snapGrid(cell.y) : prevBottom + GRID;
     const x = pair.column.x;
     if (x !== cell.x || y !== cell.y) { if (out) out[id] = { x, y }; cell.x = x; cell.y = y; }
     const o = map.get(cell.outputNodeId ?? '');
-    const ox = o ? (toSlot ? pair.outputX : Math.max(o.x, pair.outputX)) : 0;
+    const ox = o ? (toSlot(id, o, wasY) ? pair.outputX : Math.max(o.x, pair.outputX)) : 0;
     if (o && (o.x !== ox || o.y !== y)) { if (out) out[o.id] = { x: ox, y }; o.x = ox; o.y = y; }
     prevBottom = rowBottom(cell, map);
   }
@@ -255,7 +257,9 @@ export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patch
   const placed = new Set(pinned);
 
   for (const pair of pairs) if (touched.has(pair.column.x)) {
-    packColumn(pair, map, packed);
+    // - an output goes back on the slot when the operation moved its code cell AND left it off that
+    //   cell's row: the pair is broken, and a cell the user dragged takes its output with it
+    packColumn(pair, map, packed, (id, o, wasY) => movers.has(id) && o.y !== wasY);
     // - the pack owns the column it just laid out: a bump moves what is in its way, never it, so the
     //   two never fight over the same cell and the next call packs it to the same place
     for (const id of pair.column.cellIds) { pinned.add(id); const outId = map.get(id)!.outputNodeId; if (outId) pinned.add(outId); }
@@ -284,7 +288,7 @@ export function reflowSection(input: EngineNode[]): Patches {
   }
   const columns = deriveColumns(nodes);
   const pairs = derivePairs(nodes, columns);
-  for (const pair of pairs) packColumn(pair, map, undefined, true);
+  for (const pair of pairs) packColumn(pair, map);
   // - pairs tight left → right (the first keeps its x); outputs re-measured after the packs
   const tight = derivePairs(nodes, deriveColumns(nodes));
   for (let i = 1; i < tight.length; i++) {
