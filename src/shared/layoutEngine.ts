@@ -157,13 +157,17 @@ function nextBump(nodes: EngineNode[], owners: Map<string, string>, pinned: Set<
  * Bumps (spec §3.2). While a node this call moved overlaps another one, that other node moves by
  * exactly the overlap, on the axis with the smaller move: right when it sits at or right of the
  * mover, left when it sits left of it (never past x = 0), down when it sits at or below it, never
- * up — and down, past the mover, when no sideways move is open (even for a node above the mover).
+ * up. A column never changes order, so a node ABOVE the one in hand does not move past it: it steps
+ * aside, or — when that is the smaller move, or there is nowhere to step — the node the operation
+ * placed YIELDS and drops below it, with whatever sits under it in its own column. That is the one
+ * case where a mover moves. A cell the pack has just laid out does not yield; the node above it
+ * steps aside, and falls past it only when it cannot.
  * Everything a bump moved is checked again, so a bump cascades — through real overlaps and by
  * overlap amounts only, never by a modelled distance, which is why a hand-placed section an edit
  * does not actually reach is left alone. `report.capped` is set when the walk ran out of steps with
  * overlaps still on the section.
  */
-function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, pinned: Set<string>, active: Set<string>, report?: { capped?: boolean }): void {
+function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, pinned: Set<string>, placed: Set<string>, active: Set<string>, report?: { capped?: boolean }): void {
   const map = byId(nodes);
   // - the cap is a real limit, not a formality: a dense section (a diagonal staircase, a tight grid)
   //   holds more overlaps than this many steps resolve, and the walk then stops with some of them
@@ -180,11 +184,18 @@ function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, pinned: 
     const dx = column.some(n => pinned.has(n.id)) ? 0
       : other.x >= mover.x ? gridUp(mover.x + mover.w + GRID - other.x)
       : Math.min(...column.map(n => n.x)) >= leftBy ? -leftBy : 0;
-    const dy = mover.y + mover.h + GRID - other.y;
-    // - sideways on a tie, so a pair keeps the row it is on. `other.y < mover.y` is the other half:
-    //   a node above the mover has no down move of its own — its own axis would be up — so it steps
-    //   aside whenever it can, and only falls past the mover when it cannot.
-    if (dx !== 0 && (other.y < mover.y || Math.abs(dx) <= dy)) for (const n of column) { n.x += dx; active.add(n.id); }
+    const dy = mover.y + mover.h + GRID - other.y;    // - the other node clears the mover, downward
+    const drop = other.y + other.h + GRID - mover.y;   // - the mover clears the other node, downward
+    // - a node ABOVE the node in hand does not move down past it: that would reorder the column the
+    //   user is looking at. It steps aside if its column can slide, and otherwise the node in hand
+    //   YIELDS — it drops below the one in its way, taking what sits under it in its own column. The
+    //   smaller of the two wins, ties sideways, the same comparison the other direction uses. Only a
+    //   node the operation itself placed yields: a cell the pack has just laid out keeps its place,
+    //   so the pack and the bumps never fight over it (that fight is not idempotent).
+    const yields = other.y < mover.y && placed.has(mover.id);
+    const sideways = dx !== 0 && (yields ? Math.abs(dx) <= drop : other.y < mover.y || Math.abs(dx) <= dy);
+    if (sideways) for (const n of column) { n.x += dx; active.add(n.id); }
+    else if (yields) for (const n of bumpGroup(mover, nodes, owners, map, true)) { n.y += drop; active.add(n.id); }
     else for (const n of bumpGroup(other, nodes, owners, map, true)) { if (!pinned.has(n.id)) { n.y += dy; active.add(n.id); } }
   }
   if (report) report.capped = true;
@@ -200,10 +211,10 @@ function diff(before: EngineNode[], after: EngineNode[]): Patches {
 
 /**
  * Lay out one section after an operation. `moverIds` = the nodes the operation inserted, moved or
- * resized (they win ties in their column and never move themselves); `columnX` = the column to pack
- * when nothing moved (a delete). Only the touched column is packed; everything else moves only where
- * a node this call moved really overlaps it, by that overlap (§3.2). Same input → same output; a
- * second call changes nothing.
+ * resized (they win ties in their column, and move only to yield to a node above them, §3.2);
+ * `columnX` = the column to pack when nothing moved (a delete). Only the touched column is packed;
+ * everything else moves only where a node this call moved really overlaps it, by that overlap
+ * (§3.2). Same input → same output; a second call changes nothing.
  */
 export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patches {
   const nodes = clone(input);
@@ -216,8 +227,8 @@ export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patch
   // - which columns are touched: the movers' (a moved output counts for its code's column) + columnX
   const touched = new Set<number>();
   // - a managed mover IS placed by the pack below, snapped onto its column and stacked in it; what
-  //   pinning means is that no BUMP moves it. The other half of its pair is pinned with it, an
-  //   output having its code cell's y.
+  //   pinning means is that no BUMP moves it, bar the one yield in `resolveBumps`. The other half of
+  //   its pair is pinned with it, an output having its code cell's y.
   const pinned = new Set(movers);
   for (const id of movers) {
     const n = map.get(id); if (!n) continue;
@@ -226,6 +237,9 @@ export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patch
     if (n.outputNodeId) pinned.add(n.outputNodeId);
   }
   if (opts.columnX !== undefined) touched.add(snapGrid(opts.columnX));
+  // - the nodes the operation itself placed, before the pack adds its column: the only ones that
+  //   yield downward to a node above them
+  const placed = new Set(pinned);
 
   for (const pair of pairs) if (touched.has(pair.column.x)) {
     packColumn(pair, map, packed);
@@ -233,7 +247,7 @@ export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patch
     //   two never fight over the same cell and the next call packs it to the same place
     for (const id of pair.column.cellIds) { pinned.add(id); const outId = map.get(id)!.outputNodeId; if (outId) pinned.add(outId); }
   }
-  resolveBumps(nodes, owners, pinned, new Set([...movers, ...Object.keys(packed)]), opts.report);
+  resolveBumps(nodes, owners, pinned, placed, new Set([...movers, ...Object.keys(packed)]), opts.report);
   return diff(input, nodes);
 }
 

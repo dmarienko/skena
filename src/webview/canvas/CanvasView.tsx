@@ -372,7 +372,9 @@ function findFreePosition(
   newH:  number,
   pushX: -1 | 0 | 1,
   pushY: -1 | 0 | 1,
-  gap = 48,
+  // - one grid, the gap the engine keeps: a smaller one parks a node closer than the engine allows
+  //   and the next call then "fixes" a placement the user never saw as wrong
+  gap = GRID,
 ): { x: number; y: number } {
   if (pushX === 0 && pushY === 0) {
     const c = clampToOrigin(x, y);
