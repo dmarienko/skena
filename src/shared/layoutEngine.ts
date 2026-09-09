@@ -337,11 +337,14 @@ function anchorLane(nodes: CanvasShapedNode[], sections: SectionLane[], anchor: 
  * included (deriveLanes lists them). Null when the canvas has no sections — a file written before
  * they existed — or the anchor sits in none: the engine lays out ONE section, so there is nothing
  * for it to work on and the caller leaves the geometry alone.
+ * `extraIds` are nodes the operation created FROM the anchor: they are laid out with the anchor's
+ * section even when their y falls in the next one, which is what keeps a new cell in the section it
+ * was created from rather than handing it to the section below.
  */
-export function sectionEngineNodes(nodes: CanvasShapedNode[], sections: SectionLane[], anchor: SectionAnchor): EngineNode[] | null {
+export function sectionEngineNodes(nodes: CanvasShapedNode[], sections: SectionLane[], anchor: SectionAnchor, extraIds?: Iterable<string>): EngineNode[] | null {
   const lane = anchorLane(nodes, sections, anchor);
   if (!lane) return null;
-  const members = new Set(lane.memberIds);
+  const members = new Set([...lane.memberIds, ...(extraIds ?? [])]);
   return toEngineNodes(nodes.filter(n => members.has(n.id)));
 }
 
@@ -349,11 +352,13 @@ export function sectionEngineNodes(nodes: CanvasShapedNode[], sections: SectionL
  * That same section's members as `fitLanes`' `own`: node id → the section's lane index. A cell the
  * engine pushed past the section's bottom edge still counts for THAT section, so the section grows
  * and the ones below move down, instead of the one below adopting the cell and leaving the overlap.
+ * `extraIds` (the same ones `sectionEngineNodes` took) get the anchor's lane index too, so a node
+ * created below the section's bottom edge grows it instead of joining the section under it.
  * Read it BEFORE the engine runs; empty when the anchor names no section.
  */
-export function sectionMembership(nodes: CanvasShapedNode[], sections: SectionLane[], anchor: SectionAnchor): Map<string, number> {
+export function sectionMembership(nodes: CanvasShapedNode[], sections: SectionLane[], anchor: SectionAnchor, extraIds?: Iterable<string>): Map<string, number> {
   const lane = anchorLane(nodes, sections, anchor);
-  return new Map(lane ? lane.memberIds.map(id => [id, lane.index] as const) : []);
+  return new Map(lane ? [...lane.memberIds, ...(extraIds ?? [])].map(id => [id, lane.index] as const) : []);
 }
 
 /**

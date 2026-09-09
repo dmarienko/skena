@@ -821,8 +821,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   //   from the React state: an action mirrors into canvasRef synchronously, while `nodes` / `lanes`
   //   only catch up on the next render, so a node just added or a lane just committed (the first-node
   //   seed, an output just pinned to a folded section) would be missing.
-  const engineNodesOf = useCallback((anchor: { nodeId?: string; sectionId?: string }): EngineNode[] | null =>
-    sectionEngineNodes(canvasRef.current.nodes, canvasRef.current.metadata?.sections ?? [], anchor),
+  const engineNodesOf = useCallback((anchor: { nodeId?: string; sectionId?: string }, extraIds?: string[]): EngineNode[] | null =>
+    sectionEngineNodes(canvasRef.current.nodes, canvasRef.current.metadata?.sections ?? [], anchor, extraIds),
   []); // - canvasRef is a ref, always current
 
   // - move/resize nodes by an engine patch, in the flow and in the canvas mirror. No history entry of
@@ -846,15 +846,19 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
    * pushed past the section's bottom edge grows that section and moves the ones below, instead of
    * dropping into the section below and overlapping what is there. `useLaneFit`'s own pass then
    * finds nothing left to move.
+   *
+   * `extraIds` are nodes the action just created from `anchor.nodeId`: they join its section and the
+   * fit runs even when the engine moved nothing, which is what grows the section under a new node
+   * placed past its bottom edge rather than leaving it to the section below.
    */
-  const runEngine = useCallback((anchor: { nodeId?: string; sectionId?: string }, opts: LayoutOpts & { reflow?: boolean; beforeApply?: () => void } = {}) => {
-    const engineNodes = engineNodesOf(anchor);
+  const runEngine = useCallback((anchor: { nodeId?: string; sectionId?: string }, opts: LayoutOpts & { reflow?: boolean; beforeApply?: () => void; extraIds?: string[] } = {}) => {
+    const engineNodes = engineNodesOf(anchor, opts.extraIds);
     if (!engineNodes) return;
     const patches = opts.reflow ? reflowSection(engineNodes) : layoutSection(engineNodes, opts);
-    if (Object.keys(patches).length === 0) return;
-    const own = sectionMembership(canvasRef.current.nodes, canvasRef.current.metadata?.sections ?? [], anchor);
-    opts.beforeApply?.();
-    applyPatches(patches);
+    const moved   = Object.keys(patches).length > 0;
+    if (!moved && !opts.extraIds?.length) return;
+    const own = sectionMembership(canvasRef.current.nodes, canvasRef.current.metadata?.sections ?? [], anchor, opts.extraIds);
+    if (moved) { opts.beforeApply?.(); applyPatches(patches); }
     const fit = fitLanes(canvasRef.current.metadata?.sections ?? [], canvasRef.current.nodes, own);
     if (Object.keys(fit.laneShifts).length) applyFit(fit);
     scheduleSave();
@@ -1574,7 +1578,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
     // - reuse the addNodeResult event handler: handles nodes/edges/save/focus/autoEdit
     window.dispatchEvent(new CustomEvent('skena:addNodeResult', {
-      detail: { type: 'addNodeResult', node: newTextNode, edge: newTextEdge, autoEdit: true } satisfies MsgAddNodeResult,
+      detail: { type: 'addNodeResult', node: newTextNode, edge: newTextEdge, autoEdit: true, anchorId: current.id } satisfies MsgAddNodeResult,
     }));
   }, []); // - only uses nodesRef (always current)
 
@@ -1743,8 +1747,11 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     const topLeft = newNodes.reduce<CanvasNode | undefined>((a, b) => !a || b.y < a.y || (b.y === a.y && b.x < a.x) ? b : a, undefined);
     // - the whole paste is the mover: it stays where it landed and pushes what it covers. The engine
     //   takes one section, so a paste spanning two lays out the top-left node's only; the other is
-    //   left to Reflow.
-    if (topLeft) runEngine({ nodeId: topLeft.id }, { moverIds: newNodes.map(n => n.id) });
+    //   left to Reflow. Pasted beside a focused node, the group joins THAT node's section.
+    if (topLeft) {
+      const ids = newNodes.map(n => n.id);
+      runEngine({ nodeId: anchor?.id ?? topLeft.id }, { moverIds: ids, ...(anchor ? { extraIds: ids } : {}) });
+    }
     if (topLeft) requestAnimationFrame(() => revealNode(topLeft.id));
   }, [setNodes, setEdges, scheduleSave, pushHistory, revealNode, runEngine]);
 
@@ -2781,7 +2788,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       const newNode: CanvasNode = { id: newId, type: 'code', code: '', language: 'python', x, y, width: NODE_SIZE.code.w, height: NODE_SIZE.code.h };
       const newEdge: CanvasEdge = { id: `${sourceId}-${newId}-${Date.now()}`, fromNode: sourceId, fromSide: 'bottom', toNode: newId, toSide: 'top', toEnd: 'arrow' };
       window.dispatchEvent(new CustomEvent('skena:addNodeResult', {
-        detail: { type: 'addNodeResult', node: newNode, edge: newEdge, autoEdit: true } satisfies MsgAddNodeResult,
+        detail: { type: 'addNodeResult', node: newNode, edge: newEdge, autoEdit: true, anchorId: sourceId } satisfies MsgAddNodeResult,
       }));
     };
     window.addEventListener('skena:addCodeBelow', handler);
@@ -2886,7 +2893,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         //   and pushes the neighbours out of its way. A re-run only rewrites content, so nothing moves
         //   then. The pushes are part of the run, so they ride on the run's own history entry.
         pushHistory();
-        runEngine({ nodeId: out.id }, { moverIds: [out.id] });
+        runEngine({ nodeId: d.codeNodeId }, { moverIds: [out.id], extraIds: [out.id] });
       }
       // - the patches above only reach kernel NODES; when the run went to a record, its live id is
       //   what the host just started or restarted
@@ -2906,7 +2913,10 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   useEffect(() => {
     const handler = (e: Event) => {
       pushHistory();
-      const { node: rawNode, edge: ce, autoEdit } = (e as CustomEvent<MsgAddNodeResult>).detail;
+      const { node: rawNode, edge: ce, autoEdit, anchorId } = (e as CustomEvent<MsgAddNodeResult>).detail;
+      // - the node the creation started from (`o`, Alt+X, a directional add, a paste beside the
+      //   focused node): the new node joins ITS section, not the one its y falls in
+      const anchor = anchorId && canvasRef.current.nodes.some(n => n.id === anchorId) ? anchorId : undefined;
 
       // - kernel nodes get a palette color by creation order — count here so the
       //   index is correct against the live node set before this one is added
@@ -2939,6 +2949,13 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         const now = Date.now();
         commitLanes([{ id: `sec-${now.toString(36)}`, y: 0, createdAt: now }]);
       }
+      // - created off a cell hidden by a fold: the new node is hidden with it, like a run's output,
+      //   rather than showing up as the only visible member of a folded section
+      if (anchor) {
+        const lanes0 = canvasRef.current.metadata?.sections ?? [];
+        const pinnedLanes = pinOutputToLane(lanes0, anchor, cn.id);
+        if (pinnedLanes !== lanes0) commitLanes(pinnedLanes);
+      }
 
       // - add connecting edge if present (Shift+hjkl case)
       if (ce) {
@@ -2953,7 +2970,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
       // - every creation path ends here (`o`, Alt+X, context menu, edge drop, host QuickPick, kernel
       //   node), so this is the one place the layout engine has to see a new node
-      runEngine({ nodeId: cn.id }, { moverIds: [cn.id] });
+      runEngine({ nodeId: anchor ?? cn.id }, { moverIds: [cn.id], ...(anchor ? { extraIds: [cn.id] } : {}) });
 
       // - focus DOM + pan viewport to the new node, at the position the engine settled it on
       focusNodeById(cn.id);
@@ -3058,7 +3075,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       : undefined;
     // - reuse the addNodeResult event handler: handles labels/history/save/focus
     window.dispatchEvent(new CustomEvent('skena:addNodeResult', {
-      detail: { type: 'addNodeResult', node, edge } satisfies MsgAddNodeResult,
+      detail: { type: 'addNodeResult', node, edge, ...(focused ? { anchorId: focused.id } : {}) } satisfies MsgAddNodeResult,
     }));
   }, []); // - no deps: reads refs, not state
 

@@ -91,12 +91,14 @@ function outputGeomFor(canvas: CanvasData, cell: CodeNode, existing?: { width: n
  * itself never is: the document holds that reference. Returns the section's membership as it stood
  * BEFORE the engine ran; the caller hands it to `applyLaneFit`, so a cell the pack pushed past the
  * section's bottom edge grows that section instead of moving into the one below.
+ * `joining` are nodes the write created from `nodeId` — a run's output cell: they belong to ITS
+ * section whatever their y, so a node placed past the bottom edge grows that section too.
  */
-function layoutAround(canvas: CanvasData, nodeId: string, opts: LayoutOpts): Map<string, number> {
+function layoutAround(canvas: CanvasData, nodeId: string, opts: LayoutOpts, joining?: string[]): Map<string, number> {
   const sections = canvas.metadata?.sections ?? [];
-  const around   = sectionEngineNodes(canvas.nodes, sections, nodeId);
+  const around   = sectionEngineNodes(canvas.nodes, sections, nodeId, joining);
   if (!around) return new Map();
-  const own = sectionMembership(canvas.nodes, sections, nodeId);
+  const own = sectionMembership(canvas.nodes, sections, nodeId, joining);
   canvas.nodes = applyPatchesToCanvas(canvas.nodes, layoutSection(around, opts));
   return own;
 }
@@ -1235,7 +1237,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       };
     }
 
-    send({ type: 'addNodeResult', node: newNode, edge, autoEdit });
+    send({ type: 'addNodeResult', node: newNode, edge, autoEdit, ...(msg.fromNodeId ? { anchorId: msg.fromNodeId } : {}) });
   }
 
   private async handleMoveToSubCanvas(
@@ -1354,7 +1356,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           c.nodes.push(outputNode);
           cn.outputNodeId = outId;   // - before the engine: the link is what makes the new cell this code cell's output rather than a free node
           if (c.metadata?.sections) c.metadata = { ...c.metadata, sections: pinOutputToLane(c.metadata.sections, cn.id, outputNode.id) };   // - an output of a folded cell stays folded
-          const own = layoutAround(c, outId, { moverIds: [outId] });
+          const own = layoutAround(c, cn.id, { moverIds: [outId] }, [outId]);
           Object.assign(c, applyLaneFit(c, Date.now(), own));   // - c IS document.canvas and persist() captured that reference: assign into it, never reassign c
           outputNode = c.nodes.find(n => n.id === outId) as CellNode;   // - the engine and the fit replace every node they move; the webview creates the node at the geometry this message carries
           edge = { id: `e-${outId}`, fromNode: cn.id, fromSide: 'right', toNode: outId, toSide: 'left', toEnd: 'arrow' };
@@ -1491,7 +1493,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           c.nodes.push(outputNode);
           cn.outputNodeId = id;   // - link first, see above
           if (c.metadata?.sections) c.metadata = { ...c.metadata, sections: pinOutputToLane(c.metadata.sections, cn.id, outputNode.id) };   // - an output of a folded cell stays folded
-          const own = layoutAround(c, id, { moverIds: [id] });
+          const own = layoutAround(c, cn.id, { moverIds: [id] }, [id]);
           Object.assign(c, applyLaneFit(c, Date.now(), own));   // - c IS document.canvas and persist() captured that reference: assign into it, never reassign c
           outputNode = c.nodes.find(n => n.id === id) as CellNode;   // - the engine and the fit replace every node they move; the caller sends this node on to the webview
           edge = { id: `e-${id}`, fromNode: cn.id, fromSide: 'right', toNode: id, toSide: 'left', toEnd: 'arrow' };
@@ -1568,7 +1570,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           if (!c.nodes.some(n => n.id === outputNode.id)) c.nodes.push(assignLabel(outputNode, c.nodes) as CellNode);
           cnDisk.outputNodeId = outputNode.id;   // - link first, see above
           if (c.metadata?.sections) c.metadata = { ...c.metadata, sections: pinOutputToLane(c.metadata.sections, cn.id, outputNode.id) };   // - an output of a folded cell stays folded
-          const own = layoutAround(c, outputNode.id, { moverIds: [outputNode.id] });
+          const own = layoutAround(c, cn.id, { moverIds: [outputNode.id] }, [outputNode.id]);
           Object.assign(c, applyLaneFit(c, Date.now(), own));   // - c IS document.canvas, written below: assign into it, never reassign c
           if (!c.edges.some(e => e.id === edge.id)) c.edges.push(edge);
           setSelfSaving(true);

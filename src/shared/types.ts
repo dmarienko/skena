@@ -823,6 +823,13 @@ export interface MsgAddNodeResult {
   node:      CanvasNode;
   edge?:     CanvasEdge;
   /**
+   * Id of the node this one was created FROM (`o`, Alt+X, a directional add, a paste beside the
+   * focused node). The new node joins that node's section — which grows to hold it — instead of the
+   * section its y happens to fall in. Absent for a creation with no source: a context-menu add at a
+   * click point, a connection dropped on empty canvas.
+   */
+  anchorId?: string;
+  /**
    * When true the webview should immediately open the node in its native
    * editor (Monaco for text nodes). Used for newly-created empty text notes.
    */

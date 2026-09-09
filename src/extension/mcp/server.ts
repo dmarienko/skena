@@ -328,23 +328,33 @@ function autoPlace(nodes: CanvasNode[], w: number, h: number): { x: number; y: n
  * `own`: a cell a pack pushed past its section's bottom edge still counts for that section, so the
  * section grows and the ones below move down instead of adopting it. Every job's member list is
  * read from that same pre-engine derivation, so job N cannot change job N+1's slice.
+ *
+ * `anchor` names the node a write created its new nodes FROM (`after`, `forkOf`, the code cell of a
+ * run's output) plus those `joining` ids: they are laid out with the anchor's section and counted
+ * for it whatever their y, so a node placed past its bottom edge grows that section instead of
+ * being adopted by the one below.
  */
-function applyEngine(d: CanvasData, movers: string[], holes: { sectionId: string; columnX: number }[] = [], report?: { capped?: boolean }): Map<string, number> {
+function applyEngine(d: CanvasData, movers: string[], holes: { sectionId: string; columnX: number }[] = [], report?: { capped?: boolean }, anchor?: { id: string; joining: string[] }): Map<string, number> {
   const own = new Map<string, number>();
   const lanes = d.metadata?.sections ?? [];
   if (lanes.length === 0) return own;
   const derived = deriveLanes(d.nodes, lanes);
+  const home    = anchor ? derived.find(l => l.memberIds.includes(anchor.id)) : undefined;
+  // - the ids that leave the lane their y puts them in for the anchor's
+  const joined  = new Set(home && anchor ? anchor.joining.filter(id => !home.memberIds.includes(id)) : []);
   const jobs: { members: Set<string>; moverIds?: string[]; columnX?: number }[] = [];
   const take = (laneId: string) => {
     const lane = derived.find(l => l.id === laneId);
     if (!lane) return null;
-    for (const id of lane.memberIds) own.set(id, lane.index);
-    return new Set(lane.memberIds);
+    const ids = lane.memberIds.filter(id => !joined.has(id));
+    if (lane.id === home?.id) ids.push(...joined);
+    for (const id of ids) own.set(id, lane.index);
+    return new Set(ids);
   };
 
   const byLane = new Map<string, string[]>();
   for (const id of movers) {
-    const lane = derived.find(l => l.memberIds.includes(id));
+    const lane = joined.has(id) ? home : derived.find(l => l.memberIds.includes(id));
     if (!lane) continue;
     const list = byLane.get(lane.id);
     if (list) list.push(id); else byLane.set(lane.id, [id]);
@@ -708,7 +718,7 @@ async function canvasAddNode(args: Record<string, unknown>): Promise<string> {
   // - a cell inserted into a FOLDED section is a hidden member of it, like a run's output: it stays
   //   pinned to that lane until the user unfolds, rather than being adopted by the lane below
   if (anchor && d.metadata?.sections) d.metadata = { ...d.metadata, sections: pinOutputToLane(d.metadata.sections, anchor.id, labeled.id) };
-  const own = applyEngine(d, [labeled.id]);
+  const own = applyEngine(d, [labeled.id], [], undefined, anchor ? { id: anchor.id, joining: [labeled.id] } : undefined);
   Object.assign(d, applyLaneFit(d, Date.now(), own));   // - every write fits the sections
   const moved = movedLabels(d, before, [labeled.id]);
   await writeCanvas(p, d);
@@ -968,7 +978,7 @@ async function canvasPinOutput(args: Record<string, unknown>): Promise<string> {
   // - an adopted pin is the mover, as a run's output is. A free one is NOT: it starts beside a code
   //   cell that already has an output, so it has to be the node the settle pushes down and clear,
   //   not the one that stays put — the code cell is what the engine is asked to lay out around.
-  const own = applyEngine(d, [adopted || !sourceNode ? labeled.id : sourceNode.id]);
+  const own = applyEngine(d, [adopted || !sourceNode ? labeled.id : sourceNode.id], [], undefined, sourceNode ? { id: sourceNode.id, joining: [labeled.id] } : undefined);
   Object.assign(d, applyLaneFit(d, Date.now(), own));   // - every write fits the sections
   const moved = movedLabels(d, before, [labeled.id]);
   await writeCanvas(p, d);
@@ -1103,7 +1113,7 @@ async function runCellCore(
         // - only a NEW output node is pinned (same rule as the host): a re-run must not re-pin an
         //   output the user has since dragged out of the folded section
         if (d.metadata?.sections) d.metadata = { ...d.metadata, sections: pinOutputToLane(d.metadata.sections, cell.id, outId) };
-        own = applyEngine(d, [outId]);
+        own = applyEngine(d, [outId], [], undefined, { id: cell.id, joining: [outId] });
         outLabel = labeled.nodeLabel ?? labeled.id;
       }
     }
