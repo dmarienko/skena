@@ -87,14 +87,12 @@ function overlaps(a: { x: number; y: number; w: number; h: number }, b: { x: num
   return !(sepX || sepY);
 }
 
-// - pack one column tight top → bottom; outputs follow their code (same y, output x of the pair).
-//   `minY` holds cells a dropped free node pushed down: they keep that y, the pack closes below them.
-function packColumn(pair: Pair, map: Map<string, EngineNode>, out?: Patches, minY?: Map<string, number>): void {
+// - pack one column tight top → bottom; outputs follow their code (same y, output x of the pair)
+function packColumn(pair: Pair, map: Map<string, EngineNode>, out?: Patches): void {
   let prevBottom: number | null = null;
   for (const id of pair.column.cellIds) {
     const cell = map.get(id)!;
-    const tight = prevBottom === null ? snapGrid(cell.y) : prevBottom + GRID;
-    const y = Math.max(tight, minY?.get(id) ?? 0);
+    const y = prevBottom === null ? snapGrid(cell.y) : prevBottom + GRID;
     const x = pair.column.x;
     if (x !== cell.x || y !== cell.y) { if (out) out[id] = { x, y }; cell.x = x; cell.y = y; }
     const o = map.get(cell.outputNodeId ?? '');
@@ -103,66 +101,84 @@ function packColumn(pair: Pair, map: Map<string, EngineNode>, out?: Patches, min
   }
 }
 
-// - push the pairs right of `from` so each starts a gap after the previous one; never pulls back
-function pushPairsRight(pairs: Pair[], fromIndex: number, map: Map<string, EngineNode>, out: Patches): void {
-  for (let i = Math.max(1, fromIndex + 1); i < pairs.length; i++) {
-    const prev = pairs[i - 1], cur = pairs[i];
-    const minX = gridUp(prev.right + GRID);
-    if (cur.column.x >= minX) continue;
-    const dx = minX - cur.column.x;
-    for (const id of cur.column.cellIds) {
-      const cell = map.get(id)!;
-      cell.x += dx; out[id] = { x: cell.x, y: cell.y };
-      const o = map.get(cell.outputNodeId ?? '');
-      if (o) { o.x += dx; out[o.id] = { x: o.x, y: o.y }; }
-    }
-    cur.column.x += dx; cur.outputX += dx; cur.right += dx;
-  }
-}
-
-// - free nodes move down out of the way, never sideways. `inWayIds` is what may START one moving:
-//   in a regular call only the ids this call moved, so a note the user parked on top of an untouched
-//   cell is left alone (spec §3.3: the ones a managed node NOW overlaps); a reflow passes none and
-//   settles against everything. Once a free node has moved it must clear every managed node — the
-//   push can carry it onto one this call never touched — and every free node moved before it.
-function settleFree(nodes: EngineNode[], owners: Map<string, string>, movers: Set<string>, out?: Patches, inWayIds?: Set<string>): void {
+// - Reflow only: a free node moves down until it is clear of every managed node and of the free
+//   nodes settled before it. A regular call bumps instead (`resolveBumps`); Reflow is the user
+//   asking for the whole section to be tidied, so it settles against everything.
+function settleFree(nodes: EngineNode[], owners: Map<string, string>): void {
   const managed = nodes.filter(n => n.type === 'code' || owners.has(n.id));
   const free = nodes.filter(n => n.type !== 'code' && !owners.has(n.id)).sort((a, b) => a.y - b.y || a.x - b.x);
-  // - a dropped free node stays put and is in the way from the start, wherever it sits in the order
-  const stayPut = free.filter(f => movers.has(f.id));
-  const canPush: EngineNode[] = [...managed.filter(n => !inWayIds || inWayIds.has(n.id)), ...stayPut];
-  const mustClear: EngineNode[] = [...managed, ...stayPut];
+  const placed: EngineNode[] = [...managed];
   for (const f of free) {
-    if (movers.has(f.id)) continue;
-    let moved = false;
     for (let again = true; again;) {
       again = false;
-      for (const p of moved ? mustClear : canPush) {
-        if (overlaps(f, p)) { f.y = p.y + p.h + GRID; if (out) out[f.id] = { x: f.x, y: f.y }; again = true; moved = true; }
-      }
+      for (const p of placed) if (overlaps(f, p)) { f.y = p.y + p.h + GRID; again = true; }
     }
-    if (moved || !inWayIds) { canPush.push(f); mustClear.push(f); }
+    placed.push(f);
   }
 }
 
-// - a free node that was itself dropped or resized pushes the managed cells it covers down; only a
-//   column it covers is repacked, so a column it does not touch keeps the layout it had
-function freeMoverPushes(map: Map<string, EngineNode>, owners: Map<string, string>, movers: Set<string>, pairs: Pair[], out: Patches): void {
-  const dropped: EngineNode[] = [];
-  for (const id of movers) {
-    const f = map.get(id);
-    if (f && f.type !== 'code' && !owners.has(id)) dropped.push(f);
-  }
-  if (dropped.length === 0) return;
-  for (const pair of pairs) {
-    const minY = new Map<string, number>();
-    for (const cid of pair.column.cellIds) {
-      const cell = map.get(cid)!;
-      for (const f of dropped) {
-        if (overlaps(f, cell)) { cell.y = f.y + f.h + GRID; minY.set(cid, cell.y); out[cid] = { x: cell.x, y: cell.y }; }
-      }
+// - what one bump moves with `node`: a code cell — or an output, through its code cell — takes its
+//   column (the code cells at that snapped x, their outputs riding along); a free node takes the
+//   free nodes at its x (spec §3.3). `below` keeps only the ones at or under the anchor, which is
+//   what a downward bump takes; a sideways bump takes the whole column, so the columns stay aligned.
+function bumpGroup(node: EngineNode, nodes: EngineNode[], owners: Map<string, string>, map: Map<string, EngineNode>, below: boolean): EngineNode[] {
+  const anchor = map.get(owners.get(node.id) ?? '') ?? node;
+  const x = snapGrid(anchor.x);
+  const column = anchor.type === 'code'
+    ? nodes.filter(n => n.type === 'code' && snapGrid(n.x) === x)
+    : nodes.filter(n => n.type !== 'code' && !owners.has(n.id) && snapGrid(n.x) === x);
+  const taken = below ? column.filter(n => n.y >= anchor.y) : column;
+  const group = [...taken];
+  for (const c of taken) { const o = map.get(c.outputNodeId ?? ''); if (o) group.push(o); }
+  return group;
+}
+
+// - the overlap to resolve next: the nodes this call moved, in id order, against every other node by
+//   (y, x). A pinned node never moves, so when it is the one in the way the two swap roles; two
+//   pinned nodes on top of each other are the caller's placement and are left alone. A code cell and
+//   its own output are one row, placed by `packColumn`: how close they sit is not a bump.
+function nextBump(nodes: EngineNode[], owners: Map<string, string>, pinned: Set<string>, active: Set<string>): { m: EngineNode; o: EngineNode } | null {
+  const moved = nodes.filter(n => active.has(n.id)).sort((a, b) => a.id.localeCompare(b.id));
+  const rest = [...nodes].sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));
+  for (const m of moved) {
+    for (const o of rest) {
+      if (o.id === m.id || owners.get(o.id) === m.id || owners.get(m.id) === o.id) continue;
+      if (!overlaps(m, o)) continue;
+      if (!pinned.has(o.id)) return { m, o };
+      if (!pinned.has(m.id)) return { m: o, o: m };
     }
-    if (minY.size > 0) packColumn(pair, map, out, minY);
+  }
+  return null;
+}
+
+/**
+ * Bumps (spec §3.2). While a node this call moved overlaps another one, that other node moves by
+ * exactly the overlap, on the axis with the smaller move: right when it sits at or right of the
+ * mover, left when it sits left of it (never past x = 0), down when it sits at or below it, never
+ * up, and down when neither sideways move is open. Everything a bump moved is checked again, so a
+ * bump cascades — through real overlaps and by overlap amounts only, never by a modelled distance,
+ * which is why a hand-placed section an edit does not actually reach is left alone.
+ */
+function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, pinned: Set<string>, active: Set<string>): void {
+  const map = byId(nodes);
+  // - a bump moves right or down, or left with the room for it, so the cascade ends; the cap is only
+  //   there in case a pair of left bumps closes a cycle
+  for (let guard = nodes.length * 4 + 32; guard > 0; guard--) {
+    const hit = nextBump(nodes, owners, pinned, active);
+    if (!hit) return;
+    const { m, o } = hit;
+    const column = bumpGroup(o, nodes, owners, map, false);
+    // - a sideways step is the overlap rounded UP to the grid: the whole column moves by the same
+    //   grid multiple, so it still shares one snapped x and the next call reads the same column.
+    //   A column slides only as one: with a pinned node in it, the node in the way goes down instead.
+    const leftBy = gridUp(o.x + o.w + GRID - m.x);
+    const dx = column.some(n => pinned.has(n.id)) ? 0
+      : o.x >= m.x ? gridUp(m.x + m.w + GRID - o.x)
+      : Math.min(...column.map(n => n.x)) >= leftBy ? -leftBy : 0;
+    const dy = m.y + m.h + GRID - o.y;
+    // - a tie goes sideways: a pair keeps the row it is on
+    if (dx !== 0 && (o.y < m.y || Math.abs(dx) <= dy)) for (const n of column) { n.x += dx; active.add(n.id); }
+    else for (const n of bumpGroup(o, nodes, owners, map, true)) { if (!pinned.has(n.id)) { n.y += dy; active.add(n.id); } }
   }
 }
 
@@ -176,37 +192,38 @@ function diff(before: EngineNode[], after: EngineNode[]): Patches {
 
 /**
  * Lay out one section after an operation. `moverIds` = the nodes the operation inserted, moved or
- * resized (they win ties and, when free, push what they cover); `columnX` = the column to pack when
- * nothing moved (a delete). Only the touched column is packed; pairs right of it are pushed, not
- * pulled; a free node moves down only out of the way of what this call moved. Same input → same
- * output; a second call changes nothing.
+ * resized (they win ties in their column and never move themselves); `columnX` = the column to pack
+ * when nothing moved (a delete). Only the touched column is packed; everything else moves only where
+ * a node this call moved really overlaps it, by that overlap (§3.2). Same input → same output; a
+ * second call changes nothing.
  */
 export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patches {
   const nodes = clone(input);
   const map = byId(nodes);
   const movers = new Set(opts.moverIds ?? []);
   const owners = outputOwners(nodes);
-  const columns = deriveColumns(nodes, movers);
-  const pairs = derivePairs(nodes, columns);
-  const out: Patches = {};
+  const pairs = derivePairs(nodes, deriveColumns(nodes, movers));
+  const packed: Patches = {};
 
   // - which columns are touched: the movers' (a moved output counts for its code's column) + columnX
   const touched = new Set<number>();
+  // - a mover never moves, and neither does the other half of its pair: an output has its code's y
+  const pinned = new Set(movers);
   for (const id of movers) {
     const n = map.get(id); if (!n) continue;
     const codeId = n.type === 'code' ? id : owners.get(id);
-    if (codeId) touched.add(snapGrid(map.get(codeId)!.x));
+    if (codeId) { touched.add(snapGrid(map.get(codeId)!.x)); pinned.add(codeId); }
+    if (n.outputNodeId) pinned.add(n.outputNodeId);
   }
   if (opts.columnX !== undefined) touched.add(snapGrid(opts.columnX));
 
-  let firstTouched = pairs.length;
-  pairs.forEach((pair, i) => { if (touched.has(pair.column.x)) { packColumn(pair, map, out); firstTouched = Math.min(firstTouched, i); } });
-  // - re-measure after the pack (an output moved with its code) and push the pairs to the right
-  const remeasured = derivePairs(nodes, deriveColumns(nodes, movers));
-  if (firstTouched < remeasured.length) pushPairsRight(remeasured, firstTouched, map, out);
-  freeMoverPushes(map, owners, movers, remeasured, out);
-  // - only what this call moved (plus the movers) can push a free node
-  settleFree(nodes, owners, movers, out, new Set([...movers, ...Object.keys(out)]));
+  for (const pair of pairs) if (touched.has(pair.column.x)) {
+    packColumn(pair, map, packed);
+    // - the pack owns the column it just laid out: a bump moves what is in its way, never it, so the
+    //   two never fight over the same cell and the next call packs it to the same place
+    for (const id of pair.column.cellIds) { pinned.add(id); const outId = map.get(id)!.outputNodeId; if (outId) pinned.add(outId); }
+  }
+  resolveBumps(nodes, owners, pinned, new Set([...movers, ...Object.keys(packed)]));
   return diff(input, nodes);
 }
 
@@ -243,7 +260,7 @@ export function reflowSection(input: EngineNode[]): Patches {
     }
     tight[i].column.x += dx; tight[i].outputX += dx; tight[i].right += dx;
   }
-  settleFree(nodes, owners, new Set());
+  settleFree(nodes, owners);
   return diff(input, nodes);
 }
 
