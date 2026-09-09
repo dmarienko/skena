@@ -84,6 +84,11 @@ One algorithm behind every row of §2, run per section:
    The walk has a step limit. A section dense enough to exceed it (a diagonal staircase, a tight
    grid) stops with overlaps still on it; the engine reports that (`report.capped`) and the MCP reply
    says to run `canvas_reflow_section`.
+   **FORK_1 (2026-09-09):** kept as built — the shorter move wins even when that puts a fork column
+   under a wide output. The "code columns always move sideways" variant was measured and rejected
+   (H1: fewer edits settle in one pass, overlaps 8 → 10, runaway on dense grids); a bounded variant
+   (sideways only when ≤ N× the down move) is the thing to revisit. Details:
+   `~/projects/crtx/decisions/skena-layout-engine-2026-09-08.md`.
 3. **Free vs managed.** The same bump rule applies to free and managed nodes; the only difference is
    what a column is: a code column brings its outputs; a free column is every free node at that x.
    A node that was itself dropped or resized is the mover and never moves.
