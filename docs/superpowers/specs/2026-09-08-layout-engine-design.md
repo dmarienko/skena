@@ -38,11 +38,11 @@ Each row is one engine call, one history entry, section fit after.
 |---|---|
 | Insert code after cell X (`o`, `Alt+X j`, MCP `after`) | new cell in X's column at X.y + X.h + GRID; the column below pushed down; output column untouched |
 | Fork right / left of X (`Alt+X l` / `h`, MCP `forkOf`) | new column pair: x = right edge of X's pair + GRID (left: X's column x − pair width − GRID, refused below 0); y = X.y; pairs beyond shift sideways if overlapped |
-| Run → output | output cell at (pair's output x, code y); width from content within `[OUTPUT_MIN_W, OUTPUT_MAX_W]`; the pair's output column is re-measured and the pairs to its right shift by the delta; if the output is taller than its code, the column below is pushed |
+| Run → output | output cell at (pair's output x, code y); width from content within `[OUTPUT_MIN_W, OUTPUT_MAX_W]`; whatever it now overlaps is bumped (§3.2); if the output is taller than its code, the column below is pushed |
 | Code height (live, on every new line) | h = `max(NODE_SIZE.code.h, ceil((lines × CODE_LINE_PX + CODE_CHROME_PX) / GRID) × GRID)` capped at `CODE_MAX_H`; grows at grid steps; the column below pushed; shrink pulls the column up |
-| Clear output / delete cell | the column closes the hole (pull up); the output column is re-measured, pairs to the right pull back |
-| Paste (§9 of the follow-ups spec), drop, MCP `canvas_add_node` with x,y | placed at the target; whatever it overlaps is pushed down (column-only for managed, overlap-only for free) |
-| Free node moved or resized | only the nodes it overlaps move, downward |
+| Clear output / delete cell | the column closes the hole (pull up); nothing pulls back sideways (Reflow does) |
+| Paste (§9 of the follow-ups spec), drop, MCP `canvas_add_node` with x,y | placed at the target; whatever it overlaps is bumped (§3.2) |
+| Free node moved or resized | only the nodes it overlaps move, by the overlap, on the shorter axis (§3.2) |
 
 "Pull up": a column never keeps a hole larger than one gap.
 
@@ -56,16 +56,23 @@ One algorithm behind every row of §2, run per section:
    placed at the next cell's y lands above it. Insert / grow pushes down; delete / shrink pulls the
    cells below up to one gap. An output cell has its code cell's y. Nothing outside the column moves
    in this pass.
-2. **Horizontal, pairs.** Pairs are packed tight left → right: the first pair keeps its x, every
-   next pair gets `x = prevRight + GRID`, where a pair's right edge = column x + 700 + GRID + output
-   column width. A growing output pushes the pairs to its right; a shrinking one pulls them back to
-   one gap. (The engine owns a managed cell's x: a fork column dragged further right comes back.)
-3. **Free nodes.** After 1–2, a free node that a node moved by this call (or the mover) now overlaps
-   moves **down** to the first y that clears every managed node — never sideways, never out of its
-   section. An overlap that existed before the call and involves no moved node is left alone (§4:
-   nothing automatic on a hand-placed section; Reflow settles everything). A moved free node can push
-   other free nodes the same way. Managed nodes are never moved by a free one, except by the free
-   node that was itself dropped or resized (§2, last two rows).
+2. **Bumps — one rule for everything the touched column did not already pack.** After step 1, the
+   engine looks for real overlaps (two boxes less than one grid gap apart on both axes) between a
+   node this call moved (or the mover) and any other node. Each one is resolved by moving the OTHER
+   node by exactly the overlap, on the axis that needs the smaller move: **right** when it sits at or
+   right of the mover, **left** when it sits left of it (never below x = 0), **down** when it sits at
+   or below it; never up. A sideways move takes the node's whole **column** with it — every node in
+   the section that shares its snapped x, outputs riding with their code cells, so columns stay
+   aligned; a downward move takes the node and everything below it in its column. Moved nodes are
+   checked again, so a bump can cascade, but only through real overlaps and only by overlap amounts —
+   never by a modelled distance. Example (H5): N1 (0,0) 700×300 widened to 800 bumps N5 (800,0): the
+   smaller move is 100 px right, so N5 → (900,0) and its column-mate N3 (800,400) → (900,400); N2
+   does not move. Consequences: a hand-placed section is never rearranged by an edit (no overlap, no
+   move); an output that grows pushes the next pair only when it actually reaches it; shrinking never
+   pulls anything back (Reflow does).
+3. **Free vs managed.** The same bump rule applies to free and managed nodes; the only difference is
+   what a column is: a code column brings its outputs; a free column is every free node at that x.
+   A node that was itself dropped or resized is the mover and never moves.
 4. **Sections.** The engine works inside one section: the caller hands it that section's nodes and
    nothing else, which is how a push never moves a node across a section boundary (the engine takes
    no lane range). `fitLanes` runs after it, so a section that grew pushes the sections below.
