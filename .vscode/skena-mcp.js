@@ -4376,7 +4376,7 @@ function nextBump(nodes, owners, pinned, active) {
   }
   return null;
 }
-function resolveBumps(nodes, owners, pinned, active, report) {
+function resolveBumps(nodes, owners, pinned, placed, active, report) {
   const map = byId(nodes);
   for (let guard = nodes.length * 4 + 32; guard > 0; guard--) {
     const hit = nextBump(nodes, owners, pinned, active);
@@ -4387,9 +4387,17 @@ function resolveBumps(nodes, owners, pinned, active, report) {
     const leftBy = gridUp(other.x + other.w + GRID - mover.x);
     const dx = column.some((n) => pinned.has(n.id)) ? 0 : other.x >= mover.x ? gridUp(mover.x + mover.w + GRID - other.x) : Math.min(...column.map((n) => n.x)) >= leftBy ? -leftBy : 0;
     const dy = mover.y + mover.h + GRID - other.y;
-    if (dx !== 0 && (other.y < mover.y || Math.abs(dx) <= dy))
+    const drop = other.y + other.h + GRID - mover.y;
+    const yields = other.y < mover.y && placed.has(mover.id);
+    const sideways = dx !== 0 && (yields ? Math.abs(dx) <= drop : other.y < mover.y || Math.abs(dx) <= dy);
+    if (sideways)
       for (const n of column) {
         n.x += dx;
+        active.add(n.id);
+      }
+    else if (yields)
+      for (const n of bumpGroup(mover, nodes, owners, map, true)) {
+        n.y += drop;
         active.add(n.id);
       }
     else
@@ -4439,6 +4447,7 @@ function layoutSection(input, opts = {}) {
   }
   if (opts.columnX !== void 0)
     touched.add(snapGrid(opts.columnX));
+  const placed = new Set(pinned);
   for (const pair of pairs)
     if (touched.has(pair.column.x)) {
       packColumn(pair, map, packed);
@@ -4449,7 +4458,7 @@ function layoutSection(input, opts = {}) {
           pinned.add(outId);
       }
     }
-  resolveBumps(nodes, owners, pinned, /* @__PURE__ */ new Set([...movers, ...Object.keys(packed)]), opts.report);
+  resolveBumps(nodes, owners, pinned, placed, /* @__PURE__ */ new Set([...movers, ...Object.keys(packed)]), opts.report);
   return diff(input, nodes);
 }
 function reflowSection(input) {
