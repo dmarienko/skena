@@ -22,8 +22,8 @@ const centre = (n: NavNode) => ({ x: n.x + n.w / 2, y: n.y + n.h / 2 });
 /**
  * The node to focus when `dir` is pressed on `from`, or null when nothing qualifies.
  * Candidates are visible nodes (in no fold list). `left`/`right` stay in `from`'s section;
- * `up`/`down` may cross into any open section. An edge attached on the pressed side wins over
- * geometry, under the same exclusions.
+ * `up`/`down` may cross into any open section. A node wired to `from` on the pressed side is one
+ * more candidate under those same exclusions, scored like the rest but without the cone test.
  */
 export function findNearestNode(from: NavNode, dir: NavDir, ctx: NavContext): string | null {
   const horiz = dir === 'left' || dir === 'right';
@@ -42,27 +42,22 @@ export function findNearestNode(from: NavNode, dir: NavDir, ctx: NavContext): st
 
   // - handles are named top/right/bottom/left; an edge carries the canvas fromSide/toSide
   const side = dir === 'up' ? 'top' : dir === 'down' ? 'bottom' : dir;
-  const byId = new Map(ctx.nodes.map(n => [n.id, n] as const));
+  const wired = new Set<string>();
+  for (const e of ctx.edges) {
+    if (e.source === from.id && e.sourceHandle === side) wired.add(e.target);
+    else if (e.target === from.id && e.targetHandle === side) wired.add(e.source);
+  }
+
   let best: string | null = null;
   let bestScore = Infinity;
-  for (const e of ctx.edges) {
-    const nid = e.source === from.id && e.sourceHandle === side ? e.target
-      : e.target === from.id && e.targetHandle === side ? e.source : null;
-    if (!nid) continue;
-    const n = byId.get(nid);
-    if (!n || !reachable(n)) continue;
-    const c = centre(n);
-    const s = score(c.x - fc.x, c.y - fc.y);
-    if (s < bestScore) { bestScore = s; best = nid; }
-  }
-  if (best) return best;
-
   for (const n of ctx.nodes) {
     if (n.id === from.id || !reachable(n)) continue;
     const c = centre(n);
     const dx = c.x - fc.x, dy = c.y - fc.y;
-    if (!inDir(dx, dy) || !inCone(dx, dy)) continue;
+    // - a wired node qualifies wherever it sits; every other candidate has to be in the cone
+    if (!wired.has(n.id) && (!inDir(dx, dy) || !inCone(dx, dy))) continue;
     const s = score(dx, dy);
+    // - strict <, so ties keep the first node in canvas order
     if (s < bestScore) { bestScore = s; best = n.id; }
   }
   return best;

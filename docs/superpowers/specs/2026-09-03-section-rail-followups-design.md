@@ -104,8 +104,10 @@ with its pinned members ignored and moved with the lane; idempotent after one pa
 **8.1 `j`/`k` may leave the section.** Candidates for `j`/`k` are all visible nodes (in no fold list)
 inside the cone below/above, in any section. `h`/`l` stay in the section. A folded section has no
 visible nodes, so it is passed over: `j` from the last row of S1 lands in S2 when S2 is open, else in
-the next open section; nothing visible below → no move. Edge-following keeps its priority under the
-same exclusions per direction: an edge into a folded node is never followed; an edge into another
+the next open section; nothing visible below → no move. An edge attached on the pressed side is one
+more candidate, scored like the cone candidates but without the cone test, so a wired node is
+reachable when nothing nearer lies in that direction; the nearest wins. The exclusions per
+direction are unchanged: an edge into a folded node is never followed; an edge into another
 section is followed for `j`/`k`, not for `h`/`l`.
 
 **8.2 Focus shows the output when it fits.** Pair = the focused code node + the node named by its
