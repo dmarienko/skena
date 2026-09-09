@@ -16,7 +16,9 @@ export interface Patch { x: number; y: number; w?: number; h?: number }
 export type Patches = Record<string, Patch>;
 export interface Column { x: number; codeW: number; cellIds: string[] }
 export interface Pair { column: Column; outputX: number; outputW: number; right: number }
-export interface LayoutOpts { moverIds?: Iterable<string>; columnX?: number }
+// - `report` is filled in by the call: `capped` says the bump walk stopped with overlaps still
+//   there (a dense section), so the caller can tell the user to reflow
+export interface LayoutOpts { moverIds?: Iterable<string>; columnX?: number; report?: { capped?: boolean } }
 
 const byId = (nodes: EngineNode[]) => new Map(nodes.map(n => [n.id, n] as const));
 
@@ -119,15 +121,15 @@ function settleFree(nodes: EngineNode[], owners: Map<string, string>): void {
 
 // - what one bump moves with `node`: a code cell — or an output, through its code cell — takes its
 //   column (the code cells at that snapped x, their outputs riding along); a free node takes the
-//   free nodes at its x (spec §3.3). `below` keeps only the ones at or under the anchor, which is
+//   free nodes at its x (spec §3.3). `downward` keeps only the ones at or under the anchor, which is
 //   what a downward bump takes; a sideways bump takes the whole column, so the columns stay aligned.
-function bumpGroup(node: EngineNode, nodes: EngineNode[], owners: Map<string, string>, map: Map<string, EngineNode>, below: boolean): EngineNode[] {
+function bumpGroup(node: EngineNode, nodes: EngineNode[], owners: Map<string, string>, map: Map<string, EngineNode>, downward: boolean): EngineNode[] {
   const anchor = map.get(owners.get(node.id) ?? '') ?? node;
   const x = snapGrid(anchor.x);
   const column = anchor.type === 'code'
     ? nodes.filter(n => n.type === 'code' && snapGrid(n.x) === x)
     : nodes.filter(n => n.type !== 'code' && !owners.has(n.id) && snapGrid(n.x) === x);
-  const taken = below ? column.filter(n => n.y >= anchor.y) : column;
+  const taken = downward ? column.filter(n => n.y >= anchor.y) : column;
   const group = [...taken];
   for (const c of taken) { const o = map.get(c.outputNodeId ?? ''); if (o) group.push(o); }
   return group;
@@ -137,15 +139,15 @@ function bumpGroup(node: EngineNode, nodes: EngineNode[], owners: Map<string, st
 //   (y, x). A pinned node never moves, so when it is the one in the way the two swap roles; two
 //   pinned nodes on top of each other are the caller's placement and are left alone. A code cell and
 //   its own output are one row, placed by `packColumn`: how close they sit is not a bump.
-function nextBump(nodes: EngineNode[], owners: Map<string, string>, pinned: Set<string>, active: Set<string>): { m: EngineNode; o: EngineNode } | null {
+function nextBump(nodes: EngineNode[], owners: Map<string, string>, pinned: Set<string>, active: Set<string>): { mover: EngineNode; other: EngineNode } | null {
   const moved = nodes.filter(n => active.has(n.id)).sort((a, b) => a.id.localeCompare(b.id));
   const rest = [...nodes].sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));
-  for (const m of moved) {
-    for (const o of rest) {
-      if (o.id === m.id || owners.get(o.id) === m.id || owners.get(m.id) === o.id) continue;
-      if (!overlaps(m, o)) continue;
-      if (!pinned.has(o.id)) return { m, o };
-      if (!pinned.has(m.id)) return { m: o, o: m };
+  for (const mover of moved) {
+    for (const other of rest) {
+      if (other.id === mover.id || owners.get(other.id) === mover.id || owners.get(mover.id) === other.id) continue;
+      if (!overlaps(mover, other)) continue;
+      if (!pinned.has(other.id)) return { mover, other };
+      if (!pinned.has(mover.id)) return { mover: other, other: mover };
     }
   }
   return null;
@@ -155,31 +157,37 @@ function nextBump(nodes: EngineNode[], owners: Map<string, string>, pinned: Set<
  * Bumps (spec §3.2). While a node this call moved overlaps another one, that other node moves by
  * exactly the overlap, on the axis with the smaller move: right when it sits at or right of the
  * mover, left when it sits left of it (never past x = 0), down when it sits at or below it, never
- * up, and down when neither sideways move is open. Everything a bump moved is checked again, so a
- * bump cascades — through real overlaps and by overlap amounts only, never by a modelled distance,
- * which is why a hand-placed section an edit does not actually reach is left alone.
+ * up — and down, past the mover, when no sideways move is open (even for a node above the mover).
+ * Everything a bump moved is checked again, so a bump cascades — through real overlaps and by
+ * overlap amounts only, never by a modelled distance, which is why a hand-placed section an edit
+ * does not actually reach is left alone. `report.capped` is set when the walk ran out of steps with
+ * overlaps still on the section.
  */
-function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, pinned: Set<string>, active: Set<string>): void {
+function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, pinned: Set<string>, active: Set<string>, report?: { capped?: boolean }): void {
   const map = byId(nodes);
-  // - a bump moves right or down, or left with the room for it, so the cascade ends; the cap is only
-  //   there in case a pair of left bumps closes a cycle
+  // - the cap is a real limit, not a formality: a dense section (a diagonal staircase, a tight grid)
+  //   holds more overlaps than this many steps resolve, and the walk then stops with some of them
+  //   still there. `capped` tells the caller, who can offer a Reflow.
   for (let guard = nodes.length * 4 + 32; guard > 0; guard--) {
     const hit = nextBump(nodes, owners, pinned, active);
     if (!hit) return;
-    const { m, o } = hit;
-    const column = bumpGroup(o, nodes, owners, map, false);
+    const { mover, other } = hit;
+    const column = bumpGroup(other, nodes, owners, map, false);
     // - a sideways step is the overlap rounded UP to the grid: the whole column moves by the same
     //   grid multiple, so it still shares one snapped x and the next call reads the same column.
     //   A column slides only as one: with a pinned node in it, the node in the way goes down instead.
-    const leftBy = gridUp(o.x + o.w + GRID - m.x);
+    const leftBy = gridUp(other.x + other.w + GRID - mover.x);
     const dx = column.some(n => pinned.has(n.id)) ? 0
-      : o.x >= m.x ? gridUp(m.x + m.w + GRID - o.x)
+      : other.x >= mover.x ? gridUp(mover.x + mover.w + GRID - other.x)
       : Math.min(...column.map(n => n.x)) >= leftBy ? -leftBy : 0;
-    const dy = m.y + m.h + GRID - o.y;
-    // - a tie goes sideways: a pair keeps the row it is on
-    if (dx !== 0 && (o.y < m.y || Math.abs(dx) <= dy)) for (const n of column) { n.x += dx; active.add(n.id); }
-    else for (const n of bumpGroup(o, nodes, owners, map, true)) { if (!pinned.has(n.id)) { n.y += dy; active.add(n.id); } }
+    const dy = mover.y + mover.h + GRID - other.y;
+    // - sideways on a tie, so a pair keeps the row it is on. `other.y < mover.y` is the other half:
+    //   a node above the mover has no down move of its own — its own axis would be up — so it steps
+    //   aside whenever it can, and only falls past the mover when it cannot.
+    if (dx !== 0 && (other.y < mover.y || Math.abs(dx) <= dy)) for (const n of column) { n.x += dx; active.add(n.id); }
+    else for (const n of bumpGroup(other, nodes, owners, map, true)) { if (!pinned.has(n.id)) { n.y += dy; active.add(n.id); } }
   }
+  if (report) report.capped = true;
 }
 
 function clone(nodes: EngineNode[]): EngineNode[] { return nodes.map(n => ({ ...n })); }
@@ -207,7 +215,9 @@ export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patch
 
   // - which columns are touched: the movers' (a moved output counts for its code's column) + columnX
   const touched = new Set<number>();
-  // - a mover never moves, and neither does the other half of its pair: an output has its code's y
+  // - a managed mover IS placed by the pack below, snapped onto its column and stacked in it; what
+  //   pinning means is that no BUMP moves it. The other half of its pair is pinned with it, an
+  //   output having its code cell's y.
   const pinned = new Set(movers);
   for (const id of movers) {
     const n = map.get(id); if (!n) continue;
@@ -223,7 +233,7 @@ export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patch
     //   two never fight over the same cell and the next call packs it to the same place
     for (const id of pair.column.cellIds) { pinned.add(id); const outId = map.get(id)!.outputNodeId; if (outId) pinned.add(outId); }
   }
-  resolveBumps(nodes, owners, pinned, new Set([...movers, ...Object.keys(packed)]));
+  resolveBumps(nodes, owners, pinned, new Set([...movers, ...Object.keys(packed)]), opts.report);
   return diff(input, nodes);
 }
 

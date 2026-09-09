@@ -61,15 +61,29 @@ One algorithm behind every row of §2, run per section:
    node this call moved (or the mover) and any other node. Each one is resolved by moving the OTHER
    node by exactly the overlap, on the axis that needs the smaller move: **right** when it sits at or
    right of the mover, **left** when it sits left of it (never below x = 0), **down** when it sits at
-   or below it; never up. A sideways move takes the node's whole **column** with it — every node in
-   the section that shares its snapped x, outputs riding with their code cells, so columns stay
-   aligned; a downward move takes the node and everything below it in its column. Moved nodes are
+   or below it; never up — and **down, past the mover**, when no sideways move is open, even for a
+   node that sits above the mover. A sideways move takes the node's whole **column** with it — every
+   node in the section that shares its snapped x, outputs riding with their code cells, so columns
+   stay aligned; a downward move takes the node and everything below it in its column. Moved nodes are
    checked again, so a bump can cascade, but only through real overlaps and only by overlap amounts —
    never by a modelled distance. Example (H5): N1 (0,0) 700×300 widened to 800 bumps N5 (800,0): the
    smaller move is 100 px right, so N5 → (900,0) and its column-mate N3 (800,400) → (900,400); N2
    does not move. Consequences: a hand-placed section is never rearranged by an edit (no overlap, no
    move); an output that grows pushes the next pair only when it actually reaches it; shrinking never
    pulls anything back (Reflow does).
+
+   Three details the rule needs for a second call to change nothing:
+   - a **sideways step is the overlap rounded UP to the grid**, so a column moves by one grid
+     multiple and its nodes still share one snapped x — the next call reads the same column;
+   - a **column slides only as one**: when the mover, or a cell the pack just laid out, sits in it,
+     there is no sideways move and the node in the way goes down instead;
+   - the **column the pack just laid out is never bumped** (the pack owns its geometry, so the two
+     cannot fight over a cell), and a **code cell and its own output never bump each other** (they
+     are one row, placed by the pack).
+
+   The walk has a step limit. A section dense enough to exceed it (a diagonal staircase, a tight
+   grid) stops with overlaps still on it; the engine reports that (`report.capped`) and the MCP reply
+   says to run `canvas_reflow_section`.
 3. **Free vs managed.** The same bump rule applies to free and managed nodes; the only difference is
    what a column is: a code column brings its outputs; a free column is every free node at that x.
    A node that was itself dropped or resized is the mover and never moves.

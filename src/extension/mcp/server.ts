@@ -329,7 +329,7 @@ function autoPlace(nodes: CanvasNode[], w: number, h: number): { x: number; y: n
  * section grows and the ones below move down instead of adopting it. Every job's member list is
  * read from that same pre-engine derivation, so job N cannot change job N+1's slice.
  */
-function applyEngine(d: CanvasData, movers: string[], holes: { sectionId: string; columnX: number }[] = []): Map<string, number> {
+function applyEngine(d: CanvasData, movers: string[], holes: { sectionId: string; columnX: number }[] = [], report?: { capped?: boolean }): Map<string, number> {
   const own = new Map<string, number>();
   const lanes = d.metadata?.sections ?? [];
   if (lanes.length === 0) return own;
@@ -353,7 +353,7 @@ function applyEngine(d: CanvasData, movers: string[], holes: { sectionId: string
   for (const h of holes) { const members = take(h.sectionId); if (members) jobs.push({ members, columnX: h.columnX }); }
 
   for (const job of jobs) {
-    const patches = layoutSection(toEngineNodes(d.nodes.filter(n => job.members.has(n.id))), { moverIds: job.moverIds, columnX: job.columnX });
+    const patches = layoutSection(toEngineNodes(d.nodes.filter(n => job.members.has(n.id))), { moverIds: job.moverIds, columnX: job.columnX, report });
     if (Object.keys(patches).length === 0) continue;
     d.nodes = applyPatchesToCanvas(d.nodes, patches);
   }
@@ -764,15 +764,18 @@ async function canvasUpdateNode(args: Record<string, unknown>): Promise<string> 
 
   const before = geomOf(d);
   d.nodes[idx] = updated;
-  // - a move or a resize re-packs the node's column and pushes the pairs to its right
+  // - a move or a resize re-packs the node's column and bumps whatever it now really overlaps
   const geom = args.x !== undefined || args.y !== undefined || args.width !== undefined || args.height !== undefined;
-  const own  = geom ? applyEngine(d, [updated.id]) : new Map<string, number>();
+  // - a section too dense for the bump walk to clear is reported, not silently left overlapping
+  const report: { capped?: boolean } = {};
+  const own  = geom ? applyEngine(d, [updated.id], [], report) : new Map<string, number>();
   Object.assign(d, applyLaneFit(d, Date.now(), own));   // - every write fits the sections
   const moved = geom ? movedLabels(d, before, [updated.id]) : [];
   await writeCanvas(p, d);
   return `Updated node ${updated.nodeLabel ?? updated.id}`
     + (clamped.length ? ` — output cell clamped: ${clamped.join(', ')}` : '')
-    + (moved.length ? ` — moved ${moved.join(', ')}` : '');
+    + (moved.length ? ` — moved ${moved.join(', ')}` : '')
+    + (report.capped ? ' — some overlaps could not be resolved; run canvas_reflow_section' : '');
   }); // - withFileLock
 }
 
