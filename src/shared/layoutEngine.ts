@@ -62,17 +62,20 @@ export function deriveColumns(nodes: EngineNode[], movers = new Set<string>()): 
  * Pairs = columns with their output column: x one gap right of the code, width = the widest output
  * the column holds, at its REAL width (never clamped: a wide output must not overlap the pair to its
  * right — OUTPUT_MAX_W is for the callers that create or resize an output), floored at OUTPUT_MIN_W.
+ * `right` is the far edge of the pair as it really sits: the modelled slot, or an output the user
+ * has parked further right than it, so a fork placed after the pair clears what is actually there.
  */
 export function derivePairs(nodes: EngineNode[], columns: Column[]): Pair[] {
   const map = byId(nodes);
   return columns.map(column => {
     let outputW = OUTPUT_MIN_W;
+    let parked = 0;
     for (const id of column.cellIds) {
       const out = map.get(map.get(id)?.outputNodeId ?? '');
-      if (out) outputW = Math.max(outputW, out.w);
+      if (out) { outputW = Math.max(outputW, out.w); parked = Math.max(parked, out.x + out.w); }
     }
     const outputX = column.x + column.codeW + GRID;
-    return { column, outputX, outputW, right: outputX + outputW };
+    return { column, outputX, outputW, right: Math.max(outputX + outputW, parked) };
   });
 }
 
@@ -89,8 +92,12 @@ function overlaps(a: { x: number; y: number; w: number; h: number }, b: { x: num
   return !(sepX || sepY);
 }
 
-// - pack one column tight top → bottom; outputs follow their code (same y, output x of the pair)
-function packColumn(pair: Pair, map: Map<string, EngineNode>, out?: Patches): void {
+// - pack one column tight top → bottom; outputs take their code cell's y. An output keeps its own x
+//   when it sits right of the pair's slot: it is where the user put it, it overlaps nothing there,
+//   and dragging it left is what starts a bump the section never needed. It moves only when it sits
+//   left of the slot, which is where it would be on its code cell. `toSlot` (Reflow, the explicit
+//   tidy) puts every output back on the slot.
+function packColumn(pair: Pair, map: Map<string, EngineNode>, out?: Patches, toSlot = false): void {
   let prevBottom: number | null = null;
   for (const id of pair.column.cellIds) {
     const cell = map.get(id)!;
@@ -98,7 +105,8 @@ function packColumn(pair: Pair, map: Map<string, EngineNode>, out?: Patches): vo
     const x = pair.column.x;
     if (x !== cell.x || y !== cell.y) { if (out) out[id] = { x, y }; cell.x = x; cell.y = y; }
     const o = map.get(cell.outputNodeId ?? '');
-    if (o && (o.x !== pair.outputX || o.y !== y)) { if (out) out[o.id] = { x: pair.outputX, y }; o.x = pair.outputX; o.y = y; }
+    const ox = o ? (toSlot ? pair.outputX : Math.max(o.x, pair.outputX)) : 0;
+    if (o && (o.x !== ox || o.y !== y)) { if (out) out[o.id] = { x: ox, y }; o.x = ox; o.y = y; }
     prevBottom = rowBottom(cell, map);
   }
 }
@@ -169,6 +177,7 @@ function nextBump(nodes: EngineNode[], owners: Map<string, string>, pinned: Set<
  */
 function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, pinned: Set<string>, placed: Set<string>, active: Set<string>, report?: { capped?: boolean }): void {
   const map = byId(nodes);
+  const before = nodes.map(n => ({ node: n, x: n.x, y: n.y }));
   // - the cap is a real limit, not a formality: a dense section (a diagonal staircase, a tight grid)
   //   holds more overlaps than this many steps resolve, and the walk then stops with some of them
   //   still there. `capped` tells the caller, who can offer a Reflow.
@@ -198,6 +207,10 @@ function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, pinned: 
     else if (yields) for (const n of bumpGroup(mover, nodes, owners, map, true)) { n.y += drop; active.add(n.id); }
     else for (const n of bumpGroup(other, nodes, owners, map, true)) { if (!pinned.has(n.id)) { n.y += dy; active.add(n.id); } }
   }
+  // - out of steps with overlaps still there: undo the walk. A half-bumped section can hold MORE
+  //   overlaps than it started with, and the user's hand-placed layout is not ours to shuffle for
+  //   nothing — the caller says to run Reflow instead.
+  for (const b of before) { b.node.x = b.x; b.node.y = b.y; }
   if (report) report.capped = true;
 }
 
@@ -271,7 +284,7 @@ export function reflowSection(input: EngineNode[]): Patches {
   }
   const columns = deriveColumns(nodes);
   const pairs = derivePairs(nodes, columns);
-  for (const pair of pairs) packColumn(pair, map);
+  for (const pair of pairs) packColumn(pair, map, undefined, true);
   // - pairs tight left → right (the first keeps its x); outputs re-measured after the packs
   const tight = derivePairs(nodes, deriveColumns(nodes));
   for (let i = 1; i < tight.length; i++) {

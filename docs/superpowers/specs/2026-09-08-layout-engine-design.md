@@ -54,8 +54,10 @@ One algorithm behind every row of §2, run per section:
    every next cell gets `y = prevBottom + GRID`. Cells are ordered by their current y; the mover
    (`moverId`, the node the operation inserted, moved or resized) wins a tie, so an inserted cell
    placed at the next cell's y lands above it. Insert / grow pushes down; delete / shrink pulls the
-   cells below up to one gap. An output cell has its code cell's y. Nothing outside the column moves
-   in this pass.
+   cells below up to one gap. An output cell has its code cell's y, and the pair's output x when it
+   sits left of that — an output the user parked further right keeps its x, so the pack never drags
+   it into something. Reflow puts every output back on the slot. Nothing outside the column moves in
+   this pass.
 2. **Bumps — one rule for everything the touched column did not already pack.** After step 1, the
    engine looks for real overlaps (two boxes less than one grid gap apart on both axes) between a
    node this call moved (or the mover) and any other node. Each one is resolved by moving the OTHER
@@ -85,8 +87,9 @@ One algorithm behind every row of §2, run per section:
      are one row, placed by the pack).
 
    The walk has a step limit. A section dense enough to exceed it (a diagonal staircase, a tight
-   grid) stops with overlaps still on it; the engine reports that (`report.capped`) and the MCP reply
-   says to run `canvas_reflow_section`.
+   grid) stops before it is clear, and the walk is then UNDONE — the section is left as the pack left
+   it, since a half-bumped one can hold more overlaps than it started with. The engine reports it
+   (`report.capped`) and the MCP reply says to run `canvas_reflow_section`.
    **FORK_1 (2026-09-09):** kept as built — the shorter move wins even when that puts a fork column
    under a wide output. The "code columns always move sideways" variant was measured and rejected
    (H1: fewer edits settle in one pass, overlaps 8 → 10, runaway on dense grids); a bounded variant
