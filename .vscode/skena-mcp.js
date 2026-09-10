@@ -4270,9 +4270,10 @@ function outputOwners(nodes) {
   return owners;
 }
 function deriveColumns(nodes, movers = /* @__PURE__ */ new Set()) {
+  const owners = outputOwners(nodes);
   const groups = /* @__PURE__ */ new Map();
   for (const n of nodes) {
-    if (n.type !== "code")
+    if (owners.has(n.id))
       continue;
     const x = snapGrid(n.x);
     const g = groups.get(x);
@@ -4283,7 +4284,7 @@ function deriveColumns(nodes, movers = /* @__PURE__ */ new Set()) {
   }
   return [...groups.entries()].sort((a, b) => a[0] - b[0]).map(([x, cells]) => {
     cells.sort((a, b) => a.y - b.y || Number(movers.has(b.id)) - Number(movers.has(a.id)) || a.id.localeCompare(b.id));
-    return { x, codeW: Math.max(...cells.map((c) => c.w)), cellIds: cells.map((c) => c.id) };
+    return { x, width: Math.max(...cells.map((c) => c.w)), cellIds: cells.map((c) => c.id) };
   });
 }
 function derivePairs(nodes, columns) {
@@ -4291,15 +4292,20 @@ function derivePairs(nodes, columns) {
   return columns.map((column) => {
     let outputW = OUTPUT_MIN_W;
     let parked = 0;
+    let hasCode = false;
     for (const id of column.cellIds) {
-      const out = map.get(map.get(id)?.outputNodeId ?? "");
+      const cell = map.get(id);
+      if (cell?.type === "code")
+        hasCode = true;
+      const out = map.get(cell?.outputNodeId ?? "");
       if (out) {
         outputW = Math.max(outputW, out.w);
         parked = Math.max(parked, out.x + out.w);
       }
     }
-    const outputX = column.x + column.codeW + GRID;
-    return { column, outputX, outputW, right: Math.max(outputX + outputW, parked) };
+    const outputX = column.x + column.width + GRID;
+    const right = hasCode ? Math.max(outputX + outputW, parked) : column.x + column.width;
+    return { column, outputX, outputW, right };
   });
 }
 function rowBottom(cell, map) {
@@ -4335,26 +4341,10 @@ function packColumn(pair, map, out, toSlot = () => true) {
     prevBottom = rowBottom(cell, map);
   }
 }
-function settleFree(nodes, owners) {
-  const managed = nodes.filter((n) => n.type === "code" || owners.has(n.id));
-  const free = nodes.filter((n) => n.type !== "code" && !owners.has(n.id)).sort((a, b) => a.y - b.y || a.x - b.x);
-  const placed = [...managed];
-  for (const f of free) {
-    for (let again = true; again; ) {
-      again = false;
-      for (const p of placed)
-        if (overlaps(f, p)) {
-          f.y = p.y + p.h + GRID;
-          again = true;
-        }
-    }
-    placed.push(f);
-  }
-}
 function bumpGroup(node, nodes, owners, map, downward) {
   const anchor = map.get(owners.get(node.id) ?? "") ?? node;
   const x = snapGrid(anchor.x);
-  const column = anchor.type === "code" ? nodes.filter((n) => n.type === "code" && snapGrid(n.x) === x) : nodes.filter((n) => n.type !== "code" && !owners.has(n.id) && snapGrid(n.x) === x);
+  const column = nodes.filter((n) => !owners.has(n.id) && snapGrid(n.x) === x);
   const taken = downward ? column.filter((n) => n.y >= anchor.y) : column;
   const group = [...taken];
   for (const c of taken) {
@@ -4449,11 +4439,9 @@ function layoutSection(input, opts = {}) {
     const n = map.get(id);
     if (!n)
       continue;
-    const codeId = n.type === "code" ? id : owners.get(id);
-    if (codeId) {
-      touched.add(snapGrid(map.get(codeId).x));
-      pinned.add(codeId);
-    }
+    const memberId = owners.get(id) ?? id;
+    touched.add(snapGrid(map.get(memberId).x));
+    pinned.add(memberId);
     if (n.outputNodeId)
       pinned.add(n.outputNodeId);
   }
@@ -4476,7 +4464,6 @@ function layoutSection(input, opts = {}) {
 function reflowSection(input) {
   const nodes = clone(input);
   const map = byId(nodes);
-  const owners = outputOwners(nodes);
   const codes = nodes.filter((n) => n.type === "code").sort((a, b) => snapGrid(a.x) - snapGrid(b.x) || a.y - b.y || a.id.localeCompare(b.id));
   const half = (NODE_SIZE.code.w + GRID + OUTPUT_MIN_W) / 2;
   const xs = [];
@@ -4508,12 +4495,11 @@ function reflowSection(input) {
     tight[i].outputX += dx;
     tight[i].right += dx;
   }
-  settleFree(nodes, owners);
   return diff(input, nodes);
 }
 function insertAfter(nodes, afterId) {
   const after = nodes.find((n) => n.id === afterId);
-  if (!after || after.type !== "code")
+  if (!after)
     return null;
   const map = byId(nodes);
   return { x: snapGrid(after.x), y: rowBottom(after, map) + GRID };
@@ -4574,17 +4560,15 @@ function columnsOfDeleted(nodes, sections, deletedIds) {
   for (const n of nodes) {
     if (!deletedIds.has(n.id))
       continue;
-    const code = n.type === "code" ? n : nodes.find((c) => c.type === "code" && c.outputNodeId === n.id && !deletedIds.has(c.id));
-    if (!code)
-      continue;
-    const lane = derived.find((l) => l.memberIds.includes(code.id));
+    const member = nodes.find((c) => c.type === "code" && c.outputNodeId === n.id) ?? n;
+    const lane = derived.find((l) => l.memberIds.includes(member.id));
     if (!lane)
       continue;
-    const key = `${lane.id}|${snapGrid(code.x)}`;
+    const key = `${lane.id}|${snapGrid(member.x)}`;
     if (seen.has(key))
       continue;
     seen.add(key);
-    cols.push({ sectionId: lane.id, columnX: snapGrid(code.x) });
+    cols.push({ sectionId: lane.id, columnX: snapGrid(member.x) });
   }
   return cols;
 }
