@@ -1633,9 +1633,14 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     };
     const { dx, dy, pushX, pushY, fromSide, toSide } = dirMap[dir];
 
+    // - down, in a section, the engine owns the spot: the next row of the anchor's column, one gap
+    //   under it, the rows below pushed down once the node is in — the same `o` a code cell gets.
+    //   No section: the free-slot search, as before.
+    const section = dir === 'J' ? engineNodesOf({ nodeId: current.id }) : null;
+    const slot = section && insertAfter(section, current.id);
     const rawX = current.position.x + dx;
     const rawY = current.position.y + dy;
-    const { x, y } = findFreePosition(nodesRef.current, rawX, rawY, nw, nh, pushX, pushY);
+    const { x, y } = slot ?? findFreePosition(nodesRef.current, rawX, rawY, nw, nh, pushX, pushY);
 
     const nodeId = `text-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
     const newTextNode: CanvasNode = { id: nodeId, type: 'text', text: '', x, y, width: nw, height: nh };
@@ -1652,7 +1657,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     window.dispatchEvent(new CustomEvent('skena:addNodeResult', {
       detail: { type: 'addNodeResult', node: newTextNode, edge: newTextEdge, autoEdit: true, anchorId: current.id } satisfies MsgAddNodeResult,
     }));
-  }, []); // - only uses nodesRef (always current)
+  }, [engineNodesOf]); // - nodesRef is always current; engineNodesOf never changes identity
 
   // - VS Code command path for Ctrl+Shift+J / Ctrl+Shift+K (intercepted before webview)
   useEffect(() => {

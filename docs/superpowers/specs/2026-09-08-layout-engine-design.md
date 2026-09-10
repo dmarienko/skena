@@ -9,6 +9,10 @@ hybrid model (code chains engine-managed, notes free), column-only push, geometr
 a column, dynamic output column width, live code-height recompute, existing canvases untouched until
 an explicit Reflow, drag-and-drop reflow deferred to phase 2.
 
+**2026-09-10:** the hybrid model is dropped. Every node is a column member and packs like a code
+cell — notes and files pull up and push down the same way. An output cell is the only node that is
+not a member: it rides with the code cell that owns it.
+
 ## 1. Where the engine lives and what it sees
 
 - One pure module `src/shared/layoutEngine.ts` (no React), used by the webview, the host
@@ -17,15 +21,18 @@ an explicit Reflow, drag-and-drop reflow deferred to phase 2.
   range. Output: `{ [id]: { x, y, w?, h? } }` — only the nodes that changed. The caller applies it,
   pushes history, saves; `fitLanes` runs after, as for every write today.
 - Nothing new in the file format. Derived on every call, never stored:
-  - **column** = the code cells of a section that share a snapped x, ordered by y;
-  - **pair** = a column + its output column: output x = column x + the column's widest code cell +
+  - **column** = the nodes of a section that share a snapped x, ordered by y — every type, a note
+    and a file next to a code cell. The one exception is an output cell: it rides with the code cell
+    that names it and is no column member of its own.
+  - **pair** = a column + its output column: output x = column x + the column's widest member +
     `GRID`; output column width = the widest output cell's real width, never under `OUTPUT_MIN_W`
     (600). `OUTPUT_MAX_W` (1400) caps an output when it is created or resized, not when measured, so
-    a wider output can never overlap the next pair.
+    a wider output can never overlap the next pair. Every column has a pair; the output column only
+    means something for a column holding a code cell, since nothing else has an output.
   - Sequence edges (code → code, spec §5) are drawn from the column order; they are a view, not
     the record.
-- **Managed** = code cells and their output cells. **Free** = every other node type: placed by
-  hand, moved only when a managed node would overlap it.
+- **Every node is column-managed** — the same pack, the same bumps, whatever its type. "Free" says
+  only that a node has no output cell of its own.
 - Constants in `src/shared/constants.ts`: `GRID` 100 (already), `NODE_SIZE.code` 700×300
   (already), `CODE_MAX_H` 900, `OUTPUT_MIN_W` 600, `OUTPUT_MAX_W` 1400, `OUTPUT_MAX_H` 900,
   `CODE_LINE_PX` 22, `CODE_CHROME_PX` 60.
@@ -36,13 +43,13 @@ Each row is one engine call, one history entry, section fit after.
 
 | Operation | Engine |
 |---|---|
-| Insert code after cell X (`o`, `Alt+X j`, MCP `after`) | new cell in X's column at X.y + X.h + GRID; the column below pushed down; output column untouched |
+| Insert after node X (`o`, `Alt+X j`, MCP `after`) | new node in X's column at X.y + X's row height + GRID, whatever X's type; the column below pushed down; output column untouched |
 | Fork right / left of X (`Alt+X l` / `h`, MCP `forkOf`) | new column pair: x = right edge of X's pair + GRID (left: X's column x − pair width − GRID, refused below 0); y = X.y; pairs beyond shift sideways if overlapped |
 | Run → output | output cell at (pair's output x, code y); width from content within `[OUTPUT_MIN_W, OUTPUT_MAX_W]`; whatever it now overlaps is bumped (§3.2); if the output is taller than its code, the column below is pushed |
 | Code height (live, on every new line) | h = `max(NODE_SIZE.code.h, ceil((lines × CODE_LINE_PX + CODE_CHROME_PX) / GRID) × GRID)` capped at `CODE_MAX_H`; grows at grid steps; the column below pushed; shrink pulls the column up |
-| Clear output / delete cell | the column closes the hole (pull up); nothing pulls back sideways (Reflow does) |
+| Clear output / delete a node | the column closes the hole (pull up); nothing pulls back sideways (Reflow does) |
 | Paste (§9 of the follow-ups spec), drop, MCP `canvas_add_node` with x,y | placed at the target; whatever it overlaps is bumped (§3.2) |
-| Free node moved or resized | only the nodes it overlaps move, by the overlap, on the shorter axis (§3.2) |
+| Node moved or resized | its column packs around it (§3.1); anything else it overlaps moves by the overlap, on the shorter axis (§3.2) |
 
 "Pull up": a column never keeps a hole larger than one gap.
 
@@ -50,8 +57,9 @@ Each row is one engine call, one history entry, section fit after.
 
 One algorithm behind every row of §2, run per section:
 
-1. **Vertical, managed.** Each column is packed tight top → bottom: the first cell keeps its y,
-   every next cell gets `y = prevBottom + GRID`. Cells are ordered by their current y; the mover
+1. **Vertical.** Every column is packed tight top → bottom, a note column exactly like a code
+   column: the first cell keeps its y (snapped), every next cell gets `y = prevBottom + GRID`, and
+   every cell takes the column's x. Cells are ordered by their current y; the mover
    (`moverId`, the node the operation inserted, moved or resized) wins a tie, so an inserted cell
    placed at the next cell's y lands above it. Insert / grow pushes down; delete / shrink pulls the
    cells below up to one gap. An output cell has its code cell's y, and the pair's output x when it
@@ -74,9 +82,9 @@ One algorithm behind every row of §2, run per section:
    again, so a bump can cascade, but only through real overlaps and only by overlap amounts — never
    by a modelled distance. Example (H5): N1 (0,0) 700×300 widened to 800 bumps N5 (800,0): the
    smaller move is 100 px right, so N5 → (900,0) and its column-mate N3 (800,400) → (900,400); N2
-   does not move. Consequences: a hand-placed section is never rearranged by an edit (no overlap, no
-   move); an output that grows pushes the next pair only when it actually reaches it; shrinking never
-   pulls anything back (Reflow does).
+   does not move. Consequences: no overlap, no bump — a hand-placed section is rearranged by an edit
+   only where the pack of the touched column (§3.1) reaches; an output that grows pushes the next
+   pair only when it actually reaches it; shrinking never pulls anything back (Reflow does).
 
    Three details the rule needs for a second call to change nothing:
    - a **sideways step is the overlap rounded UP to the grid**, so a column moves by one grid
@@ -96,10 +104,11 @@ One algorithm behind every row of §2, run per section:
    (H1: fewer edits settle in one pass, overlaps 8 → 10, runaway on dense grids); a bounded variant
    (sideways only when ≤ N× the down move) is the thing to revisit. Details:
    `~/projects/crtx/decisions/skena-layout-engine-2026-09-08.md`.
-3. **Free vs managed.** The same bump rule applies to free and managed nodes; the only difference is
-   what a column is: a code column brings its outputs; a free column is every free node at that x.
-   A node that was itself dropped or resized is the mover and moves only to yield to a node above
-   it (§3.2).
+3. **Outputs.** An output cell is the one node the pack does not treat as a column member: it is
+   placed at its code cell's y, at the pair's output x or at the x the user parked it at, and a
+   sideways or downward move of that cell takes it along. Everything else — notes, files, links,
+   code cells — is a member of the column at its snapped x and packs there. A node that was itself
+   dropped or resized is the mover and moves only to yield to a node above it (§3.2).
 4. **Sections.** The engine works inside one section: the caller hands it that section's nodes and
    nothing else, which is how a push never moves a node across a section boundary (the engine takes
    no lane range). `fitLanes` runs after it, so a section that grew pushes the sections below.
@@ -143,8 +152,8 @@ One algorithm behind every row of §2, run per section:
 ## 6. Tests
 
 `test/layout-engine.mjs` on the esbuild bundle: insert pushes the column only; delete pulls up to
-one gap; output growth shifts the pairs to the right and shrink pulls them back; a free node is moved
-only when overlapped, downward; a push never crosses a section boundary; idempotence; `codeCellHeight`
-at the grid steps and the cap; Reflow on copies of `test/H1–H5.canvas` under `/tmp` (never the real
+one gap; output growth shifts the pairs to the right and shrink pulls them back; a note column packs
+like a code column and a note in a code column packs with it; a push never crosses a section
+boundary; idempotence; `codeCellHeight` at the grid steps and the cap; Reflow on copies of `test/H1–H5.canvas` under `/tmp` (never the real
 files): no overlap, one-gap columns, every code cell on a column x. `test/mcp-parity.mjs` gains
 `after`, `forkOf`, `canvas_reflow_section` and the engine on `canvas_add_node` with x/y.

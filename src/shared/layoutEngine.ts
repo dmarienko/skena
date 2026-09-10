@@ -4,9 +4,10 @@ import { deriveLanes, type SectionLane } from './sectionLanes';
 
 /**
  * The layout engine of one section (spec 2026-09-08-layout-engine-design.md).
- * Managed = code cells and the output cells they name in `outputNodeId`; free = everything else.
- * A column = code cells sharing a snapped x, ordered by y; a pair = a column + its output column.
- * Every function is pure and returns only what changed.
+ * A column = every node of the section sharing a snapped x, whatever its type, ordered by y; the one
+ * exception is an output cell, which rides with the code cell that names it in `outputNodeId` and is
+ * no column member of its own. A pair = a column + its output column (only a code cell has an
+ * output). Every function is pure and returns only what changed.
  */
 
 export interface EngineNode { id: string; type: string; x: number; y: number; w: number; h: number; outputNodeId?: string }
@@ -14,7 +15,7 @@ export interface EngineNode { id: string; type: string; x: number; y: number; w:
 //   patch a caller receives today carries only x/y.
 export interface Patch { x: number; y: number; w?: number; h?: number }
 export type Patches = Record<string, Patch>;
-export interface Column { x: number; codeW: number; cellIds: string[] }
+export interface Column { x: number; width: number; cellIds: string[] }
 export interface Pair { column: Column; outputX: number; outputW: number; right: number }
 // - `report` is filled in by the call: `capped` says the bump walk stopped with overlaps still
 //   there (a dense section), so the caller can tell the user to reflow. `maxSteps` overrides how
@@ -34,7 +35,7 @@ export function codeCellHeight(lines: number): number {
   return Math.min(CODE_MAX_H, Math.max(NODE_SIZE.code.h, raw));
 }
 
-/** Ids of output cells owned by a code cell (the managed non-code nodes). */
+/** Ids of output cells owned by a code cell (the nodes that ride with a cell instead of a column). */
 export function outputOwners(nodes: EngineNode[]): Map<string, string> {
   const owners = new Map<string, string>();
   const ids = new Set(nodes.map(n => n.id));
@@ -42,11 +43,16 @@ export function outputOwners(nodes: EngineNode[]): Map<string, string> {
   return owners;
 }
 
-/** Columns of a section, left to right; cells top to bottom, a mover first on a tie. */
+/**
+ * Columns of a section, left to right; cells top to bottom, a mover first on a tie. Every node type
+ * is a column member — a note, a file and a code cell at the same snapped x are one column and pack
+ * together. An output cell is not: it takes its code cell's row (`packColumn`).
+ */
 export function deriveColumns(nodes: EngineNode[], movers = new Set<string>()): Column[] {
+  const owners = outputOwners(nodes);
   const groups = new Map<number, EngineNode[]>();
   for (const n of nodes) {
-    if (n.type !== 'code') continue;
+    if (owners.has(n.id)) continue;
     const x = snapGrid(n.x);
     const g = groups.get(x);
     if (g) g.push(n); else groups.set(x, [n]);
@@ -55,32 +61,39 @@ export function deriveColumns(nodes: EngineNode[], movers = new Set<string>()): 
     .sort((a, b) => a[0] - b[0])
     .map(([x, cells]) => {
       cells.sort((a, b) => a.y - b.y || Number(movers.has(b.id)) - Number(movers.has(a.id)) || a.id.localeCompare(b.id));
-      return { x, codeW: Math.max(...cells.map(c => c.w)), cellIds: cells.map(c => c.id) };
+      return { x, width: Math.max(...cells.map(c => c.w)), cellIds: cells.map(c => c.id) };
     });
 }
 
 /**
- * Pairs = columns with their output column: x one gap right of the code, width = the widest output
- * the column holds, at its REAL width (never clamped: a wide output must not overlap the pair to its
- * right — OUTPUT_MAX_W is for the callers that create or resize an output), floored at OUTPUT_MIN_W.
- * `right` is the far edge of the pair as it really sits: the modelled slot, or an output the user
- * has parked further right than it, so a fork placed after the pair clears what is actually there.
+ * Pairs = columns with their output column: x one gap right of the column's widest member, width =
+ * the widest output the column holds, at its REAL width (never clamped: a wide output must not
+ * overlap the pair to its right — OUTPUT_MAX_W is for the callers that create or resize an output),
+ * floored at OUTPUT_MIN_W. Every column gets a pair; the output column only means something for a
+ * column that holds a code cell, since nothing else has an output.
+ * `right` is the far edge of the pair as it really sits: the modelled slot (kept for a code column
+ * whose cells have not run yet, so a fork clears the outputs to come), or an output the user has
+ * parked further right than it. A column with no code cell ends at its own right edge.
  */
 export function derivePairs(nodes: EngineNode[], columns: Column[]): Pair[] {
   const map = byId(nodes);
   return columns.map(column => {
     let outputW = OUTPUT_MIN_W;
     let parked = 0;
+    let hasCode = false;
     for (const id of column.cellIds) {
-      const out = map.get(map.get(id)?.outputNodeId ?? '');
+      const cell = map.get(id);
+      if (cell?.type === 'code') hasCode = true;
+      const out = map.get(cell?.outputNodeId ?? '');
       if (out) { outputW = Math.max(outputW, out.w); parked = Math.max(parked, out.x + out.w); }
     }
-    const outputX = column.x + column.codeW + GRID;
-    return { column, outputX, outputW, right: Math.max(outputX + outputW, parked) };
+    const outputX = column.x + column.width + GRID;
+    const right = hasCode ? Math.max(outputX + outputW, parked) : column.x + column.width;
+    return { column, outputX, outputW, right };
   });
 }
 
-// - bottom of a code cell's row = the taller of the cell and its output
+// - bottom of a column member's row = the taller of the node and its output (a note has none)
 function rowBottom(cell: EngineNode, map: Map<string, EngineNode>): number {
   const out = map.get(cell.outputNodeId ?? '');
   return cell.y + Math.max(cell.h, out ? out.h : 0);
@@ -93,7 +106,8 @@ function overlaps(a: { x: number; y: number; w: number; h: number }, b: { x: num
   return !(sepX || sepY);
 }
 
-// - pack one column tight top → bottom; outputs take their code cell's y. `toSlot` decides whether
+// - pack one column tight top → bottom, whatever the node types in it; outputs take their code
+//   cell's y and are placed here rather than as members. `toSlot` decides whether
 //   an output also goes back to the pair's x slot: Reflow (the explicit tidy) takes every one of
 //   them, a regular call only the ones whose pair the operation itself broke. An output the user
 //   parked overlaps nothing where it is, so pulling it left starts a bump the section never needed.
@@ -112,32 +126,14 @@ function packColumn(pair: Pair, map: Map<string, EngineNode>, out?: Patches, toS
   }
 }
 
-// - Reflow only: a free node moves down until it is clear of every managed node and of the free
-//   nodes settled before it. A regular call bumps instead (`resolveBumps`); Reflow is the user
-//   asking for the whole section to be tidied, so it settles against everything.
-function settleFree(nodes: EngineNode[], owners: Map<string, string>): void {
-  const managed = nodes.filter(n => n.type === 'code' || owners.has(n.id));
-  const free = nodes.filter(n => n.type !== 'code' && !owners.has(n.id)).sort((a, b) => a.y - b.y || a.x - b.x);
-  const placed: EngineNode[] = [...managed];
-  for (const f of free) {
-    for (let again = true; again;) {
-      again = false;
-      for (const p of placed) if (overlaps(f, p)) { f.y = p.y + p.h + GRID; again = true; }
-    }
-    placed.push(f);
-  }
-}
-
-// - what one bump moves with `node`: a code cell — or an output, through its code cell — takes its
-//   column (the code cells at that snapped x, their outputs riding along); a free node takes the
-//   free nodes at its x (spec §3.3). `downward` keeps only the ones at or under the anchor, which is
-//   what a downward bump takes; a sideways bump takes the whole column, so the columns stay aligned.
+// - what one bump moves with `node`: its column — every node at that snapped x, outputs riding with
+//   their code cells; an output is taken through the cell that owns it. `downward` keeps only the
+//   ones at or under the anchor, which is what a downward bump takes; a sideways bump takes the
+//   whole column, so the columns stay aligned.
 function bumpGroup(node: EngineNode, nodes: EngineNode[], owners: Map<string, string>, map: Map<string, EngineNode>, downward: boolean): EngineNode[] {
   const anchor = map.get(owners.get(node.id) ?? '') ?? node;
   const x = snapGrid(anchor.x);
-  const column = anchor.type === 'code'
-    ? nodes.filter(n => n.type === 'code' && snapGrid(n.x) === x)
-    : nodes.filter(n => n.type !== 'code' && !owners.has(n.id) && snapGrid(n.x) === x);
+  const column = nodes.filter(n => !owners.has(n.id) && snapGrid(n.x) === x);
   const taken = downward ? column.filter(n => n.y >= anchor.y) : column;
   const group = [...taken];
   for (const c of taken) { const o = map.get(c.outputNodeId ?? ''); if (o) group.push(o); }
@@ -243,14 +239,15 @@ export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patch
 
   // - which columns are touched: the movers' (a moved output counts for its code's column) + columnX
   const touched = new Set<number>();
-  // - a managed mover IS placed by the pack below, snapped onto its column and stacked in it; what
-  //   pinning means is that no BUMP moves it, bar the one yield in `resolveBumps`. The other half of
-  //   its pair is pinned with it, an output having its code cell's y.
+  // - a mover IS placed by the pack below, snapped onto its column and stacked in it; what pinning
+  //   means is that no BUMP moves it, bar the one yield in `resolveBumps`. The other half of its
+  //   pair is pinned with it, an output having its code cell's y.
   const pinned = new Set(movers);
   for (const id of movers) {
     const n = map.get(id); if (!n) continue;
-    const codeId = n.type === 'code' ? id : owners.get(id);
-    if (codeId) { touched.add(snapGrid(map.get(codeId)!.x)); pinned.add(codeId); }
+    const memberId = owners.get(id) ?? id;
+    touched.add(snapGrid(map.get(memberId)!.x));
+    pinned.add(memberId);
     if (n.outputNodeId) pinned.add(n.outputNodeId);
   }
   if (opts.columnX !== undefined) touched.add(snapGrid(opts.columnX));
@@ -270,11 +267,10 @@ export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patch
   return diff(input, nodes);
 }
 
-/** Whole-section pack: every code cell snapped to its column, every column and pair tight, free nodes settled. */
+/** Whole-section pack: every code cell snapped to its column, every column and every pair tight. */
 export function reflowSection(input: EngineNode[]): Patches {
   const nodes = clone(input);
   const map = byId(nodes);
-  const owners = outputOwners(nodes);
   // - snap x onto columns, left → right: a cell joins the nearest column established so far when it
   //   sits within half a pair width, else it starts one at its own snapped x. A cell is never a
   //   candidate column for itself — that is what leaves an off-column cell in its own column.
@@ -303,14 +299,13 @@ export function reflowSection(input: EngineNode[]): Patches {
     }
     tight[i].column.x += dx; tight[i].outputX += dx; tight[i].right += dx;
   }
-  settleFree(nodes, owners);
   return diff(input, nodes);
 }
 
-/** Where a new code cell goes after `afterId`: its column, one gap below. Null when `afterId` is not a code cell. */
+/** Where a new node goes after `afterId`: its column, one gap below its row. Null when there is no such node. */
 export function insertAfter(nodes: EngineNode[], afterId: string): { x: number; y: number } | null {
   const after = nodes.find(n => n.id === afterId);
-  if (!after || after.type !== 'code') return null;
+  if (!after) return null;
   const map = byId(nodes);
   return { x: snapGrid(after.x), y: rowBottom(after, map) + GRID };
 }
@@ -396,8 +391,9 @@ export function sectionMembership(nodes: CanvasShapedNode[], sections: SectionLa
 
 /**
  * The columns a delete leaves a hole in, read BEFORE the removal so the engine can close them after:
- * an output cell counts for its code cell's column, and a code cell going with its output leaves one
- * entry, not two. One entry per column; empty when the canvas has no sections.
+ * every deleted node leaves one in its own column, whatever its type, except an output cell — which
+ * counts for its code cell's column, so a code cell going with its output leaves one entry, not two.
+ * One entry per column; empty when the canvas has no sections.
  */
 export function columnsOfDeleted(nodes: CanvasShapedNode[], sections: SectionLane[], deletedIds: Set<string>): { sectionId: string; columnX: number }[] {
   if (sections.length === 0) return [];
@@ -406,14 +402,13 @@ export function columnsOfDeleted(nodes: CanvasShapedNode[], sections: SectionLan
   const cols: { sectionId: string; columnX: number }[] = [];
   for (const n of nodes) {
     if (!deletedIds.has(n.id)) continue;
-    const code = n.type === 'code' ? n : nodes.find(c => c.type === 'code' && c.outputNodeId === n.id && !deletedIds.has(c.id));
-    if (!code) continue;
-    const lane = derived.find(l => l.memberIds.includes(code.id));
+    const member = nodes.find(c => c.type === 'code' && c.outputNodeId === n.id) ?? n;
+    const lane = derived.find(l => l.memberIds.includes(member.id));
     if (!lane) continue;
-    const key = `${lane.id}|${snapGrid(code.x)}`;
+    const key = `${lane.id}|${snapGrid(member.x)}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    cols.push({ sectionId: lane.id, columnX: snapGrid(code.x) });
+    cols.push({ sectionId: lane.id, columnX: snapGrid(member.x) });
   }
   return cols;
 }
