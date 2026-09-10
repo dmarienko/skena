@@ -4269,11 +4269,12 @@ function outputOwners(nodes) {
       owners.set(n.outputNodeId, n.id);
   return owners;
 }
+var isMember = (n, owners) => !owners.has(n.id) && n.type !== "kernel";
 function deriveColumns(nodes, movers = /* @__PURE__ */ new Set()) {
   const owners = outputOwners(nodes);
   const groups = /* @__PURE__ */ new Map();
   for (const n of nodes) {
-    if (owners.has(n.id))
+    if (!isMember(n, owners))
       continue;
     const x = snapGrid(n.x);
     const g = groups.get(x);
@@ -4343,8 +4344,10 @@ function packColumn(pair, map, out, toSlot = () => true) {
 }
 function bumpGroup(node, nodes, owners, map, downward) {
   const anchor = map.get(owners.get(node.id) ?? "") ?? node;
+  if (anchor.type === "kernel")
+    return [anchor];
   const x = snapGrid(anchor.x);
-  const column = nodes.filter((n) => !owners.has(n.id) && snapGrid(n.x) === x);
+  const column = nodes.filter((n) => isMember(n, owners) && snapGrid(n.x) === x);
   const taken = downward ? column.filter((n) => n.y >= anchor.y) : column;
   const group = [...taken];
   for (const c of taken) {
@@ -5579,14 +5582,14 @@ async function canvasAddNode(args) {
     const anchor = anchorRef !== void 0 ? findNode(d, anchorRef) : void 0;
     if (anchorRef !== void 0 && !anchor)
       return `Node not found: ${anchorRef}`;
-    const type = args.type ?? (anchor ? "code" : "text");
+    const type = args.type ?? (anchor?.type === "code" ? "code" : "text");
     const dims = defaultDims(type);
     const w = args.width ?? dims.w;
     const h = args.height ?? dims.h;
     let placed = null;
     if (anchor) {
-      if (anchor.type !== "code")
-        return `${args.after !== void 0 ? "after" : "forkOf"} must be a code cell`;
+      if (args.forkOf !== void 0 && anchor.type !== "code")
+        return "forkOf must be a code cell";
       const around = sectionEngineNodes(d.nodes, d.metadata?.sections ?? [], anchor.id) ?? toEngineNodes(d.nodes);
       placed = args.after !== void 0 ? insertAfter(around, anchor.id) : forkOf(around, anchor.id, args.side ?? "right", snapGrid(w));
       if (!placed)
@@ -6424,7 +6427,7 @@ var TOOLS = [
   },
   {
     name: "canvas_add_node",
-    description: "Add a new node to the canvas. The node is automatically marked as AI-created (\u{1F916} badge) and assigned a label. Position defaults to the right of all existing nodes. `after` puts a new code cell under a code cell in its own column; `forkOf` starts a new column pair beside one; both ignore x/y. Whatever the placement, the layout engine then packs the column the node landed in and pushes the column pairs to its right and the notes it covers out of the way \u2014 never across a section boundary. Sections fit their content: a node placed past its section's bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Supplied coordinates are snapped to the grid and clamped to the canvas origin.",
+    description: "Add a new node to the canvas. The node is automatically marked as AI-created (\u{1F916} badge) and assigned a label. Position defaults to the right of all existing nodes. `after` puts the new node under any node, in that node's own column (the type defaults to code under a code cell, else to a text note); `forkOf` names a code cell and starts a new column pair beside its pair; both ignore x/y. Whatever the placement, the layout engine then packs the column the node landed in and pushes the column pairs to its right and the notes it covers out of the way \u2014 never across a section boundary. Sections fit their content: a node placed past its section's bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Supplied coordinates are snapped to the grid and clamped to the canvas origin.",
     inputSchema: {
       type: "object",
       properties: {
@@ -6441,7 +6444,7 @@ var TOOLS = [
         y: { type: "number", description: "Y position (auto-placed if omitted; ignored with after/forkOf)" },
         width: { type: "number", description: "Width in canvas units (default: type-dependent)" },
         height: { type: "number", description: "Height in canvas units (default: type-dependent)" },
-        after: { type: "string", description: "Label or id of a code cell: place the new cell one gap below it in the same column (type defaults to code)" },
+        after: { type: "string", description: "Label or id of any node: place the new node one gap below it in the same column (type defaults to code under a code cell, else text)" },
         forkOf: { type: "string", description: "Label or id of a code cell: start a new column pair beside its pair (type defaults to code)" },
         side: { type: "string", description: "forkOf side: right (default) or left; a left fork that would start before the canvas origin is refused" }
       },
