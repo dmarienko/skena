@@ -644,26 +644,29 @@ async function canvasAddNode(args: Record<string, unknown>): Promise<string> {
   const p = resolvePath(args.canvasPath as string);
   return withFileLock(p, async () => {
   const d    = await readCanvasOrEmpty(p);   // - create-on-first-add: empty canvas if the file is new
-  // - `after` and `forkOf` both name a code cell and let the engine place the new one, so the type
-  //   defaults to code and a supplied x/y is ignored (the reply says so)
+  // - `after` and `forkOf` both let the engine place the new node, so a supplied x/y is ignored (the
+  //   reply says so). `after` takes any node; `forkOf` names a code cell, since it opens a new pair
+  //   and only a code cell has an output column. Without an explicit `type`, a node made off a code
+  //   cell is a code cell and anything else gets a note.
   const anchorRef = (args.after as string | undefined) ?? (args.forkOf as string | undefined);
   const anchor    = anchorRef !== undefined ? findNode(d, anchorRef) : undefined;
   if (anchorRef !== undefined && !anchor) return `Node not found: ${anchorRef}`;
 
-  const type = (args.type as string | undefined) ?? (anchor ? 'code' : 'text');
+  const type = (args.type as string | undefined) ?? (anchor?.type === 'code' ? 'code' : 'text');
   const dims = defaultDims(type);
   const w    = (args.width  as number | undefined) ?? dims.w;
   const h    = (args.height as number | undefined) ?? dims.h;
 
   let placed: { x: number; y: number } | null = null;
   if (anchor) {
-    if (anchor.type !== 'code') return `${args.after !== undefined ? 'after' : 'forkOf'} must be a code cell`;
+    if (args.forkOf !== undefined && anchor.type !== 'code') return 'forkOf must be a code cell';
     // - the anchor's own section; a canvas that has no sections yet still gets a position out of this
     const around = sectionEngineNodes(d.nodes, d.metadata?.sections ?? [], anchor.id) ?? toEngineNodes(d.nodes);
     placed = args.after !== undefined
       ? insertAfter(around, anchor.id)
       : forkOf(around, anchor.id, (args.side as 'right' | 'left' | undefined) ?? 'right', snapGrid(w));
-    // - the anchor is a code cell in a column, so the only refusal left is a left fork off the edge
+    // - the anchor is a node of the section either way, so the only refusal left is a left fork off
+    //   the edge
     if (!placed) return 'a left fork does not fit before the origin';
   }
 
@@ -1540,7 +1543,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_add_node',
-    description: 'Add a new node to the canvas. The node is automatically marked as AI-created (🤖 badge) and assigned a label. Position defaults to the right of all existing nodes. `after` puts a new code cell under a code cell in its own column; `forkOf` starts a new column pair beside one; both ignore x/y. Whatever the placement, the layout engine then packs the column the node landed in and pushes the column pairs to its right and the notes it covers out of the way — never across a section boundary. Sections fit their content: a node placed past its section\'s bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Supplied coordinates are snapped to the grid and clamped to the canvas origin.',
+    description: 'Add a new node to the canvas. The node is automatically marked as AI-created (🤖 badge) and assigned a label. Position defaults to the right of all existing nodes. `after` puts the new node under any node, in that node\'s own column (the type defaults to code under a code cell, else to a text note); `forkOf` names a code cell and starts a new column pair beside its pair; both ignore x/y. Whatever the placement, the layout engine then packs the column the node landed in and pushes the column pairs to its right and the notes it covers out of the way — never across a section boundary. Sections fit their content: a node placed past its section\'s bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Supplied coordinates are snapped to the grid and clamped to the canvas origin.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1557,7 +1560,7 @@ const TOOLS = [
         y:          { type: 'number', description: 'Y position (auto-placed if omitted; ignored with after/forkOf)' },
         width:      { type: 'number', description: 'Width in canvas units (default: type-dependent)' },
         height:     { type: 'number', description: 'Height in canvas units (default: type-dependent)' },
-        after:      { type: 'string', description: 'Label or id of a code cell: place the new cell one gap below it in the same column (type defaults to code)' },
+        after:      { type: 'string', description: 'Label or id of any node: place the new node one gap below it in the same column (type defaults to code under a code cell, else text)' },
         forkOf:     { type: 'string', description: 'Label or id of a code cell: start a new column pair beside its pair (type defaults to code)' },
         side:       { type: 'string', description: 'forkOf side: right (default) or left; a left fork that would start before the canvas origin is refused' },
       },

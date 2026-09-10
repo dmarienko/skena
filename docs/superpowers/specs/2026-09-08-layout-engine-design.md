@@ -35,7 +35,7 @@ not a member: it rides with the code cell that owns it.
   only that a node has no output cell of its own.
 - Constants in `src/shared/constants.ts`: `GRID` 100 (already), `NODE_SIZE.code` 700×300
   (already), `CODE_MAX_H` 900, `OUTPUT_MIN_W` 600, `OUTPUT_MAX_W` 1400, `OUTPUT_MAX_H` 900,
-  `CODE_LINE_PX` 22, `CODE_CHROME_PX` 60.
+  `CODE_H_STEP` 50.
 
 ## 2. Operations
 
@@ -46,7 +46,7 @@ Each row is one engine call, one history entry, section fit after.
 | Insert after node X (`o`, `Alt+X j`, MCP `after`) | new node in X's column at X.y + X's row height + GRID, whatever X's type; the column below pushed down; output column untouched |
 | Fork right / left of X (`Alt+X l` / `h`, MCP `forkOf`) | new column pair: x = right edge of X's pair + GRID (left: X's column x − pair width − GRID, refused below 0); y = X.y; pairs beyond shift sideways if overlapped |
 | Run → output | output cell at (pair's output x, code y); width from content within `[OUTPUT_MIN_W, OUTPUT_MAX_W]`; whatever it now overlaps is bumped (§3.2); if the output is taller than its code, the column below is pushed |
-| Code height (live, on every new line) | h = `max(NODE_SIZE.code.h, ceil((lines × CODE_LINE_PX + CODE_CHROME_PX) / GRID) × GRID)` capped at `CODE_MAX_H`; grows at grid steps; the column below pushed; shrink pulls the column up |
+| Code height (live, on the user's edits) | h = the text's real need (editor content height + the cell's chrome, measured by the cell) rounded up to `CODE_H_STEP`, min `NODE_SIZE.code.h`, max `CODE_MAX_H`; recomputed on the user's edits only, so a hand-resized cell keeps its height until its text changes; the column below pushed; shrink pulls the column up |
 | Clear output / delete a node | the column closes the hole (pull up); nothing pulls back sideways (Reflow does) |
 | Paste (§9 of the follow-ups spec), drop, MCP `canvas_add_node` with x,y | placed at the target; whatever it overlaps is bumped (§3.2) |
 | Node moved or resized | its column packs around it (§3.1); anything else it overlaps moves by the overlap, on the shorter axis (§3.2) |
@@ -62,10 +62,12 @@ One algorithm behind every row of §2, run per section:
    every cell takes the column's x. Cells are ordered by their current y; the mover
    (`moverId`, the node the operation inserted, moved or resized) wins a tie, so an inserted cell
    placed at the next cell's y lands above it. Insert / grow pushes down; delete / shrink pulls the
-   cells below up to one gap. An output cell has its code cell's y, and the pair's output x when it
-   sits left of that or when the operation moved its code cell off the row the output is on — a cell
-   the user dragged takes its output with it. An output the user parked further right of a cell that
-   did not move keeps its x, so the pack never drags it into something. Reflow puts every output back
+   cells below up to one gap. Kernel badges are not column members: a badge is a marker the user
+   parks where they like, never packed and never carried along by a column. An output cell has its
+   code cell's y, and the pair's output x when it sits left of that or when the operation moved its
+   code cell off the row the output is on — a cell the user dragged takes its output with it. An
+   output the user parked further right of a cell that did not move keeps its x, so the pack never
+   drags it into something. Reflow puts every output back
    on the slot. Nothing outside the column moves in this pass.
 2. **Bumps — one rule for everything the touched column did not already pack.** After step 1, the
    engine looks for real overlaps (two boxes less than one grid gap apart on both axes) between a
@@ -142,7 +144,7 @@ One algorithm behind every row of §2, run per section:
 | File | Change |
 |---|---|
 | `src/shared/constants.ts` | the constants of §1 |
-| `src/shared/layoutEngine.ts` | new: `deriveColumns`, `derivePairs`, `layoutSection(nodes, lane, { moverId? })`, `reflowSection`, `codeCellHeight(lines)` |
+| `src/shared/layoutEngine.ts` | new: `deriveColumns`, `derivePairs`, `layoutSection(nodes, lane, { moverId? })`, `reflowSection`, `codeCellHeight(neededPx)` |
 | `src/webview/canvas/CanvasView.tsx` | creation (`o`, `Alt+X`), paste, drop, resize, code-height, run-output and delete paths call the engine and apply its result with the action's history entry |
 | `src/webview/rail/SegmentMenu.tsx`, `SectionRail.tsx` | "Reflow section" entry |
 | `src/extension/editor-provider.ts` | run-output placement through the engine (replaces `outputCellGeom`'s free-slot search) |

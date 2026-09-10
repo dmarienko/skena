@@ -4,10 +4,10 @@ import { deriveLanes, type SectionLane } from './sectionLanes';
 
 /**
  * The layout engine of one section (spec 2026-09-08-layout-engine-design.md).
- * A column = every node of the section sharing a snapped x, whatever its type, ordered by y; the one
- * exception is an output cell, which rides with the code cell that names it in `outputNodeId` and is
- * no column member of its own. A pair = a column + its output column (only a code cell has an
- * output). Every function is pure and returns only what changed.
+ * A column = every node of the section sharing a snapped x, whatever its type, ordered by y; the two
+ * exceptions are an output cell, which rides with the code cell that names it in `outputNodeId`, and
+ * a kernel badge, which is a marker the user parks anywhere. A pair = a column + its output column
+ * (only a code cell has an output). Every function is pure and returns only what changed.
  */
 
 export interface EngineNode { id: string; type: string; x: number; y: number; w: number; h: number; outputNodeId?: string }
@@ -48,16 +48,22 @@ export function outputOwners(nodes: EngineNode[]): Map<string, string> {
   return owners;
 }
 
+// - a kernel badge is a 140×160 marker the user parks where they like, so it is no column member:
+//   as the head of a column it would drag the first code cell up to its own y. It is still a plain
+//   box, so the bumps still move it, on its own, to keep it clear of what lands on it.
+const isMember = (n: EngineNode, owners: Map<string, string>) => !owners.has(n.id) && n.type !== 'kernel';
+
 /**
  * Columns of a section, left to right; cells top to bottom, a mover first on a tie. Every node type
  * is a column member — a note, a file and a code cell at the same snapped x are one column and pack
- * together. An output cell is not: it takes its code cell's row (`packColumn`).
+ * together. Two are not: an output cell takes its code cell's row (`packColumn`), and a kernel badge
+ * is a marker that belongs to no column.
  */
 export function deriveColumns(nodes: EngineNode[], movers = new Set<string>()): Column[] {
   const owners = outputOwners(nodes);
   const groups = new Map<number, EngineNode[]>();
   for (const n of nodes) {
-    if (owners.has(n.id)) continue;
+    if (!isMember(n, owners)) continue;
     const x = snapGrid(n.x);
     const g = groups.get(x);
     if (g) g.push(n); else groups.set(x, [n]);
@@ -134,11 +140,12 @@ function packColumn(pair: Pair, map: Map<string, EngineNode>, out?: Patches, toS
 // - what one bump moves with `node`: its column — every node at that snapped x, outputs riding with
 //   their code cells; an output is taken through the cell that owns it. `downward` keeps only the
 //   ones at or under the anchor, which is what a downward bump takes; a sideways bump takes the
-//   whole column, so the columns stay aligned.
+//   whole column, so the columns stay aligned. A kernel badge is in no column and moves alone.
 function bumpGroup(node: EngineNode, nodes: EngineNode[], owners: Map<string, string>, map: Map<string, EngineNode>, downward: boolean): EngineNode[] {
   const anchor = map.get(owners.get(node.id) ?? '') ?? node;
+  if (anchor.type === 'kernel') return [anchor];
   const x = snapGrid(anchor.x);
-  const column = nodes.filter(n => !owners.has(n.id) && snapGrid(n.x) === x);
+  const column = nodes.filter(n => isMember(n, owners) && snapGrid(n.x) === x);
   const taken = downward ? column.filter(n => n.y >= anchor.y) : column;
   const group = [...taken];
   for (const c of taken) { const o = map.get(c.outputNodeId ?? ''); if (o) group.push(o); }

@@ -2003,13 +2003,15 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         K: { dx: 0,         dy: -nh - GAP, pushX:  0, pushY: -1, fromSide: 'top',    toSide: 'bottom' },
       };
       const { dx, dy, pushX, pushY, fromSide, toSide } = dirMap[key];
-      // - off a code cell the engine owns the spot: L / H open a new column pair right / left of its
-      //   pair, J is the next cell of its own column. K keeps the free-slot search — there is no
-      //   "insert above" rule. A left fork with no room before the origin is refused: nothing is added.
-      const section = current.type === 'code' ? engineNodesOf({ nodeId: current.id }) : null;
+      // - in a section the engine owns the spot below any node: J is the next member of the anchor's
+      //   own column, whatever the anchor is. L / H open a new column pair right / left of the
+      //   anchor's pair, which only a code cell has, so off any other node they keep the free-slot
+      //   search, as K does everywhere (there is no "insert above" rule). A left fork with no room
+      //   before the origin is refused: nothing is added.
+      const section = engineNodesOf({ nodeId: current.id });
       let slot: { x: number; y: number } | null = null;
       if (section) {
-        if (key === 'L' || key === 'H') {
+        if ((key === 'L' || key === 'H') && current.type === 'code') {
           slot = forkOf(section, current.id, key === 'L' ? 'right' : 'left', NODE_SIZE.code.w);
           if (!slot) return;
         } else if (key === 'J') {
@@ -2869,8 +2871,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     return () => window.removeEventListener('skena:runStatus', handler);
   }, [setNodes]);
 
-  // - vim `o` on a code cell → the next cell of its column, one gap below it; the cells under it are
-  // - pushed down by the engine once the node is in (the addNodeResult funnel). Edit-ready.
+  // - vim `o` in a code cell → a new code cell one gap below it in its column; the cells under it
+  // - are pushed down by the engine once the node is in (the addNodeResult funnel). Edit-ready.
   useEffect(() => {
     const handler = (e: Event) => {
       const { sourceId } = (e as CustomEvent<{ sourceId: string }>).detail;
@@ -2879,8 +2881,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       const sh = Number(src.style?.height ?? NODE_SIZE.code.h);
       const section = engineNodesOf({ nodeId: sourceId });
       const slot = section && insertAfter(section, sourceId);
-      // - no section (or not a code cell): the old free-slot search, gap = the shared NEW_NODE gap.
-      //   Either way the slot is snapped, so the new cell lands on its column and not half a grid off.
+      // - no section: the old free-slot search, gap = the shared NEW_NODE gap. Either way the slot is
+      //   snapped, so the new cell lands on its column and not half a grid off.
       const at = slot ?? findFreePosition(nodesRef.current, src.position.x, src.position.y + sh + NEW_NODE_GAP, NODE_SIZE.code.w, NODE_SIZE.code.h, 0, 1);
       const x = snapGrid(at.x), y = snapGrid(at.y);
       const newId = `code-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
