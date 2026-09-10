@@ -117,12 +117,12 @@ export const FILE_TYPE_COLORS: Record<string, string> = {
   unknown:  '#6b7280',  //  — unrecognised files
 };
 
-// - layout engine (spec 2026-09-08-layout-engine-design.md §1): the box sizes are grid multiples,
-//   the two px values are what a code cell's height is computed from (line height + header/padding)
+// - layout engine (spec 2026-09-08-layout-engine-design.md §1): the box sizes are grid multiples.
+//   A code cell is the exception: it steps by CODE_H_STEP (half a grid) so one more line that no
+//   longer fits adds 50px, not a whole 100px row.
 export const CODE_MAX_H       = 900;
+export const CODE_H_STEP      = 50;
 export const OUTPUT_MIN_W     = 600;
 export const OUTPUT_MAX_W     = 1400;
 export const OUTPUT_MAX_H     = 900;
 export const OUTPUT_DEFAULT_H = 300;
-export const CODE_LINE_PX     = 22;
-export const CODE_CHROME_PX   = 60;

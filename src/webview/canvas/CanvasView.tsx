@@ -2735,6 +2735,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       scheduleSave();
       // - a taller code cell pushes its column down, a wider output pushes the pairs right of it; a
       //   resized free node pushes only what it now covers
+      // - a code cell resized by hand keeps the height set here until its text changes again: the
+      //   next edit reports what it needs and skena:codeHeight sizes it from that.
       runEngine({ nodeId: id }, { moverIds: [id] });
     };
     window.addEventListener('skena:nodeResize', handler);
@@ -2824,15 +2826,16 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     return () => window.removeEventListener('skena:nodeCodeEdit', handler);
   }, [setNodes, scheduleSave, pushHistory]);
 
-  // - a code cell is as tall as its content: the engine's step of the line count, and its column
-  // - closes up or opens under it. No history entry of its own — the keystroke that changed the line
-  // - count went through skena:nodeCodeEdit above, which pushed one for the same edit.
+  // - a code cell is as tall as its content needs: the cell reports the px its text no longer fits
+  // - in, the engine steps that to a height, and the column closes up or opens under it. Shrinks
+  // - the same way. No history entry of its own — the keystroke that changed the content went
+  // - through skena:nodeCodeEdit above, which pushed one for the same edit.
   useEffect(() => {
     const handler = (e: Event) => {
-      const { id, lines } = (e as CustomEvent<{ id: string; lines: number }>).detail;
+      const { id, height: needPx } = (e as CustomEvent<{ id: string; height: number }>).detail;
       const cur = canvasRef.current.nodes.find(n => n.id === id);
       if (!cur || cur.type !== 'code') return;
-      const height = codeCellHeight(lines);
+      const height = codeCellHeight(needPx);
       if (height === cur.height) return;
       canvasRef.current = {
         ...canvasRef.current,
@@ -2842,8 +2845,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       runEngine({ nodeId: id }, { moverIds: [id] });
       scheduleSave();
     };
-    window.addEventListener('skena:codeLines', handler);
-    return () => window.removeEventListener('skena:codeLines', handler);
+    window.addEventListener('skena:codeHeight', handler);
+    return () => window.removeEventListener('skena:codeHeight', handler);
   }, [setNodes, scheduleSave, runEngine]);
 
   // - transient run status from the host: drive the code node's status glyph and

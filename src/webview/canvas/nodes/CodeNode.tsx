@@ -128,12 +128,37 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
 
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const vimStatusRef = useRef<HTMLDivElement | null>(null);
+  const nodeElRef = useRef<HTMLDivElement | null>(null);
+  // - the cell's chrome is everything the editor's text does not occupy: header, borders, vim
+  // - status bar. Measured off the live DOM — the node box minus the editor's own box — the first
+  // - time both have a height, then cached: it does not change with the content or the node size.
+  const chromeRef = useRef<number | null>(null);
+  const chromePx = useCallback((ed: Parameters<OnMount>[0]): number | null => {
+    if (chromeRef.current !== null) return chromeRef.current;
+    const dom = ed.getDomNode();
+    const box = nodeElRef.current?.closest('.react-flow__node') as HTMLElement | null;
+    if (!dom || !box) return null;
+    const chrome = box.offsetHeight - dom.offsetHeight;
+    if (dom.offsetHeight <= 0 || chrome <= 0 || chrome >= box.offsetHeight) return null;
+    chromeRef.current = chrome;
+    return chrome;
+  }, []);
+  // - what this cell's text needs right now, in px: Monaco's content height plus the chrome. The
+  // - engine turns it into a height; the cell only grows once the text no longer fits.
+  const reportHeight = useCallback(() => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    const chrome = chromePx(ed);
+    if (chrome === null) return;
+    window.dispatchEvent(new CustomEvent('skena:codeHeight', { detail: { id, height: ed.getContentHeight() + chrome } }));
+  }, [id, chromePx]);
   // - cursor + scroll position, preserved across edit → preview → edit so re-entering
   // - the cell lands where you left off instead of at line 1
   const savedViewState = useRef<MonacoEditor.ICodeEditorViewState | null>(null);
   const magicDecoRef = useRef<string[]>([]);
   const onEditorMount = useCallback<OnMount>((editorInstance, monacoInstance) => {
     editorRef.current = editorInstance;
+    requestAnimationFrame(() => chromePx(editorInstance));
     // - pin the shiki preview's line-number gutter to Monaco's REAL gutter width so the code
     // - start x is pixel-identical across preview<->edit (no 2-3px shift). contentLeft is the
     // - measured px from the editor's left to the first code glyph (line-numbers + decorations).
@@ -240,7 +265,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     editorInstance.onKeyDown(e => {
       if (e.browserEvent.key === 'Escape' && !vimIsEditing) leaveEdit();
     });
-  }, []);
+  }, [chromePx]);
 
   // - a freshly-created code cell (autoEdit) or Enter-on-selected fires skena:enterEdit → edit mode
   useEffect(() => {
@@ -358,6 +383,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     <>
       <NodeLabelBadge label={node.nodeLabel} createdBy={(node as { createdBy?: string }).createdBy} />
       <div
+        ref={nodeElRef}
         className={`skena-node skena-node--code${node.lastStatus === 'running' ? ' skena-node--running' : ''}`}
         onContextMenu={onContextMenu}
         style={{
@@ -422,10 +448,11 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
                 const next = v ?? '';
                 setCode(next);
                 window.dispatchEvent(new CustomEvent('skena:nodeCodeEdit', { detail: { id, code: next } }));
-                // - the layout engine sizes a code cell by its line count. Fired from onChange, not
-                // - from onDidChangeModelContent: the latter also fires when the editor takes in a
-                // - `value` written elsewhere (MCP, a disk reload, undo), which must resize nothing.
-                window.dispatchEvent(new CustomEvent('skena:codeLines', { detail: { id, lines: next.split('\n').length } }));
+                // - the layout engine sizes a code cell by what its text needs. Fired from onChange,
+                // - not from onDidChangeModelContent: the latter also fires when the editor takes in
+                // - a `value` written elsewhere (MCP, a disk reload, undo), which must resize
+                // - nothing. So this only ever runs on the user's own edit, with the editor open.
+                reportHeight();
               }}
               options={{
                 minimap:              { enabled: false },
