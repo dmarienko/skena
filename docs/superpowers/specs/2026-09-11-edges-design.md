@@ -33,12 +33,14 @@ Scope of this round: §1–§4 below. Out: engine-drawn sequence edges, paragrap
 
 ## 2. Lanes and exit points
 
-- Every gap channel has lanes **10 px apart** (10, 20 … 90 inside a 100 px gap: 9 lanes). A route
-  takes the first free lane in each channel segment it uses; a tenth edge shares lane 1. Lanes are
+- Every gap channel has lanes **10 px apart**, filled from its centre line outwards (0, −10, +10,
+  −20 … ±40: 9 lanes in a 100 px gap), so a lone route keeps the centre and a pair straddles it. A
+  route takes the first free lane in each channel segment it uses; a tenth edge shares the centre. Lanes are
   assigned in a stable order (edges sorted by id), so a re-render never swaps them.
 - The edges leaving or entering one border are spread along it 10 px apart, centred on the border's
   middle, ordered by the position of the node at the other end (topmost / leftmost first). An edge
-  keeps its point while the set of edges on that border is unchanged.
+  keeps its point while the set of edges on that border is unchanged. A border with a single edge
+  takes the offset of the other end's slot, so a facing pair runs straight across.
 - Corners keep today's small radius; arrowheads stay.
 - All edges of a section are routed in one pass whenever its nodes or edges change, so lane
   assignment sees every edge.

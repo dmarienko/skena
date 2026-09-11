@@ -31,9 +31,15 @@ export const LANE_STEP = 10;
 export const BEND_COST = GRID;
 
 const HALF = GRID / 2;
-// - 9 lanes fit in a 100 px gap; lane 4 is the centre line, so lane k sits (k - 4) * LANE_STEP off it
+// - 9 lanes fit in a 100 px gap
 const LANE_COUNT = 9;
-const CENTRE_LANE = 4;
+
+// - lanes fill from the gap centre outwards (0, -10, +10, -20 … ±40), so a lone run keeps the centre
+//   line and a pair straddles it; past the ninth the lanes repeat
+const laneOffset = (k: number): number => {
+  const lane = k % LANE_COUNT;
+  return (lane % 2 === 1 ? -1 : 1) * Math.ceil(lane / 2) * LANE_STEP;
+};
 
 export function edgeKind(e: RouteEdge, byId: Map<string, RouteNode>): EdgeKind {
   const s = byId.get(e.source), t = byId.get(e.target);
@@ -99,7 +105,7 @@ function borderPoint(n: RouteNode, side: Side, off: number): Point {
 
 const isHorizontal = (side: Side) => side === 'left' || side === 'right';
 
-interface EndPoint { node: RouteNode; side: Side; at: Point; slot: number }
+interface EndPoint { node: RouteNode; side: Side; at: Point; slot: number; off: number; count: number }
 interface Attachment { edgeId: string; role: 'source' | 'target'; node: RouteNode; other: RouteNode; side: Side }
 
 /**
@@ -132,13 +138,27 @@ function resolveEnds(edges: RouteEdge[], byId: Map<string, RouteNode>): Map<stri
       (p.edgeId < q.edgeId ? -1 : p.edgeId > q.edgeId ? 1 : 0));
     list.forEach((a, i) => {
       const off = (i - (list.length - 1) / 2) * LANE_STEP;
-      const end: EndPoint = { node: a.node, side: a.side, at: borderPoint(a.node, a.side, off), slot: i };
+      const end: EndPoint = { node: a.node, side: a.side, at: borderPoint(a.node, a.side, off), slot: i, off, count: list.length };
       const cur = ends.get(a.edgeId) ?? {};
       cur[a.role] = end;
       ends.set(a.edgeId, cur);
     });
   }
+
+  // - a border holding a single edge lines its point up with the slot the busy border at the other
+  //   end gave that edge, so a facing pair stays one straight line instead of stepping in the gap.
+  //   Only when both ends spread along the same axis: across two axes there is nothing to line up.
+  for (const { source, target } of ends.values()) {
+    if (!source || !target || isHorizontal(source.side) !== isHorizontal(target.side)) continue;
+    if (source.count === 1 && target.count > 1) adopt(source, target.off);
+    else if (target.count === 1 && source.count > 1) adopt(target, source.off);
+  }
   return ends;
+}
+
+function adopt(end: EndPoint, off: number): void {
+  end.off = off;
+  end.at = borderPoint(end.node, end.side, off);
 }
 
 interface Lattice { ny: number; free: boolean[]; nbrs: number[][] }
@@ -333,8 +353,8 @@ interface Span { a: number; b: number }
 
 /**
  * Spreads the runs that share a grid line. A run takes the lowest lane whose spans do not overlap
- * its own (touching is free), lane k sitting (k - CENTRE_LANE) * LANE_STEP off the line; past
- * LANE_COUNT the lanes repeat. The exit and entry segments keep the border points they were given.
+ * its own (touching is free), and lanes fill outwards from the line itself. The exit and entry
+ * segments keep the border points they were given.
  */
 function laneShift(paths: Map<string, Point[]>, order: string[], g: GapGraph): void {
   const onX = new Set(g.xs), onY = new Set(g.ys);
@@ -359,7 +379,7 @@ function laneShift(paths: Map<string, Point[]>, order: string[], g: GapGraph): v
       if (!lanes[k]) lanes[k] = [];
       lanes[k].push({ a: lo, b: hi });
       taken.set(key, lanes);
-      const shifted = coord + ((k % LANE_COUNT) - CENTRE_LANE) * LANE_STEP;
+      const shifted = coord + laneOffset(k);
       if (vertical) { moved[i][0] = shifted; moved[i + 1][0] = shifted; }
       else          { moved[i][1] = shifted; moved[i + 1][1] = shifted; }
     }
