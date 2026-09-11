@@ -13,6 +13,8 @@
  * space-pinned ring) — they can't import from TS; see the comment there.
  */
 
+import type { EdgeKind } from '../../shared/edgeRouting';
+
 // ─── node borders (fallback when a node has no Obsidian accent color) ───────────
 // - keyed by NODE TYPE (`node.type`): each is the border of that kind of node.
 export const DEFAULT_NODE_BORDER_BY_TYPE = {
@@ -54,7 +56,72 @@ export { KERNEL_PALETTE, kernelColor, nextKernelColorIndex } from '../../shared/
 
 // - neutral chrome tokens (the rail now, the node restyle next). Picked by the VS Code theme kind and
 // - exposed as --sk-* CSS variables on <html> by src/webview/theme.ts
+// - edgeSequence / edgeOutput / edgeContext are the three edge kinds of edgeRouting.ts (spec
+// - 2026-09-11-edges-design.md §3): the accent blue for code -> code, a grey-green for a cell and its
+// - output, a muted violet for everything else, including user-drawn links
 export const THEME = {
-  light: { bg1: '#f5f5f7', bg2: '#ffffff', bg3: '#e5e5e7', border: '#d1d1d6', text1: '#1d1d1f', text2: '#86868b', text3: '#aeaeb2', accent: '#0071e3' },
-  dark:  { bg1: '#1d1d1f', bg2: '#2d2d2f', bg3: '#3d3d3f', border: '#424245', text1: '#f5f5f7', text2: '#86868b', text3: '#636366', accent: '#0a84ff' },
+  light: { bg1: '#f5f5f7', bg2: '#ffffff', bg3: '#e5e5e7', border: '#d1d1d6', text1: '#1d1d1f', text2: '#86868b', text3: '#aeaeb2', accent: '#0071e3',
+           edgeSequence: '#0071e3', edgeOutput: '#4e8a72', edgeContext: '#7c6bd6' },
+  dark:  { bg1: '#1d1d1f', bg2: '#2d2d2f', bg3: '#3d3d3f', border: '#424245', text1: '#f5f5f7', text2: '#86868b', text3: '#636366', accent: '#0a84ff',
+           edgeSequence: '#0a84ff', edgeOutput: '#6fae92', edgeContext: '#9c8cf5' },
 } as const;
+
+// - the VS Code theme kind, from the class VS Code puts on <body>. No DOM (a node test) reads as light.
+export function isDarkTheme(): boolean {
+  if (typeof document === 'undefined') return false;
+  const c = document.body.classList;
+  return c.contains('vscode-dark') || c.contains('vscode-high-contrast');
+}
+
+const EDGE_KIND_TOKEN = { sequence: 'edgeSequence', output: 'edgeOutput', context: 'edgeContext' } as const;
+
+// - how far apart two variants of one kind sit on the colour wheel, and how many before they repeat
+const HUE_STEP = 25;
+const VARIANTS = 6;
+
+function hexToRgb(hex: string): [number, number, number] | null {
+  const m = /^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(hex.trim());
+  return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : null;
+}
+
+// - h in degrees, s and l in 0..1
+function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+  const rn = r / 255, gn = g / 255, bn = b / 255;
+  const max = Math.max(rn, gn, bn), min = Math.min(rn, gn, bn), d = max - min;
+  const l = (max + min) / 2;
+  if (d === 0) return [0, 0, l];
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  const h = max === rn ? ((gn - bn) / d + (gn < bn ? 6 : 0))
+          : max === gn ? (bn - rn) / d + 2
+          : (rn - gn) / d + 4;
+  return [h * 60, s, l];
+}
+
+function hslToHex(h: number, s: number, l: number): string {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+  const seg = Math.floor(h / 60) % 6;
+  const [r, g, b] = seg === 0 ? [c, x, 0] : seg === 1 ? [x, c, 0] : seg === 2 ? [0, c, x]
+                  : seg === 3 ? [0, x, c] : seg === 4 ? [x, 0, c] : [c, 0, x];
+  const to = (v: number) => Math.round((v + m) * 255).toString(16).padStart(2, '0');
+  return `#${to(r)}${to(g)}${to(b)}`;
+}
+
+/** The same colour with its hue turned `deg` degrees; saturation and lightness are kept. */
+export function rotateHue(hex: string, deg: number): string {
+  const rgb = hexToRgb(hex);
+  if (!rgb || deg % 360 === 0) return hex;
+  const [h, s, l] = rgbToHsl(rgb[0], rgb[1], rgb[2]);
+  return hslToHex((((h + deg) % 360) + 360) % 360, s, l);
+}
+
+/**
+ * Stroke for one edge: its kind's base colour, turned HUE_STEP degrees per variant so the edges
+ * leaving one border are told apart by colour as well as by their exit point. Past VARIANTS the
+ * colours repeat, as the spec asks.
+ */
+export function edgeKindColor(kind: EdgeKind, variant = 0): string {
+  const t = isDarkTheme() ? THEME.dark : THEME.light;
+  return rotateHue(t[EDGE_KIND_TOKEN[kind]], (((variant % VARIANTS) + VARIANTS) % VARIANTS) * HUE_STEP);
+}

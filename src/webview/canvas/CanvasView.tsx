@@ -39,7 +39,7 @@ import { ORIGIN_GUTTER, clampToOrigin, clampCameraToOrigin } from '../../shared/
 import { ensureLabels, assignLabel } from './nodeLabels';
 import { ZoomLevelProvider } from '../context/ZoomLevelContext';
 
-import { DEFAULT_EDGE_COLOR, DEFAULT_NODE_BORDER_BY_TYPE, nextKernelColorIndex } from './palette';
+import { nextKernelColorIndex } from './palette';
 import { FileNodeComponent }  from './nodes/FileNode';
 import { TextNodeComponent }  from './nodes/TextNode';
 import { GroupNodeComponent } from './nodes/GroupNode';
@@ -62,6 +62,8 @@ import { CanvasSearch } from './CanvasSearch';
 import { MarksPanel  } from './MarksPanel';
 import { LanesContext } from './LanesContext';
 import { KernelsContext } from './KernelsContext';
+import { EdgeRoutesContext } from './EdgeRoutesContext';
+import { routeSection, type RouteEdge, type RouteNode, type RoutedEdge, type Side } from '../../shared/edgeRouting';
 
 const NODE_TYPES: NodeTypes = {
   file:   FileNodeComponent,
@@ -196,9 +198,12 @@ function nowLabel(): string {
   return `${yy}-${mm}-${dd} ${hh}:${min}`;
 }
 
-// - canvas edge → React Flow edge
+// - canvas edge → React Flow edge. Without an explicit colour on the canvas edge neither the stroke
+//   nor the arrow marker is set here: LabeledEdge then colours both from the route's kind and variant
+//   (spec 2026-09-11-edges-design.md §3), which this function cannot see.
 function toFlowEdge(ce: CanvasEdge): Edge {
-  const stroke = resolveColor(ce.color) ?? DEFAULT_EDGE_COLOR;
+  const stroke = resolveColor(ce.color);
+  const arrow = ce.toEnd === 'arrow' || !ce.toEnd;
   return {
     id:           ce.id,
     source:       ce.fromNode,
@@ -207,13 +212,23 @@ function toFlowEdge(ce: CanvasEdge): Edge {
     targetHandle: ce.toSide,
     type:         'labeled',
     label:        ce.label,
-    style:        { stroke, strokeWidth: 1.5 },
-    markerEnd:    ce.toEnd === 'arrow' || !ce.toEnd
-      ? { type: MarkerType.ArrowClosed, color: stroke }
-      : undefined,
-    data:         { label: ce.label },
+    style:        stroke ? { stroke, strokeWidth: 1.5 } : { strokeWidth: 1.5 },
+    markerEnd:    arrow && stroke ? { type: MarkerType.ArrowClosed, color: stroke } : undefined,
+    data:         { label: ce.label, arrow },
   };
 }
+
+const SIDES: Side[] = ['top', 'right', 'bottom', 'left'];
+// - a React Flow handle id is the JSON Canvas side; anything else (a node-local handle) has no side
+const sideOfHandle = (h?: string | null): Side | undefined => (SIDES as string[]).includes(h ?? '') ? h as Side : undefined;
+
+const toRouteNode = (n: Node): RouteNode => {
+  const g = flowGeom(n);
+  return {
+    id: g.id, type: n.type ?? '', x: g.x, y: g.y, w: g.width, h: g.height,
+    outputNodeId: (n.data as { outputNodeId?: string } | undefined)?.outputNodeId,
+  };
+};
 
 // - a code node's "input" is an edge FROM a code or kernel node INTO it (toNode === code).
 function isBindingSourceType(t?: string): boolean {
@@ -805,6 +820,33 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     () => (hiddenByFold.size === 0 ? nodes : nodes.map(n => (hiddenByFold.has(n.id) ? { ...n, hidden: true } : n))),
     [nodes, hiddenByFold],
   );
+
+  // - the last finished pass, kept so a drag can hand back the routes it is not recomputing
+  const routesRef = useRef<Map<string, RoutedEdge>>(new Map());
+  // - one routing pass per section, all of its edges together, so the lanes and the exit slots see
+  //   every edge (spec §2). Folded members are left out: React Flow hides them and their edges, and a
+  //   hidden node must not reserve a lane. An edge whose ends are in two different sections is not
+  //   routed here at all — it stays out of the map and LabeledEdge falls back to the old router.
+  const edgeRoutes = useMemo(() => {
+    // - a drag moves nodes every frame; the pass is ~7 ms for 22 edges, far too much to pay per frame.
+    //   The drop is a position change of its own, so the routes catch up one frame after the gesture.
+    if (draggingRef.current) return routesRef.current;
+    const next = new Map<string, RoutedEdge>();
+    for (const lane of derivedLanes) {
+      const ids = new Set(lane.memberIds.filter(id => !hiddenByFold.has(id)));
+      if (ids.size === 0) continue;
+      const sectionEdges: RouteEdge[] = edges
+        .filter(e => ids.has(e.source) && ids.has(e.target))
+        .map(e => ({
+          id: e.id, source: e.source, target: e.target,
+          sourceSide: sideOfHandle(e.sourceHandle), targetSide: sideOfHandle(e.targetHandle),
+        }));
+      if (sectionEdges.length === 0) continue;
+      for (const r of routeSection(nodes.filter(n => ids.has(n.id)).map(toRouteNode), sectionEdges)) next.set(r.id, r);
+    }
+    routesRef.current = next;
+    return next;
+  }, [nodes, edges, derivedLanes, hiddenByFold]);
 
   // - persist a lane edit: update local state, mirror into canvasRef, schedule the save
   const commitLanes = useCallback((next: SectionLane[]) => {
@@ -2938,30 +2980,13 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   // - survives reopen. Cheap when nothing runs (early-return + same-ref no-op).
   useEffect(() => {
     const want = runningPathEdgeIds(nodes, edges);
-    // - an edge touching a code node takes that code node's border colour (its accent override,
-    // - else the code default) so kernel<->cell<->output links read as one group with the cells.
-    const typeById   = new Map(nodes.map(n => [n.id, n.type as string | undefined]));
-    const accentById = new Map(nodes.map(n => [n.id, (n.data as { accentColor?: string } | undefined)?.accentColor]));
-    const codeStroke = (ed: Edge): string | undefined => {
-      const codeId = typeById.get(ed.source) === 'code' ? ed.source
-                   : typeById.get(ed.target) === 'code' ? ed.target
-                   : undefined;
-      return codeId ? (accentById.get(codeId) ?? DEFAULT_NODE_BORDER_BY_TYPE.code) : undefined;
-    };
     setEdges(eds => {
       let changed = false;
       const next = eds.map(ed => {
-        const a         = want.has(ed.id);
-        const stroke    = codeStroke(ed);
-        const curStroke = (ed.style as { stroke?: string } | undefined)?.stroke;
-        const needStroke = stroke !== undefined && curStroke !== stroke;
-        if (!!ed.animated === a && !needStroke) return ed;
+        const a = want.has(ed.id);
+        if (!!ed.animated === a) return ed;
         changed = true;
-        const style = needStroke ? { ...ed.style, stroke } : ed.style;
-        const markerEnd = needStroke && ed.markerEnd && typeof ed.markerEnd === 'object'
-          ? { ...ed.markerEnd, color: stroke }
-          : ed.markerEnd;
-        return { ...ed, animated: a, style, markerEnd };
+        return { ...ed, animated: a };
       });
       return changed ? next : eds;
     });
@@ -3457,6 +3482,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     <ZoomLevelProvider>
     <LanesContext.Provider value={lanes}>
     <KernelsContext.Provider value={kernels}>
+    <EdgeRoutesContext.Provider value={edgeRoutes}>
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'row' }}>
     <SectionRail lanes={derivedLanes} kernels={railKernels} selectedNodeId={selectedNodeId}
       onFold={handleFoldLane} onRun={handleRunLane} onReflow={handleReflowLane} onDelete={handleDeleteLane}
@@ -3574,6 +3600,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       )}
     </div>
     </div>
+    </EdgeRoutesContext.Provider>
     </KernelsContext.Provider>
     </LanesContext.Provider>
     </ZoomLevelProvider>

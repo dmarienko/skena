@@ -2,10 +2,18 @@
  * LabeledEdge — canvas edge with optional label at midpoint.
  *
  * Routing strategy:
- *   All connections use the orthogonal router (routing/orthogonal.ts) which produces
- *   PCB-style axis-aligned polylines that avoid all node bounding boxes.  The router
- *   tries L-shapes first, then Z-shapes, then scans obstacle boundaries for a clear
- *   channel.  Corners are drawn with small quadratic-bezier rounds (8 px radius).
+ *   An edge inside a section is routed with the whole section in one pass by CanvasView
+ *   (src/shared/edgeRouting.ts); this component only draws the polyline it finds in
+ *   EdgeRoutesContext.  An edge with no entry there — the two ends in different sections,
+ *   or a canvas with no sections — falls back to the per-edge orthogonal router
+ *   (routing/orthogonal.ts), which produces PCB-style axis-aligned polylines that avoid all
+ *   node bounding boxes.  Corners are drawn with small quadratic-bezier rounds (8 px radius).
+ *
+ * Colour:
+ *   The colour set on the canvas edge wins.  Without one the edge takes its kind's colour,
+ *   turned by its variant (palette.edgeKindColor), so the edges leaving one border differ.
+ *   The arrowhead follows the stroke: React Flow builds its marker defs from the edge object,
+ *   which cannot know the computed colour, so an edge colouring itself renders its own marker.
  *
  * Label editing:
  *   Double-click the edge path (or existing label) → enters inline edit mode.
@@ -18,7 +26,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { EdgeProps, BaseEdge, EdgeLabelRenderer, Position, useStore } from '@xyflow/react';
 import { routeOrthogonal, ORTHOGONAL_CORNER_R, NodeRect } from '../routing/orthogonal';
 import { useZoomInvariantBorderWidth } from '../nodes/nodeShared';
-import { EDGE_FALLBACK_COLOR } from '../palette';
+import { edgeKindColor } from '../palette';
+import { useEdgeRoute } from '../EdgeRoutesContext';
 
 // ─── SVG path builder ────────────────────────────────────────────────────────
 
@@ -50,13 +59,34 @@ function waypointPath(pts: [number, number][], r: number): string {
   return d;
 }
 
+// - what the fallback router needs of a React Flow node, taken structurally so this file does not
+//   depend on the store's internal node type
+interface ObstacleNode {
+  type?: string;
+  position: { x: number; y: number };
+  measured?: { width?: number | null; height?: number | null };
+  style?: unknown;
+}
+
+// - every non-group node as a box the per-edge fallback router must stay out of
+function obstacles(nodes: readonly ObstacleNode[]): NodeRect[] {
+  return nodes
+    .filter(n => n.type !== 'group')
+    .map(n => ({
+      x: n.position.x,
+      y: n.position.y,
+      w: n.measured?.width  ?? Number((n.style as React.CSSProperties | undefined)?.width  ?? 200),
+      h: n.measured?.height ?? Number((n.style as React.CSSProperties | undefined)?.height ?? 150),
+    }));
+}
+
 // ─── component ────────────────────────────────────────────────────────────────
 
 export function LabeledEdgeComponent({
   id, source, target,
   sourceX, sourceY, targetX, targetY,
   sourcePosition, targetPosition,
-  style, label, markerEnd, selected,
+  style, label, markerEnd, selected, data,
 }: EdgeProps): JSX.Element {
 
   const [editing, setEditing] = useState(false);
@@ -90,23 +120,13 @@ export function LabeledEdgeComponent({
 
   const cancel = useCallback(() => setEditing(false), []);
 
-  // - build obstacle list from all non-group nodes for orthogonal routing
   const allNodes = useStore(s => s.nodes);
-  const rects: NodeRect[] = allNodes
-    .filter(n => n.type !== 'group')
-    .map(n => ({
-      x: n.position.x,
-      y: n.position.y,
-      w: n.measured?.width  ?? Number((n.style as React.CSSProperties | undefined)?.width  ?? 200),
-      h: n.measured?.height ?? Number((n.style as React.CSSProperties | undefined)?.height ?? 150),
-    }));
+  const route = useEdgeRoute(id);
 
-  // - orthogonal route (obstacle-avoiding, PCB-style)
-  const pts = routeOrthogonal(
-    sourceX, sourceY, sourcePosition,
-    targetX, targetY, targetPosition,
-    rects,
-  );
+  // - the section pass drew this one; otherwise route it alone against every non-group node as before
+  const pts = route && !route.fallback && route.points.length >= 2
+    ? route.points
+    : routeOrthogonal(sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, obstacles(allNodes));
   const edgePath = waypointPath(pts, ORTHOGONAL_CORNER_R);
   // - label at midpoint of the middle segment
   const mi     = Math.max(1, Math.floor(pts.length / 2));
@@ -116,15 +136,18 @@ export function LabeledEdgeComponent({
   // - zoom-invariant edge width (shared scaler with node borders) so connectors stay
   // - visible when zoomed out; wider than the old fixed 1.5px
   const sw = useZoomInvariantBorderWidth(1.5);
-  const activeStyle = selected
-    ? {
-        ...style,
-        strokeWidth: sw * 1.6,
-        filter: `drop-shadow(0 0 4px ${style?.stroke ?? EDGE_FALLBACK_COLOR})`,
-      }
-    : { ...style, strokeWidth: sw };
+  // - a colour set on the canvas edge is in style.stroke and wins; without one the kind decides, and
+  //   an edge with no route at all is a context edge until the section pass says otherwise
+  const edgeColor = ((style as React.CSSProperties | undefined)?.stroke as string | undefined)
+    ?? edgeKindColor(route?.kind ?? 'context', route?.variant ?? 0);
+  const activeStyle: React.CSSProperties = selected
+    ? { ...style, stroke: edgeColor, strokeWidth: sw * 1.6, filter: `drop-shadow(0 0 4px ${edgeColor})` }
+    : { ...style, stroke: edgeColor, strokeWidth: sw };
 
-  const edgeColor = (activeStyle.stroke ?? EDGE_FALLBACK_COLOR) as string;
+  // - React Flow resolves an edge's markerEnd object into a url() before this component sees it, so an
+  //   arrow whose colour was decided here needs a marker of its own; the id is per edge, like RF's own
+  const ownArrow = !markerEnd && ((data as { arrow?: boolean } | undefined)?.arrow ?? false);
+  const arrowId = `sk-arrow-${id.replace(/[^\w-]/g, '_')}`;
 
   const labelStyle: React.CSSProperties = {
     position:     'absolute',
@@ -144,7 +167,20 @@ export function LabeledEdgeComponent({
 
   return (
     <>
-      <BaseEdge id={id} path={edgePath} style={activeStyle} markerEnd={markerEnd} />
+      {ownArrow && (
+        <defs>
+          <marker
+            id={arrowId} className="react-flow__arrowhead" markerWidth="12.5" markerHeight="12.5"
+            viewBox="-10 -10 20 20" markerUnits="strokeWidth" orient="auto-start-reverse" refX="0" refY="0"
+          >
+            <polyline
+              className="arrowclosed" points="-5,-4 0,0 -5,4 -5,-4" strokeWidth="1"
+              strokeLinecap="round" strokeLinejoin="round" stroke={edgeColor} fill={edgeColor}
+            />
+          </marker>
+        </defs>
+      )}
+      <BaseEdge id={id} path={edgePath} style={activeStyle} markerEnd={ownArrow ? `url(#${arrowId})` : markerEnd} />
 
       <EdgeLabelRenderer>
         {editing ? (
