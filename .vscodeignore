@@ -1,5 +1,7 @@
 # - source & tooling — not needed at runtime (dist/ has everything compiled)
 src/**
+# - brainstorm mockups, server logs and pids of the visual companion — never runtime
+.superpowers/**
 test/**
 scripts/**
 .vscode/**
