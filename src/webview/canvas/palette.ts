@@ -53,8 +53,9 @@ export { KERNEL_PALETTE, kernelColor, nextKernelColorIndex } from '../../shared/
 // - neutral chrome tokens (the rail now, the node restyle next). Picked by the VS Code theme kind and
 // - exposed as --sk-* CSS variables on <html> by src/webview/theme.ts
 // - edgeSequence / edgeOutput / edgeContext are the three edge kinds of edgeRouting.ts (spec
-// - 2026-09-11-edges-design.md §3): the accent blue for code -> code, a grey-green for a cell and its
-// - output, a muted violet for everything else, including user-drawn links
+// - 2026-09-11-edges-design.md §3): a muted green for code -> code, a muted blue for a cell and its
+// - output, a muted violet for everything else, including user-drawn links. All three are drawn at
+// - 60% opacity on a 1 px line, so they read as chrome rather than as content.
 export const THEME = {
   light: { bg1: '#f5f5f7', bg2: '#ffffff', bg3: '#e5e5e7', border: '#d1d1d6', text1: '#1d1d1f', text2: '#86868b', text3: '#aeaeb2', accent: '#0071e3',
            edgeSequence: '#5a8f77', edgeOutput: '#5b7fb0', edgeContext: '#8a7db5' },
@@ -70,12 +71,6 @@ export function isDarkTheme(): boolean {
 }
 
 const EDGE_KIND_TOKEN = { sequence: 'edgeSequence', output: 'edgeOutput', context: 'edgeContext' } as const;
-
-// - one variant step on the colour wheel, and the order the variants take it: the hue alternates
-//   around the base (0, +12, -12, +24, -24, +36) so a kind stays recognisable instead of sweeping
-//   away to a neighbouring colour. Past the sixth the offsets repeat.
-const HUE_STEP = 12;
-const HUE_ORDER = [0, 1, -1, 2, -2, 3];
 
 function hexToRgb(hex: string): [number, number, number] | null {
   const m = /^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(hex.trim());
@@ -106,14 +101,6 @@ function hslToHex(h: number, s: number, l: number): string {
   return `#${to(r)}${to(g)}${to(b)}`;
 }
 
-/** The same colour with its hue turned `deg` degrees; saturation and lightness are kept. */
-export function rotateHue(hex: string, deg: number): string {
-  const rgb = hexToRgb(hex);
-  if (!rgb || deg % 360 === 0) return hex;
-  const [h, s, l] = rgbToHsl(rgb[0], rgb[1], rgb[2]);
-  return hslToHex((((h + deg) % 360) + 360) % 360, s, l);
-}
-
 /** The same colour moved `amount` (0..1) of the way from its lightness to white. */
 export function lighten(hex: string, amount: number): string {
   const rgb = hexToRgb(hex);
@@ -123,11 +110,9 @@ export function lighten(hex: string, amount: number): string {
 }
 
 /**
- * Stroke for one edge: its kind's base colour, its hue stepped off the base by the variant so the
- * edges leaving one border are told apart by colour as well as by their exit point.
+ * Stroke for one edge: its kind's colour, one per kind. The edges of one border are told apart by
+ * their exit point and by the line style, not by a colour of their own.
  */
-export function edgeKindColor(kind: EdgeKind, variant = 0): string {
-  const t = isDarkTheme() ? THEME.dark : THEME.light;
-  const i = ((variant % HUE_ORDER.length) + HUE_ORDER.length) % HUE_ORDER.length;
-  return rotateHue(t[EDGE_KIND_TOKEN[kind]], HUE_ORDER[i] * HUE_STEP);
+export function edgeKindColor(kind: EdgeKind): string {
+  return (isDarkTheme() ? THEME.dark : THEME.light)[EDGE_KIND_TOKEN[kind]];
 }
