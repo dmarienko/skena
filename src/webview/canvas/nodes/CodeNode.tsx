@@ -129,36 +129,33 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const vimStatusRef = useRef<HTMLDivElement | null>(null);
   const nodeElRef = useRef<HTMLDivElement | null>(null);
-  // - the cell's chrome is everything the editor's text does not occupy: header, borders, vim
-  // - status bar. Measured off the live DOM — the node box minus the editor's own box — the first
-  // - time both have a height, then cached: it does not change with the content or the node size.
-  const chromeRef = useRef<number | null>(null);
-  const chromePx = useCallback((ed: Parameters<OnMount>[0]): number | null => {
-    if (chromeRef.current !== null) return chromeRef.current;
-    const dom = ed.getDomNode();
-    const box = nodeElRef.current?.closest('.react-flow__node') as HTMLElement | null;
-    if (!dom || !box) return null;
-    const chrome = box.offsetHeight - dom.offsetHeight;
-    if (dom.offsetHeight <= 0 || chrome <= 0 || chrome >= box.offsetHeight) return null;
-    chromeRef.current = chrome;
-    return chrome;
-  }, []);
-  // - what this cell's text needs right now, in px: Monaco's content height plus the chrome. The
-  // - engine turns it into a height; the cell only grows once the text no longer fits.
+  // - what this cell's text needs right now, in px: Monaco's content height plus the chrome around
+  // - it (header, node borders, vim status bar). Both boxes are read off the live DOM on EVERY
+  // - call. A chrome measured once after mount is taken before Monaco has sized itself to its
+  // - flex container (automaticLayout observes asynchronously), so the editor box reads back far
+  // - too short and the chrome far too tall — every cell then grew on its first keystroke. Two
+  // - offsetHeight reads per keystroke cost nothing. The same expression also SHRINKS an
+  // - oversized cell: fewer lines, smaller need, and the engine steps the height back down.
   const reportHeight = useCallback(() => {
     const ed = editorRef.current;
     if (!ed) return;
-    const chrome = chromePx(ed);
-    if (chrome === null) return;
-    window.dispatchEvent(new CustomEvent('skena:codeHeight', { detail: { id, height: ed.getContentHeight() + chrome } }));
-  }, [id, chromePx]);
+    const dom = ed.getDomNode();
+    const box = nodeElRef.current?.closest('.react-flow__node') as HTMLElement | null;
+    if (!dom || !box) return;
+    const chrome = box.offsetHeight - dom.offsetHeight;
+    if (dom.offsetHeight <= 0 || box.offsetHeight <= 0 || chrome <= 0) return;
+    const content = ed.getContentHeight();
+    const need = content + chrome;
+    // - flip with localStorage.setItem('skena.debugCodeHeight', '1') in the webview devtools — no rebuild
+    if (localStorage.getItem('skena.debugCodeHeight') === '1') console.debug('[skena codeHeight]', { id, box: box.offsetHeight, dom: dom.offsetHeight, content, need });
+    window.dispatchEvent(new CustomEvent('skena:codeHeight', { detail: { id, height: need } }));
+  }, [id]);
   // - cursor + scroll position, preserved across edit → preview → edit so re-entering
   // - the cell lands where you left off instead of at line 1
   const savedViewState = useRef<MonacoEditor.ICodeEditorViewState | null>(null);
   const magicDecoRef = useRef<string[]>([]);
   const onEditorMount = useCallback<OnMount>((editorInstance, monacoInstance) => {
     editorRef.current = editorInstance;
-    requestAnimationFrame(() => chromePx(editorInstance));
     // - pin the shiki preview's line-number gutter to Monaco's REAL gutter width so the code
     // - start x is pixel-identical across preview<->edit (no 2-3px shift). contentLeft is the
     // - measured px from the editor's left to the first code glyph (line-numbers + decorations).
@@ -265,7 +262,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     editorInstance.onKeyDown(e => {
       if (e.browserEvent.key === 'Escape' && !vimIsEditing) leaveEdit();
     });
-  }, [chromePx]);
+  }, [id]);
 
   // - a freshly-created code cell (autoEdit) or Enter-on-selected fires skena:enterEdit → edit mode
   useEffect(() => {
