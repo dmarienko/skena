@@ -14,11 +14,12 @@ Base: `2026-09-01-spatial-notebook-design.md` §5. Status of §5 today (FACT, re
 
 ## User inputs (2026-09-11, verbatim intent — not to be lost)
 
-- **Follow a connection with hotkeys**: `Shift+{h,j,k,l}` starts following from the matching border
-  of the focused node (left / bottom / top / right) — jump to the node the edge on that side leads to.
-  Open: `Shift+H/J/K/L` today move Space-pinned nodes and otherwise scroll the focused node's content;
-  the binding has to be resolved (e.g. follow when nothing is pinned and the content does not scroll,
-  or move the pinned-move to another chord).
+- **Follow a connection with hotkeys** — vim-style `g` prefix (the `g` chord is free since the
+  heatmap was removed): `g` then `h`/`j`/`k`/`l` follows the edge attached to that border of the
+  focused node (left / bottom / top / right) and focuses the node it leads to; several edges on one
+  border → the nearest by the navigation score, repeat to cycle. `gg` = the first node of the current
+  section, `G` = the last node of the current section (reading: top/bottom of the SECTION, not of the
+  canvas — to confirm). `Shift+H/J/K/L` keep their current meaning (move pinned nodes / scroll).
 - **Colouring**: when one border of a node has many outgoing edges, give them different colours so
   they can be told apart; and colour by execution connection (the sequence edge a run follows).
 - **No bundling**: several edges must never be drawn as one line (seen on H5: two edges sharing a
