@@ -99,12 +99,17 @@ One algorithm behind every row of §2, run per section:
    left move gone, N8's only move is down: N8 → (2400,1200), one step, nothing else touched. The
    every-node-as-mover sweep over H1/H4/H5 (80 movers) goes from one capped walk to none, with the
    same idempotence and no overlap growth.
+   Cannot revisit a position is not the same as settles, so the step cap stays: a right or down move
+   can repeat for ever at a fresh position. That is what a column holding the node doing the bumping
+   did — the slide carried that node along, so the overlap came out the same every step (20 000 of
+   them on a three-node shape) until the cap undid the walk. Such a column no longer slides.
 
    Three details the rule needs for a second call to change nothing:
    - a **sideways step is the overlap rounded UP to the grid**, so a column moves by one grid
      multiple and its nodes still share one snapped x — the next call reads the same column;
-   - a **column slides only as one**: when the mover, or a cell the pack just laid out, sits in it,
-     there is no sideways move and the node in the way goes down instead;
+   - a **column slides only as one**, so it never slides while the node doing the bumping sits in it,
+     nor while a cell the pack just laid out does: the bumping node would ride along and the overlap
+     would come out unchanged. The node in the way goes down instead;
    - the **column the pack just laid out is never bumped** (the pack owns its geometry, so the two
      cannot fight over a cell), and a **code cell and its own output never bump each other** (they
      are one row, placed by the pack).

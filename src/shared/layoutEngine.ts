@@ -197,11 +197,13 @@ function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, pinned: 
     const column = bumpGroup(other, nodes, owners, map, false);
     // - a sideways step is RIGHT only, and is the overlap rounded UP to the grid: the whole column
     //   moves by the same grid multiple, so it still shares one snapped x and the next call reads
-    //   the same column. A column slides only as one: with a pinned node in it, the node in the way
-    //   goes down instead. A node left of the mover has no sideways move at all — a left step is not
+    //   the same column. A node left of the mover has no sideways move at all — a left step is not
     //   monotone, so a walk that allows one can return to a position it has already been in and
     //   never settle (H4, N11 created on M1: N8 slid left into E6's column, and round again).
-    const dx = other.x < mover.x || column.some(n => pinned.has(n.id)) ? 0
+    //   A column slides only as one, so it does not slide at all while a pinned node sits in it, nor
+    //   while the node doing the bumping does: that one would ride along and the overlap would come
+    //   out the same, step after step — 20 000 identical right steps, measured. It goes down instead.
+    const dx = other.x < mover.x || column.some(n => pinned.has(n.id) || n.id === mover.id) ? 0
       : gridUp(mover.x + mover.w + GRID - other.x);
     const dy = mover.y + mover.h + GRID - other.y;    // - the other node clears the mover, downward
     const drop = other.y + other.h + GRID - mover.y;   // - the mover clears the other node, downward
