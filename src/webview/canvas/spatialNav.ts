@@ -13,7 +13,7 @@ export interface NavNode { id: string; x: number; y: number; w: number; h: numbe
 export interface NavEdge { source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }
 export interface NavContext { nodes: NavNode[]; edges: NavEdge[]; lanes: SectionLane[] }
 
-// - the off-axis offset may be CONE × the gap, or one grid when the gap is smaller: a node right
+// - the off-axis miss may be CONE × the gap, or one grid when the gap is smaller: a node right
 //   beside the source qualifies on any overlap, a distant one only while it stays roughly aligned
 const CONE = 0.6;
 // - ranking: aligned beats near
@@ -22,31 +22,37 @@ const CROSS_WEIGHT = 2.5;
 const BEHIND_SLACK = GRID / 2;
 
 /**
- * The two distances between the boxes along `dir`, in flow units. `gap` runs from `from`'s far edge
- * to `to`'s near edge, and is negative when the two overlap on the pressed axis. `off` is how far
- * the boxes miss each other on the other axis, and is 0 while their ranges there overlap.
+ * The three distances between the boxes along `dir`, in flow units. `gap` runs from `from`'s far
+ * edge to `to`'s near edge, and is negative when the two overlap on the pressed axis. `overlap` is
+ * the length the two spans share on the other axis — 0 when they only touch, negative when they
+ * miss. `off` is that miss, 0 from a touch upwards.
  */
-function boxDelta(from: NavNode, to: NavNode, dir: NavDir): { gap: number; off: number } {
+function boxDelta(from: NavNode, to: NavNode, dir: NavDir): { gap: number; off: number; overlap: number } {
+  const horiz = dir === 'left' || dir === 'right';
   const gap =
     dir === 'right' ? to.x - (from.x + from.w) :
     dir === 'left'  ? from.x - (to.x + to.w) :
     dir === 'down'  ? to.y - (from.y + from.h) :
                       from.y - (to.y + to.h);
-  const off = dir === 'left' || dir === 'right'
-    ? Math.max(0, to.y - (from.y + from.h), from.y - (to.y + to.h))
-    : Math.max(0, to.x - (from.x + from.w), from.x - (to.x + to.w));
-  return { gap, off };
+  const aNear = horiz ? from.y : from.x, aFar = aNear + (horiz ? from.h : from.w);
+  const bNear = horiz ? to.y : to.x,     bFar = bNear + (horiz ? to.h : to.w);
+  const overlap = Math.min(aFar, bFar) - Math.max(aNear, bNear);
+  return { gap, off: Math.max(0, -overlap), overlap };
 }
 
 /**
  * How far `to` sits from `from` along `dir`: the gap between the two boxes on the pressed axis plus
- * their off-axis offset weighted up, so an aligned node beats one off to the side. Measured edge to
+ * their off-axis miss weighted up, so an aligned node beats one off to the side. Measured edge to
  * edge, never centre to centre — a tall node beside a short one has a far-off centre but no gap.
+ * A candidate that does not share any of the source's span on the other axis pays one grid on top
+ * of the miss, so a neighbour sharing the row beats one merely touching its corner. That penalty is
+ * in the score only: `findNearestNode` cones on the raw miss, or a touching node one grid away
+ * would fall out of its own cone.
  * Shared with the g-chord follow, which ranks the edge targets on a border the same way.
  */
 export function navScore(from: NavNode, to: NavNode, dir: NavDir): number {
-  const { gap, off } = boxDelta(from, to, dir);
-  return gap + CROSS_WEIGHT * off;
+  const { gap, off, overlap } = boxDelta(from, to, dir);
+  return gap + CROSS_WEIGHT * (overlap > 0 ? 0 : GRID + off);
 }
 
 /**
@@ -75,14 +81,15 @@ export function findNearestNode(from: NavNode, dir: NavDir, ctx: NavContext): st
 
   let best: string | null = null;
   let bestScore = Infinity;
+  let bestOverlap = -Infinity;
   for (const n of ctx.nodes) {
     if (n.id === from.id || !reachable(n)) continue;
-    const { gap, off } = boxDelta(from, n, dir);
+    const { gap, off, overlap } = boxDelta(from, n, dir);
     // - a wired node qualifies wherever it sits; every other candidate has to be in the cone
     if (!wired.has(n.id) && (!inDir(gap) || !inCone(gap, off))) continue;
     const s = navScore(from, n, dir);
-    // - strict <, so ties keep the first node in canvas order
-    if (s < bestScore) { bestScore = s; best = n.id; }
+    // - equal scores go to the wider overlap; failing that the first node in canvas order stays
+    if (s < bestScore || (s === bestScore && overlap > bestOverlap)) { bestScore = s; bestOverlap = overlap; best = n.id; }
   }
   return best;
 }
