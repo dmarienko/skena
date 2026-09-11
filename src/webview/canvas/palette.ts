@@ -30,6 +30,15 @@ export const DEFAULT_NODE_BORDER_BY_TYPE = {
   kernel: '#4cc8a0',                 // - kernel node — live Jupyter kernel widget
 } as const;
 
+/**
+ * The border a node draws: the colour set on it, else the default for its kind. This is the exact
+ * expression every node component uses, so an edge coloured with it matches the border of the node
+ * it leaves. Undefined for a type the table does not know.
+ */
+export function nodeBorderColor(type: string | undefined, accentColor?: string): string | undefined {
+  return accentColor ?? DEFAULT_NODE_BORDER_BY_TYPE[type as keyof typeof DEFAULT_NODE_BORDER_BY_TYPE];
+}
+
 // ─── selection / focus ring (crisp outline drawn around the focused node) ───────
 export const SELECTION_RING_COLOR = '#f7430280';
 

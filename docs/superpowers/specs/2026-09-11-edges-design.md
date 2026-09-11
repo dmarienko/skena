@@ -47,11 +47,10 @@ Scope of this round: §1–§4 below. Out: engine-drawn sequence edges, paragrap
 
 ## 3. Colour
 
-Edges are chrome, not content. Muted colour by kind — **sequence** (code → code) = muted green,
-**output** (code → output) = muted blue, **context** (everything else, user-drawn included) = muted
-violet; three tokens in the theme, kept low-saturation (user, 2026-09-11: the first set was too
-bright). No per-border variants: the edges of one border are told apart by their exit point. The
-kind also sets the line style: the code → output link is dotted, every other edge is a plain line. Every edge draws 1 px
+Edges are chrome, not content. An edge takes its source node's border colour (an explicit edge
+colour wins); the code → output link is dotted, every other edge is a plain line. The kind tokens in
+the theme stay as the last resort, for an edge whose source node is not on the canvas. No per-border
+variants: the edges of one border are told apart by their exit point. Every edge draws 1 px
 at 60% opacity; the focused node's edges draw at full opacity and 1.3× width, and running edges —
 the upstream path of a running cell — draw lighter and wider. The selected style stays as it is.
 

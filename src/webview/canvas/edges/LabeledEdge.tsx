@@ -10,10 +10,11 @@
  *   node bounding boxes.  Corners are drawn with small quadratic-bezier rounds (8 px radius).
  *
  * Look:
- *   Edges are chrome, not content: 1 px at 60% opacity.  The colour set on the canvas edge
- *   wins; without one the edge takes its kind's colour (palette.edgeKindColor), and the kind
- *   also sets the line style — sequence solid, output dashed, context dotted.  The edges of one
- *   border are told apart by their exit point, not by a colour of their own.
+ *   Edges are chrome, not content: 1 px at 60% opacity.  The colour set on the canvas edge wins;
+ *   without one the edge takes the border colour of the node it leaves (palette.nodeBorderColor),
+ *   so a link reads as coming out of that node.  The kind shows only as the line style: the
+ *   code → output link is dotted, every other edge is a plain line.  The edges of one border are
+ *   told apart by their exit point.
  *   An edge of the focused node draws at full opacity and wider; while animated — the run path
  *   from a running cell to its kernel — it draws lightened and wider again; both stack under the
  *   selected style.  The arrowhead follows the stroke: React Flow builds its marker defs from the
@@ -31,7 +32,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { EdgeProps, BaseEdge, EdgeLabelRenderer, Position, useStore } from '@xyflow/react';
 import { routeOrthogonal, ORTHOGONAL_CORNER_R, NodeRect } from '../routing/orthogonal';
 import { useZoomInvariantBorderWidth } from '../nodes/nodeShared';
-import { edgeKindColor, lighten } from '../palette';
+import { edgeKindColor, lighten, nodeBorderColor } from '../palette';
 import { useEdgeRoute } from '../EdgeRoutesContext';
 import { useThemeTick } from '../../theme';
 import type { EdgeKind } from '../../../shared/edgeRouting';
@@ -73,6 +74,7 @@ interface StoreNode {
   type?: string;
   selected?: boolean;
   dragging?: boolean;
+  data?: { accentColor?: string };
   position: { x: number; y: number };
   measured?: { width?: number | null; height?: number | null };
   style?: unknown;
@@ -158,17 +160,21 @@ export function LabeledEdgeComponent({
   const cancel = useCallback(() => setEditing(false), []);
 
   const allNodes = useStore(s => s.nodes) as readonly StoreNode[];
-  // - the focused node, read off the subscription this component already holds: no second store
-  //   selector and no context, and a selection change re-renders every edge through it either way
-  const focusedId = allNodes.find(n => n.selected)?.id ?? null;
+  // - one pass for everything this edge needs of the node array, off the subscription it already
+  //   holds: no second store selector and no context. `focusedId` is the node the keys are on;
+  //   `sourceNode` gives the edge its colour; `endMoving` is true while either end is being dragged —
+  //   CanvasView freezes the section pass for the length of a drag (one pass per frame is too slow),
+  //   so its polyline still points at where the node was, and this one edge routes itself instead.
+  //   The drop is a position change of its own, which re-runs the pass and puts the edge in its lane.
+  let focusedId: string | null = null;
+  let sourceNode: StoreNode | undefined;
+  let endMoving = false;
+  for (const n of allNodes) {
+    if (n.selected) focusedId = n.id;
+    if (n.id === source) sourceNode = n;
+    if (n.dragging === true && (n.id === source || n.id === target)) endMoving = true;
+  }
   const route = useEdgeRoute(id);
-
-  // - CanvasView freezes the section pass for the length of a drag (one pass per frame is too slow),
-  //   so its polyline still points at where the node was. While React Flow reports either end as
-  //   dragging, route this one edge on its own: the fallback router reads the live boxes and the live
-  //   endpoints, so the edge follows the node. The drop is a position change of its own, which re-runs
-  //   the pass and puts the edge back in its lane.
-  const endMoving = allNodes.some(n => n.dragging === true && (n.id === source || n.id === target));
 
   // - the section pass drew this one; otherwise route it alone against every non-group node as before
   const pts = route && !route.fallback && !endMoving && route.points.length >= 2
@@ -187,9 +193,11 @@ export function LabeledEdgeComponent({
   // - edgeKindColor reads the VS Code theme kind once, at this render; the tick re-renders on a swap
   useThemeTick();
   const kind = route?.kind ?? 'context';
-  // - a colour set on the canvas edge is in style.stroke and wins; without one the kind decides, and
-  //   an edge with no route at all is a context edge until the section pass says otherwise
+  // - a colour set on the canvas edge is in style.stroke and wins. Otherwise the edge takes the border
+  //   colour of the node it leaves, so a link reads as coming out of that node. The kind token is only
+  //   the last resort, for a source React Flow does not have (an edge to another canvas's node).
   const baseColor = ((style as React.CSSProperties | undefined)?.stroke as string | undefined)
+    ?? nodeBorderColor(sourceNode?.type, sourceNode?.data?.accentColor)
     ?? edgeKindColor(kind);
   // - running: this edge is on the path from a running cell to its kernel (spec §3)
   const edgeColor = animated ? lighten(baseColor, RUNNING_LIGHTEN) : baseColor;
