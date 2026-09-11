@@ -30,10 +30,6 @@ export const DEFAULT_NODE_BORDER_BY_TYPE = {
   kernel: '#4cc8a0',                 // - kernel node — live Jupyter kernel widget
 } as const;
 
-// ─── connection edges (links between nodes) ─────────────────────────────────────
-export const DEFAULT_EDGE_COLOR = '#1f96bda0';   // - default edge stroke (no color set)
-export const EDGE_FALLBACK_COLOR = '#888888';  // - last-resort stroke if style has none
-
 // ─── selection / focus ring (crisp outline drawn around the focused node) ───────
 export const SELECTION_RING_COLOR = '#f7430280';
 
@@ -75,9 +71,11 @@ export function isDarkTheme(): boolean {
 
 const EDGE_KIND_TOKEN = { sequence: 'edgeSequence', output: 'edgeOutput', context: 'edgeContext' } as const;
 
-// - how far apart two variants of one kind sit on the colour wheel, and how many before they repeat
-const HUE_STEP = 25;
-const VARIANTS = 6;
+// - one variant step on the colour wheel, and the order the variants take it: the hue alternates
+//   around the base (0, +12, -12, +24, -24, +36) so a kind stays recognisable instead of sweeping
+//   away to a neighbouring colour. Past the sixth the offsets repeat.
+const HUE_STEP = 12;
+const HUE_ORDER = [0, 1, -1, 2, -2, 3];
 
 function hexToRgb(hex: string): [number, number, number] | null {
   const m = /^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(hex.trim());
@@ -116,12 +114,20 @@ export function rotateHue(hex: string, deg: number): string {
   return hslToHex((((h + deg) % 360) + 360) % 360, s, l);
 }
 
+/** The same colour moved `amount` (0..1) of the way from its lightness to white. */
+export function lighten(hex: string, amount: number): string {
+  const rgb = hexToRgb(hex);
+  if (!rgb || amount <= 0) return hex;
+  const [h, s, l] = rgbToHsl(rgb[0], rgb[1], rgb[2]);
+  return hslToHex(h, s, l + (1 - l) * Math.min(1, amount));
+}
+
 /**
- * Stroke for one edge: its kind's base colour, turned HUE_STEP degrees per variant so the edges
- * leaving one border are told apart by colour as well as by their exit point. Past VARIANTS the
- * colours repeat, as the spec asks.
+ * Stroke for one edge: its kind's base colour, its hue stepped off the base by the variant so the
+ * edges leaving one border are told apart by colour as well as by their exit point.
  */
 export function edgeKindColor(kind: EdgeKind, variant = 0): string {
   const t = isDarkTheme() ? THEME.dark : THEME.light;
-  return rotateHue(t[EDGE_KIND_TOKEN[kind]], (((variant % VARIANTS) + VARIANTS) % VARIANTS) * HUE_STEP);
+  const i = ((variant % HUE_ORDER.length) + HUE_ORDER.length) % HUE_ORDER.length;
+  return rotateHue(t[EDGE_KIND_TOKEN[kind]], HUE_ORDER[i] * HUE_STEP);
 }

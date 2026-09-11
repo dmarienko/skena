@@ -49,9 +49,9 @@ Scope of this round: §1–§4 below. Out: engine-drawn sequence edges, paragrap
 
 - Base colour by kind: **sequence** (code → code), **output** (code → output), **context**
   (everything else, user-drawn included). Three tokens in the theme.
-- Many edges on one border: each gets a distinct variant of its kind's base colour (hue shifted
-  around the base, up to 6 variants, then repeat), in the same stable order as the exit points — the
-  colour and the exit position tell the same story.
+- Many edges on one border: each gets a distinct variant of its kind's base colour (hue alternates
+  ±12° around the base, up to 6 variants, then repeat), in the same stable order as the exit points —
+  the colour and the exit position tell the same story.
 - Execution: while a cell runs, the sequence edges on the run's upstream path draw bright (today's
   running style); at rest they return to the base colour.
 - The selected node's edges draw one step brighter than the rest (today's selected style stays).

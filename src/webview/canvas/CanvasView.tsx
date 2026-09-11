@@ -162,8 +162,11 @@ function toFlowNode(cn: CanvasNode): Node {
 // - how long a just-produced run output is protected from being reverted by a stale reload
 const RECENT_OUTPUT_MS = 4000;
 
-// - how long g waits for its second key, and how long a g{hjkl} follow stays cyclable
+// - how long g waits for its second key
 const G_CHORD_MS = 400;
+// - how long g + the same key keeps walking the same border instead of starting over; longer than the
+//   chord window, which only has to catch the second key of one press
+const G_CYCLE_MS = 1500;
 
 // - default size + gap for a NEW node created by directional-add (Alt+X / Ctrl+Shift+hjkl), an edge
 //   dropped on empty canvas, or `o` below a node
@@ -215,7 +218,7 @@ function toFlowEdge(ce: CanvasEdge): Edge {
     targetHandle: ce.toSide,
     type:         'labeled',
     label:        ce.label,
-    style:        stroke ? { stroke, strokeWidth: 1.5 } : { strokeWidth: 1.5 },
+    style:        stroke ? { stroke } : undefined,
     markerEnd:    arrow && stroke ? { type: MarkerType.ArrowClosed, color: stroke } : undefined,
     data:         { label: ce.label, arrow },
   };
@@ -834,7 +837,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const hiddenByFoldRef = useRef(hiddenByFold);
   useEffect(() => { hiddenByFoldRef.current = hiddenByFold; });
 
-  // - the last finished pass, kept so a drag can hand back the routes it is not recomputing
+  // - the last committed pass, so a drag can hand back the routes it is not recomputing
   const routesRef = useRef<Map<string, RoutedEdge>>(new Map());
   // - one routing pass per section, all of its edges together, so the lanes and the exit slots see
   //   every edge (spec §2). Folded members are left out: React Flow hides them and their edges, and a
@@ -846,8 +849,12 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     if (draggingRef.current) return routesRef.current;
     const next = new Map<string, RoutedEdge>();
     for (const lane of derivedLanes) {
-      const ids = new Set(lane.memberIds.filter(id => !hiddenByFold.has(id)));
-      if (ids.size === 0) continue;
+      const member = new Set(lane.memberIds);
+      // - a group box encloses the nodes it holds, so handing it to the router would block every edge
+      //   drawn over it; the per-edge fallback router leaves group nodes out for the same reason
+      const routeNodes = nodes.filter(n => member.has(n.id) && !hiddenByFold.has(n.id) && n.type !== 'group');
+      if (routeNodes.length === 0) continue;
+      const ids = new Set(routeNodes.map(n => n.id));
       const sectionEdges: RouteEdge[] = edges
         .filter(e => ids.has(e.source) && ids.has(e.target))
         .map(e => ({
@@ -855,11 +862,11 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           sourceSide: sideOfHandle(e.sourceHandle), targetSide: sideOfHandle(e.targetHandle),
         }));
       if (sectionEdges.length === 0) continue;
-      for (const r of routeSection(nodes.filter(n => ids.has(n.id)).map(toRouteNode), sectionEdges)) next.set(r.id, r);
+      for (const r of routeSection(routeNodes.map(toRouteNode), sectionEdges)) next.set(r.id, r);
     }
-    routesRef.current = next;
     return next;
   }, [nodes, edges, derivedLanes, hiddenByFold]);
+  useEffect(() => { routesRef.current = edgeRoutes; });
 
   // - persist a lane edit: update local state, mirror into canvasRef, schedule the save
   const commitLanes = useCallback((next: SectionLane[]) => {
@@ -2118,7 +2125,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       if (!current) return;
       const side = SIDE_OF_DIR[dir];
       const prev = lastFollowRef.current;
-      const cycle = prev && prev.side === side && Date.now() - prev.at < G_CHORD_MS
+      const cycle = prev && prev.side === side && Date.now() - prev.at < G_CYCLE_MS
         && followTargets(prev.nodeId, dir)[prev.index] === current.id ? prev : null;
       const originId = cycle ? cycle.nodeId : current.id;
       const targets = followTargets(originId, dir);
@@ -2136,17 +2143,19 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       return derivedLanesRef.current.find(l => l.memberIds.includes(id));
     };
 
-    // - gg / G: the first / last member of the focused node's section, read in canvas order (y, then x)
+    // - gg / G: the first / last member of the current section, read in canvas order (y, then x). No
+    //   focused node is not a reason to stop: currentLane falls back to the node focused last, as
+    //   ( and ) do, so the keys still work after a fold dropped the selection.
     const jumpInSection = (which: 'first' | 'last') => {
       const current = focusedNode();
       const lane = currentLane();
-      if (!current || !lane) return;
+      if (!lane) return;
       const ids = new Set(lane.memberIds);
       const members = nodesRef.current
         .filter(n => ids.has(n.id) && !isBandType(n.type) && !hiddenByFoldRef.current.has(n.id))
         .sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x);
       const target = which === 'first' ? members[0] : members[members.length - 1];
-      if (target && target.id !== current.id) focusNodeById(target.id);
+      if (target && target.id !== current?.id) focusNodeById(target.id);
     };
 
     // - add a node off the focused node in the given direction (Alt+X chord target)

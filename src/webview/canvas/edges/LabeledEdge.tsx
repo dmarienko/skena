@@ -12,8 +12,10 @@
  * Colour:
  *   The colour set on the canvas edge wins.  Without one the edge takes its kind's colour,
  *   turned by its variant (palette.edgeKindColor), so the edges leaving one border differ.
- *   The arrowhead follows the stroke: React Flow builds its marker defs from the edge object,
- *   which cannot know the computed colour, so an edge colouring itself renders its own marker.
+ *   While the edge is animated — the run path from a running cell to its kernel — it draws
+ *   lightened and wider.  The arrowhead follows the stroke: React Flow builds its marker defs
+ *   from the edge object, which cannot know the computed colour, so an edge colouring itself
+ *   renders its own marker.
  *
  * Label editing:
  *   Double-click the edge path (or existing label) → enters inline edit mode.
@@ -26,8 +28,9 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { EdgeProps, BaseEdge, EdgeLabelRenderer, Position, useStore } from '@xyflow/react';
 import { routeOrthogonal, ORTHOGONAL_CORNER_R, NodeRect } from '../routing/orthogonal';
 import { useZoomInvariantBorderWidth } from '../nodes/nodeShared';
-import { edgeKindColor } from '../palette';
+import { edgeKindColor, lighten } from '../palette';
 import { useEdgeRoute } from '../EdgeRoutesContext';
+import { useThemeTick } from '../../theme';
 
 // ─── SVG path builder ────────────────────────────────────────────────────────
 
@@ -68,6 +71,20 @@ interface ObstacleNode {
   style?: unknown;
 }
 
+// - how much brighter and wider a running edge draws than the same edge at rest
+const RUNNING_LIGHTEN = 0.25;
+const RUNNING_WIDTH = 1.3;
+
+/**
+ * A marker id for one edge. Sanitising alone is not injective — two ids differing only in a stripped
+ * character would collide, and `url(#…)` takes the first match — so a hash of the raw id follows it.
+ */
+function markerKey(id: string): string {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (Math.imul(h, 31) + id.charCodeAt(i)) | 0;
+  return `${id.replace(/[^\w-]/g, '_')}-${(h >>> 0).toString(36)}`;
+}
+
 // - every non-group node as a box the per-edge fallback router must stay out of
 function obstacles(nodes: readonly ObstacleNode[]): NodeRect[] {
   return nodes
@@ -86,7 +103,7 @@ export function LabeledEdgeComponent({
   id, source, target,
   sourceX, sourceY, targetX, targetY,
   sourcePosition, targetPosition,
-  style, label, markerEnd, selected, data,
+  style, label, markerEnd, selected, animated, data,
 }: EdgeProps): JSX.Element {
 
   const [editing, setEditing] = useState(false);
@@ -136,18 +153,23 @@ export function LabeledEdgeComponent({
   // - zoom-invariant edge width (shared scaler with node borders) so connectors stay
   // - visible when zoomed out; wider than the old fixed 1.5px
   const sw = useZoomInvariantBorderWidth(1.5);
+  // - edgeKindColor reads the VS Code theme kind once, at this render; the tick re-renders on a swap
+  useThemeTick();
   // - a colour set on the canvas edge is in style.stroke and wins; without one the kind decides, and
   //   an edge with no route at all is a context edge until the section pass says otherwise
-  const edgeColor = ((style as React.CSSProperties | undefined)?.stroke as string | undefined)
+  const baseColor = ((style as React.CSSProperties | undefined)?.stroke as string | undefined)
     ?? edgeKindColor(route?.kind ?? 'context', route?.variant ?? 0);
+  // - running: this edge is on the path from a running cell to its kernel (spec §3)
+  const edgeColor = animated ? lighten(baseColor, RUNNING_LIGHTEN) : baseColor;
+  const width = animated ? sw * RUNNING_WIDTH : sw;
   const activeStyle: React.CSSProperties = selected
-    ? { ...style, stroke: edgeColor, strokeWidth: sw * 1.6, filter: `drop-shadow(0 0 4px ${edgeColor})` }
-    : { ...style, stroke: edgeColor, strokeWidth: sw };
+    ? { ...style, stroke: edgeColor, strokeWidth: width * 1.6, filter: `drop-shadow(0 0 4px ${edgeColor})` }
+    : { ...style, stroke: edgeColor, strokeWidth: width };
 
   // - React Flow resolves an edge's markerEnd object into a url() before this component sees it, so an
-  //   arrow whose colour was decided here needs a marker of its own; the id is per edge, like RF's own
+  //   arrow whose colour was decided here needs a marker of its own
   const ownArrow = !markerEnd && ((data as { arrow?: boolean } | undefined)?.arrow ?? false);
-  const arrowId = `sk-arrow-${id.replace(/[^\w-]/g, '_')}`;
+  const arrowId = `sk-arrow-${markerKey(id)}`;
 
   const labelStyle: React.CSSProperties = {
     position:     'absolute',
