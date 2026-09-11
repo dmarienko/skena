@@ -1510,14 +1510,21 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
    * centres the pair instead and zooms out to fit it — the only path here that changes the zoom.
    */
   const revealNode = useCallback((id: string, forceCenter = false) => {
-    const node = nodesRef.current.find(n => n.id === id);
+    // - a node added this tick is in the canvas mirror before it is in the RF array
+    const lookup = (nid: string): Node | undefined => {
+      const rf = nodesRef.current.find(n => n.id === nid);
+      if (rf) return rf;
+      const cn = canvasRef.current.nodes.find(n => n.id === nid);
+      return cn ? toFlowNode(cn) : undefined;
+    };
+    const node = lookup(id);
     if (!node) return;
     const nw = (n: Node) => Number(n.style?.width  ?? 200);
     const nh = (n: Node) => Number(n.style?.height ?? 150);
     const box = (n: Node) => ({ x1: n.position.x, y1: n.position.y, x2: n.position.x + nw(n), y2: n.position.y + nh(n) });
     const nodeBox = box(node);
     const outId = (node.data as { outputNodeId?: string } | undefined)?.outputNodeId;
-    const out = outId ? nodesRef.current.find(n => n.id === outId) : undefined;
+    const out = outId ? lookup(outId) : undefined;
     const outBox = out ? box(out) : null;
     const pairBox = outBox && {
       x1: Math.min(nodeBox.x1, outBox.x1), y1: Math.min(nodeBox.y1, outBox.y1),
@@ -3076,10 +3083,10 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       //   node), so this is the one place the layout engine has to see a new node
       runEngine({ nodeId: anchor ?? cn.id }, { moverIds: [cn.id], ...(anchor ? { extraIds: [cn.id] } : {}) });
 
-      // - select now; reveal on the next frame, when the RF node exists, with the minimal pan of §8.2
-      //   (centring on every new node broke the flow of working down a column)
+      // - select, then the minimal pan of §8.2 (centring on every new node broke the flow of working
+      //   down a column); revealNode reads the mirror, so the node added this tick is found
       focusNodeById(cn.id);
-      requestAnimationFrame(() => revealNode(cn.id));
+      revealNode(cn.id);
 
       // - for new text notes: open Monaco immediately so the user can start typing
       if (autoEdit) {
