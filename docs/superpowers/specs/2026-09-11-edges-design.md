@@ -30,8 +30,10 @@ Base: `2026-09-01-spatial-notebook-design.md` §5. Status of §5 today (FACT, re
 
 ## Open questions (brainstorm in progress)
 
-1. Scope of this round: no-bundling channels · colour by kind + per-border palette · engine-drawn
-   sequence edges (derived from column order, re-wired on move) · `gf` / `Shift+hjkl` follow.
+1. Scope of this round (decided 2026-09-11): no-bundling channels · colour by kind + per-border
+   palette · `g{hjkl}` / `gg` / `G` follow · `Shift+(` / `Shift+)` fold. Engine-drawn sequence
+   edges: **not in this round** — an edge stays as drawn even when its cell moves to a neighbouring
+   column (user: unclear what a re-wire should look like).
 2. Channel rule for parallel edges: spacing inside the one-grid gap (100 px holds ~4 lines at 20 px)
    vs distinct gaps.
 3. What "route finding" is wrong today (through nodes / detours / odd bends).
