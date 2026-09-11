@@ -4383,12 +4383,11 @@ function resolveBumps(nodes, owners, pinned, placed, active, opts = {}) {
       return;
     const { mover, other } = hit;
     const column = bumpGroup(other, nodes, owners, map, false);
-    const leftBy = gridUp(other.x + other.w + GRID - mover.x);
-    const dx = column.some((n) => pinned.has(n.id)) ? 0 : other.x >= mover.x ? gridUp(mover.x + mover.w + GRID - other.x) : Math.min(...column.map((n) => n.x)) >= leftBy ? -leftBy : 0;
+    const dx = other.x < mover.x || column.some((n) => pinned.has(n.id)) ? 0 : gridUp(mover.x + mover.w + GRID - other.x);
     const dy = mover.y + mover.h + GRID - other.y;
     const drop = other.y + other.h + GRID - mover.y;
     const yields = other.y < mover.y && placed.has(mover.id);
-    const sideways = dx !== 0 && (yields ? Math.abs(dx) <= drop : other.y < mover.y || Math.abs(dx) <= dy);
+    const sideways = dx !== 0 && (yields ? dx <= drop : other.y < mover.y || dx <= dy);
     if (sideways)
       for (const n of column) {
         n.x += dx;
