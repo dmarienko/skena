@@ -104,6 +104,9 @@ Navigate the canvas without touching the mouse:
 | Key | Action |
 |---|---|
 | `h` / `j` / `k` / `l` | Move focus to nearest node in direction |
+| `g` then `h/j/k/l` | Follow the edge on that border of the focused node (left / bottom / top / right); several edges → the nearest first, press again within 400 ms for the next |
+| `gg` / `G` | Focus the first / last node of the focused node's section (by y, then x) |
+| `Shift+(` / `Shift+)` | Fold / unfold the current section (same action as the rail chevron) |
 | `Enter` / `Ctrl+Enter` | Open focused file in editor (beside / maximized) |
 | `Alt+X` then `h/j/k/l` | Add node from vault search, connected in direction — in a section the new node takes the column slot beside, below or above the anchor and that column packs, so a slot already taken puts it below the occupant; on a code cell `h` / `l` fork left / right instead |
 | `Ctrl+Shift+H/J/K/L` or arrows | Add connected empty text node in direction and start editing it |

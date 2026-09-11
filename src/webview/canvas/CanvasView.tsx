@@ -57,13 +57,13 @@ import { SectionRail, type RailKernel } from '../rail/SectionRail';
 import { deriveLanes, fitLanes, sortLanes, insertLaneAt, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
 import { applyPatchesToCanvas, codeCellHeight, columnsOfDeleted as columnsOfDeletedIn, forkOf, insertAfter, layoutSection, reflowSection, sectionEngineNodes, sectionMembership, type EngineNode, type LayoutOpts, type Patches } from '../../shared/layoutEngine';
 import { useLaneFit, flowGeom } from '../rail/useLaneFit';
-import { findNearestNode, revealPan, type NavNode, type Rect } from './spatialNav';
+import { findNearestNode, navScore, revealPan, type NavDir, type NavNode, type Rect } from './spatialNav';
 import { CanvasSearch } from './CanvasSearch';
 import { MarksPanel  } from './MarksPanel';
 import { LanesContext } from './LanesContext';
 import { KernelsContext } from './KernelsContext';
 import { EdgeRoutesContext } from './EdgeRoutesContext';
-import { routeSection, type RouteEdge, type RouteNode, type RoutedEdge, type Side } from '../../shared/edgeRouting';
+import { facingSide, routeSection, type RouteEdge, type RouteNode, type RoutedEdge, type Side } from '../../shared/edgeRouting';
 
 const NODE_TYPES: NodeTypes = {
   file:   FileNodeComponent,
@@ -161,6 +161,9 @@ function toFlowNode(cn: CanvasNode): Node {
 
 // - how long a just-produced run output is protected from being reverted by a stale reload
 const RECENT_OUTPUT_MS = 4000;
+
+// - how long g waits for its second key, and how long a g{hjkl} follow stays cyclable
+const G_CHORD_MS = 400;
 
 // - default size + gap for a NEW node created by directional-add (Alt+X / Ctrl+Shift+hjkl), an edge
 //   dropped on empty canvas, or `o` below a node
@@ -510,6 +513,11 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   // - Alt+X add-node chord: armed until the next h/j/k/l (or 2s timeout)
   const chordRef       = useRef(false);
   const chordTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // - g chord: the moment g was pressed; the next key counts as its second within G_CHORD_MS
+  const lastGPressRef  = useRef<number>(0);
+  // - the last g{hjkl} follow, so pressing it again inside the window takes the next edge on that
+  //   border instead of re-taking the first one
+  const lastFollowRef  = useRef<{ nodeId: string; side: Side; index: number; at: number } | null>(null);
   const [marksOpen, setMarksOpen] = useState(false);
   // - mirrored so the stable document-level paste listener sees panel state without re-subscribing
   const panelOpenRef = useRef(false);
@@ -820,6 +828,11 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     () => (hiddenByFold.size === 0 ? nodes : nodes.map(n => (hiddenByFold.has(n.id) ? { ...n, hidden: true } : n))),
     [nodes, hiddenByFold],
   );
+  // - the keydown handler is registered once, so the section keys read both through a ref
+  const derivedLanesRef = useRef(derivedLanes);
+  useEffect(() => { derivedLanesRef.current = derivedLanes; });
+  const hiddenByFoldRef = useRef(hiddenByFold);
+  useEffect(() => { hiddenByFoldRef.current = hiddenByFold; });
 
   // - the last finished pass, kept so a drag can hand back the routes it is not recomputing
   const routesRef = useRef<Map<string, RoutedEdge>>(new Map());
@@ -1002,6 +1015,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     // - a hidden node must not stay selected: keyboard nav would then start from a node nobody sees
     setNodes(nds => nds.map(n => (target.memberIds.includes(n.id) ? { ...n, selected: false } : n)));
   }, [derivedLanes, lanes, nodes, commitLanes, pushHistory, shiftNodes, setNodes]);
+  // - Shift+( / Shift+) call the rail's own fold action; the ref keeps the keydown handler stable
+  const foldLaneRef = useRef(handleFoldLane);
+  useEffect(() => { foldLaneRef.current = handleFoldLane; });
 
   // - a new lane is APPENDED below the last one, past its content: sections are an append-only stack,
   //   so creating one is the next step in the notebook and never renumbers what already exists. The
@@ -2066,6 +2082,73 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       w: Number(n.style?.width ?? 200), h: Number(n.style?.height ?? 150),
     });
 
+    const focusedNode = () => nodesRef.current.find(n => n.selected && !isBandType(n.type));
+
+    const SIDE_OF_DIR: Record<NavDir, Side> = { left: 'left', right: 'right', up: 'top', down: 'bottom' };
+
+    /**
+     * The nodes `g{hjkl}` can land on from `fromId`: the other end of every edge attached to that
+     * border, visible only, nearest first by the navigation score. An edge carries its border as the
+     * React Flow handle (the canvas fromSide / toSide); without one the border comes from geometry.
+     */
+    const followTargets = (fromId: string, dir: NavDir): string[] => {
+      const from = nodesRef.current.find(n => n.id === fromId);
+      if (!from) return [];
+      const side = SIDE_OF_DIR[dir];
+      const fromRoute = toRouteNode(from);
+      const scored = new Map<string, number>();
+      for (const e of edgesRef.current) {
+        const otherId = e.source === fromId ? e.target : e.target === fromId ? e.source : null;
+        if (otherId === null || otherId === fromId) continue;
+        const other = nodesRef.current.find(n => n.id === otherId);
+        if (!other || isBandType(other.type) || hiddenByFoldRef.current.has(otherId)) continue;
+        const handle = sideOfHandle(e.source === fromId ? e.sourceHandle : e.targetHandle);
+        if ((handle ?? facingSide(fromRoute, toRouteNode(other))) !== side) continue;
+        const s = navScore(toNav(from), toNav(other), dir);
+        // - two edges may join the same pair on one border; the node is one candidate, scored once
+        if (s < (scored.get(otherId) ?? Infinity)) scored.set(otherId, s);
+      }
+      return [...scored].sort((a, b) => a[1] - b[1]).map(([id]) => id);
+    };
+
+    // - g then h/j/k/l: follow the edge on that border. Pressing it again within the chord window
+    //   walks to the next edge on the same border of the same node instead of starting over.
+    const followEdgeOnSide = (dir: NavDir) => {
+      const current = focusedNode();
+      if (!current) return;
+      const side = SIDE_OF_DIR[dir];
+      const prev = lastFollowRef.current;
+      const cycle = prev && prev.side === side && Date.now() - prev.at < G_CHORD_MS
+        && followTargets(prev.nodeId, dir)[prev.index] === current.id ? prev : null;
+      const originId = cycle ? cycle.nodeId : current.id;
+      const targets = followTargets(originId, dir);
+      if (targets.length === 0) return;
+      const index = cycle ? (cycle.index + 1) % targets.length : 0;
+      lastFollowRef.current = { nodeId: originId, side, index, at: Date.now() };
+      focusNodeById(targets[index]);
+    };
+
+    // - the section the keys act on: the focused node's, or — after a fold dropped the selection —
+    //   the one holding the node focused last
+    const currentLane = () => {
+      const id = focusedNode()?.id ?? lastFocusedNodeId.get(canvasPath);
+      if (!id) return undefined;
+      return derivedLanesRef.current.find(l => l.memberIds.includes(id));
+    };
+
+    // - gg / G: the first / last member of the focused node's section, read in canvas order (y, then x)
+    const jumpInSection = (which: 'first' | 'last') => {
+      const current = focusedNode();
+      const lane = currentLane();
+      if (!current || !lane) return;
+      const ids = new Set(lane.memberIds);
+      const members = nodesRef.current
+        .filter(n => ids.has(n.id) && !isBandType(n.type) && !hiddenByFoldRef.current.has(n.id))
+        .sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x);
+      const target = which === 'first' ? members[0] : members[members.length - 1];
+      if (target && target.id !== current.id) focusNodeById(target.id);
+    };
+
     // - add a node off the focused node in the given direction (Alt+X chord target)
     const requestAddNodeInDirection = (key: 'H' | 'J' | 'K' | 'L') => {
       const current = nodesRef.current.find(n => n.selected && !isBandType(n.type));
@@ -2185,6 +2268,42 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           requestAddNodeInDirection(e.key.toUpperCase() as 'H' | 'J' | 'K' | 'L');
         }
         // - any other key silently cancels the chord (swallowed, no action)
+        return;
+      }
+
+      // ── g chord: consume the second key (h/j/k/l follows an edge, g jumps to the section top) ──
+      if (lastGPressRef.current !== 0 && Date.now() - lastGPressRef.current < G_CHORD_MS) {
+        lastGPressRef.current = 0;
+        if (!e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          const dir = keyToDir(e.key);
+          if (dir && e.key.length === 1) { e.preventDefault(); followEdgeOnSide(dir); return; }
+          if (e.key === 'g') { e.preventDefault(); jumpInSection('first'); return; }
+        }
+        // - any other second key cancels the chord and is then handled normally, so plain h still
+        //   navigates left; falling through is the whole point
+      }
+
+      // - g: arm the chord. Nothing happens on its own, so a stray g is harmless.
+      if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'g') {
+        lastGPressRef.current = Date.now();
+        return;
+      }
+
+      // - G: the last member of the current section (gg is the first)
+      if (!e.ctrlKey && !e.metaKey && e.shiftKey && !e.altKey && e.key === 'G') {
+        e.preventDefault();
+        jumpInSection('last');
+        return;
+      }
+
+      // - Shift+( / Shift+) : fold / unfold the current section — the rail chevron's own action, so
+      //   both paths share the history entry
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === '(' || e.key === ')')) {
+        const lane = currentLane();
+        if (lane && !!lane.folded === (e.key === ')')) {
+          e.preventDefault();
+          foldLaneRef.current(lane.id);
+        }
         return;
       }
 
@@ -2724,7 +2843,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       window.removeEventListener('keydown', handler);
       window.removeEventListener('keydown', panCapture, { capture: true });
     };
-  }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToMark, engineNodesOf, runEngineAfterMove]); // - nodesRef + spaceSelectedRef carry live state
+  }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToMark, engineNodesOf, runEngineAfterMove, canvasPath]); // - nodesRef + spaceSelectedRef carry live state
 
   // - expose a viewport snapshot for the AI companion (what the user actually sees:
   // - zoom, on-screen node labels, scroll position within the focused node)

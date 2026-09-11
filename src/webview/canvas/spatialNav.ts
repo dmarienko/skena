@@ -20,6 +20,19 @@ const CROSS_WEIGHT = 2.5;
 const centre = (n: NavNode) => ({ x: n.x + n.w / 2, y: n.y + n.h / 2 });
 
 /**
+ * How far `to` sits from `from` along `dir`: the displacement on the pressed axis plus the
+ * off-axis one weighted up, so an aligned node beats a nearer one that is off to the side.
+ * Shared with the g-chord follow, which ranks the edge targets on a border the same way.
+ */
+export function navScore(from: NavNode, to: NavNode, dir: NavDir): number {
+  const a = centre(from), b = centre(to);
+  const dx = b.x - a.x, dy = b.y - a.y;
+  return dir === 'left' || dir === 'right'
+    ? Math.abs(dx) + Math.abs(dy) * CROSS_WEIGHT
+    : Math.abs(dy) + Math.abs(dx) * CROSS_WEIGHT;
+}
+
+/**
  * The node to focus when `dir` is pressed on `from`, or null when nothing qualifies.
  * Candidates are visible nodes (in no fold list). `left`/`right` stay in `from`'s section;
  * `up`/`down` may cross into any open section. A node wired to `from` on the pressed side is one
@@ -37,8 +50,6 @@ export function findNearestNode(from: NavNode, dir: NavDir, ctx: NavContext): st
     dir === 'left' ? dx < 0 : dir === 'right' ? dx > 0 : dir === 'up' ? dy < 0 : dy > 0;
   const inCone = (dx: number, dy: number) =>
     horiz ? Math.abs(dx) >= Math.abs(dy) * CONE : Math.abs(dy) >= Math.abs(dx) * CONE;
-  const score = (dx: number, dy: number) =>
-    horiz ? Math.abs(dx) + Math.abs(dy) * CROSS_WEIGHT : Math.abs(dy) + Math.abs(dx) * CROSS_WEIGHT;
 
   // - handles are named top/right/bottom/left; an edge carries the canvas fromSide/toSide
   const side = dir === 'up' ? 'top' : dir === 'down' ? 'bottom' : dir;
@@ -56,7 +67,7 @@ export function findNearestNode(from: NavNode, dir: NavDir, ctx: NavContext): st
     const dx = c.x - fc.x, dy = c.y - fc.y;
     // - a wired node qualifies wherever it sits; every other candidate has to be in the cone
     if (!wired.has(n.id) && (!inDir(dx, dy) || !inCone(dx, dy))) continue;
-    const s = score(dx, dy);
+    const s = navScore(from, n, dir);
     // - strict <, so ties keep the first node in canvas order
     if (s < bestScore) { bestScore = s; best = n.id; }
   }
