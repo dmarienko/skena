@@ -3,9 +3,10 @@ import { GRID } from './constants';
 /**
  * Edge routing for one section (spec 2026-09-11-edges-design.md §1–§2). The layout engine leaves a
  * full grid between columns and between rows, so every edge can run on the centre line of a gap.
- * This module builds that lattice once per section, routes every edge on it with a shortest path
- * that pays for its corners, spreads the edges of one border 10 px apart, and puts parallel runs on
- * the same grid line into 10 px lanes. Pure — no React, no DOM.
+ * This module builds that grid of crossings once per section, routes every edge on it with a
+ * shortest path that pays for its corners, spreads the edges of one border 10 px apart, and puts
+ * parallel runs on one line into 10 px lanes so that no two edges are drawn over each other.
+ * Pure — no React, no DOM.
  */
 
 export interface RouteNode { id: string; type: string; x: number; y: number; w: number; h: number; outputNodeId?: string }
@@ -19,20 +20,42 @@ export interface RoutedEdge {
   kind: EdgeKind;
   /** - polyline, first = exit point on the source border, last = entry point on the target border */
   points: Point[];
-  /** - 0-based index among the edges sharing the source border (colour + exit slot) */
+  /** - 0-based slot among the edges sharing the source border (colour + exit slot) */
   variant: number;
+  /** - the same slot on the target border */
+  variantIn: number;
+  /** - the border each end leaves or enters by, after the geometry default; absent when that end is
+      not a node of this section (such an edge always falls back) */
+  sourceSide?: Side;
+  targetSide?: Side;
   /** - true when no gap route was found (caller uses the old router) */
   fallback: boolean;
+}
+
+/** What a pass could not do; the caller may surface it. */
+export interface RouteReport {
+  /** - the section has more crossings than MAX_CROSSINGS, so every edge came back as a fallback */
+  capped?: boolean;
+  /** - lanes turned down because the shifted run would have crossed a node */
+  blockedLanes?: number;
+  /** - runs that found no lane whose whole stretch was free; each took the one sharing the least */
+  crowded?: number;
 }
 
 /** - px between parallel edges in one gap, and between exit points on one border */
 export const LANE_STEP = 10;
 /** - a corner costs one grid of length */
 export const BEND_COST = GRID;
+// - the crossings cost one clear test each to build and one Dijkstra state per direction per edge to
+//   search: 40 000 of them (100 nodes sharing no column and no row) take 5.5 s for 99 long edges,
+//   4 000 take 0.2 s. A section past the cap is not routed — the old per-edge router draws its edges.
+export const MAX_CROSSINGS = 4000;
 
 const HALF = GRID / 2;
 // - 9 lanes fit in a 100 px gap
 const LANE_COUNT = 9;
+// - the furthest from its line a lane can put a run, so also how far a corner on it can travel
+const LANE_SPREAD = LANE_STEP * ((LANE_COUNT - 1) / 2);
 
 // - lanes fill from the gap centre outwards (0, -10, +10, -20 … ±40), so a lone run keeps the centre
 //   line and a pair straddles it; past the ninth the lanes repeat
@@ -49,16 +72,29 @@ export function edgeKind(e: RouteEdge, byId: Map<string, RouteNode>): EdgeKind {
   return 'context';
 }
 
+/** Side of `from` that faces `to` — the default when the canvas edge names no handle. */
+export function facingSide(from: RouteNode, to: RouteNode): Side {
+  const dx = (to.x + to.w / 2) - (from.x + from.w / 2);
+  const dy = (to.y + to.h / 2) - (from.y + from.h / 2);
+  if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? 'right' : 'left';
+  return dy >= 0 ? 'bottom' : 'top';
+}
+
 /**
- * The gap lattice of a section: one line half a grid outside every node border. `free` says a
- * crossing is usable, `clearH` / `clearV` say a run between two crossings on one line is.
+ * The gap grid of a section: one line half a grid outside every node border, the crossings of those
+ * lines, and the straight runs between neighbouring crossings. A crossing is addressed by
+ * `xi * ys.length + yi`.
  */
 export interface GapGraph {
   xs: number[];
   ys: number[];
+  /** - too many crossings to route (see MAX_CROSSINGS): `nbrs` is empty and every edge falls back */
+  capped: boolean;
   free: (xi: number, yi: number) => boolean;
   clearH: (yi: number, xa: number, xb: number) => boolean;
   clearV: (xi: number, ya: number, yb: number) => boolean;
+  /** - the crossings each crossing reaches in one straight run */
+  nbrs: number[][];
 }
 
 // - only a run through a box's interior is blocked: the lines sit half a grid off the borders, so a
@@ -79,20 +115,24 @@ export function buildGapGraph(nodes: RouteNode[]): GapGraph {
   }
   const xs = [...xv].sort((a, b) => a - b);
   const ys = [...yv].sort((a, b) => a - b);
-  return {
-    xs, ys,
-    free:   (xi, yi)     => clearSeg(nodes, xs[xi], ys[yi], xs[xi], ys[yi]),
-    clearH: (yi, xa, xb) => clearSeg(nodes, xs[xa], ys[yi], xs[xb], ys[yi]),
-    clearV: (xi, ya, yb) => clearSeg(nodes, xs[xi], ys[ya], xs[xi], ys[yb]),
-  };
-}
+  const free = (xi: number, yi: number) => clearSeg(nodes, xs[xi], ys[yi], xs[xi], ys[yi]);
+  const clearH = (yi: number, xa: number, xb: number) => clearSeg(nodes, xs[xa], ys[yi], xs[xb], ys[yi]);
+  const clearV = (xi: number, ya: number, yb: number) => clearSeg(nodes, xs[xi], ys[ya], xs[xi], ys[yb]);
+  const nbrs: number[][] = [];
+  if (xs.length * ys.length > MAX_CROSSINGS) return { xs, ys, capped: true, free, clearH, clearV, nbrs };
 
-/** Side of `from` that faces `to` — the default when the canvas edge names no handle. */
-function facingSide(from: RouteNode, to: RouteNode): Side {
-  const dx = (to.x + to.w / 2) - (from.x + from.w / 2);
-  const dy = (to.y + to.h / 2) - (from.y + from.h / 2);
-  if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? 'right' : 'left';
-  return dy >= 0 ? 'bottom' : 'top';
+  const nx = xs.length, ny = ys.length;
+  const open: boolean[] = [];
+  for (let i = 0; i < nx * ny; i++) { open.push(free(Math.floor(i / ny), i % ny)); nbrs.push([]); }
+  for (let xi = 0; xi < nx; xi++) for (let yi = 0; yi < ny; yi++) {
+    const i = xi * ny + yi;
+    if (!open[i]) continue;
+    const right = i + ny;
+    if (xi + 1 < nx && open[right] && clearH(yi, xi, xi + 1)) { nbrs[i].push(right); nbrs[right].push(i); }
+    const down = i + 1;
+    if (yi + 1 < ny && open[down] && clearV(xi, yi, yi + 1)) { nbrs[i].push(down); nbrs[down].push(i); }
+  }
+  return { xs, ys, capped: false, free, clearH, clearV, nbrs };
 }
 
 /** Point on `side` of `n`, `off` px from the middle of that border. */
@@ -105,7 +145,8 @@ function borderPoint(n: RouteNode, side: Side, off: number): Point {
 
 const isHorizontal = (side: Side) => side === 'left' || side === 'right';
 
-interface EndPoint { node: RouteNode; side: Side; at: Point; slot: number; off: number; count: number }
+/** Where one end of an edge meets its node: the border, the point on it, and which slot of it. */
+interface BorderEnd { node: RouteNode; side: Side; at: Point; slot: number; off: number; count: number }
 interface Attachment { edgeId: string; role: 'source' | 'target'; node: RouteNode; other: RouteNode; side: Side }
 
 /**
@@ -113,7 +154,7 @@ interface Attachment { edgeId: string; role: 'source' | 'target'; node: RouteNod
  * The edges of one border are ordered by the position of the node at the other end and spread
  * LANE_STEP apart around the border's middle, so no two of them share a point.
  */
-function resolveEnds(edges: RouteEdge[], byId: Map<string, RouteNode>): Map<string, { source?: EndPoint; target?: EndPoint }> {
+function resolveEnds(edges: RouteEdge[], byId: Map<string, RouteNode>): Map<string, { source?: BorderEnd; target?: BorderEnd }> {
   const borders = new Map<string, Attachment[]>();
   const add = (a: Attachment) => {
     const key = `${a.node.id}:${a.side}`;
@@ -123,13 +164,11 @@ function resolveEnds(edges: RouteEdge[], byId: Map<string, RouteNode>): Map<stri
   for (const e of edges) {
     const s = byId.get(e.source), t = byId.get(e.target);
     if (!s || !t || s === t) continue;
-    const sSide = e.sourceSide ?? facingSide(s, t);
-    const tSide = e.targetSide ?? facingSide(t, s);
-    add({ edgeId: e.id, role: 'source', node: s, other: t, side: sSide });
-    add({ edgeId: e.id, role: 'target', node: t, other: s, side: tSide });
+    add({ edgeId: e.id, role: 'source', node: s, other: t, side: e.sourceSide ?? facingSide(s, t) });
+    add({ edgeId: e.id, role: 'target', node: t, other: s, side: e.targetSide ?? facingSide(t, s) });
   }
 
-  const ends = new Map<string, { source?: EndPoint; target?: EndPoint }>();
+  const ends = new Map<string, { source?: BorderEnd; target?: BorderEnd }>();
   for (const list of borders.values()) {
     const across = isHorizontal(list[0].side);
     list.sort((p, q) =>
@@ -138,7 +177,7 @@ function resolveEnds(edges: RouteEdge[], byId: Map<string, RouteNode>): Map<stri
       (p.edgeId < q.edgeId ? -1 : p.edgeId > q.edgeId ? 1 : 0));
     list.forEach((a, i) => {
       const off = (i - (list.length - 1) / 2) * LANE_STEP;
-      const end: EndPoint = { node: a.node, side: a.side, at: borderPoint(a.node, a.side, off), slot: i, off, count: list.length };
+      const end: BorderEnd = { node: a.node, side: a.side, at: borderPoint(a.node, a.side, off), slot: i, off, count: list.length };
       const cur = ends.get(a.edgeId) ?? {};
       cur[a.role] = end;
       ends.set(a.edgeId, cur);
@@ -156,30 +195,12 @@ function resolveEnds(edges: RouteEdge[], byId: Map<string, RouteNode>): Map<stri
   return ends;
 }
 
-function adopt(end: EndPoint, off: number): void {
+function adopt(end: BorderEnd, off: number): void {
   end.off = off;
   end.at = borderPoint(end.node, end.side, off);
 }
 
-interface Lattice { ny: number; free: boolean[]; nbrs: number[][] }
-
-function buildLattice(g: GapGraph): Lattice {
-  const nx = g.xs.length, ny = g.ys.length;
-  const free: boolean[] = [];
-  const nbrs: number[][] = [];
-  for (let i = 0; i < nx * ny; i++) { free.push(g.free(Math.floor(i / ny), i % ny)); nbrs.push([]); }
-  for (let xi = 0; xi < nx; xi++) for (let yi = 0; yi < ny; yi++) {
-    const i = xi * ny + yi;
-    if (!free[i]) continue;
-    const right = (xi + 1) * ny + yi;
-    if (xi + 1 < nx && free[right] && g.clearH(yi, xi, xi + 1)) { nbrs[i].push(right); nbrs[right].push(i); }
-    const down = i + 1;
-    if (yi + 1 < ny && free[down] && g.clearV(xi, yi, yi + 1)) { nbrs[i].push(down); nbrs[down].push(i); }
-  }
-  return { ny, free, nbrs };
-}
-
-// - a small binary heap: Dijkstra runs over 4 states per lattice vertex, far too many to scan
+// - a small binary heap: Dijkstra runs over 4 states per crossing, far too many to scan
 class MinHeap {
   private cost: number[] = [];
   private item: number[] = [];
@@ -224,15 +245,15 @@ const dirBetween = (a: Point, b: Point): number => b[0] > a[0] ? 0 : b[0] < a[0]
 const OUT_DIR: Record<Side, number> = { right: 0, left: 1, bottom: 2, top: 3 };
 
 /**
- * Shortest orthogonal path from `start` to `goal` over the lattice plus the two port vertices in
+ * Shortest orthogonal path from `start` to `goal` over the crossings plus the two end points in
  * `extra`. Cost = length + BEND_COST per change of direction, counting the corner where the route
  * leaves the exit segment and the one where it meets the entry segment.
  */
 function shortestPath(
-  lat: Lattice, extra: Map<number, number[]>, at: (i: number) => Point,
+  g: GapGraph, extra: Map<number, number[]>, at: (i: number) => Point,
   start: number, startDir: number, goal: number, goalDir: number,
 ): number[] | null {
-  const count = lat.nbrs.length + 2;
+  const count = g.nbrs.length + 2;
   const dist = new Float64Array(count * 4).fill(Infinity);
   const prev = new Int32Array(count * 4).fill(-1);
   const done = new Uint8Array(count * 4);
@@ -249,7 +270,7 @@ function shortestPath(
     if (dist[state] >= best) break;
     if ((state >> 2) === goal) best = Math.min(best, dist[state] + ((state & 3) === goalDir ? 0 : BEND_COST));
     const v = state >> 2, dir = state & 3;
-    const base = v < lat.nbrs.length ? lat.nbrs[v] : [];
+    const base = v < g.nbrs.length ? g.nbrs[v] : [];
     const here = at(v);
     for (const w of [...base, ...(extra.get(v) ?? [])]) {
       const there = at(w);
@@ -275,10 +296,10 @@ function shortestPath(
 const lineBelow = (vals: number[], v: number) => { let i = -1; while (i + 1 < vals.length && vals[i + 1] < v) i++; return i; };
 const lineAbove = (vals: number[], v: number) => { let i = vals.length; while (i - 1 >= 0 && vals[i - 1] > v) i--; return i < vals.length ? i : -1; };
 
-interface Port { at: Point; vertical: boolean; line: number }
+/** Where a route starts and stops being a grid run: one step out of the node, on the nearest line. */
+interface EndPoint { at: Point; vertical: boolean; line: number }
 
-/** The point one step out of the node: the nearest grid line in the direction the border faces. */
-function portOf(g: GapGraph, end: EndPoint): Port | null {
+function endPointOf(g: GapGraph, end: BorderEnd): EndPoint | null {
   const vertical = isHorizontal(end.side);
   const vals = vertical ? g.xs : g.ys;
   const v = vertical ? end.at[0] : end.at[1];
@@ -288,54 +309,53 @@ function portOf(g: GapGraph, end: EndPoint): Port | null {
 }
 
 /**
- * Waypoints of one edge: the exit point, the grid run between the two ports, the entry point.
- * Returns null when the gap lattice does not connect the two.
+ * Waypoints of one edge: the exit point, the two end points with the grid run between them, the
+ * entry point. The end points are kept even when they fall on a straight stretch — the lanes are
+ * measured between them. Returns null when the gap grid does not connect the two.
  */
-function routeOne(nodes: RouteNode[], g: GapGraph, lat: Lattice, source: EndPoint, target: EndPoint): Point[] | null {
-  const src = portOf(g, source), tgt = portOf(g, target);
+function routeOne(nodes: RouteNode[], g: GapGraph, source: BorderEnd, target: BorderEnd): Point[] | null {
+  const src = endPointOf(g, source), tgt = endPointOf(g, target);
   if (!src || !tgt) return null;
-  if (src.at[0] === tgt.at[0] && src.at[1] === tgt.at[1]) return simplify([source.at, src.at, target.at]);
+  if (src.at[0] === tgt.at[0] && src.at[1] === tgt.at[1]) return [source.at, src.at, target.at];
 
-  const size = lat.nbrs.length;
+  const ny = g.ys.length;
+  const size = g.nbrs.length;
   const extra = new Map<number, number[]>();
-  const link = (a: number, b: number) => {
+  const join = (a: number, b: number) => {
     for (const [from, to] of [[a, b], [b, a]]) {
       const list = extra.get(from);
       if (list) list.push(to); else extra.set(from, [to]);
     }
   };
-  // - a port that lands exactly on a crossing is that crossing; otherwise it is an extra vertex tied
-  //   to the two crossings it sits between on its own line
-  const attach = (p: Port, spare: number): number => {
-    const cross = p.vertical ? g.ys.indexOf(p.at[1]) : g.xs.indexOf(p.at[0]);
-    if (cross >= 0) {
-      const idx = p.vertical ? p.line * lat.ny + cross : cross * lat.ny + p.line;
-      if (lat.free[idx]) return idx;
-    }
+  // - an end point that lands exactly on a crossing is that crossing; otherwise it is a vertex of its
+  //   own, tied to the two crossings it sits between on its line
+  const attach = (p: EndPoint, spare: number): number => {
     const vals = p.vertical ? g.ys : g.xs;
     const along = p.vertical ? p.at[1] : p.at[0];
+    const exact = vals.indexOf(along);
+    const crossing = (k: number) => p.vertical ? p.line * ny + k : k * ny + p.line;
+    if (exact >= 0 && g.free(p.vertical ? p.line : exact, p.vertical ? exact : p.line)) return crossing(exact);
     for (const k of [lineBelow(vals, along), lineAbove(vals, along)]) {
       if (k < 0) continue;
-      const idx = p.vertical ? p.line * lat.ny + k : k * lat.ny + p.line;
       const to: Point = p.vertical ? [p.at[0], vals[k]] : [vals[k], p.at[1]];
-      if (lat.free[idx] && clearSeg(nodes, p.at[0], p.at[1], to[0], to[1])) link(spare, idx);
+      if (g.free(p.vertical ? p.line : k, p.vertical ? k : p.line) && clearSeg(nodes, p.at[0], p.at[1], to[0], to[1])) join(spare, crossing(k));
     }
     return spare;
   };
   const pointAt = (i: number): Point =>
-    i === size ? src.at : i === size + 1 ? tgt.at : [g.xs[Math.floor(i / lat.ny)], g.ys[i % lat.ny]];
+    i === size ? src.at : i === size + 1 ? tgt.at : [g.xs[Math.floor(i / ny)], g.ys[i % ny]];
   const from = attach(src, size);
   const to = attach(tgt, size + 1);
-  // - the two ports may face each other on one line: that is the straight edge, no crossing needed
-  if ((src.at[0] === tgt.at[0] || src.at[1] === tgt.at[1]) && clearSeg(nodes, src.at[0], src.at[1], tgt.at[0], tgt.at[1])) link(from, to);
+  // - the two end points may face each other on one line: that is the straight edge, no crossing needed
+  if ((src.at[0] === tgt.at[0] || src.at[1] === tgt.at[1]) && clearSeg(nodes, src.at[0], src.at[1], tgt.at[0], tgt.at[1])) join(from, to);
 
   // - the route meets the entry segment head on, so the goal direction is the target side reversed
-  const path = shortestPath(lat, extra, pointAt, from, OUT_DIR[source.side], to, OUT_DIR[target.side] ^ 1);
+  const path = shortestPath(g, extra, pointAt, from, OUT_DIR[source.side], to, OUT_DIR[target.side] ^ 1);
   if (!path) return null;
-  return simplify([source.at, ...path.map(pointAt), target.at]);
+  return [source.at, ...simplify(path.map(pointAt)), target.at];
 }
 
-/** Drops repeated points and the middle of three points on one line. */
+/** Drops repeated points and the middle of any three points on one line. */
 function simplify(pts: Point[]): Point[] {
   const out: Point[] = [];
   for (const p of pts) {
@@ -352,69 +372,116 @@ function simplify(pts: Point[]): Point[] {
 interface Span { a: number; b: number }
 
 /**
- * Spreads the runs that share a grid line. A run takes the lowest lane whose spans do not overlap
- * its own (touching is free), and lanes fill outwards from the line itself. The exit and entry
- * segments keep the border points they were given.
+ * Puts the runs that would be drawn over each other into separate lanes. A route is a chain of
+ * straight runs, each one held at a fixed coordinate and reaching from the coordinate of the run
+ * before it to the coordinate of the run after it — so moving one run into a lane also moves the
+ * corners of its two neighbours. A run takes the first lane that leaves its own stretch and both
+ * neighbours' stretches untouched, or else the lane that shares the least. Stretches are booked
+ * against the coordinate a run ends up on, not the line it came from, so two lines shifting towards
+ * each other are seen as well. The two steps between a border and its end point never move: two
+ * edges crossing one gap therefore still share part of one step, which is what `crowded` counts.
  */
-function laneShift(paths: Map<string, Point[]>, order: string[], g: GapGraph): void {
+function laneShift(nodes: RouteNode[], paths: Map<string, Point[]>, order: string[], g: GapGraph, report: RouteReport): void {
   const onX = new Set(g.xs), onY = new Set(g.ys);
-  const taken = new Map<string, Span[][]>();
+  const taken = new Map<string, Span[]>();
+  const key = (vertical: boolean, coord: number) => `${vertical ? 'v' : 'h'}${coord}`;
+  // - how much of `s` is already drawn on: 0 means the lane is free there
+  const over = (k: string, s: Span) => (taken.get(k) ?? []).reduce((sum, t) => sum + Math.max(0, Math.min(s.b, t.b) - Math.max(s.a, t.a)), 0);
+  const book = (k: string, s: Span) => { const l = taken.get(k); if (l) l.push(s); else taken.set(k, [s]); };
+
   for (const id of order) {
     const pts = paths.get(id);
-    if (!pts || pts.length < 4) continue;
-    const moved = pts.map(p => [p[0], p[1]] as Point);
-    for (let i = 1; i < pts.length - 2; i++) {
-      const a = pts[i], b = pts[i + 1];
-      const vertical = a[0] === b[0];
-      const coord = vertical ? a[0] : a[1];
-      // - a run off the grid can only be the straight shot between two facing borders; the spread
-      //   exit points already keep those apart, so it needs no lane
-      if (!(vertical ? onX : onY).has(coord)) continue;
-      const lo = Math.min(vertical ? a[1] : a[0], vertical ? b[1] : b[0]);
-      const hi = Math.max(vertical ? a[1] : a[0], vertical ? b[1] : b[0]);
-      const key = `${vertical ? 'v' : 'h'}${coord}`;
-      const lanes = taken.get(key) ?? [];
-      let k = 0;
-      while (lanes[k] && lanes[k].some(s => lo < s.b && s.a < hi)) k++;
-      if (!lanes[k]) lanes[k] = [];
-      lanes[k].push({ a: lo, b: hi });
-      taken.set(key, lanes);
-      const shifted = coord + laneOffset(k);
-      if (vertical) { moved[i][0] = shifted; moved[i + 1][0] = shifted; }
-      else          { moved[i][1] = shifted; moved[i + 1][1] = shifted; }
+    if (!pts || pts.length < 3) continue;
+    const runs = pts.length - 1;
+    const vertical: boolean[] = [], coord: number[] = [], movable: boolean[] = [];
+    for (let i = 0; i < runs; i++) {
+      const v = pts[i][0] === pts[i + 1][0];
+      const c = v ? pts[i][0] : pts[i][1];
+      vertical.push(v);
+      coord.push(c);
+      // - a run off the lines is the straight shot between two facing borders, which the spread exit
+      //   points already keep apart; the first and last run hold the slot their border gave them
+      movable.push(i > 0 && i < runs - 1 && (v ? onX : onY).has(c));
     }
-    paths.set(id, simplify(moved));
+    const first = vertical[0] ? pts[0][1] : pts[0][0];
+    const last = vertical[runs - 1] ? pts[runs][1] : pts[runs][0];
+    // - `reach` is only padded while the run after this one is still waiting for its lane
+    const stretch = (i: number, pad: boolean): Span => {
+      const from = i === 0 ? first : coord[i - 1];
+      const reach = i === runs - 1 ? last : coord[i + 1];
+      const to = pad ? reach + (reach >= from ? LANE_SPREAD : -LANE_SPREAD) : reach;
+      return { a: Math.min(from, to), b: Math.max(from, to) };
+    };
+    const clearOf = (i: number) => {
+      const s = stretch(i, false);
+      return vertical[i] ? clearSeg(nodes, coord[i], s.a, coord[i], s.b) : clearSeg(nodes, s.a, coord[i], s.b, coord[i]);
+    };
+
+    for (let i = 1; i < runs - 1; i++) {
+      if (!movable[i]) continue;
+      const line = coord[i], next = i + 1;
+      let chosen = line, least = Infinity;
+      for (let k = 0; k < LANE_COUNT; k++) {
+        coord[i] = line + laneOffset(k);
+        // - a lane can push a run inside a node where the gap is under one grid; keep looking
+        if (!clearOf(i)) { report.blockedLanes = (report.blockedLanes ?? 0) + 1; continue; }
+        // - what this lane would draw over: the run itself, the run before it, whose corner it moves,
+        //   and the run after it when that one has no lane of its own to dodge with
+        const drawn =
+          over(key(vertical[i], coord[i]), stretch(i, next < runs - 1 && movable[next])) +
+          over(key(vertical[i - 1], coord[i - 1]), stretch(i - 1, false)) +
+          (movable[next] ? 0 : over(key(vertical[next], coord[next]), stretch(next, next + 1 < runs - 1 && movable[next + 1])));
+        if (drawn < least) { least = drawn; chosen = coord[i]; }
+        if (drawn === 0) break;
+      }
+      if (least > 0) report.crowded = (report.crowded ?? 0) + 1;
+      coord[i] = chosen;
+    }
+
+    for (let i = 0; i < runs; i++) {
+      const axis = vertical[i] ? 0 : 1;
+      pts[i][axis] = coord[i];
+      pts[i + 1][axis] = coord[i];
+      book(key(vertical[i], coord[i]), stretch(i, false));
+    }
+    paths.set(id, simplify(pts));
   }
 }
 
 /**
  * Routes every edge of one section in one pass. Edges are handled in id order, so the lanes and the
- * returned array do not depend on the order they arrive in. An edge with no route on the gap
- * lattice comes back with `fallback: true` and no points; the caller routes that one the old way.
+ * returned array do not depend on the order they arrive in. An edge with no route on the gap grid
+ * comes back with `fallback: true` and no points; the caller routes that one the old way.
  */
-export function routeSection(nodes: RouteNode[], edges: RouteEdge[]): RoutedEdge[] {
+export function routeSection(nodes: RouteNode[], edges: RouteEdge[], report: RouteReport = {}): RoutedEdge[] {
   const byId = new Map(nodes.map(n => [n.id, n] as const));
   const ordered = [...edges].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
   const g = buildGapGraph(nodes);
-  const lat = buildLattice(g);
   const ends = resolveEnds(ordered, byId);
-
   const paths = new Map<string, Point[]>();
-  for (const e of ordered) {
-    const end = ends.get(e.id);
-    if (!end || !end.source || !end.target) continue;
-    const pts = routeOne(nodes, g, lat, end.source, end.target);
-    if (pts) paths.set(e.id, pts);
+
+  if (g.capped) report.capped = true;
+  else {
+    for (const e of ordered) {
+      const end = ends.get(e.id);
+      if (!end || !end.source || !end.target) continue;
+      const pts = routeOne(nodes, g, end.source, end.target);
+      if (pts) paths.set(e.id, pts);
+    }
+    laneShift(nodes, paths, ordered.map(e => e.id), g, report);
   }
-  laneShift(paths, ordered.map(e => e.id), g);
 
   return ordered.map(e => {
+    const end = ends.get(e.id);
     const pts = paths.get(e.id);
     return {
       id: e.id,
       kind: edgeKind(e, byId),
       points: pts ?? [],
-      variant: ends.get(e.id)?.source?.slot ?? 0,
+      variant: end?.source?.slot ?? 0,
+      variantIn: end?.target?.slot ?? 0,
+      sourceSide: end?.source?.side,
+      targetSide: end?.target?.side,
       fallback: !pts,
     };
   });
