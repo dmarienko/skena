@@ -5,6 +5,7 @@
  * fits).
  */
 
+import { GRID } from '../../shared/constants';
 import { laneIndexForNode, pinnedLaneIndex, sortLanes, type SectionLane } from '../../shared/sectionLanes';
 
 export type NavDir = 'left' | 'right' | 'up' | 'down';
@@ -12,24 +13,40 @@ export interface NavNode { id: string; x: number; y: number; w: number; h: numbe
 export interface NavEdge { source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }
 export interface NavContext { nodes: NavNode[]; edges: NavEdge[]; lanes: SectionLane[] }
 
-// - primary-axis displacement must be ≥ CONE × the perpendicular one (~59° half-cone)
+// - the off-axis offset may be CONE × the gap, or one grid when the gap is smaller: a node right
+//   beside the source qualifies on any overlap, a distant one only while it stays roughly aligned
 const CONE = 0.6;
-// - ranking inside the cone: aligned beats near
+// - ranking: aligned beats near
 const CROSS_WEIGHT = 2.5;
-
-const centre = (n: NavNode) => ({ x: n.x + n.w / 2, y: n.y + n.h / 2 });
+// - a target whose near edge sits at most half a grid behind the source's far edge still counts
+const BEHIND_SLACK = GRID / 2;
 
 /**
- * How far `to` sits from `from` along `dir`: the displacement on the pressed axis plus the
- * off-axis one weighted up, so an aligned node beats a nearer one that is off to the side.
+ * The two distances between the boxes along `dir`, in flow units. `gap` runs from `from`'s far edge
+ * to `to`'s near edge, and is negative when the two overlap on the pressed axis. `off` is how far
+ * the boxes miss each other on the other axis, and is 0 while their ranges there overlap.
+ */
+function boxDelta(from: NavNode, to: NavNode, dir: NavDir): { gap: number; off: number } {
+  const gap =
+    dir === 'right' ? to.x - (from.x + from.w) :
+    dir === 'left'  ? from.x - (to.x + to.w) :
+    dir === 'down'  ? to.y - (from.y + from.h) :
+                      from.y - (to.y + to.h);
+  const off = dir === 'left' || dir === 'right'
+    ? Math.max(0, to.y - (from.y + from.h), from.y - (to.y + to.h))
+    : Math.max(0, to.x - (from.x + from.w), from.x - (to.x + to.w));
+  return { gap, off };
+}
+
+/**
+ * How far `to` sits from `from` along `dir`: the gap between the two boxes on the pressed axis plus
+ * their off-axis offset weighted up, so an aligned node beats one off to the side. Measured edge to
+ * edge, never centre to centre — a tall node beside a short one has a far-off centre but no gap.
  * Shared with the g-chord follow, which ranks the edge targets on a border the same way.
  */
 export function navScore(from: NavNode, to: NavNode, dir: NavDir): number {
-  const a = centre(from), b = centre(to);
-  const dx = b.x - a.x, dy = b.y - a.y;
-  return dir === 'left' || dir === 'right'
-    ? Math.abs(dx) + Math.abs(dy) * CROSS_WEIGHT
-    : Math.abs(dy) + Math.abs(dx) * CROSS_WEIGHT;
+  const { gap, off } = boxDelta(from, to, dir);
+  return gap + CROSS_WEIGHT * off;
 }
 
 /**
@@ -45,11 +62,8 @@ export function findNearestNode(from: NavNode, dir: NavDir, ctx: NavContext): st
   const laneOf = (n: NavNode) => (sorted.length ? laneIndexForNode(sorted, { id: n.id, y: n.y }, pinned) : -1);
   const fromLane = laneOf(from);
   const reachable = (n: NavNode) => !pinned.has(n.id) && (!horiz || laneOf(n) === fromLane);
-  const fc = centre(from);
-  const inDir = (dx: number, dy: number) =>
-    dir === 'left' ? dx < 0 : dir === 'right' ? dx > 0 : dir === 'up' ? dy < 0 : dy > 0;
-  const inCone = (dx: number, dy: number) =>
-    horiz ? Math.abs(dx) >= Math.abs(dy) * CONE : Math.abs(dy) >= Math.abs(dx) * CONE;
+  const inDir = (gap: number) => gap >= -BEHIND_SLACK;
+  const inCone = (gap: number, off: number) => off <= CONE * Math.max(gap, GRID);
 
   // - handles are named top/right/bottom/left; an edge carries the canvas fromSide/toSide
   const side = dir === 'up' ? 'top' : dir === 'down' ? 'bottom' : dir;
@@ -63,10 +77,9 @@ export function findNearestNode(from: NavNode, dir: NavDir, ctx: NavContext): st
   let bestScore = Infinity;
   for (const n of ctx.nodes) {
     if (n.id === from.id || !reachable(n)) continue;
-    const c = centre(n);
-    const dx = c.x - fc.x, dy = c.y - fc.y;
+    const { gap, off } = boxDelta(from, n, dir);
     // - a wired node qualifies wherever it sits; every other candidate has to be in the cone
-    if (!wired.has(n.id) && (!inDir(dx, dy) || !inCone(dx, dy))) continue;
+    if (!wired.has(n.id) && (!inDir(gap) || !inCone(gap, off))) continue;
     const s = navScore(from, n, dir);
     // - strict <, so ties keep the first node in canvas order
     if (s < bestScore) { bestScore = s; best = n.id; }
