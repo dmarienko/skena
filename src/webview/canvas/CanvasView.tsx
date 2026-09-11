@@ -81,6 +81,8 @@ const isBandType = (t?: string): boolean => t === 'group';
 
 // - the title is pinned outside the canvas area now, so no zoom is unsafe: back to the original floor
 const MIN_ZOOM = 0.05;
+// - no zooming in past the readable scale: node text already matches the editor at 1
+const MAX_ZOOM = READABLE_ZOOM;
 
 // - pan bounds: one grid left of the origin, flush at the top (the rail is outside the flow)
 const TRANSLATE_EXTENT: [[number, number], [number, number]] = [[-ORIGIN_GUTTER, 0], [1e7, 1e7]];
@@ -89,7 +91,7 @@ const TRANSLATE_EXTENT: [[number, number], [number, number]] = [[-ORIGIN_GUTTER,
 //   would paint one frame there before the load effect clamps it — clamp it here instead.
 function initialViewport(viewport: CanvasViewport | undefined): CanvasViewport {
   if (!viewport) return { x: 0, y: 0, zoom: 1 };
-  const zoom = Math.max(viewport.zoom, MIN_ZOOM);
+  const zoom = Math.min(MAX_ZOOM, Math.max(viewport.zoom, MIN_ZOOM));
   const c    = clampCameraToOrigin(viewport.x, viewport.y, zoom);
   return { x: c.x, y: c.y, zoom };
 }
@@ -670,7 +672,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     // - restore saved viewport ONLY on the first load of this path (defaultViewport only fires on
     //   mount). On a reload keep the user's current camera — never snap to the stale disk viewport.
     if (isInitialLoad && canvas.viewport) {
-      const zoom = Math.max(canvas.viewport.zoom, MIN_ZOOM);
+      const zoom = Math.min(MAX_ZOOM, Math.max(canvas.viewport.zoom, MIN_ZOOM));
       // - React Flow applies a restored viewport verbatim (translateExtent only bounds interactive
       //   panning), so it goes through clampCam like every other camera write
       const cRestore = clampCam(canvas.viewport.x, canvas.viewport.y, zoom);
@@ -2143,7 +2145,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         e.preventDefault();
         const STEP = 0.15;
         const { x: tx, y: ty, zoom } = rfRef.current.getViewport();
-        const newZoom = Math.max(MIN_ZOOM, Math.min(3, zoom * (1 + STEP)));
+        const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom * (1 + STEP)));
         const scale   = newZoom / zoom;
         const cx = window.innerWidth  / 2;
         const cy = window.innerHeight / 2;
@@ -2180,7 +2182,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         e.preventDefault();
         const STEP = 0.15;
         const { x: tx, y: ty, zoom } = rfRef.current.getViewport();
-        const newZoom = Math.max(MIN_ZOOM, Math.min(3, zoom / (1 + STEP)));
+        const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom / (1 + STEP)));
         const scale   = newZoom / zoom;
         const cx = window.innerWidth  / 2;
         const cy = window.innerHeight / 2;
@@ -2763,7 +2765,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       const STEP = 0.06; // - 6% per scroll notch (D3 default ≈ 15%)
       const { x: tx, y: ty, zoom } = rfRef.current.getViewport();
       const dir     = e.deltaY > 0 ? -1 : 1;
-      const newZoom = Math.max(MIN_ZOOM, Math.min(3, zoom * (1 + STEP * dir)));
+      const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom * (1 + STEP * dir)));
       const scale   = newZoom / zoom;
 
       // - keep the flow point under the cursor stationary:
@@ -3464,7 +3466,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           scheduleSave();
         }}
         minZoom={MIN_ZOOM}
-        maxZoom={3}
+        maxZoom={MAX_ZOOM}
         translateExtent={TRANSLATE_EXTENT}
         deleteKeyCode="Delete"
         multiSelectionKeyCode="Shift"
