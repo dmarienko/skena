@@ -172,13 +172,13 @@ function nextBump(nodes: EngineNode[], owners: Map<string, string>, pinned: Set<
 
 /**
  * Bumps (spec §3.2). While a node this call moved overlaps another one, that other node moves by
- * exactly the overlap, on the axis with the smaller move: right when it sits at or right of the
- * mover, left when it sits left of it (never past x = 0), down when it sits at or below it, never
- * up. A column never changes order, so a node ABOVE the one in hand does not move past it: it steps
- * aside, or — when that is the smaller move, or there is nowhere to step — the node the operation
- * placed YIELDS and drops below it, with whatever sits under it in its own column. That is the one
- * case where a mover moves. A cell the pack has just laid out does not yield; the node above it
- * steps aside, and falls past it only when it cannot.
+ * exactly the overlap — right or down, never left and never up. Sitting left of the mover, its only
+ * move is down, past the mover's row; sitting at or right of it, it takes the smaller of right and
+ * down, a tie going right. A column never changes order, so a node ABOVE the one in hand does not
+ * move past it: it steps aside, or — when that is the smaller move, or there is nowhere to step —
+ * the node the operation placed YIELDS and drops below it, with whatever sits under it in its own
+ * column. That is the one case where a mover moves. A cell the pack has just laid out does not
+ * yield; the node above it steps aside, and falls past it only when it cannot.
  * Everything a bump moved is checked again, so a bump cascades — through real overlaps and by
  * overlap amounts only, never by a modelled distance, which is why a hand-placed section an edit
  * does not actually reach is left alone. `report.capped` is set when the walk ran out of steps with
@@ -195,13 +195,14 @@ function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, pinned: 
     if (!hit) return;
     const { mover, other } = hit;
     const column = bumpGroup(other, nodes, owners, map, false);
-    // - a sideways step is the overlap rounded UP to the grid: the whole column moves by the same
-    //   grid multiple, so it still shares one snapped x and the next call reads the same column.
-    //   A column slides only as one: with a pinned node in it, the node in the way goes down instead.
-    const leftBy = gridUp(other.x + other.w + GRID - mover.x);
-    const dx = column.some(n => pinned.has(n.id)) ? 0
-      : other.x >= mover.x ? gridUp(mover.x + mover.w + GRID - other.x)
-      : Math.min(...column.map(n => n.x)) >= leftBy ? -leftBy : 0;
+    // - a sideways step is RIGHT only, and is the overlap rounded UP to the grid: the whole column
+    //   moves by the same grid multiple, so it still shares one snapped x and the next call reads
+    //   the same column. A column slides only as one: with a pinned node in it, the node in the way
+    //   goes down instead. A node left of the mover has no sideways move at all — a left step is not
+    //   monotone, so a walk that allows one can return to a position it has already been in and
+    //   never settle (H4, N11 created on M1: N8 slid left into E6's column, and round again).
+    const dx = other.x < mover.x || column.some(n => pinned.has(n.id)) ? 0
+      : gridUp(mover.x + mover.w + GRID - other.x);
     const dy = mover.y + mover.h + GRID - other.y;    // - the other node clears the mover, downward
     const drop = other.y + other.h + GRID - mover.y;   // - the mover clears the other node, downward
     // - a node ABOVE the node in hand does not move down past it: that would reorder the column the
@@ -211,7 +212,7 @@ function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, pinned: 
     //   node the operation itself placed yields: a cell the pack has just laid out keeps its place,
     //   so the pack and the bumps never fight over it (that fight is not idempotent).
     const yields = other.y < mover.y && placed.has(mover.id);
-    const sideways = dx !== 0 && (yields ? Math.abs(dx) <= drop : other.y < mover.y || Math.abs(dx) <= dy);
+    const sideways = dx !== 0 && (yields ? dx <= drop : other.y < mover.y || dx <= dy);
     if (sideways) for (const n of column) { n.x += dx; active.add(n.id); }
     else if (yields) for (const n of bumpGroup(mover, nodes, owners, map, true)) { n.y += drop; active.add(n.id); }
     else for (const n of bumpGroup(other, nodes, owners, map, true)) { if (!pinned.has(n.id)) { n.y += dy; active.add(n.id); } }

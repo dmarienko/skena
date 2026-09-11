@@ -72,9 +72,10 @@ One algorithm behind every row of §2, run per section:
 2. **Bumps — one rule for everything the touched column did not already pack.** After step 1, the
    engine looks for real overlaps (two boxes less than one grid gap apart on both axes) between a
    node this call moved (or the mover) and any other node. Each one is resolved by moving the OTHER
-   node by exactly the overlap, on the axis that needs the smaller move: **right** when it sits at or
-   right of the mover, **left** when it sits left of it (never below x = 0), **down** when it sits at
-   or below it; never up. **A node above the mover never moves past it** — a column keeps its order:
+   node by exactly the overlap, **right or down, never left and never up**. Sitting left of the
+   mover, its only move is **down**, past the mover's row (`mover.y + mover.h + GRID`); sitting at or
+   right of it, it takes the smaller of **right** and **down**, a tie going right (FORK_1 below).
+   **A node above the mover never moves past it** — a column keeps its order:
    it steps aside, or **the mover yields downward** when that is the smaller move (or when there is
    nowhere to step aside), taking what sits under it in its own column; that is the one case where a
    mover moves, and only a node the operation itself placed yields — a cell the pack has just laid
@@ -87,6 +88,17 @@ One algorithm behind every row of §2, run per section:
    does not move. Consequences: no overlap, no bump — a hand-placed section is rearranged by an edit
    only where the pack of the touched column (§3.1) reaches; an output that grows pushes the next
    pair only when it actually reaches it; shrinking never pulls anything back (Reflow does).
+
+   **No left move (2026-09-11).** A right or a down move takes a node further right or further down
+   than it was, so a walk made of them cannot come back to a position it has already been in. A left
+   move can, and the walk then never settles. Measured on `test/H4.canvas`: `o` on M1 (3100,100)
+   700×600 put N11 at (3100,800) 700×300, over N8 (2400,900) 900×300. N8 sits left of N11 and the
+   overlap was 300 either way, so the tie went sideways: N8's column slid 300 left, reached E6's
+   column at x 1600, that one slid left in turn, and the moves came back round. The walk did not
+   settle at 112, 500 or 5000 steps, so the capped undo left the overlap on the canvas. With the
+   left move gone, N8's only move is down: N8 → (2400,1200), one step, nothing else touched. The
+   every-node-as-mover sweep over H1/H4/H5 (80 movers) goes from one capped walk to none, with the
+   same idempotence and no overlap growth.
 
    Three details the rule needs for a second call to change nothing:
    - a **sideways step is the overlap rounded UP to the grid**, so a column moves by one grid
