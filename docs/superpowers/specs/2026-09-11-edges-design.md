@@ -34,6 +34,8 @@ Base: `2026-09-01-spatial-notebook-design.md` §5. Status of §5 today (FACT, re
    palette · `g{hjkl}` / `gg` / `G` follow · `Shift+(` / `Shift+)` fold. Engine-drawn sequence
    edges: **not in this round** — an edge stays as drawn even when its cell moves to a neighbouring
    column (user: unclear what a re-wire should look like).
-2. Channel rule for parallel edges: spacing inside the one-grid gap (100 px holds ~4 lines at 20 px)
-   vs distinct gaps.
+2. Channel rule (decided 2026-09-11): **A — lanes inside the gap**: the one-grid gap between columns
+   holds up to four lanes 20 px apart; each edge gets its own lane and its own exit point spread along
+   the border; a fifth edge through the same gap shares a lane. Edges from one border get distinct
+   colours.
 3. What "route finding" is wrong today (through nodes / detours / odd bends).
