@@ -75,6 +75,18 @@ const webviewConfig = {
   },
 };
 
+// - .mcp.json runs .vscode/skena-mcp.js, not dist/: copy the bundle there after every build so the
+//   MCP a Claude session talks to is the build it was packaged with (it was a May copy until 2026-09-09)
+const deployMcpServer = {
+  name: 'deploy-mcp-server',
+  setup(build) {
+    build.onEnd(result => {
+      if (result.errors.length) return;
+      copyFileSync('dist/mcp-server.js', '.vscode/skena-mcp.js');
+    });
+  },
+};
+
 /** @type {esbuild.BuildOptions} */
 const mcpServerConfig = {
   ...baseOptions,
@@ -86,6 +98,7 @@ const mcpServerConfig = {
   target:   'node20',
   external: [],  // - bundle everything; only Node built-ins are external
   banner:   { js: '#!/usr/bin/env node' },
+  plugins:  [...(baseOptions.plugins ?? []), deployMcpServer],
 };
 
 if (watch) {
