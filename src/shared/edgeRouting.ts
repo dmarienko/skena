@@ -403,12 +403,14 @@ function laneShift(nodes: RouteNode[], paths: Map<string, Point[]>, order: strin
       //   points already keep apart; the first and last run hold the slot their border gave them
       movable.push(i > 0 && i < runs - 1 && (v ? onX : onY).has(c));
     }
-    const first = vertical[0] ? pts[0][1] : pts[0][0];
-    const last = vertical[runs - 1] ? pts[runs][1] : pts[runs][0];
+    // - a run reaches as far as the fixed coordinate of the perpendicular run beside it, which is why
+    //   a lane moves its neighbours' corners. Beside a parallel run — the step to a border end point
+    //   can be one — that coordinate is on the other axis, so there the shared point is the end.
+    const along = (p: Point, i: number) => vertical[i] ? p[1] : p[0];
     // - `reach` is only padded while the run after this one is still waiting for its lane
     const stretch = (i: number, pad: boolean): Span => {
-      const from = i === 0 ? first : coord[i - 1];
-      const reach = i === runs - 1 ? last : coord[i + 1];
+      const from = i === 0 || vertical[i - 1] === vertical[i] ? along(pts[i], i) : coord[i - 1];
+      const reach = i === runs - 1 || vertical[i + 1] === vertical[i] ? along(pts[i + 1], i) : coord[i + 1];
       const to = pad ? reach + (reach >= from ? LANE_SPREAD : -LANE_SPREAD) : reach;
       return { a: Math.min(from, to), b: Math.max(from, to) };
     };
@@ -438,11 +440,12 @@ function laneShift(nodes: RouteNode[], paths: Map<string, Point[]>, order: strin
       coord[i] = chosen;
     }
 
+    // - book before moving anything: `stretch` reads the points the route was found on
+    for (let i = 0; i < runs; i++) book(key(vertical[i], coord[i]), stretch(i, false));
     for (let i = 0; i < runs; i++) {
       const axis = vertical[i] ? 0 : 1;
       pts[i][axis] = coord[i];
       pts[i + 1][axis] = coord[i];
-      book(key(vertical[i], coord[i]), stretch(i, false));
     }
     paths.set(id, simplify(pts));
   }
