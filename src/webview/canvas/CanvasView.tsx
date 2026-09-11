@@ -2179,6 +2179,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       gWindowRef.current = hints.length > 0 ? G_HINT_MS : G_CHORD_MS;
       gDigitRef.current = null;
       if (gHintTimerRef.current) clearTimeout(gHintTimerRef.current);
+      gHintTimerRef.current = null;
       setGHints(h => (hints.length === 0 && h.length === 0 ? h : hints));
       if (hints.length > 0) gHintTimerRef.current = setTimeout(() => { lastGPressRef.current = 0; setGHints([]); }, G_HINT_MS);
     };
@@ -2914,7 +2915,10 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     return () => {
       window.removeEventListener('keydown', handler);
       window.removeEventListener('keydown', panCapture, { capture: true });
-      if (gHintTimerRef.current) clearTimeout(gHintTimerRef.current);
+      // - a canvas switch re-runs this effect: drop the armed chord and its badges with it
+      if (gHintTimerRef.current) { clearTimeout(gHintTimerRef.current); gHintTimerRef.current = null; }
+      lastGPressRef.current = 0;
+      setGHints([]);
     };
   }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToMark, engineNodesOf, runEngineAfterMove, canvasPath]); // - nodesRef + spaceSelectedRef carry live state
 

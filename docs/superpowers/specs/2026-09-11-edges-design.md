@@ -64,10 +64,16 @@ the upstream path of a running cell — draw lighter and wider. The selected sty
   numbers are the exit-point order of §2 — topmost / leftmost is 1 — so they are the order the edges
   leave the border in, not a ranking. 1–9; a number the border does not have does nothing; any other
   key between `g` and the direction cancels the chord.
+- `g` + a digit + `g` is not `gg`: the digit cancels that chord, and the second `g` arms a new one.
+  Two edges between the same pair on one border draw two wires but one badge, on the first of their
+  two slots — the follow lands on the node, so one number is all there is to press.
 - The numbers are drawn only while `g` is armed: a small badge 8 px outside each exit / entry point,
   on the borders of the focused node that carry more than one edge. A border with one edge gets
   none, and a node whose every border has at most one gets none at all. They go away on the
-  direction key, on a cancel and on the timeout. An edge the routing pass did not route has no exit
+  direction key, on a cancel, on the timeout and on a canvas switch. The exit points are 10 flow px
+  apart and the badge is a fixed 14 px, so the badges of one border are fanned apart on screen — slot
+  order kept, at least 16 px between centres, the run centred on the points it names — and a badge
+  the fan moved keeps a 1 px line back to its own exit point. An edge the routing pass did not route has no exit
   point of its own; its badge is spread along the border the way the router spreads the rest.
 - `gg`: first node of the current section (by y, then x); `G`: its last node. Both reveal.
 - `Shift+(` / `Shift+)`: fold / unfold the current section — the rail chevron's action and history
