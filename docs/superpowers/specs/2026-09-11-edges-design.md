@@ -19,7 +19,10 @@ Base: `2026-09-01-spatial-notebook-design.md` §5. Status of §5 today (FACT, re
   focused node (left / bottom / top / right) and focuses the node it leads to; several edges on one
   border → the nearest by the navigation score, repeat to cycle. `gg` = the first node of the current
   section, `G` = the last node of the current section (reading: top/bottom of the SECTION, not of the
-  canvas — to confirm). `Shift+H/J/K/L` keep their current meaning (move pinned nodes / scroll).
+  canvas — confirmed: the section). `Shift+H/J/K/L` keep their current meaning (move pinned nodes /
+  scroll).
+- **Section fold hotkeys**: `Shift+(` folds the current section (the one holding the focused node),
+  `Shift+)` unfolds it — the same actions as the rail chevron (`e.key` is `(` / `)`).
 - **Colouring**: when one border of a node has many outgoing edges, give them different colours so
   they can be told apart; and colour by execution connection (the sequence edge a run follows).
 - **No bundling**: several edges must never be drawn as one line (seen on H5: two edges sharing a
