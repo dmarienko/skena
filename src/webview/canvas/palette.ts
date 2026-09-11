@@ -57,9 +57,9 @@ export { KERNEL_PALETTE, kernelColor, nextKernelColorIndex } from '../../shared/
 // - output, a muted violet for everything else, including user-drawn links
 export const THEME = {
   light: { bg1: '#f5f5f7', bg2: '#ffffff', bg3: '#e5e5e7', border: '#d1d1d6', text1: '#1d1d1f', text2: '#86868b', text3: '#aeaeb2', accent: '#0071e3',
-           edgeSequence: '#0071e3', edgeOutput: '#4e8a72', edgeContext: '#7c6bd6' },
+           edgeSequence: '#5a8f77', edgeOutput: '#5b7fb0', edgeContext: '#8a7db5' },
   dark:  { bg1: '#1d1d1f', bg2: '#2d2d2f', bg3: '#3d3d3f', border: '#424245', text1: '#f5f5f7', text2: '#86868b', text3: '#636366', accent: '#0a84ff',
-           edgeSequence: '#0a84ff', edgeOutput: '#6fae92', edgeContext: '#9c8cf5' },
+           edgeSequence: '#6f9e86', edgeOutput: '#6f8fc0', edgeContext: '#9a8fc4' },
 } as const;
 
 // - the VS Code theme kind, from the class VS Code puts on <body>. No DOM (a node test) reads as light.

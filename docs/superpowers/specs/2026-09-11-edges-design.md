@@ -47,8 +47,9 @@ Scope of this round: §1–§4 below. Out: engine-drawn sequence edges, paragrap
 
 ## 3. Colour
 
-- Base colour by kind: **sequence** (code → code), **output** (code → output), **context**
-  (everything else, user-drawn included). Three tokens in the theme.
+- Base colour by kind: **sequence** (code → code) = muted green, **output** (code → output) = muted
+  blue, **context** (everything else, user-drawn included) = muted violet. Three tokens in the theme;
+  kept low-saturation (user, 2026-09-11: the first set was too bright).
 - Many edges on one border: each gets a distinct variant of its kind's base colour (hue alternates
   ±12° around the base, up to 6 variants, then repeat), in the same stable order as the exit points —
   the colour and the exit position tell the same story.
