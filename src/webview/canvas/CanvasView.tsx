@@ -53,17 +53,18 @@ import { CodeNodeComponent }   from './nodes/CodeNode';
 import { LabeledEdgeComponent } from './edges/LabeledEdge';
 import { HelperLines } from './HelperLines';
 import { SectionSeparators } from './SectionSeparators';
+import { EdgeFollowHints, type EdgeHint } from './EdgeFollowHints';
 import { SectionRail, type RailKernel } from '../rail/SectionRail';
 import { deriveLanes, fitLanes, sortLanes, insertLaneAt, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
 import { applyPatchesToCanvas, codeCellHeight, columnsOfDeleted as columnsOfDeletedIn, forkOf, insertAfter, layoutSection, reflowSection, sectionEngineNodes, sectionMembership, type EngineNode, type LayoutOpts, type Patches } from '../../shared/layoutEngine';
 import { useLaneFit, flowGeom } from '../rail/useLaneFit';
-import { findNearestNode, navScore, revealPan, type NavDir, type NavNode, type Rect } from './spatialNav';
+import { edgesOnSide, findNearestNode, revealPan, type EdgeSideContext, type NavDir, type NavNode, type Rect } from './spatialNav';
 import { CanvasSearch } from './CanvasSearch';
 import { MarksPanel  } from './MarksPanel';
 import { LanesContext } from './LanesContext';
 import { KernelsContext } from './KernelsContext';
 import { EdgeRoutesContext } from './EdgeRoutesContext';
-import { facingSide, routeSection, type RouteEdge, type RouteNode, type RoutedEdge, type Side } from '../../shared/edgeRouting';
+import { borderPoint, LANE_STEP, routeSection, sideOfHandle, type RouteEdge, type RouteNode, type RoutedEdge, type Side } from '../../shared/edgeRouting';
 
 const NODE_TYPES: NodeTypes = {
   file:   FileNodeComponent,
@@ -167,6 +168,8 @@ const G_CHORD_MS = 400;
 // - how long g + the same key keeps walking the same border instead of starting over; longer than the
 //   chord window, which only has to catch the second key of one press
 const G_CYCLE_MS = 1500;
+// - the chord window once the numbers are on screen: long enough to read one and type it
+const G_HINT_MS = 1500;
 
 // - default size + gap for a NEW node created by directional-add (Alt+X / Ctrl+Shift+hjkl), an edge
 //   dropped on empty canvas, or `o` below a node
@@ -225,8 +228,6 @@ function toFlowEdge(ce: CanvasEdge): Edge {
 }
 
 const SIDES: Side[] = ['top', 'right', 'bottom', 'left'];
-// - a React Flow handle id is the JSON Canvas side; anything else (a node-local handle) has no side
-const sideOfHandle = (h?: string | null): Side | undefined => (SIDES as string[]).includes(h ?? '') ? h as Side : undefined;
 
 const toRouteNode = (n: Node): RouteNode => {
   const g = flowGeom(n);
@@ -516,8 +517,15 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   // - Alt+X add-node chord: armed until the next h/j/k/l (or 2s timeout)
   const chordRef       = useRef(false);
   const chordTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // - g chord: the moment g was pressed; the next key counts as its second within G_CHORD_MS
+  // - g chord: the moment g was pressed; the next key counts as its second within gWindowRef
   const lastGPressRef  = useRef<number>(0);
+  // - G_CHORD_MS, or G_HINT_MS while the numbers are on screen
+  const gWindowRef     = useRef<number>(G_CHORD_MS);
+  // - the digit typed between g and the direction key, so g 2 l takes the second exit point
+  const gDigitRef      = useRef<number | null>(null);
+  const gHintTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // - the numbers drawn over the focused node's borders; only while the chord is armed
+  const [gHints, setGHints] = useState<EdgeHint[]>([]);
   // - the last g{hjkl} follow, so pressing it again inside the window takes the next edge on that
   //   border instead of re-taking the first one
   const lastFollowRef  = useRef<{ nodeId: string; side: Side; index: number; at: number } | null>(null);
@@ -2093,46 +2101,93 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
     const SIDE_OF_DIR: Record<NavDir, Side> = { left: 'left', right: 'right', up: 'top', down: 'bottom' };
 
+    // - what the follow reads: every visible node, every edge, and the routes of the last pass. A band
+    //   node is a backdrop and a folded member is hidden, so neither is a landing place.
+    const sideContext = (): EdgeSideContext => ({
+      nodes: nodesRef.current.filter(n => !isBandType(n.type) && !hiddenByFoldRef.current.has(n.id)).map(toNav),
+      edges: edgesRef.current,
+      routes: routesRef.current,
+    });
+
     /**
-     * The nodes `g{hjkl}` can land on from `fromId`: the other end of every edge attached to that
-     * border, visible only, nearest first by the navigation score. An edge carries its border as the
-     * React Flow handle (the canvas fromSide / toSide); without one the border comes from geometry.
+     * The candidates `g{hjkl}` reaches from `fromId` on that border, in the order their exit points
+     * are drawn (see `edgesOnSide`): index 0 is the topmost / leftmost, so `g {n} {dir}` takes
+     * index n − 1.
      */
-    const followTargets = (fromId: string, dir: NavDir): string[] => {
+    const followCandidates = (fromId: string, dir: NavDir) => {
       const from = nodesRef.current.find(n => n.id === fromId);
-      if (!from) return [];
-      const side = SIDE_OF_DIR[dir];
-      const fromRoute = toRouteNode(from);
-      const scored = new Map<string, number>();
-      for (const e of edgesRef.current) {
-        const otherId = e.source === fromId ? e.target : e.target === fromId ? e.source : null;
-        if (otherId === null || otherId === fromId) continue;
-        const other = nodesRef.current.find(n => n.id === otherId);
-        if (!other || isBandType(other.type) || hiddenByFoldRef.current.has(otherId)) continue;
-        const handle = sideOfHandle(e.source === fromId ? e.sourceHandle : e.targetHandle);
-        if ((handle ?? facingSide(fromRoute, toRouteNode(other))) !== side) continue;
-        const s = navScore(toNav(from), toNav(other), dir);
-        // - two edges may join the same pair on one border; the node is one candidate, scored once
-        if (s < (scored.get(otherId) ?? Infinity)) scored.set(otherId, s);
-      }
-      return [...scored].sort((a, b) => a[1] - b[1]).map(([id]) => id);
+      return from ? edgesOnSide(toNav(from), SIDE_OF_DIR[dir], sideContext()) : [];
     };
 
-    // - g then h/j/k/l: follow the edge on that border. Pressing it again within the chord window
-    //   walks to the next edge on the same border of the same node instead of starting over.
-    const followEdgeOnSide = (dir: NavDir) => {
+    /**
+     * `g` then h/j/k/l: follow the edge on that border. `pick` is the digit typed between the two
+     * keys — that exit point, nothing when the border has no such number. Without a digit the first
+     * exit point is taken, and pressing the pair again within the cycle window walks to the next one
+     * on the same border of the same node instead of starting over.
+     */
+    const followEdgeOnSide = (dir: NavDir, pick: number | null) => {
       const current = focusedNode();
       if (!current) return;
       const side = SIDE_OF_DIR[dir];
+      if (pick !== null) {
+        const targets = followCandidates(current.id, dir);
+        if (pick > targets.length) return;
+        lastFollowRef.current = { nodeId: current.id, side, index: pick - 1, at: Date.now() };
+        focusNodeById(targets[pick - 1].nodeId);
+        return;
+      }
       const prev = lastFollowRef.current;
       const cycle = prev && prev.side === side && Date.now() - prev.at < G_CYCLE_MS
-        && followTargets(prev.nodeId, dir)[prev.index] === current.id ? prev : null;
+        && followCandidates(prev.nodeId, dir)[prev.index]?.nodeId === current.id ? prev : null;
       const originId = cycle ? cycle.nodeId : current.id;
-      const targets = followTargets(originId, dir);
+      const targets = followCandidates(originId, dir);
       if (targets.length === 0) return;
       const index = cycle ? (cycle.index + 1) % targets.length : 0;
       lastFollowRef.current = { nodeId: originId, side, index, at: Date.now() };
-      focusNodeById(targets[index]);
+      focusNodeById(targets[index].nodeId);
+    };
+
+    /**
+     * The badges to show while `g` is armed: every border of the focused node carrying more than one
+     * edge, numbered the way `followEdgeOnSide` counts them. An edge the routing pass did not route
+     * has no exit point of its own; those badges are spread along the border the way the router
+     * spreads the ones it does route.
+     */
+    const borderHints = (): EdgeHint[] => {
+      const from = focusedNode();
+      if (!from) return [];
+      const geom = toNav(from);
+      const ctx = sideContext();
+      const out: EdgeHint[] = [];
+      for (const side of SIDES) {
+        const cands = edgesOnSide(geom, side, ctx);
+        if (cands.length < 2) continue;
+        cands.forEach((c, i) => {
+          const at = c.at ?? borderPoint(geom, side, (i - (cands.length - 1) / 2) * LANE_STEP);
+          out.push({ key: `${side}:${c.edgeId ?? c.nodeId}`, n: i + 1, x: at[0], y: at[1], side });
+        });
+      }
+      return out;
+    };
+
+    // - arm the g chord, and put the numbers on screen when a border has more than one edge to tell
+    //   apart. Reading a number and typing it takes longer than the second key of a plain chord, so
+    //   the window only stretches to G_HINT_MS when there is something to read.
+    const armG = () => {
+      const hints = borderHints();
+      lastGPressRef.current = Date.now();
+      gWindowRef.current = hints.length > 0 ? G_HINT_MS : G_CHORD_MS;
+      gDigitRef.current = null;
+      if (gHintTimerRef.current) clearTimeout(gHintTimerRef.current);
+      setGHints(h => (hints.length === 0 && h.length === 0 ? h : hints));
+      if (hints.length > 0) gHintTimerRef.current = setTimeout(() => { lastGPressRef.current = 0; setGHints([]); }, G_HINT_MS);
+    };
+
+    const disarmG = () => {
+      lastGPressRef.current = 0;
+      gDigitRef.current = null;
+      if (gHintTimerRef.current) { clearTimeout(gHintTimerRef.current); gHintTimerRef.current = null; }
+      setGHints(h => (h.length === 0 ? h : []));
     };
 
     // - the section the keys act on: the focused node's, or — after a fold dropped the selection —
@@ -2280,21 +2335,29 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         return;
       }
 
-      // ── g chord: consume the second key (h/j/k/l follows an edge, g jumps to the section top) ──
-      if (lastGPressRef.current !== 0 && Date.now() - lastGPressRef.current < G_CHORD_MS) {
-        lastGPressRef.current = 0;
+      // ── g chord: consume the rest (a digit is held, h/j/k/l follows an edge, g jumps to the top) ──
+      if (lastGPressRef.current !== 0 && Date.now() - lastGPressRef.current < gWindowRef.current) {
         if (!e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          // - the digit sits between g and the direction key, so the chord stays armed for it
+          if (e.key.length === 1 && e.key >= '1' && e.key <= '9') { e.preventDefault(); gDigitRef.current = Number(e.key); return; }
           const dir = keyToDir(e.key);
-          if (dir && e.key.length === 1) { e.preventDefault(); followEdgeOnSide(dir); return; }
-          if (e.key === 'g') { e.preventDefault(); jumpInSection('first'); return; }
+          if (dir && e.key.length === 1) {
+            const pick = gDigitRef.current;
+            disarmG();
+            e.preventDefault();
+            followEdgeOnSide(dir, pick);
+            return;
+          }
+          if (e.key === 'g' && gDigitRef.current === null) { disarmG(); e.preventDefault(); jumpInSection('first'); return; }
         }
-        // - any other second key cancels the chord and is then handled normally, so plain h still
+        // - any other key cancels the chord and is then handled normally, so plain h still
         //   navigates left; falling through is the whole point
+        disarmG();
       }
 
       // - g: arm the chord. Nothing happens on its own, so a stray g is harmless.
       if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'g') {
-        lastGPressRef.current = Date.now();
+        armG();
         return;
       }
 
@@ -2851,6 +2914,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     return () => {
       window.removeEventListener('keydown', handler);
       window.removeEventListener('keydown', panCapture, { capture: true });
+      if (gHintTimerRef.current) clearTimeout(gHintTimerRef.current);
     };
   }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToMark, engineNodesOf, runEngineAfterMove, canvasPath]); // - nodesRef + spaceSelectedRef carry live state
 
@@ -3664,6 +3728,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       >
         <Background variant={BackgroundVariant.Dots} gap={GRID} size={1} color="var(--vscode-editorIndentGuide-background)" />
         <SectionSeparators lanes={derivedLanes} />
+        <EdgeFollowHints hints={gHints} />
         <HelperLines horizontal={helperLines.horizontal} vertical={helperLines.vertical} />
         <Controls showInteractive={false} showFitView={false}>
           {/* - our own fit button: React Flow's fires an unbounded fitView */}

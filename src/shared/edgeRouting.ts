@@ -9,10 +9,17 @@ import { GRID } from './constants';
  * Pure — no React, no DOM.
  */
 
-export interface RouteNode { id: string; type: string; x: number; y: number; w: number; h: number; outputNodeId?: string }
+/** - the geometry a border is measured from; RouteNode and the nav nodes both satisfy it */
+export interface BoxGeom { x: number; y: number; w: number; h: number }
+export interface RouteNode extends BoxGeom { id: string; type: string; outputNodeId?: string }
 export type Side = 'top' | 'right' | 'bottom' | 'left';
 export interface RouteEdge { id: string; source: string; target: string; sourceSide?: Side; targetSide?: Side }
 export type EdgeKind = 'sequence' | 'output' | 'context';
+
+const SIDES: Side[] = ['top', 'right', 'bottom', 'left'];
+// - a React Flow handle id is the JSON Canvas side; anything else (a node-local handle) has no side
+export const sideOfHandle = (h?: string | null): Side | undefined =>
+  (SIDES as string[]).includes(h ?? '') ? h as Side : undefined;
 export type Point = [number, number];
 
 export interface RoutedEdge {
@@ -73,7 +80,7 @@ export function edgeKind(e: RouteEdge, byId: Map<string, RouteNode>): EdgeKind {
 }
 
 /** Side of `from` that faces `to` — the default when the canvas edge names no handle. */
-export function facingSide(from: RouteNode, to: RouteNode): Side {
+export function facingSide(from: BoxGeom, to: BoxGeom): Side {
   const dx = (to.x + to.w / 2) - (from.x + from.w / 2);
   const dy = (to.y + to.h / 2) - (from.y + from.h / 2);
   if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? 'right' : 'left';
@@ -136,7 +143,7 @@ export function buildGapGraph(nodes: RouteNode[]): GapGraph {
 }
 
 /** Point on `side` of `n`, `off` px from the middle of that border. */
-function borderPoint(n: RouteNode, side: Side, off: number): Point {
+export function borderPoint(n: BoxGeom, side: Side, off: number): Point {
   if (side === 'right')  return [n.x + n.w, n.y + n.h / 2 + off];
   if (side === 'left')   return [n.x, n.y + n.h / 2 + off];
   if (side === 'bottom') return [n.x + n.w / 2 + off, n.y + n.h];

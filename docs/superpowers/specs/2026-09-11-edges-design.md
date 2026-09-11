@@ -57,14 +57,24 @@ the upstream path of a running cell — draw lighter and wider. The selected sty
 ## 4. Keys
 
 - `g` then `h` / `j` / `k` / `l`: follow the edge on that border of the focused node (left / bottom
-  / top / right), whichever end the node is on; several → the nearest by the navigation score
-  first, `g` + the same key again cycles; none → nothing. The target is focused and revealed
+  / top / right), whichever end the node is on; several → the first exit point on that border,
+  `g` + the same key again walks to the next; none → nothing. The target is focused and revealed
   (follow-ups spec §8.2).
+- `g` then a digit then `h` / `j` / `k` / `l`: the edge that digit numbers on that border. The
+  numbers are the exit-point order of §2 — topmost / leftmost is 1 — so they are the order the edges
+  leave the border in, not a ranking. 1–9; a number the border does not have does nothing; any other
+  key between `g` and the direction cancels the chord.
+- The numbers are drawn only while `g` is armed: a small badge 8 px outside each exit / entry point,
+  on the borders of the focused node that carry more than one edge. A border with one edge gets
+  none, and a node whose every border has at most one gets none at all. They go away on the
+  direction key, on a cancel and on the timeout. An edge the routing pass did not route has no exit
+  point of its own; its badge is spread along the border the way the router spreads the rest.
 - `gg`: first node of the current section (by y, then x); `G`: its last node. Both reveal.
 - `Shift+(` / `Shift+)`: fold / unfold the current section — the rail chevron's action and history
   entry (`e.key` is `(` / `)`).
-- `g` waits 400 ms for its second key; any other key cancels; `g` alone does nothing.
-  `Shift+H/J/K/L` keep their meaning (move pinned nodes / scroll content).
+- `g` waits 400 ms for its next key, or 1.5 s while the numbers are on screen; any other key
+  cancels; `g` alone does nothing. `Shift+H/J/K/L` keep their meaning (move pinned nodes / scroll
+  content).
 
 ## 5. Files and tests
 
@@ -73,8 +83,11 @@ the upstream path of a running cell — draw lighter and wider. The selected sty
 | `src/shared/edgeRouting.ts` (new, pure) | `buildGapGraph(sectionNodes)`, `routeOnGaps(edges, graph)` → per edge: waypoints, lane per segment, exit/entry offsets; stable order; a flag when no gap route exists |
 | `src/webview/canvas/edges/LabeledEdge.tsx` | draws the route it is given (waypoints, colour, offsets); no per-edge routing |
 | `src/webview/canvas/CanvasView.tsx` | one routing pass per section on node/edge change, results in a context the edges read; the `g` chord, `gg`, `G`, `Shift+(`/`)` |
+| `src/webview/canvas/spatialNav.ts` | `edgesOnSide(from, side, ctx)` — the border's candidates in exit-point order, from the pass's `variant` / `variantIn` |
+| `src/webview/canvas/EdgeFollowHints.tsx` (new) | the numbers shown while `g` is armed; same overlay as `SectionSeparators`, flow coordinates through React Flow's transform |
 | `src/webview/canvas/palette.ts`, `theme.ts` | kind colours + the variant rule |
 | `src/webview/canvas/routing/orthogonal.ts` | kept as the fallback |
+| `test/spatial-nav.mjs` | `edgesOnSide`: order by slot; `variantIn` on the target side; an unrouted edge last, by the other end's y |
 | `test/edge-routing.mjs` | gap graph from a two-column section; shortest route with the bend penalty on the H4/H5 shapes (no detour); lanes 10 px, 9 per gap, stable order; exit spreading; fallback when no gap route |
 | `README.md` | the keys |
 

@@ -2,15 +2,16 @@
  * Spatial navigation and the reveal pan. Pure: CanvasView maps its refs into these, so both are
  * testable without React Flow. `findNearestNode` picks the node a direction key lands on;
  * `revealPan` returns the smallest viewport move that shows a node (with its output when the pair
- * fits).
+ * fits); `edgesOnSide` orders the edges of one border for the `g` follow chord.
  */
 
 import { GRID } from '../../shared/constants';
+import { facingSide, sideOfHandle, type Point, type Side } from '../../shared/edgeRouting';
 import { laneIndexForNode, pinnedLaneIndex, sortLanes, type SectionLane } from '../../shared/sectionLanes';
 
 export type NavDir = 'left' | 'right' | 'up' | 'down';
 export interface NavNode { id: string; x: number; y: number; w: number; h: number }
-export interface NavEdge { source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }
+export interface NavEdge { id?: string; source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }
 export interface NavContext { nodes: NavNode[]; edges: NavEdge[]; lanes: SectionLane[] }
 
 // - the off-axis miss may be CONE × the gap, or one grid when the gap is smaller: a node right
@@ -48,7 +49,6 @@ function boxDelta(from: NavNode, to: NavNode, dir: NavDir): { gap: number; off: 
  * of the miss, so a neighbour sharing the row beats one merely touching its corner. That penalty is
  * in the score only: `findNearestNode` cones on the raw miss, or a touching node one grid away
  * would fall out of its own cone.
- * Shared with the g-chord follow, which ranks the edge targets on a border the same way.
  */
 export function navScore(from: NavNode, to: NavNode, dir: NavDir): number {
   const { gap, off, overlap } = boxDelta(from, to, dir);
@@ -120,4 +120,65 @@ export function revealPan(node: Box, pair: Box | null, area: Rect, vp: Viewport,
   else if (sy2 > area.bottom - margin) dy = area.bottom - margin - sy2;
   if (dx === 0 && dy === 0) return null;
   return { x: vp.x + dx, y: vp.y + dy };
+}
+
+// - the follow keys read the routing pass, which orders the edges of one border and hands each end a
+//   slot: 0 is the topmost (a left / right border) or leftmost (a top / bottom border) exit point
+export interface NavRoute { variant: number; variantIn: number; points: Point[] }
+export interface EdgeSideContext {
+  /** - the nodes a follow may land on: the caller drops band nodes and folded members */
+  nodes: NavNode[];
+  edges: NavEdge[];
+  routes: ReadonlyMap<string, NavRoute>;
+}
+export interface SideCandidate {
+  /** - the node `g` lands on */
+  nodeId: string;
+  edgeId?: string;
+  /** - where the edge meets the border, from the route; absent while the edge has no route */
+  at?: Point;
+}
+
+/**
+ * The candidates `g` + a direction key can land on from `from`: the other end of every edge attached
+ * to `side`, ordered by the slot the routing pass gave that end on that border — the order the exit
+ * points are drawn in, topmost / leftmost first. So candidate #1 is the first exit point on the
+ * border and `g {n} {dir}` takes the nth. An edge the pass did not route (its two ends sit in
+ * different sections, or the canvas has no sections) has no slot: those go after the slotted ones,
+ * ordered by the y of the node at the other end.
+ * Two edges may join the same pair on one border; the node is one candidate, taking the first slot.
+ */
+export function edgesOnSide(from: NavNode, side: Side, ctx: EdgeSideContext): SideCandidate[] {
+  const byId = new Map(ctx.nodes.map(n => [n.id, n]));
+  interface Ranked extends SideCandidate { slot: number | null; y: number; x: number }
+  const best = new Map<string, Ranked>();
+  for (const e of ctx.edges) {
+    const fromIsSource = e.source === from.id;
+    const otherId = fromIsSource ? e.target : e.target === from.id ? e.source : null;
+    if (otherId === null || otherId === from.id) continue;
+    const other = byId.get(otherId);
+    if (!other) continue;
+    const handle = sideOfHandle(fromIsSource ? e.sourceHandle : e.targetHandle);
+    if ((handle ?? facingSide(from, other)) !== side) continue;
+    const route = e.id === undefined ? undefined : ctx.routes.get(e.id);
+    const ends = route?.points ?? [];
+    const cand: Ranked = {
+      nodeId: otherId,
+      edgeId: e.id,
+      at: ends.length ? (fromIsSource ? ends[0] : ends[ends.length - 1]) : undefined,
+      slot: route ? (fromIsSource ? route.variant : route.variantIn) : null,
+      y: other.y, x: other.x,
+    };
+    const held = best.get(otherId);
+    if (!held || rank(cand, held) < 0) best.set(otherId, cand);
+  }
+  return [...best.values()].sort(rank).map(({ nodeId, edgeId, at }) => ({ nodeId, edgeId, at }));
+}
+
+// - a slotted candidate always precedes an unslotted one; ties among the unslotted go by position
+function rank(a: { slot: number | null; y: number; x: number }, b: { slot: number | null; y: number; x: number }): number {
+  if (a.slot !== null && b.slot !== null) return a.slot - b.slot;
+  if (a.slot !== null) return -1;
+  if (b.slot !== null) return 1;
+  return a.y - b.y || a.x - b.x;
 }
