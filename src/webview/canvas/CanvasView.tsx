@@ -416,6 +416,27 @@ function findFreePosition(
   return { x: Math.round(c.x), y: Math.round(c.y) };
 }
 
+/**
+ * Where a directional add lands when the anchor is in a section: the column slot beside (L / H) or
+ * above (K) the anchor, snapped to the grid. The engine packs that column from there, so a slot
+ * another node already holds is no reason to look elsewhere. Null when the slot falls outside the
+ * canvas.
+ */
+function directionSlot(
+  dir:    'H' | 'K' | 'L',
+  anchor: { x: number; y: number; w: number },
+  newW:   number,
+  newH:   number,
+): { x: number; y: number } | null {
+  const x = dir === 'L' ? snapGrid(anchor.x + anchor.w + GRID)
+          : dir === 'H' ? snapGrid(anchor.x - newW - GRID)
+          :               snapGrid(anchor.x);
+  const y = dir === 'K' ? snapGrid(anchor.y - newH - GRID) : snapGrid(anchor.y);
+  // - refused, not clamped to 0: a clamp lands the node on a row that is not free and the pack then
+  //   pushes the whole column down to open one — nodes the user never asked to move.
+  return x < 0 || y < 0 ? null : { x, y };
+}
+
 // ─── per-canvas focus memory (survives canvas reloads within a session) ──────
 
 /**
@@ -1642,11 +1663,17 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     };
     const { dx, dy, pushX, pushY, fromSide, toSide } = dirMap[dir];
 
-    // - down, in a section, the engine owns the spot: the next row of the anchor's column, one gap
-    //   under it, the rows below pushed down once the node is in — the same `o` a code cell gets.
+    // - in a section the engine owns the spot: J is the next row of the anchor's own column, one gap
+    //   under it (the same `o` a code cell gets); H / K / L take the column slot beside or above the
+    //   anchor. A slot another node holds is no reason to look further out — the pack puts the new
+    //   node under its occupant, and on an exact y tie the mover wins and the occupant moves down.
     //   No section: the free-slot search, as before.
-    const section = dir === 'J' ? engineNodesOf({ nodeId: current.id }) : null;
-    const slot = section && insertAfter(section, current.id);
+    const section = engineNodesOf({ nodeId: current.id });
+    const slot = section && (dir === 'J'
+      ? insertAfter(section, current.id)
+      : directionSlot(dir, { x: current.position.x, y: current.position.y, w: cw }, nw, nh));
+    // - no column left of x 0, no row above y 0: nothing is added
+    if (section && !slot) return;
     const rawX = current.position.x + dx;
     const rawY = current.position.y + dy;
     const { x, y } = slot ?? findFreePosition(nodesRef.current, rawX, rawY, nw, nh, pushX, pushY);
@@ -2012,20 +2039,22 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         K: { dx: 0,         dy: -nh - GAP, pushX:  0, pushY: -1, fromSide: 'top',    toSide: 'bottom' },
       };
       const { dx, dy, pushX, pushY, fromSide, toSide } = dirMap[key];
-      // - in a section the engine owns the spot below any node: J is the next member of the anchor's
-      //   own column, whatever the anchor is. L / H open a new column pair right / left of the
-      //   anchor's pair, which only a code cell has, so off any other node they keep the free-slot
-      //   search, as K does everywhere (there is no "insert above" rule). A left fork with no room
-      //   before the origin is refused: nothing is added.
+      // - in a section the engine owns the spot: J is the next member of the anchor's own column,
+      //   whatever the anchor is; L / H off a code cell open a new column pair right / left of its
+      //   pair. Everything else takes the column slot beside or above the anchor and lets the pack
+      //   sort it out — a slot another node holds puts the new node under that occupant, and on an
+      //   exact y tie the mover wins and the occupant moves down. No room before the origin (a left
+      //   fork, H off the first column, K off the first row) is refused: nothing is added.
+      //   No section: the free-slot search, as before.
       const section = engineNodesOf({ nodeId: current.id });
       let slot: { x: number; y: number } | null = null;
       if (section) {
-        if ((key === 'L' || key === 'H') && current.type === 'code') {
-          slot = forkOf(section, current.id, key === 'L' ? 'right' : 'left', NODE_SIZE.code.w);
-          if (!slot) return;
-        } else if (key === 'J') {
-          slot = insertAfter(section, current.id);
-        }
+        slot = (key === 'L' || key === 'H') && current.type === 'code'
+          ? forkOf(section, current.id, key === 'L' ? 'right' : 'left', NODE_SIZE.code.w)
+          : key === 'J'
+            ? insertAfter(section, current.id)
+            : directionSlot(key, { x: current.position.x, y: current.position.y, w: cw }, nw, nh);
+        if (!slot) return;
       }
       const { x, y } = slot ?? findFreePosition(nodesRef.current, current.position.x + dx, current.position.y + dy, nw, nh, pushX, pushY);
       const w = slot ? NODE_SIZE.code.w : nw;
@@ -3159,7 +3188,13 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     let x: number, y: number;
     if (focused) {
       const cw = Number(focused.style?.width ?? 400);
-      const pos = findFreePosition(nodesRef.current, focused.position.x + cw + GRID, focused.position.y + offsetIndex * (nh + GRID), nw, nh, 1, 0);
+      const rawY = focused.position.y + offsetIndex * (nh + GRID);
+      // - in a section the engine owns the spot: the column slot right of the anchor, packed from
+      //   there — a slot another node holds puts the pasted node under that occupant, and on an
+      //   exact y tie the mover wins and the occupant moves down. No section: the free-slot search.
+      const section = engineNodesOf({ nodeId: focused.id });
+      const slot = section && directionSlot('L', { x: focused.position.x, y: rawY, w: cw }, nw, nh);
+      const pos = slot ?? findFreePosition(nodesRef.current, focused.position.x + cw + GRID, rawY, nw, nh, 1, 0);
       x = pos.x; y = pos.y;
     } else {
       const { x: vx, y: vy, zoom } = rfRef.current.getViewport();
@@ -3175,7 +3210,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     window.dispatchEvent(new CustomEvent('skena:addNodeResult', {
       detail: { type: 'addNodeResult', node, edge, ...(focused ? { anchorId: focused.id } : {}) } satisfies MsgAddNodeResult,
     }));
-  }, []); // - no deps: reads refs, not state
+  }, [engineNodesOf]); // - reads refs otherwise; engineNodesOf never changes identity
 
   // ─── pin notebook cell output → new CellNode ─────────────────────────────────
   // - fired by NotebookRenderer's 📌 button

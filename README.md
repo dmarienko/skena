@@ -105,7 +105,7 @@ Navigate the canvas without touching the mouse:
 |---|---|
 | `h` / `j` / `k` / `l` | Move focus to nearest node in direction |
 | `Enter` / `Ctrl+Enter` | Open focused file in editor (beside / maximized) |
-| `Alt+X` then `h/j/k/l` | Add node from vault search, connected in direction — on a code cell, `h` / `j` / `l` mean fork left / insert below / fork right in its section's column grid |
+| `Alt+X` then `h/j/k/l` | Add node from vault search, connected in direction — in a section the new node takes the column slot beside, below or above the anchor and that column packs, so a slot already taken puts it below the occupant; on a code cell `h` / `l` fork left / right instead |
 | `Ctrl+Shift+H/J/K/L` or arrows | Add connected empty text node in direction and start editing it |
 | `Space` | Pin node for group movement or edge connection |
 | `Shift+H/J/K/L` | Move pinned nodes one grid step — or scroll focused node's content if nothing is pinned |
