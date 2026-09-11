@@ -72,6 +72,7 @@ interface StoreNode {
   id: string;
   type?: string;
   selected?: boolean;
+  dragging?: boolean;
   position: { x: number; y: number };
   measured?: { width?: number | null; height?: number | null };
   style?: unknown;
@@ -162,8 +163,15 @@ export function LabeledEdgeComponent({
   const focusedId = allNodes.find(n => n.selected)?.id ?? null;
   const route = useEdgeRoute(id);
 
+  // - CanvasView freezes the section pass for the length of a drag (one pass per frame is too slow),
+  //   so its polyline still points at where the node was. While React Flow reports either end as
+  //   dragging, route this one edge on its own: the fallback router reads the live boxes and the live
+  //   endpoints, so the edge follows the node. The drop is a position change of its own, which re-runs
+  //   the pass and puts the edge back in its lane.
+  const endMoving = allNodes.some(n => n.dragging === true && (n.id === source || n.id === target));
+
   // - the section pass drew this one; otherwise route it alone against every non-group node as before
-  const pts = route && !route.fallback && route.points.length >= 2
+  const pts = route && !route.fallback && !endMoving && route.points.length >= 2
     ? route.points
     : routeOrthogonal(sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, obstacles(allNodes));
   const edgePath = waypointPath(pts, ORTHOGONAL_CORNER_R);
