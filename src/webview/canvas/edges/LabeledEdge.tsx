@@ -87,10 +87,11 @@ const RUNNING_LIGHTEN = 0.25;
 const RUNNING_WIDTH = 1.3;
 // - the kind is readable without colour too (spec §3). Lengths are multiples of the 1 px base width,
 //   so the scaler below stretches the dashes by exactly the factor it stretches the line.
+// - only the code → output link is dotted; everything else is a plain line (user, 2026-09-11)
 const DASH_BY_KIND: Record<EdgeKind, [number, number] | null> = {
   sequence: null,
-  output: [6, 4],
-  context: [1.5, 3],
+  output: [1.5, 3],
+  context: null,
 };
 
 /**

@@ -51,7 +51,7 @@ Edges are chrome, not content. Muted colour by kind — **sequence** (code → c
 **output** (code → output) = muted blue, **context** (everything else, user-drawn included) = muted
 violet; three tokens in the theme, kept low-saturation (user, 2026-09-11: the first set was too
 bright). No per-border variants: the edges of one border are told apart by their exit point. The
-kind also sets the line style — sequence solid, output dashed, context dotted. Every edge draws 1 px
+kind also sets the line style: the code → output link is dotted, every other edge is a plain line. Every edge draws 1 px
 at 60% opacity; the focused node's edges draw at full opacity and 1.3× width, and running edges —
 the upstream path of a running cell — draw lighter and wider. The selected style stays as it is.
 
