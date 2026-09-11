@@ -38,4 +38,6 @@ Base: `2026-09-01-spatial-notebook-design.md` §5. Status of §5 today (FACT, re
    holds up to four lanes 20 px apart; each edge gets its own lane and its own exit point spread along
    the border; a fifth edge through the same gap shares a lane. Edges from one border get distinct
    colours.
-3. What "route finding" is wrong today (through nodes / detours / odd bends).
+3. Route quality today (user, 2026-09-11): edges mostly do not cross nodes; **long detours happen**;
+   odd bends sometimes. Reading of the router: its last resorts are a Z-shape outside the combined
+   bounding box of ALL obstacles — that is the detour — and an unconstrained Z at the midpoint.
