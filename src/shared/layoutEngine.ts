@@ -215,9 +215,14 @@ function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, pinned: 
     //   so the pack and the bumps never fight over it (that fight is not idempotent).
     const yields = other.y < mover.y && placed.has(mover.id);
     const sideways = dx !== 0 && (yields ? dx <= drop : other.y < mover.y || dx <= dy);
+    // - the down group is the node in the way and what sits under it in its column, and that can
+    //   hold the node doing the bumping too, which then rides down with them and leaves the overlap
+    //   exactly as it was — the same walk that never closes as a column sliding with it. It is held
+    //   back, and its pair partner with it, so a code cell and its output stay on one row.
+    const held = new Set([mover.id, owners.get(mover.id) ?? mover.outputNodeId ?? '']);
     if (sideways) for (const n of column) { n.x += dx; active.add(n.id); }
     else if (yields) for (const n of bumpGroup(mover, nodes, owners, map, true)) { n.y += drop; active.add(n.id); }
-    else for (const n of bumpGroup(other, nodes, owners, map, true)) { if (!pinned.has(n.id)) { n.y += dy; active.add(n.id); } }
+    else for (const n of bumpGroup(other, nodes, owners, map, true)) { if (!pinned.has(n.id) && !held.has(n.id)) { n.y += dy; active.add(n.id); } }
   }
   // - the last allowed step may be the one that cleared the section: out of steps is not out of
   //   overlaps, so ask once more before undoing anything

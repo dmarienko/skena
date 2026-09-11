@@ -100,16 +100,20 @@ One algorithm behind every row of §2, run per section:
    every-node-as-mover sweep over H1/H4/H5 (80 movers) goes from one capped walk to none, with the
    same idempotence and no overlap growth.
    Cannot revisit a position is not the same as settles, so the step cap stays: a right or down move
-   can repeat for ever at a fresh position. That is what a column holding the node doing the bumping
-   did — the slide carried that node along, so the overlap came out the same every step (20 000 of
-   them on a three-node shape) until the cap undid the walk. Such a column no longer slides.
+   can repeat for ever at a fresh position. That is what a move carrying the node doing the bumping
+   did — the overlap came out the same every step (20 000 of them on a three-node shape) until the
+   cap undid the walk. Neither move carries it now: a column does not slide while it holds that node,
+   and the down group leaves it, and its pair partner, where they are. Measured over 2794 random
+   sections, every node as the mover: capped 266 → 13, non-idempotent 29 → 22, overlap growth 15 → 0.
+   The cap is still reachable — a note dropped on an output whose code cell sits above it pushes the
+   pair down, yields to the code cell, and lands on the output again, 300px lower each step.
 
    Three details the rule needs for a second call to change nothing:
    - a **sideways step is the overlap rounded UP to the grid**, so a column moves by one grid
      multiple and its nodes still share one snapped x — the next call reads the same column;
-   - a **column slides only as one**, so it never slides while the node doing the bumping sits in it,
-     nor while a cell the pack just laid out does: the bumping node would ride along and the overlap
-     would come out unchanged. The node in the way goes down instead;
+   - **no move carries the node doing the bumping**: a column does not slide while that node (or a
+     cell the pack just laid out) sits in it, and the group that goes down leaves that node, and its
+     pair partner, where they are. Carried along, it would keep the overlap exactly as it was;
    - the **column the pack just laid out is never bumped** (the pack owns its geometry, so the two
      cannot fight over a cell), and a **code cell and its own output never bump each other** (they
      are one row, placed by the pack).
