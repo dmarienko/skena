@@ -3076,16 +3076,10 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       //   node), so this is the one place the layout engine has to see a new node
       runEngine({ nodeId: anchor ?? cn.id }, { moverIds: [cn.id], ...(anchor ? { extraIds: [cn.id] } : {}) });
 
-      // - focus DOM + pan viewport to the new node, at the position the engine settled it on
+      // - select now; reveal on the next frame, when the RF node exists, with the minimal pan of §8.2
+      //   (centring on every new node broke the flow of working down a column)
       focusNodeById(cn.id);
-      const placed = canvasRef.current.nodes.find(n => n.id === cn.id) ?? cn;
-      const { zoom } = rfRef.current.getViewport();
-      const cAddNode = clampCam(
-        window.innerWidth  / 2 - (placed.x + placed.width  / 2) * zoom,
-        window.innerHeight / 2 - (placed.y + placed.height / 2) * zoom,
-        zoom,
-      );
-      rfRef.current.setViewport({ x: cAddNode.x, y: cAddNode.y, zoom }, { duration: 250 });
+      requestAnimationFrame(() => revealNode(cn.id));
 
       // - for new text notes: open Monaco immediately so the user can start typing
       if (autoEdit) {
@@ -3098,7 +3092,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
     window.addEventListener('skena:addNodeResult', handler);
     return () => window.removeEventListener('skena:addNodeResult', handler);
-  }, [setNodes, setEdges, scheduleSave, focusNodeById, pushHistory, clampCam, commitLanes, runEngine]);
+  }, [setNodes, setEdges, scheduleSave, focusNodeById, revealNode, pushHistory, commitLanes, runEngine]);
 
   // ─── helper: place a new CellNode at viewport centre ─────────────────────────
 
