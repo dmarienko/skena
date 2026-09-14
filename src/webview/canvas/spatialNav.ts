@@ -2,7 +2,8 @@
  * Spatial navigation and the reveal pan. Pure: CanvasView maps its refs into these, so both are
  * testable without React Flow. `findNearestNode` picks the node a direction key lands on;
  * `revealPan` returns the smallest viewport move that shows a node (with its output when the pair
- * fits); `edgesOnSide` orders the edges of one border for the `g` follow chord.
+ * fits); `edgesOnSide` orders the edges of one border and `connectionLabels` gives every connection
+ * of a node the key that follows it.
  */
 
 import { GRID } from '../../shared/constants';
@@ -140,12 +141,11 @@ export interface SideCandidate {
 }
 
 /**
- * The candidates `g` + a direction key can land on from `from`: the other end of every edge attached
- * to `side`, ordered by the slot the routing pass gave that end on that border — the order the exit
- * points are drawn in, topmost / leftmost first. So candidate #1 is the first exit point on the
- * border and `g {n} {dir}` takes the nth. An edge the pass did not route (its two ends sit in
- * different sections, or the canvas has no sections) has no slot: those go after the slotted ones,
- * ordered by the y of the node at the other end.
+ * The candidates `g` can land on from `from` through `side`: the other end of every edge attached to
+ * that border, ordered by the slot the routing pass gave that end — the order the exit points are
+ * drawn in, topmost / leftmost first. An edge the pass did not route (its two ends sit in different
+ * sections, or the canvas has no sections) has no slot: those go after the slotted ones, ordered by
+ * the y of the node at the other end.
  * Two edges may join the same pair on one border; the node is one candidate, taking the first slot.
  */
 export function edgesOnSide(from: NavNode, side: Side, ctx: EdgeSideContext): SideCandidate[] {
@@ -181,4 +181,35 @@ function rank(a: { slot: number | null; y: number; x: number }, b: { slot: numbe
   if (a.slot !== null) return -1;
   if (b.slot !== null) return 1;
   return a.y - b.y || a.x - b.x;
+}
+
+// - the first connection of a border takes that border's vim key
+const SIDE_KEY: Record<Side, string> = { left: 'h', top: 'k', right: 'l', bottom: 'j' };
+// - and the borders are walked in that order, so the labels of a given node never move
+const LABEL_SIDES: Side[] = ['left', 'top', 'right', 'bottom'];
+// - one sequence for every connection past the first of its border, shared by all four borders.
+//   g is out (it re-arms the chord) and so are h j k l (already a border's first label).
+const OVERFLOW = '123456789abcdefimnopqrstuvwxyz';
+
+export interface ConnectionLabel { label: string; side: Side; nodeId: string; edgeId?: string; at?: Point }
+
+/**
+ * The key to press for every connection of `from`, in and out, on all four borders. The first
+ * connection of a border is its own vim key — left `h`, top `k`, right `l`, bottom `j` — and every
+ * further one takes the next symbol of OVERFLOW, walked left, top, right, bottom, in the drawn
+ * (exit-slot) order inside each border. So two connections left and three right read `h 1` and
+ * `l 2 3`. A border with no connection contributes nothing, and a node with more connections than
+ * the sequence has symbols leaves the last ones unlabelled.
+ */
+export function connectionLabels(from: NavNode, ctx: EdgeSideContext): ConnectionLabel[] {
+  const out: ConnectionLabel[] = [];
+  let next = 0;
+  for (const side of LABEL_SIDES) {
+    edgesOnSide(from, side, ctx).forEach((c, i) => {
+      const label = i === 0 ? SIDE_KEY[side] : OVERFLOW[next++];
+      if (label === undefined) return;
+      out.push({ label, side, nodeId: c.nodeId, edgeId: c.edgeId, at: c.at });
+    });
+  }
+  return out;
 }

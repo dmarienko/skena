@@ -2,14 +2,14 @@ import React from 'react';
 import { useStore } from '@xyflow/react';
 import type { Side } from '../../shared/edgeRouting';
 
-/** One badge: the number to press after `g`, at the point its edge meets the border. */
-export interface EdgeHint { key: string; n: number; x: number; y: number; side: Side }
+/** One badge: the key to press after `g`, at the point its connection meets the border. */
+export interface EdgeHint { key: string; label: string; x: number; y: number; side: Side }
 
 const FONT = 'system-ui, -apple-system, sans-serif';
 // - px the badge sits outside the border, so it does not cover the exit point it names
 const OUT = 8;
 // - the badge is a 14 px box and does not scale, while the exit points are 10 flow px apart and do;
-//   past zoom 1 they never fit, so the fan keeps at least this much between two badge centres
+//   below zoom 1 they never fit, so the fan keeps at least this much between two badge centres
 const MIN_GAP = 16;
 // - under this the badge still covers its own exit point, so a line to it would only add clutter
 const LEAD_MIN = 4;
@@ -55,10 +55,10 @@ function place(hints: EdgeHint[], tx: number, ty: number, zoom: number): Placed[
 }
 
 /**
- * The numbers shown while the `g` chord is armed, one per edge on a border of the focused node that
- * carries more than one. Same layer as the section separators: a pointer-transparent overlay over
- * the pane, with the flow coordinates projected through React Flow's own transform. A badge the fan
- * moved off its own exit point keeps a line back to it.
+ * The labels shown while the `g` chord is armed, one per connection of the focused node, on all four
+ * borders. Same layer as the section separators: a pointer-transparent overlay over the pane, with
+ * the flow coordinates projected through React Flow's own transform. A badge the fan moved off its
+ * own exit point keeps a line back to it.
  */
 export function EdgeFollowHints({ hints }: { hints: EdgeHint[] }): JSX.Element | null {
   const tx = useStore(s => s.transform[0]);
@@ -85,7 +85,7 @@ export function EdgeFollowHints({ hints }: { hints: EdgeHint[] }): JSX.Element |
             fontFamily: FONT, fontWeight: 700, fontSize: 10.5, lineHeight: 1, userSelect: 'none',
           }}
         >
-          {p.hint.n}
+          {p.hint.label}
         </div>
       ))}
     </div>

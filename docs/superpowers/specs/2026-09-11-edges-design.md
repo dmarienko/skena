@@ -56,31 +56,35 @@ the upstream path of a running cell — draw lighter and wider. The selected sty
 
 ## 4. Keys
 
-- `g` then `h` / `j` / `k` / `l`: follow the edge on that border of the focused node (left / bottom
-  / top / right), whichever end the node is on; several → the first exit point on that border,
-  `g` + the same key again walks to the next; none → nothing. The target is focused and revealed
-  (follow-ups spec §8.2).
-- `g` then a digit then `h` / `j` / `k` / `l`: the edge that digit numbers on that border. The
-  numbers are the exit-point order of §2 — topmost / leftmost is 1 — so they are the order the edges
-  leave the border in, not a ranking. 1–9; a number the border does not have does nothing; any other
-  key between `g` and the direction cancels the chord.
-- `g` + a digit + `g` is not `gg`: the digit cancels that chord, and the second `g` arms a new one.
-  Two edges between the same pair on one border draw two wires but one badge, on the first of their
-  two slots — the follow lands on the node, so one number is all there is to press.
-- The numbers are drawn only while `g` is armed: a small badge 8 px outside each exit / entry point,
-  on the borders of the focused node that carry more than one edge. A border with one edge gets
-  none, and a node whose every border has at most one gets none at all. They go away on the
-  direction key, on a cancel, on the timeout and on a canvas switch. The exit points are 10 flow px
-  apart and the badge is a fixed 14 px, so the badges of one border are fanned apart on screen — slot
-  order kept, at least 16 px between centres, the run centred on the points it names — and a badge
-  the fan moved keeps a 1 px line back to its own exit point. An edge the routing pass did not route has no exit
-  point of its own; its badge is spread along the border the way the router spreads the rest.
+- `g` on a focused node labels every connection it has — in and out, all four borders — and waits
+  1.5 s for one of those keys; that key focuses and reveals the node at the other end (follow-ups
+  spec §8.2). No connection → nothing is drawn and the wait is the plain 400 ms.
+- The labels: the first connection of a border takes that border's vim key — left `h`, top `k`,
+  right `l`, bottom `j` — and every further one takes the next symbol of one sequence shared by all
+  four borders, `1`–`9` then `a b c d e f i m n o p q r s t u v w x y z` (never `g`, and never
+  `h j k l`, which are already a border's first label). The borders are walked left, top, right,
+  bottom, and the connections inside a border in the drawn exit-slot order of §2. So two connections
+  left and three right read `h 1` and `l 2 3`. A border with no connection contributes nothing, and
+  a node's labels do not move while its connections do not. Past the 34th connection there are no
+  symbols left and the rest go unlabelled.
+- While the chord is armed `h` / `k` / `l` / `j` are labels, not directions; a border with no
+  connection leaves its key unclaimed, so it cancels the chord and navigates as usual. There is no
+  cycle key any more — the labels name every connection outright, so nothing has to be stepped
+  through. Two edges between the same pair on one border draw two wires but carry one label, on the
+  first of their two slots: the follow lands on the node, so one key is all there is to press.
+- The labels are drawn only while `g` is armed: a small badge 8 px outside each exit / entry point.
+  They go away on the label key, on a cancel, on the timeout and on a canvas switch. The exit points
+  are 10 flow px apart and the badge is a fixed 14 px, so the badges of one border are fanned apart
+  on screen — slot order kept, at least 16 px between centres, the run centred on the points it
+  names — and a badge the fan moved keeps a 1 px line back to its own exit point. Each border is
+  fanned along its own axis. A connection the routing pass did not route has no exit point of its
+  own; its badge is spread along the border the way the router spreads the rest.
 - `gg`: first node of the current section (by y, then x); `G`: its last node. Both reveal.
 - `Shift+(` / `Shift+)`: fold / unfold the current section — the rail chevron's action and history
   entry (`e.key` is `(` / `)`).
-- `g` waits 400 ms for its next key, or 1.5 s while the numbers are on screen; any other key
-  cancels; `g` alone does nothing. `Shift+H/J/K/L` keep their meaning (move pinned nodes / scroll
-  content).
+- `g` waits 400 ms for its next key, or 1.5 s while the labels are on screen; a second `g` is `gg`;
+  any other key cancels and is then handled normally; `g` alone does nothing. `Shift+H/J/K/L` keep
+  their meaning (move pinned nodes / scroll content).
 
 ## 5. Files and tests
 
@@ -89,11 +93,11 @@ the upstream path of a running cell — draw lighter and wider. The selected sty
 | `src/shared/edgeRouting.ts` (new, pure) | `buildGapGraph(sectionNodes)`, `routeOnGaps(edges, graph)` → per edge: waypoints, lane per segment, exit/entry offsets; stable order; a flag when no gap route exists |
 | `src/webview/canvas/edges/LabeledEdge.tsx` | draws the route it is given (waypoints, colour, offsets); no per-edge routing |
 | `src/webview/canvas/CanvasView.tsx` | one routing pass per section on node/edge change, results in a context the edges read; the `g` chord, `gg`, `G`, `Shift+(`/`)` |
-| `src/webview/canvas/spatialNav.ts` | `edgesOnSide(from, side, ctx)` — the border's candidates in exit-point order, from the pass's `variant` / `variantIn` |
-| `src/webview/canvas/EdgeFollowHints.tsx` (new) | the numbers shown while `g` is armed; same overlay as `SectionSeparators`, flow coordinates through React Flow's transform |
+| `src/webview/canvas/spatialNav.ts` | `edgesOnSide(from, side, ctx)` — the border's candidates in exit-point order, from the pass's `variant` / `variantIn`; `connectionLabels(from, ctx)` — the key for every connection of a node |
+| `src/webview/canvas/EdgeFollowHints.tsx` (new) | the labels shown while `g` is armed; same overlay as `SectionSeparators`, flow coordinates through React Flow's transform, each border fanned on screen |
 | `src/webview/canvas/palette.ts`, `theme.ts` | kind colours + the variant rule |
 | `src/webview/canvas/routing/orthogonal.ts` | kept as the fallback |
-| `test/spatial-nav.mjs` | `edgesOnSide`: order by slot; `variantIn` on the target side; an unrouted edge last, by the other end's y |
+| `test/spatial-nav.mjs` | `edgesOnSide`: order by slot; `variantIn` on the target side; an unrouted edge last, by the other end's y. `connectionLabels`: the 2-left/3-right case reads `h 1 l 2 3`; twelve on one border read `h 1`–`9 a b`; no connection → none; the sequence never hands out `g h j k l` |
 | `test/edge-routing.mjs` | gap graph from a two-column section; shortest route with the bend penalty on the H4/H5 shapes (no detour); lanes 10 px, 9 per gap, stable order; exit spreading; fallback when no gap route |
 | `README.md` | the keys |
 

@@ -104,8 +104,8 @@ Navigate the canvas without touching the mouse:
 | Key | Action |
 |---|---|
 | `h` / `j` / `k` / `l` | Move focus to nearest node in direction |
-| `g` then `h/j/k/l` | Follow the edge on that border of the focused node (left / bottom / top / right); several edges → the first exit point on that border, press again for the next |
-| `g` then a digit then `h/j/k/l` | Follow edge number *n* on that border. While `g` is armed the numbers are shown at the exit points of every border of the focused node carrying more than one edge, and the chord waits 1.5 s instead of 400 ms |
+| `g` | Label every connection of the focused node — in and out, all four borders — for 1.5 s |
+| `g` then a label key | Focus and reveal the node at the other end of that connection. The first connection of a border is its own vim key (left `h`, top `k`, right `l`, bottom `j`); the rest take `1`–`9` then `a`–`z` minus `g h j k l`, walked left, top, right, bottom |
 | `gg` / `G` | Focus the first / last node of the focused node's section (by y, then x) |
 | `Shift+(` / `Shift+)` | Fold / unfold the current section (same action as the rail chevron) |
 | `Enter` / `Ctrl+Enter` | Open focused file in editor (beside / maximized) |

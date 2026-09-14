@@ -58,7 +58,7 @@ import { SectionRail, type RailKernel } from '../rail/SectionRail';
 import { deriveLanes, fitLanes, sortLanes, insertLaneAt, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
 import { applyPatchesToCanvas, codeCellHeight, columnsOfDeleted as columnsOfDeletedIn, forkOf, insertAfter, layoutSection, reflowSection, sectionEngineNodes, sectionMembership, type EngineNode, type LayoutOpts, type Patches } from '../../shared/layoutEngine';
 import { useLaneFit, flowGeom } from '../rail/useLaneFit';
-import { edgesOnSide, findNearestNode, revealPan, type EdgeSideContext, type NavDir, type NavNode, type Rect } from './spatialNav';
+import { connectionLabels, findNearestNode, revealPan, type ConnectionLabel, type EdgeSideContext, type NavDir, type NavNode, type Rect } from './spatialNav';
 import { CanvasSearch } from './CanvasSearch';
 import { MarksPanel  } from './MarksPanel';
 import { LanesContext } from './LanesContext';
@@ -165,11 +165,10 @@ const RECENT_OUTPUT_MS = 4000;
 
 // - how long g waits for its second key
 const G_CHORD_MS = 400;
-// - how long g + the same key keeps walking the same border instead of starting over; longer than the
-//   chord window, which only has to catch the second key of one press
-const G_CYCLE_MS = 1500;
-// - the chord window once the numbers are on screen: long enough to read one and type it
+// - the chord window once the labels are on screen: long enough to find one and type it
 const G_HINT_MS = 1500;
+// - the label map of a disarmed chord, so disarming allocates nothing
+const EMPTY_LABELS: ReadonlyMap<string, string> = new Map();
 
 // - default size + gap for a NEW node created by directional-add (Alt+X / Ctrl+Shift+hjkl), an edge
 //   dropped on empty canvas, or `o` below a node
@@ -227,7 +226,6 @@ function toFlowEdge(ce: CanvasEdge): Edge {
   };
 }
 
-const SIDES: Side[] = ['top', 'right', 'bottom', 'left'];
 
 const toRouteNode = (n: Node): RouteNode => {
   const g = flowGeom(n);
@@ -519,16 +517,13 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const chordTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
   // - g chord: the moment g was pressed; the next key counts as its second within gWindowRef
   const lastGPressRef  = useRef<number>(0);
-  // - G_CHORD_MS, or G_HINT_MS while the numbers are on screen
+  // - G_CHORD_MS, or G_HINT_MS while the labels are on screen
   const gWindowRef     = useRef<number>(G_CHORD_MS);
-  // - the digit typed between g and the direction key, so g 2 l takes the second exit point
-  const gDigitRef      = useRef<number | null>(null);
+  // - what each label key follows: the node at the other end of that connection
+  const gLabelsRef     = useRef<ReadonlyMap<string, string>>(EMPTY_LABELS);
   const gHintTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // - the numbers drawn over the focused node's borders; only while the chord is armed
+  // - the labels drawn over the focused node's borders; only while the chord is armed
   const [gHints, setGHints] = useState<EdgeHint[]>([]);
-  // - the last g{hjkl} follow, so pressing it again inside the window takes the next edge on that
-  //   border instead of re-taking the first one
-  const lastFollowRef  = useRef<{ nodeId: string; side: Side; index: number; at: number } | null>(null);
   const [marksOpen, setMarksOpen] = useState(false);
   // - mirrored so the stable document-level paste listener sees panel state without re-subscribing
   const panelOpenRef = useRef(false);
@@ -2099,8 +2094,6 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
     const focusedNode = () => nodesRef.current.find(n => n.selected && !isBandType(n.type));
 
-    const SIDE_OF_DIR: Record<NavDir, Side> = { left: 'left', right: 'right', up: 'top', down: 'bottom' };
-
     // - what the follow reads: every visible node, every edge, and the routes of the last pass. A band
     //   node is a backdrop and a folded member is hidden, so neither is a landing place.
     const sideContext = (): EdgeSideContext => ({
@@ -2110,74 +2103,37 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     });
 
     /**
-     * The candidates `g{hjkl}` reaches from `fromId` on that border, in the order their exit points
-     * are drawn (see `edgesOnSide`): index 0 is the topmost / leftmost, so `g {n} {dir}` takes
-     * index n − 1.
+     * What `g` puts on screen and what the next key means: one badge per connection of the focused
+     * node, on all four borders, carrying the key that follows it (see `connectionLabels`). A
+     * connection the routing pass did not route has no exit point of its own; its badge is spread
+     * along the border the way the router spreads the ones it does route.
      */
-    const followCandidates = (fromId: string, dir: NavDir) => {
-      const from = nodesRef.current.find(n => n.id === fromId);
-      return from ? edgesOnSide(toNav(from), SIDE_OF_DIR[dir], sideContext()) : [];
-    };
-
-    /**
-     * `g` then h/j/k/l: follow the edge on that border. `pick` is the digit typed between the two
-     * keys — that exit point, nothing when the border has no such number. Without a digit the first
-     * exit point is taken, and pressing the pair again within the cycle window walks to the next one
-     * on the same border of the same node instead of starting over.
-     */
-    const followEdgeOnSide = (dir: NavDir, pick: number | null) => {
-      const current = focusedNode();
-      if (!current) return;
-      const side = SIDE_OF_DIR[dir];
-      if (pick !== null) {
-        const targets = followCandidates(current.id, dir);
-        if (pick > targets.length) return;
-        lastFollowRef.current = { nodeId: current.id, side, index: pick - 1, at: Date.now() };
-        focusNodeById(targets[pick - 1].nodeId);
-        return;
-      }
-      const prev = lastFollowRef.current;
-      const cycle = prev && prev.side === side && Date.now() - prev.at < G_CYCLE_MS
-        && followCandidates(prev.nodeId, dir)[prev.index]?.nodeId === current.id ? prev : null;
-      const originId = cycle ? cycle.nodeId : current.id;
-      const targets = followCandidates(originId, dir);
-      if (targets.length === 0) return;
-      const index = cycle ? (cycle.index + 1) % targets.length : 0;
-      lastFollowRef.current = { nodeId: originId, side, index, at: Date.now() };
-      focusNodeById(targets[index].nodeId);
-    };
-
-    /**
-     * The badges to show while `g` is armed: every border of the focused node carrying more than one
-     * edge, numbered the way `followEdgeOnSide` counts them. An edge the routing pass did not route
-     * has no exit point of its own; those badges are spread along the border the way the router
-     * spreads the ones it does route.
-     */
-    const borderHints = (): EdgeHint[] => {
+    const connectionBadges = (): { hints: EdgeHint[]; byLabel: Map<string, string> } => {
       const from = focusedNode();
-      if (!from) return [];
+      if (!from) return { hints: [], byLabel: new Map() };
       const geom = toNav(from);
-      const ctx = sideContext();
-      const out: EdgeHint[] = [];
-      for (const side of SIDES) {
-        const cands = edgesOnSide(geom, side, ctx);
-        if (cands.length < 2) continue;
-        cands.forEach((c, i) => {
-          const at = c.at ?? borderPoint(geom, side, (i - (cands.length - 1) / 2) * LANE_STEP);
-          out.push({ key: `${side}:${c.edgeId ?? c.nodeId}`, n: i + 1, x: at[0], y: at[1], side });
-        });
+      const labels = connectionLabels(geom, sideContext());
+      const bySide = new Map<Side, ConnectionLabel[]>();
+      for (const c of labels) {
+        const list = bySide.get(c.side);
+        if (list) list.push(c); else bySide.set(c.side, [c]);
       }
-      return out;
+      const hints: EdgeHint[] = [];
+      for (const [side, list] of bySide) list.forEach((c, i) => {
+        const at = c.at ?? borderPoint(geom, side, (i - (list.length - 1) / 2) * LANE_STEP);
+        hints.push({ key: `${side}:${c.edgeId ?? c.nodeId}`, label: c.label, x: at[0], y: at[1], side });
+      });
+      return { hints, byLabel: new Map(labels.map(c => [c.label, c.nodeId])) };
     };
 
-    // - arm the g chord, and put the numbers on screen when a border has more than one edge to tell
-    //   apart. Reading a number and typing it takes longer than the second key of a plain chord, so
-    //   the window only stretches to G_HINT_MS when there is something to read.
+    // - arm the g chord and show the labels. Reading one and typing it takes longer than the second
+    //   key of a plain chord, so the window only stretches to G_HINT_MS when there is something to
+    //   read; a node with no connection keeps the old 400 ms.
     const armG = () => {
-      const hints = borderHints();
+      const { hints, byLabel } = connectionBadges();
       lastGPressRef.current = Date.now();
       gWindowRef.current = hints.length > 0 ? G_HINT_MS : G_CHORD_MS;
-      gDigitRef.current = null;
+      gLabelsRef.current = byLabel;
       if (gHintTimerRef.current) clearTimeout(gHintTimerRef.current);
       gHintTimerRef.current = null;
       setGHints(h => (hints.length === 0 && h.length === 0 ? h : hints));
@@ -2186,7 +2142,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
     const disarmG = () => {
       lastGPressRef.current = 0;
-      gDigitRef.current = null;
+      gLabelsRef.current = EMPTY_LABELS;
       if (gHintTimerRef.current) { clearTimeout(gHintTimerRef.current); gHintTimerRef.current = null; }
       setGHints(h => (h.length === 0 ? h : []));
     };
@@ -2336,20 +2292,14 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         return;
       }
 
-      // ── g chord: consume the rest (a digit is held, h/j/k/l follows an edge, g jumps to the top) ──
+      // ── g chord: consume the second key (a connection label follows it, g jumps to the section top) ──
       if (lastGPressRef.current !== 0 && Date.now() - lastGPressRef.current < gWindowRef.current) {
         if (!e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
-          // - the digit sits between g and the direction key, so the chord stays armed for it
-          if (e.key.length === 1 && e.key >= '1' && e.key <= '9') { e.preventDefault(); gDigitRef.current = Number(e.key); return; }
-          const dir = keyToDir(e.key);
-          if (dir && e.key.length === 1) {
-            const pick = gDigitRef.current;
-            disarmG();
-            e.preventDefault();
-            followEdgeOnSide(dir, pick);
-            return;
-          }
-          if (e.key === 'g' && gDigitRef.current === null) { disarmG(); e.preventDefault(); jumpInSection('first'); return; }
+          if (e.key === 'g') { disarmG(); e.preventDefault(); jumpInSection('first'); return; }
+          // - h/k/l/j are labels too, so while the chord is armed they follow the first connection of
+          //   their border rather than navigating; a border with none leaves the key unclaimed
+          const target = e.key.length === 1 ? gLabelsRef.current.get(e.key) : undefined;
+          if (target !== undefined) { disarmG(); e.preventDefault(); focusNodeById(target); return; }
         }
         // - any other key cancels the chord and is then handled normally, so plain h still
         //   navigates left; falling through is the whole point
@@ -2918,6 +2868,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       // - a canvas switch re-runs this effect: drop the armed chord and its badges with it
       if (gHintTimerRef.current) { clearTimeout(gHintTimerRef.current); gHintTimerRef.current = null; }
       lastGPressRef.current = 0;
+      gLabelsRef.current = EMPTY_LABELS;
       setGHints([]);
     };
   }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToMark, engineNodesOf, runEngineAfterMove, canvasPath]); // - nodesRef + spaceSelectedRef carry live state
