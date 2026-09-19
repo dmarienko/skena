@@ -187,6 +187,78 @@ export function patchVimNewlineAndIndent(): void {
 }
 
 /**
+ * Make vim's linewise ranges reach the last line.
+ *
+ * CodeMirror's document has a position one line past the last line, and vim builds every linewise
+ * range to end on it ({line: lastLine + 1, ch: 0}). Monaco has no such position: validatePosition
+ * clamps the LINE but keeps the COLUMN, so the range ends at column 1 of the last line and that
+ * line falls outside it. On a one-line cell `yy` yanks "\n" and `dd` does nothing; `j dd` on
+ * "ab\ncd" joins the two lines; `V j y` on "ab\ncd" yanks "ab\n".
+ *
+ * Fix: clip any position past the document end to the END of the last line, the way CodeMirror's
+ * clipPos does, in the four adapter methods that receive CM positions from vim.
+ *
+ * VimMode IS the CMAdapter class, so patching its prototype covers every editor instance.
+ * Idempotent via a flag on the prototype, and independent of when it runs vs initVimMode().
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function clipPastDocEnd(pos: any, model: MonacoEditor.ITextModel, lastLine: number): any {
+  if (!pos || typeof pos.line !== 'number' || pos.line <= lastLine) return pos;
+  // - CM lines are 0-based, Monaco's 1-based; getLineMaxColumn is one past the last character
+  return { line: lastLine, ch: model.getLineMaxColumn(lastLine + 1) - 1 };
+}
+
+export function patchVimLastLine(): void {
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const P = (VimMode as any)?.prototype;
+  if (!P || P.__skenaLastLineClip) return;
+
+  const origSetSelections = P.setSelections;
+  P.setSelections = function(this: any, selections: any[], primIndex?: number) {
+    const model = this.editor.getModel();
+    let sels = selections;
+    if (model && sels) {
+      const lastLine = model.getLineCount() - 1;
+      sels = sels.map((sel: any) => ({
+        ...sel,
+        anchor: clipPastDocEnd(sel.anchor, model, lastLine),
+        head:   clipPastDocEnd(sel.head,   model, lastLine),
+      }));
+    }
+    return origSetSelections.call(this, sels, primIndex);
+  };
+
+  const origSetSelection = P.setSelection;
+  P.setSelection = function(this: any, frm: any, to: any) {
+    const model = this.editor.getModel();
+    if (!model) return origSetSelection.call(this, frm, to);
+    const lastLine = model.getLineCount() - 1;
+    return origSetSelection.call(this, clipPastDocEnd(frm, model, lastLine), clipPastDocEnd(to, model, lastLine));
+  };
+
+  const origGetRange = P.getRange;
+  P.getRange = function(this: any, start: any, end: any) {
+    const model = this.editor.getModel();
+    if (!model) return origGetRange.call(this, start, end);
+    const lastLine = model.getLineCount() - 1;
+    return origGetRange.call(this, clipPastDocEnd(start, model, lastLine), clipPastDocEnd(end, model, lastLine));
+  };
+
+  const origReplaceRange = P.replaceRange;
+  P.replaceRange = function(this: any, text: string, start: any, end: any) {
+    const model = this.editor.getModel();
+    if (!model) return origReplaceRange.call(this, text, start, end);
+    const lastLine = model.getLineCount() - 1;
+    // - `end` is optional: replaceRange(text, pos) is an insert at `pos`
+    return origReplaceRange.call(this, text, clipPastDocEnd(start, model, lastLine),
+      end ? clipPastDocEnd(end, model, lastLine) : end);
+  };
+
+  P.__skenaLastLineClip = true;
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+}
+
+/**
  * Wire the clipboard relay register into the vim RegisterController.
  * MUST be called after initVimMode() — the Vim singleton is not available until then.
  * Safe to call on every editor mount (handles re-registration and re-replacement).
@@ -505,6 +577,7 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
     // - which initialises the Vim singleton and (re)creates the RegisterController.
     applyVimClipboard();
     patchVimNewlineAndIndent();
+    patchVimLastLine();
     patchVimJoin(editorInstance, vimStatusRef.current);
 
     // ─── vim mode tracking via MutationObserver ──────────────────────────────
