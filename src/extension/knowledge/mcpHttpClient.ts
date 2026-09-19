@@ -49,7 +49,9 @@ async function readSseUntil(res: Response, id: number): Promise<RpcMessage[]> {
       if (done || hasResponse(msgs, id)) return msgs;
     }
   } finally {
-    void reader.cancel();
+    // - cancelling a reader whose stream already failed rejects; the read path has reported that
+    //   failure already, so drop it here rather than leave an unhandled rejection
+    void reader.cancel().catch(() => {});
   }
 }
 

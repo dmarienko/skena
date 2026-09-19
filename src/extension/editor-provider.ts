@@ -266,8 +266,13 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             const canvas = normalizeCanvasToOrigin(migrateSections(rawCanvas, Date.now()));
             document.updateFromDisk(canvas);
             // - knowledge nodes already on the canvas refresh on open, so the providers exist
-            //   before the webview has the canvas — not only once the dialog asks for the list
-            this.knowledge.configure(await getKnowledgeServers());
+            //   before the webview has the canvas — not only once the dialog asks for the list.
+            //   A settings file that fails to parse must not stop the canvas from loading
+            try {
+              this.knowledge.configure(await getKnowledgeServers());
+            } catch {
+              this.knowledge.configure([]);
+            }
             send({ type: 'canvasLoaded', canvas, canvasPath: document.uri.fsPath });
             // - a cross-canvas node reference opened this canvas — focus the referenced node now
             // - that the webview has parsed it (document.canvas isn't ready any earlier than this)
