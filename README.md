@@ -145,6 +145,45 @@ Sections are horizontal lanes running down the canvas — a node belongs to the 
 
 **From MCP** — `canvas_add_node` takes `after` (a code cell: the new code cell goes under it in the same column) and `forkOf` with `side` (`right` by default, or `left`: a new column pair beside that cell's pair); both place the node themselves and ignore `x`/`y`. `canvas_reflow_section` runs the same reflow as the rail menu. Every MCP write follows the same engine rules as the UI — the touched column is packed, the column pairs to its right are pushed clear, covered notes move down, no node crosses a section boundary, and the sections re-fit afterwards.
 
+### Knowledge search
+Search a knowledge server from the canvas and put a result on it as a node. The node keeps its own copy of the matched section, so it still reads with the server unreachable. First server: crtx (the `kb` MCP).
+
+Configure at least one server in `settings.json` (shared) or `.vscode/settings.local.json` (personal — put the token there):
+
+```jsonc
+{
+  "skena.knowledge.servers": [
+    { "name": "crtx", "kind": "crtx", "url": "http://aurora-1:8788/mcp", "token": "…" }
+  ],
+  "skena.knowledge.refreshAfterHours": 24   // - default; how old a cached copy gets before it's refreshed on open
+}
+```
+
+`Ctrl+F` opens the dialog (`/` still opens find-in-canvas):
+
+| Key | Action |
+|---|---|
+| type | search the server as you type |
+| `#tag` | filter by tag, when the server supports tags |
+| `Tab` | cycle the vault, when the server has more than one |
+| `↑` / `↓` | move the highlight |
+| `Enter` | add the highlighted result — right of the focused node, or centred if nothing is focused — and close |
+| `Esc` | close |
+| `Ctrl+F` | back to the input, from anywhere in the dialog |
+
+A picked result becomes a `knowledge` node:
+- header: `<server> › <title> · <age>`, where `<title>` is the file and heading the server matched, e.g. `skena.md › 2026-09-19 — state`.
+- `●` before the title while the cached text has changed since you last looked at the node; it clears when you focus the node.
+- `!` after the age when the last refresh failed — hover the header for the reason.
+- `↻` refreshes the node now. `↗` opens the source in the server's web reader.
+- the body is the cached text, rendered as markdown, read-only.
+
+On canvas open, every knowledge node older than `refreshAfterHours` is refreshed in the background, three at a time per server, without blocking the canvas. A server that does not answer is skipped for the rest of that run.
+
+**From MCP** — `canvas_add_knowledge {canvasPath, server, uri, title, text, after?, x?, y?}` puts a result you already read on the canvas as a knowledge node (the MCP process holds no server token, so an agent searches the server itself and passes back the text); `canvas_refresh_knowledge {canvasPath, ref}` marks a node stale so the canvas refreshes it the next time it's open.
+
+To add another server kind, write one adapter file under `src/extension/knowledge/adapters/` implementing `KnowledgeProvider` (`src/shared/knowledge/types.ts`), and register it in `registry.ts`.
+
 ### Monaco text editor inside nodes
 Double-click any text node to edit it inline — full Monaco editor with vim keybindings, markdown syntax highlighting, and VS Code theme integration.
 
