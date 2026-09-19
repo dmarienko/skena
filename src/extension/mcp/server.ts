@@ -815,6 +815,93 @@ async function canvasUpdateNode(args: Record<string, unknown>): Promise<string> 
   }); // - withFileLock
 }
 
+// - the text comes from the caller: the MCP process holds no knowledge-server token, so an agent
+// - that searched the server itself passes what it read back in here
+async function canvasAddKnowledge(args: Record<string, unknown>): Promise<string> {
+  const p = resolvePath(args.canvasPath as string);
+  return withFileLock(p, async () => {
+  const d = await readCanvasOrEmpty(p);   // - create-on-first-add, as canvas_add_node does
+  const anchorRef = args.after as string | undefined;
+  const anchor    = anchorRef !== undefined ? findNode(d, anchorRef) : undefined;
+  if (anchorRef !== undefined && !anchor) return `Node not found: ${anchorRef}`;
+
+  const w = NODE_SIZE.knowledge.w;
+  const h = NODE_SIZE.knowledge.h;
+  const server = (args.server as string | undefined) ?? '';
+  const uri    = (args.uri    as string | undefined) ?? '';
+
+  // - `after` lets the engine place the node, so a supplied x/y is ignored (the reply says so)
+  let placed: { x: number; y: number } | null = null;
+  if (anchor) {
+    const around = sectionEngineNodes(d.nodes, d.metadata?.sections ?? [], anchor.id) ?? toEngineNodes(d.nodes);
+    placed = insertAfter(around, anchor.id);
+  }
+  const pos = placed ?? ((args.x !== undefined && args.y !== undefined)
+    ? { x: args.x as number, y: args.y as number }
+    : autoPlace(d.nodes, w, h));
+  const at = clampToOrigin(snapGrid(pos.x), snapGrid(pos.y));
+
+  // - no `changed`: a node that was just fetched has nothing to compare against
+  const node: CanvasNode = {
+    id:        uid(),
+    type:      'knowledge',
+    x:         at.x,
+    y:         at.y,
+    width:     w,
+    height:    h,
+    server,
+    uri,
+    title:     (args.title as string | undefined) ?? '',
+    text:      (args.text  as string | undefined) ?? '',
+    fetchedAt: new Date().toISOString(),
+    createdBy: 'ai',
+  } as CanvasNode;
+
+  const labeled = assignLabel(node, d.nodes);
+  const before  = geomOf(d);
+  d.nodes.push(labeled);
+  // - a node added under a member of a FOLDED section is a hidden member of it too, not adopted by
+  //   the section below
+  if (anchor && d.metadata?.sections) d.metadata = { ...d.metadata, sections: pinOutputToLane(d.metadata.sections, anchor.id, labeled.id) };
+  const report: { capped?: boolean } = {};
+  const own = applyEngine(d, [labeled.id], [], report, anchor ? { id: anchor.id, joining: [labeled.id] } : undefined);
+  Object.assign(d, applyLaneFit(d, Date.now(), own));   // - every write fits the sections
+  const moved = movedLabels(d, before, [labeled.id]);
+  await writeCanvas(p, d);
+
+  const final = d.nodes.find(n => n.id === labeled.id) ?? labeled;
+  const lines = [
+    `Created node ${labeled.nodeLabel} (id: ${labeled.id})`,
+    'Type: knowledge',
+    `Source: ${server} ${uri}`,
+    `Position: (${final.x}, ${final.y})  Size: ${final.width}×${final.height}`,
+  ];
+  if (anchor && (args.x !== undefined || args.y !== undefined)) lines.push(`x/y ignored: placed after ${anchor.nodeLabel ?? anchor.id}`);
+  if (moved.length) lines.push(`Moved: ${moved.join(', ')}`);
+  if (report.capped) lines.push(CAPPED_NOTE);
+  lines.push(`Canvas: ${p}`);
+  return lines.join('\n');
+  }); // - withFileLock
+}
+
+// - older than any refreshAfterHours window, so the host's staleness check picks the node up
+const KNOWLEDGE_EPOCH = '1970-01-01T00:00:00.000Z';
+
+async function canvasRefreshKnowledge(args: Record<string, unknown>): Promise<string> {
+  const p = resolvePath(args.canvasPath as string);
+  return withFileLock(p, async () => {
+  const d = await readCanvas(p);
+  const n = findNode(d, args.ref as string);
+  if (!n) return `Node not found: ${args.ref}`;
+  if (n.type !== 'knowledge') return `Node ${n.nodeLabel ?? n.id} is not a knowledge node`;
+  // - this process has no token for the knowledge server, so it only ages the node out; the host
+  //   fetches the new text when the canvas is next opened
+  n.fetchedAt = KNOWLEDGE_EPOCH;
+  await writeCanvas(p, d);
+  return `Marked ${n.nodeLabel ?? n.id} for refresh on the next open`;
+  }); // - withFileLock
+}
+
 async function canvasRemoveNode(args: Record<string, unknown>): Promise<string> {
   const p = resolvePath(args.canvasPath as string);
   return withFileLock(p, async () => {
@@ -1606,6 +1693,36 @@ const TOOLS = [
     },
   },
   {
+    name: 'canvas_add_knowledge',
+    description: 'Put a result you read from a knowledge server on the canvas as a knowledge node: the server name, the source URI, the title and the text you read, cached in the node so it reads offline. This server holds no knowledge-server token and never calls one — search the knowledge server yourself and pass the text you got back. The node is marked AI-created and assigned a W label; the canvas refreshes it from its server on a later open. Placement and the layout engine work as in canvas_add_node: `after` puts the node one gap below any node in that node\'s column and ignores x/y, otherwise x/y (snapped and clamped to the canvas origin) or a free slot right of everything; the column then packs, the pairs to its right are pushed clear, and the sections grow or shrink to fit.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        canvasPath: { type: 'string', description: 'Path to the .canvas file' },
+        server:     { type: 'string', description: 'Name of the knowledge server the result came from (a skena.knowledge.servers entry, e.g. crtx)' },
+        uri:        { type: 'string', description: 'Source URI as the server gave it (e.g. crtx://crtx/projects/skena.md#state); the canvas refreshes the node from it' },
+        title:      { type: 'string', description: 'Title shown in the node header' },
+        text:       { type: 'string', description: 'The markdown text you read from the server, cached in the node' },
+        after:      { type: 'string', description: 'Label or id of any node: place the new node one gap below it in the same column' },
+        x:          { type: 'number', description: 'X position (auto-placed if omitted; ignored with after)' },
+        y:          { type: 'number', description: 'Y position (auto-placed if omitted; ignored with after)' },
+      },
+      required: ['canvasPath', 'server', 'uri', 'title', 'text'],
+    },
+  },
+  {
+    name: 'canvas_refresh_knowledge',
+    description: 'Mark a knowledge node stale so the canvas fetches its text again the next time it is opened. This server has no knowledge-server token, so it cannot fetch the text itself — it only dates the node back. To replace the text now, read the source yourself and add a new node with canvas_add_knowledge.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        canvasPath: { type: 'string', description: 'Path to the .canvas file' },
+        ref:        { type: 'string', description: 'Label (W1, W2…) or id of the knowledge node' },
+      },
+      required: ['canvasPath', 'ref'],
+    },
+  },
+  {
     name: 'canvas_create',
     description: 'Create a new empty .canvas file (with parent directories). No-op if it already exists.',
     inputSchema: {
@@ -1873,6 +1990,8 @@ async function dispatch(msg: JsonRpcMsg): Promise<void> {
         case 'canvas_follow':      text = await canvasFollow(args);      break;
         case 'canvas_add_node':    text = await canvasAddNode(args);     break;
         case 'canvas_update_node': text = await canvasUpdateNode(args);  break;
+        case 'canvas_add_knowledge':     text = await canvasAddKnowledge(args);     break;
+        case 'canvas_refresh_knowledge': text = await canvasRefreshKnowledge(args); break;
         case 'canvas_remove_node': text = await canvasRemoveNode(args);  break;
         case 'canvas_add_edge':    text = await canvasAddEdge(args);     break;
         case 'canvas_update_edge': text = await canvasUpdateEdge(args);  break;
