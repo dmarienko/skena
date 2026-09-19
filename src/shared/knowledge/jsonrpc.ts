@@ -10,11 +10,15 @@ export function parseJsonBody(body: string): RpcMessage[] {
 }
 
 // - SSE: events separated by a blank line; `data:` lines of one event are joined with '\n';
-//   comment lines start with ':'; only events whose data parses as JSON-RPC are returned
+//   comment lines start with ':'; a named event other than 'message' is skipped whole; only
+//   events whose data parses as JSON-RPC are returned
 export function parseSseBody(body: string): RpcMessage[] {
   const out: RpcMessage[] = [];
   for (const block of body.split(/\r?\n\r?\n/)) {
-    const data = block.split(/\r?\n/).filter(l => l.startsWith('data:')).map(l => l.slice(5).replace(/^ /, '')).join('\n');
+    const lines = block.split(/\r?\n/);
+    const event = lines.find(l => l.startsWith('event:'))?.slice(6).trim();
+    if (event && event !== 'message') continue;
+    const data = lines.filter(l => l.startsWith('data:')).map(l => l.slice(5).replace(/^ /, '')).join('\n');
     if (!data) continue;
     try { const m = JSON.parse(data) as RpcMessage; if (m && m.jsonrpc === '2.0') out.push(m); } catch { /* - not JSON-RPC: a ping or a comment */ }
   }
@@ -23,9 +27,15 @@ export function parseSseBody(body: string): RpcMessage[] {
 
 export function pickResponse(msgs: RpcMessage[], id: number): unknown {
   const m = msgs.find(x => x.id === id);
-  if (!m) throw new Error(`no response for request ${id}`);
-  if (m.error) throw new Error(m.error.message);
-  return m.result;
+  if (m) {
+    if (m.error) throw new Error(m.error.message);
+    return m.result;
+  }
+  // - a server that rejects the whole request answers under its own id ('server-error', null, ...)
+  //   rather than this one's; a lone error like that is why this id got no reply
+  const serverErrors = msgs.filter(x => x.error && typeof x.id !== 'number');
+  if (serverErrors.length === 1) throw new Error(serverErrors[0].error!.message);
+  throw new Error(`no response for request ${id}`);
 }
 
 // - MCP tool results carry `content: [{type:'text', text}]`; servers put JSON in the text
