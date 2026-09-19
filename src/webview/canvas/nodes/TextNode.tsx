@@ -259,6 +259,79 @@ export function patchVimLastLine(): void {
 }
 
 /**
+ * Draw vim's block cursor on the last SELECTED character in visual mode.
+ *
+ * monaco-vim keeps cursorStyle "block" in visual mode, and Monaco draws the block at the
+ * selection END, which is exclusive: on "12345", `v l l l` selects "1234" but the block sits
+ * on "5". Vim draws it on "4". CodeMirror's vim fixes this with $customCursor
+ * (transformCursor), which the Monaco adapter ignores; its markText() is a no-op too.
+ *
+ * So: hide Monaco's own cursor while visual mode is on and paint a one-character decoration at
+ * vim.sel.head, which is the inclusive cursor character in char, line and block visual mode.
+ *
+ * The sync runs in a microtask because exitVisualMode() calls cm.setCursor() BEFORE it clears
+ * vim.visualMode — a synchronous hook would leave a stale block after Esc. Rendering happens
+ * after microtasks, so nothing flickers.
+ */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+function syncVisualCursor(cm: any): void {
+  const editor = cm.editor as MonacoEditor.IStandaloneCodeEditor;
+  const vim    = cm.state?.vim;
+  const model  = editor.getModel();
+  if (!model) return;
+
+  const collection = (cm.__skenaFatCursor ??= editor.createDecorationsCollection());
+  const dom        = editor.getDomNode();
+  const visual     = !!vim && vim.visualMode && !vim.insertMode;
+
+  if (!visual) {
+    collection.clear();
+    dom?.classList.remove('skena-vim-visual');
+    return;
+  }
+
+  const head = vim.sel.head;                      // - CodeMirror 0-based {line, ch}
+  const line = head.line + 1;
+  const col  = head.ch + 1;
+  const max  = model.getLineMaxColumn(line);
+  collection.set([col < max
+    ? {
+      range:   { startLineNumber: line, startColumn: col, endLineNumber: line, endColumn: col + 1 },
+      options: { inlineClassName: 'skena-vim-fat-cursor' },
+    }
+    : {
+      // - empty line or head past the last character: no glyph to paint over
+      range:   { startLineNumber: line, startColumn: max, endLineNumber: line, endColumn: max },
+      options: { afterContentClassName: 'skena-vim-fat-cursor-eol' },
+    }]);
+  dom?.classList.add('skena-vim-visual');
+}
+
+export function patchVimVisualCursor(): void {
+  const P = (VimMode as any)?.prototype;
+  if (!P || P.__skenaVisualCursor) return;
+
+  const schedule = (cm: any) => {
+    if (cm.__skenaFatPending) return;
+    cm.__skenaFatPending = true;
+    queueMicrotask(() => { cm.__skenaFatPending = false; syncVisualCursor(cm); });
+  };
+
+  for (const name of ['setSelections', 'setSelection', 'setCursor'] as const) {
+    const orig = P[name];
+    if (!orig) continue;
+    P[name] = function(this: any, ...args: any[]) {
+      const r = orig.apply(this, args);
+      schedule(this);
+      return r;
+    };
+  }
+
+  P.__skenaVisualCursor = true;
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+/**
  * Wire the clipboard relay register into the vim RegisterController.
  * MUST be called after initVimMode() — the Vim singleton is not available until then.
  * Safe to call on every editor mount (handles re-registration and re-replacement).
@@ -578,6 +651,7 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
     applyVimClipboard();
     patchVimNewlineAndIndent();
     patchVimLastLine();
+    patchVimVisualCursor();
     patchVimJoin(editorInstance, vimStatusRef.current);
 
     // ─── vim mode tracking via MutationObserver ──────────────────────────────
