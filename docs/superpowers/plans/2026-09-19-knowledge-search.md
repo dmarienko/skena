@@ -403,11 +403,11 @@ test('capabilities and openUrl', () => {
 });
 ```
 
-Add `write`/`append` tests once the argument names are read off the live server (Step 3); they assert the exact `callTool` args.
+Add two tests for the write direction, asserting the exact `callTool` args (names measured on the live server 2026-09-19): `write({title:'t', text:'body', tags:['research'], scope:'crtx', source:{…}})` → `create_note {vault:'crtx', title:'t', content:'body', agent:'skena', tags:['research']}` and the returned uri built from the reply's `file`; `append('crtx://crtx/log.md', {text:'more', …})` → `append_note {vault:'crtx', file:'log.md', content:'more', agent:'skena'}`.
 
 - [ ] **Step 2: Run to verify it fails.**
 
-- [ ] **Step 3: Read the live write-tool schema** — `curl -s -X POST http://aurora-1:8788/mcp -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"x","version":"1"}}}'` then `tools/list` with the returned `Mcp-Session-Id`; the token is `CRTX_AUTH_TOKEN` in `~/.crtx-server/auth.env`. Record the `create_note` / `append_note` parameter names in the adapter's comment. If the server cannot be reached, map to the names in the spec and mark the two methods with `// - argument names unverified` and say so in the report.
+- [ ] **Step 3: Live write-tool schema — already read (2026-09-19, crtx 1.28.1)**: `create_note` requires `vault, title, content`, optional `tags` (crtx vault: non-empty, slug-shaped, from the controlled vocabulary), `dest`, `sections`, `links`, `session_id`, `agent`; `append_note` requires `vault, file, content`, optional `session_id`, `agent`; `read_section` requires `vault, file, heading`; `facets` takes optional `vault`. The reply shape of `create_note` (which field names the new file) is NOT known — read it from one real call only if a throwaway vault is available (`test-knowledges`), otherwise accept `file`/`path`/`uri` as the code does and say so. Original instruction for reference: — `curl -s -X POST http://aurora-1:8788/mcp -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"x","version":"1"}}}'` then `tools/list` with the returned `Mcp-Session-Id`; the token is `CRTX_AUTH_TOKEN` in `~/.crtx-server/auth.env`. Record the `create_note` / `append_note` parameter names in the adapter's comment. If the server cannot be reached, map to the names in the spec and mark the two methods with `// - argument names unverified` and say so in the report.
 
 - [ ] **Step 4: Implement**
 
@@ -497,16 +497,21 @@ export function createCrtxProvider(config: KnowledgeServerConfig, transport: Too
 
     openUrl(uri: string) { return crtxReaderUrl(uri, config.url); },
 
-    // - argument names read off the live tools/list on <date>; update here if the server changes
+    // - argument names read off the live tools/list on 2026-09-19 (crtx 1.28.1):
+    //   create_note(vault, title, content, tags?, dest?, sections?, links?, session_id?, agent?) —
+    //   the crtx vault requires non-empty slug tags from its controlled vocabulary;
+    //   append_note(vault, file, content, session_id?, agent?)
     async write(item: KnowledgeWrite) {
-      const res = unwrap<{ uri?: string; file?: string; vault?: string }>(await transport.callTool('create_note', {
-        vault: item.scope ?? 'crtx', title: item.title, text: item.text, ...(item.tags?.length ? { tags: item.tags } : {}),
+      const res = unwrap<{ uri?: string; file?: string; path?: string; vault?: string }>(await transport.callTool('create_note', {
+        vault: item.scope ?? 'crtx', title: item.title, content: item.text, agent: 'skena',
+        ...(item.tags?.length ? { tags: item.tags } : {}),
       }));
-      return { uri: res?.uri ?? buildCrtxUri({ vault: res?.vault ?? item.scope ?? 'crtx', file: res?.file ?? '', heading: '' }) };
+      const file = res?.file ?? res?.path ?? '';
+      return { uri: res?.uri ?? buildCrtxUri({ vault: res?.vault ?? item.scope ?? 'crtx', file, heading: '' }) };
     },
     async append(uri: string, item: KnowledgeWrite) {
       const r = parseCrtxUri(uri);
-      await transport.callTool('append_note', { vault: r.vault, file: r.file, text: item.text });
+      await transport.callTool('append_note', { vault: r.vault, file: r.file, content: item.text, agent: 'skena' });
     },
   };
 }
