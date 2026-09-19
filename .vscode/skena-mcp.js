@@ -3905,10 +3905,14 @@ var DEFAULT_NODE_HEIGHT = NODE_SIZE.text.h;
 var MAX_FILE_FULL_BYTES = 2 * 1024 * 1024;
 var MAX_FILE_PREVIEW_BYTES = 200 * 1024;
 var MAX_NOTEBOOK_BYTES = 10 * 1024 * 1024;
+var CODE_MAX_H = 900;
+var CODE_H_STEP = 50;
 var OUTPUT_MIN_W = 600;
 var OUTPUT_MAX_W = 1400;
 var OUTPUT_MAX_H = 900;
 var OUTPUT_DEFAULT_H = 300;
+var CODE_LINE_H_ESTIMATE = 18;
+var CODE_CHROME_ESTIMATE = 39;
 
 // src/shared/grid.ts
 function snapGrid(v) {
@@ -4261,6 +4265,14 @@ function upstreamCellsForRun(targetId, c) {
 // src/shared/layoutEngine.ts
 var byId = (nodes) => new Map(nodes.map((n) => [n.id, n]));
 var gridUp = (v) => Math.ceil(v / GRID) * GRID;
+function codeCellHeight(neededPx) {
+  const raw = Math.ceil(Math.max(0, neededPx) / CODE_H_STEP) * CODE_H_STEP;
+  return Math.min(CODE_MAX_H, Math.max(NODE_SIZE.code.h, raw));
+}
+function estimateCodeNeedPx(code) {
+  const lines = code.split("\n").length;
+  return lines * CODE_LINE_H_ESTIMATE + CODE_CHROME_ESTIMATE;
+}
 function outputOwners(nodes) {
   const owners = /* @__PURE__ */ new Map();
   const ids = new Set(nodes.map((n) => n.id));
@@ -4467,10 +4479,11 @@ function layoutSection(input, opts = {}) {
 function reflowSection(input) {
   const nodes = clone(input);
   const map = byId(nodes);
-  const codes = nodes.filter((n) => n.type === "code").sort((a, b) => snapGrid(a.x) - snapGrid(b.x) || a.y - b.y || a.id.localeCompare(b.id));
+  const owners = outputOwners(nodes);
+  const members = nodes.filter((n) => isMember(n, owners)).sort((a, b) => snapGrid(a.x) - snapGrid(b.x) || a.y - b.y || a.id.localeCompare(b.id));
   const half = (NODE_SIZE.code.w + GRID + OUTPUT_MIN_W) / 2;
   const xs = [];
-  for (const n of codes) {
+  for (const n of members) {
     const sx = snapGrid(n.x);
     const near = xs.filter((x) => Math.abs(x - sx) <= half).sort((a, b) => Math.abs(a - sx) - Math.abs(b - sx))[0];
     if (near === void 0)
@@ -5585,7 +5598,8 @@ async function canvasAddNode(args) {
     const type = args.type ?? (anchor?.type === "code" ? "code" : "text");
     const dims = defaultDims(type);
     const w = args.width ?? dims.w;
-    const h = args.height ?? dims.h;
+    const sized = type === "code" && args.height === void 0 && typeof args.content === "string";
+    const h = sized ? codeCellHeight(estimateCodeNeedPx(args.content)) : args.height ?? dims.h;
     let placed = null;
     if (anchor) {
       if (args.forkOf !== void 0 && anchor.type !== "code")
@@ -5603,7 +5617,7 @@ async function canvasAddNode(args) {
       x: at.x,
       y: at.y,
       width: snapGrid(w),
-      height: snapGrid(h),
+      height: sized ? h : snapGrid(h),
       createdBy: "ai",
       ...args.color ? { color: args.color } : {},
       ...args.tags ? { tags: args.tags } : {}
@@ -5695,6 +5709,11 @@ async function canvasUpdateNode(args) {
       updated.width = snapGrid(args.width);
     if (args.height !== void 0)
       updated.height = snapGrid(args.height);
+    let resized = false;
+    if (args.content !== void 0 && n.type === "code" && args.height === void 0) {
+      updated.height = codeCellHeight(estimateCodeNeedPx(args.content));
+      resized = updated.height !== n.height;
+    }
     const isOutput = d.nodes.some((o) => o.type === "code" && o.outputNodeId === n.id);
     const clamped = [];
     if (isOutput && updated.width > OUTPUT_MAX_W) {
@@ -5707,7 +5726,7 @@ async function canvasUpdateNode(args) {
     }
     const before = geomOf(d);
     d.nodes[idx] = updated;
-    const geom = args.x !== void 0 || args.y !== void 0 || args.width !== void 0 || args.height !== void 0;
+    const geom = args.x !== void 0 || args.y !== void 0 || args.width !== void 0 || args.height !== void 0 || resized;
     const report = {};
     const own = geom ? applyEngine(d, [updated.id], [], report) : /* @__PURE__ */ new Map();
     Object.assign(d, applyLaneFit(d, Date.now(), own));
@@ -6443,7 +6462,7 @@ var TOOLS = [
         x: { type: "number", description: "X position (auto-placed if omitted; ignored with after/forkOf)" },
         y: { type: "number", description: "Y position (auto-placed if omitted; ignored with after/forkOf)" },
         width: { type: "number", description: "Width in canvas units (default: type-dependent)" },
-        height: { type: "number", description: "Height in canvas units (default: type-dependent)" },
+        height: { type: "number", description: "Height in canvas units (default: type-dependent; a code cell with content is sized to the lines it holds, up to 900)" },
         after: { type: "string", description: "Label or id of any node: place the new node one gap below it in the same column (type defaults to code under a code cell, else text)" },
         forkOf: { type: "string", description: "Label or id of a code cell: start a new column pair beside its pair (type defaults to code)" },
         side: { type: "string", description: "forkOf side: right (default) or left; a left fork that would start before the canvas origin is refused" }
@@ -6453,7 +6472,7 @@ var TOOLS = [
   },
   {
     name: "canvas_update_node",
-    description: "Update an existing node: content, tags, color, label, and/or move/resize it. Partial \u2014 only supplied fields change. Move/resize uses absolute canvas coordinates and runs the layout engine: the node's column is packed, the column pairs to its right are pushed clear, and the notes it covers move down. An output cell is clamped to 1400 wide by 900 high so it cannot overlap the pair to its right. Sections fit their content: a node placed past its section's bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Supplied coordinates are snapped to the grid and clamped to the canvas origin.",
+    description: "Update an existing node: content, tags, color, label, and/or move/resize it. Partial \u2014 only supplied fields change. New code content with no explicit height re-sizes the cell to the lines it now holds (grows or shrinks, up to 900) and counts as a resize. Move/resize uses absolute canvas coordinates and runs the layout engine: the node's column is packed, the column pairs to its right are pushed clear, and the notes it covers move down. An output cell is clamped to 1400 wide by 900 high so it cannot overlap the pair to its right. Sections fit their content: a node placed past its section's bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Supplied coordinates are snapped to the grid and clamped to the canvas origin.",
     inputSchema: {
       type: "object",
       properties: {
@@ -6466,7 +6485,7 @@ var TOOLS = [
         x: { type: "number", description: "Move: absolute x (left)" },
         y: { type: "number", description: "Move: absolute y (top)" },
         width: { type: "number", description: "Resize: width" },
-        height: { type: "number", description: "Resize: height" }
+        height: { type: "number", description: "Resize: height (omit it with new code content and the cell is re-sized to the lines it now holds)" }
       },
       required: ["canvasPath", "ref"]
     }
