@@ -106,6 +106,25 @@ export function deriveLanes(nodes: LaneNodeGeom[], lanes: SectionLane[]): Derive
   });
 }
 
+/**
+ * The given ids split by the lane each one is a member of: lane id → its ids, in the order they
+ * arrived. An id in no lane (a band, or a canvas with no sections) is dropped. The layout engine
+ * lays out ONE section, so a caller holding a set of nodes that spans two — a move, a paste —
+ * runs it once per group.
+ */
+export function groupIdsByLane(lanes: DerivedLane[], ids: Iterable<string>): Map<string, string[]> {
+  const laneOf = new Map<string, string>();
+  for (const l of lanes) for (const id of l.memberIds) laneOf.set(id, l.id);
+  const groups = new Map<string, string[]>();
+  for (const id of ids) {
+    const laneId = laneOf.get(id);
+    if (laneId === undefined) continue;
+    const g = groups.get(laneId);
+    if (g) g.push(id); else groups.set(laneId, [id]);
+  }
+  return groups;
+}
+
 export interface LaneGrowth {
   /** - lane id → how far it moves, flow units; may be negative */
   laneShifts: Record<string, number>;

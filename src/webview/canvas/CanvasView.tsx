@@ -56,7 +56,7 @@ import { SectionSeparators } from './SectionSeparators';
 import { EdgeFollowHints, type EdgeHint } from './EdgeFollowHints';
 import { SectionRail, type RailKernel } from '../rail/SectionRail';
 import { fmtDateTime } from '../rail/RailSegment';
-import { deriveLanes, fitLanes, sortLanes, insertLaneAt, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
+import { deriveLanes, fitLanes, groupIdsByLane, sortLanes, insertLaneAt, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
 import { applyPatchesToCanvas, codeCellHeight, columnsOfDeleted as columnsOfDeletedIn, forkOf, insertAfter, layoutSection, reflowSection, sectionEngineNodes, sectionMembership, type EngineNode, type LayoutOpts, type Patches } from '../../shared/layoutEngine';
 import { useLaneFit, flowGeom } from '../rail/useLaneFit';
 import { connectionLabels, findNearestNode, revealPan, type ConnectionLabel, type EdgeSideContext, type NavDir, type NavNode, type Rect } from './spatialNav';
@@ -994,13 +994,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
    */
   const runEngineAfterMove = useCallback((movedIds: Iterable<string>, grabbedId?: string) => {
     const lanes = deriveLanes(canvasRef.current.nodes, canvasRef.current.metadata?.sections ?? []);
-    const groups = new Map<string, string[]>();
-    for (const id of movedIds) {
-      const lane = lanes.find(l => l.memberIds.includes(id));
-      if (!lane) continue;   // - a band, or a canvas with no sections: nothing for the engine to lay out
-      const g = groups.get(lane.id);
-      if (g) g.push(id); else groups.set(lane.id, [id]);
-    }
+    const groups = groupIdsByLane(lanes, movedIds);
     for (const moverIds of groups.values()) {
       // - the grabbed node names its own section; the other groups are named by any mover in them
       const grabbed = grabbedId !== undefined && moverIds.includes(grabbedId) ? grabbedId : moverIds[0];
@@ -2001,12 +1995,17 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     scheduleSave();
     // - clipboard order is arbitrary; the top-left node is the one the eye starts from
     const topLeft = newNodes.reduce<CanvasNode | undefined>((a, b) => !a || b.y < a.y || (b.y === a.y && b.x < a.x) ? b : a, undefined);
-    // - the whole paste is the mover: it stays where it landed and pushes what it covers. The engine
-    //   takes one section, so a paste spanning two lays out the top-left node's only; the other is
-    //   left to Reflow. Pasted beside a focused node, the group joins THAT node's section.
+    // - the whole paste is the mover: it stays where it landed and pushes what it covers. Pasted
+    //   beside a focused node, the group joins THAT node's section whatever its y. Pane-centred, the
+    //   group lands by y and can straddle a boundary, so the engine runs once per section it
+    //   reached, as a move does — it lays out one section per call.
     if (topLeft) {
       const ids = newNodes.map(n => n.id);
-      runEngine({ nodeId: anchor?.id ?? topLeft.id }, { moverIds: ids, ...(anchor ? { extraIds: ids } : {}) });
+      if (anchor) runEngine({ nodeId: anchor.id }, { moverIds: ids, extraIds: ids });
+      else {
+        const lanes = deriveLanes(canvasRef.current.nodes, canvasRef.current.metadata?.sections ?? []);
+        for (const moverIds of groupIdsByLane(lanes, ids).values()) runEngine({ nodeId: moverIds[0] }, { moverIds });
+      }
     }
     if (topLeft) requestAnimationFrame(() => revealNode(topLeft.id));
   }, [setNodes, setEdges, scheduleSave, pushHistory, revealNode, runEngine]);
