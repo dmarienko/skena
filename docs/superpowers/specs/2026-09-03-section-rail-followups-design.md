@@ -139,3 +139,15 @@ centred on the React Flow pane's centre, snapped to the grid and clamped to the 
 belong to the section they land in (this is the copy/paste section move of the rail spec) and the
 sections fit as usual. The pasted group is selected and revealed (§8.2). Today's rule — each pasted
 node at the copied node's own x/y + 40 px — is gone.
+
+## 10. Folded sections and section switching (2026-09-19, user)
+
+- **A folded section shows its title in the band.** The folded lane (one grid tall) draws the
+  section's title centred in its area (same font as the rail title, the section's colour), with a
+  second line below in the muted text colour: the member count, e.g. `12 nodes`, plus the kernel
+  name when the section is bound (`12 nodes · rwa`). Nothing is drawn in an open section.
+- **Sections in the marks panel.** `Ctrl+M` (the bookmarks/marks panel) gains a `Sections` list
+  above the marks: `S1 First experiment`, `S2 …` (label, title, member count, `folded` when
+  folded). Choosing one: unfold it when folded, then focus and reveal its first node (by y, then
+  x); an empty section only unfolds and pans to its top. Keyboard: the panel's existing navigation.
+- `Shift+(` / `Shift+)` stay on the focused node's section.
