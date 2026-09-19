@@ -1,18 +1,5 @@
 /* React Flow canvas customizations */
 
-/* - the --sk-* neutral chrome tokens: src/webview/theme.ts overwrites these on <html> per VS Code
-   - theme (src/webview/canvas/palette.ts THEME), so this block is only the value seen before that
-   - JS runs (or if it doesn't) — same mapping intent, VS Code var first, a literal last resort. */
-:root {
-  --sk-text1:  var(--vscode-foreground, #cccccc);
-  --sk-text2:  var(--vscode-descriptionForeground, #8b8b8b);
-  --sk-text3:  var(--vscode-disabledForeground, #6b6b6b);
-  --sk-bg1:    var(--vscode-sideBar-background, #1e1e1e);
-  --sk-bg2:    var(--vscode-editorWidget-background, #252526);
-  --sk-border: var(--vscode-widget-border, var(--vscode-panel-border, #454545));
-  --sk-accent: var(--vscode-focusBorder, #007acc);
-}
-
 .react-flow__background { background: var(--vscode-editor-background); }
 .react-flow__minimap    { border-radius: 4px; overflow: hidden; }
 .react-flow__controls   { background: var(--vscode-sideBar-background); border: 1px solid var(--vscode-editorWidget-border); border-radius: 4px; }
