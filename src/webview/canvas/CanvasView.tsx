@@ -1746,11 +1746,22 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     else jumpToMark(register);
   }, [jumpToPreviousNode, jumpToMark]);
 
+  // - per-lane count of nodes handlePickSection can actually focus: memberIds includes band (group)
+  //   nodes, which a pick skips, so the marks panel row and the folded band both read from here
+  const laneFocusableCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const l of derivedLanes) {
+      const members = new Set(l.memberIds);
+      m.set(l.id, nodes.filter(n => members.has(n.id) && !isBandType(n.type)).length);
+    }
+    return m;
+  }, [derivedLanes, nodes]);
+
   // - the section rows of the marks panel: stack order, the rail's title for an untitled one
   const marksSections = useMemo<SectionEntry[]>(() => derivedLanes.map(l => ({
     id: l.id, label: l.label, title: l.title?.trim() || fmtDateTime(l.createdAt),
-    count: l.memberIds.length, folded: !!l.folded,
-  })), [derivedLanes]);
+    count: laneFocusableCounts.get(l.id) ?? l.memberIds.length, folded: !!l.folded,
+  })), [derivedLanes, laneFocusableCounts]);
 
   /**
    * Go to a section from the marks panel: unfold it when folded, then focus its first node (by y,
@@ -3750,7 +3761,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         elevateEdgesOnSelect
       >
         <Background variant={BackgroundVariant.Dots} gap={GRID} size={1} color="var(--vscode-editorIndentGuide-background)" />
-        <SectionSeparators lanes={derivedLanes} kernels={railKernels} />
+        <SectionSeparators lanes={derivedLanes} kernels={railKernels} focusableCounts={laneFocusableCounts} />
         <EdgeFollowHints hints={gHints} />
         <HelperLines horizontal={helperLines.horizontal} vertical={helperLines.vertical} />
         <Controls showInteractive={false} showFitView={false}>

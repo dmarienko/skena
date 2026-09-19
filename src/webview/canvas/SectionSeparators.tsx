@@ -7,7 +7,7 @@ import { fmtDateTime } from '../rail/RailSegment';
 const FONT = 'system-ui, -apple-system, sans-serif';
 
 /** The 1px line at each section's bottom, and the title a folded section shows in its band. */
-export function SectionSeparators({ lanes, kernels }: { lanes: DerivedLane[]; kernels: RailKernel[] }): JSX.Element {
+export function SectionSeparators({ lanes, kernels, focusableCounts }: { lanes: DerivedLane[]; kernels: RailKernel[]; focusableCounts: Map<string, number> }): JSX.Element {
   const ty = useStore(s => s.transform[1]);
   const zoom = useStore(s => s.transform[2]);
   const height = useStore(s => s.height);
@@ -31,12 +31,13 @@ export function SectionSeparators({ lanes, kernels }: { lanes: DerivedLane[]; ke
         // - the kernel's own name, not the rail's status line: a record's display name is its label,
         //   a kernel node's is its name
         const kernelName = kernel ? (kernel.kind === 'record' ? kernel.label : kernel.name) : null;
-        const count = `${l.memberIds.length} nodes`;
+        // - the count of nodes a pick can actually focus: memberIds also holds band (group) nodes
+        const count = `${focusableCounts.get(l.id) ?? l.memberIds.length} nodes`;
         // - flow-space text: it scales with the canvas, so it keeps its place in the band at any zoom
         return (
           <div key={`${l.id}-band`}
             style={{ position: 'absolute', left: 0, right: 0, top, height: h, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3 * zoom, overflow: 'hidden' }}>
-            <div style={{ fontFamily: FONT, fontWeight: 600, fontSize: 12 * zoom, color, whiteSpace: 'nowrap' }}>
+            <div style={{ fontFamily: FONT, fontWeight: 600, fontSize: 12 * zoom, color, whiteSpace: 'nowrap', maxWidth: '70%', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {l.title?.trim() || fmtDateTime(l.createdAt)}
             </div>
             <div style={{ fontFamily: FONT, fontSize: 10.5 * zoom, color: 'var(--sk-text2)', whiteSpace: 'nowrap' }}>
