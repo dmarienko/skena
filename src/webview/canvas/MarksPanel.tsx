@@ -69,14 +69,13 @@ export function MarksPanel({ marks, nodes, onJump, onClose }: Props): JSX.Elemen
     entries.push({ register, mark, title, jumpable: true });
   }
 
-  // - `` ` `` previous-position register at the bottom (viewport is always valid)
-  if (marks['`']) {
-    const mark = marks['`'];
-    const node = mark.nodeId ? nodes.find(n => n.id === mark.nodeId) : undefined;
-    const title = node
-      ? `← ${nodeTitle(node.data as Record<string, unknown>, node.type ?? '')}`
-      : '← (previous position)';
-    entries.push({ register: '`', mark, title, jumpable: true });
+  // - `` ` `` previous node at the bottom; hidden once that node is gone, since the jump goes to
+  //   the node itself and no longer falls back to the stored viewport
+  const previous     = marks['`'];
+  const previousNode = previous?.nodeId ? nodes.find(n => n.id === previous.nodeId) : undefined;
+  if (previous && previousNode) {
+    const title = `← ${nodeTitle(previousNode.data as Record<string, unknown>, previousNode.type ?? '')}`;
+    entries.push({ register: '`', mark: previous, title, jumpable: true });
   }
 
   // - all displayed entries are jumpable; start on first

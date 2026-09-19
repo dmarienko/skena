@@ -699,7 +699,7 @@ export interface MsgFloatingChatPersistHistory {
 
 /** - one stored bookmark: focused node + viewport state at mark time */
 export interface CanvasMark {
-  /** - id of the focused node; null for the `` ` `` (previous-position) register */
+  /** - id of the focused node; null in position-only marks saved before every mark carried a node */
   nodeId: string | null;
   viewport: { x: number; y: number; zoom: number };
 }

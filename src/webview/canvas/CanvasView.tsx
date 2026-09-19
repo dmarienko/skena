@@ -465,6 +465,17 @@ function directionSlot(
  */
 const lastFocusedNodeId = new Map<string, string>();
 
+/**
+ * The marks to persist: every named register, never `` ` ``. The previous-position register now
+ * changes on every focus change, so saving it would write the bookmarks file on every h/j/k/l;
+ * it is a within-session position, like vim's jump list.
+ */
+function persistedMarks(marks: Record<string, CanvasMark>): Record<string, CanvasMark> {
+  const named: Record<string, CanvasMark> = {};
+  for (const [register, mark] of Object.entries(marks)) if (register !== '`') named[register] = mark;
+  return named;
+}
+
 // - module-level copy/paste clipboard (shared across canvas reloads)
 let clipboard: { nodes: CanvasNode[]; edges: CanvasEdge[] } | null = null;
 
@@ -532,7 +543,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   // - restore marks from workspaceState (sent by host on canvas open)
   useEffect(() => {
     const handler = (e: Event) => {
-      marksRef.current = (e as CustomEvent<Record<string, CanvasMark>>).detail ?? {};
+      // - named marks only: `` ` `` is this session's previous node, and a file written before it
+      //   stopped being saved would otherwise hand back a node from another session
+      marksRef.current = persistedMarks((e as CustomEvent<Record<string, CanvasMark>>).detail ?? {});
     };
     window.addEventListener('skena:marksRestored', handler);
     return () => window.removeEventListener('skena:marksRestored', handler);
@@ -1645,15 +1658,27 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   }, [clampCam]); // - nodesRef / rfRef / wrapperRef are always current
 
   /**
+   * Stores the node focus is leaving in the `` ` `` register, so `` ` ` `` goes back to it.
+   * Called by every focus change; re-focusing the same node is not one.
+   */
+  const recordPreviousPosition = useCallback((nextId: string) => {
+    const previous = lastFocusedNodeId.get(canvasPath);
+    if (!previous || previous === nextId) return;
+    // - the viewport is the one we are leaving; only named marks restore a camera, `` ` ` `` reveals
+    marksRef.current = { ...marksRef.current, '`': { nodeId: previous, viewport: rfRef.current.getViewport() } };
+  }, [canvasPath]);
+
+  /**
    * Select + DOM-focus a node by id, reveal it, and persist the id in lastFocusedNodeId for
    * restoration.
    */
   const focusNodeById = useCallback((id: string, forceCenter = false) => {
+    recordPreviousPosition(id);
     lastFocusedNodeId.set(canvasPath, id);
     setNodes(nds => nds.map(n => ({ ...n, selected: n.id === id })));
     window.dispatchEvent(new CustomEvent('skena:focusNode', { detail: { id } }));
     revealNode(id, forceCenter);
-  }, [setNodes, canvasPath, revealNode]);
+  }, [setNodes, canvasPath, revealNode, recordPreviousPosition]);
 
   // - a plain click reveals the node it hit, the same pan the keyboard gets. Selection stays React
   //   Flow's, so a modifier click (add to selection) must not pan; React Flow does not fire this
@@ -1661,10 +1686,11 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   //   delivers two clicks first, and the second would pan under the cursor.
   const onNodeClick = useCallback((e: React.MouseEvent, n: Node) => {
     if (e.shiftKey || e.ctrlKey || e.metaKey || isBandType(n.type)) return;
+    recordPreviousPosition(n.id);              // - a click is a jump too, so `` ` ` `` comes back from it
     lastFocusedNodeId.set(canvasPath, n.id);   // - a reload restores the node last clicked, not last keyed
     if (n.selected) return;
     revealNode(n.id);
-  }, [revealNode, canvasPath]);
+  }, [revealNode, canvasPath, recordPreviousPosition]);
 
   /**
    * Returns the id of the non-group node whose center is closest to the
@@ -1686,27 +1712,38 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     return bestId;
   }, []); // - rfRef + nodesRef always current
 
-  // - jump to a stored mark: save current viewport to `` ` ``, animate, focus node
+  // - jump to a named mark: restore its viewport, then focus its node (which records `` ` ``)
   const jumpToMark = useCallback((register: string) => {
     const target = marksRef.current[register];
     if (!target) return;
-    // - for named marks: abort if the target node was deleted
-    // - for `` ` `` (previous-position): a stale nodeId is not a blocker; still jump to viewport
-    if (register !== '`' && target.nodeId !== null && !nodesRef.current.some(n => n.id === target.nodeId)) return;
-    const currentFocused = nodesRef.current.find(n => n.selected && !isBandType(n.type));
-    marksRef.current = {
-      ...marksRef.current,
-      '`': { nodeId: currentFocused?.id ?? null, viewport: rfRef.current.getViewport() },
-    };
+    // - abort if the marked node was deleted since
+    if (target.nodeId !== null && !nodesRef.current.some(n => n.id === target.nodeId)) return;
     const cMark = clampCam(target.viewport.x, target.viewport.y, target.viewport.zoom);
     rfRef.current.setViewport({ x: cMark.x, y: cMark.y, zoom: target.viewport.zoom }, { duration: 300 });
     if (target.nodeId) {
       const id = target.nodeId;
       setTimeout(() => focusNodeById(id), 320);
     }
-    vscodePostMessage({ type: 'saveMarks', marks: marksRef.current });
+    setMarksOpen(false);
+  }, [focusNodeById, clampCam]);
+
+  /**
+   * `` ` ` ``: back to the node focus came from. It only reveals that node — the minimal pan at the
+   * current zoom — where a named mark also restores the camera it was set with. The jump is itself
+   * a focus change, so the register then holds the node left behind and `` ` ` `` returns.
+   */
+  const jumpToPreviousNode = useCallback(() => {
+    const previous = marksRef.current['`']?.nodeId;
+    if (!previous || !nodesRef.current.some(n => n.id === previous)) return;
+    focusNodeById(previous);
     setMarksOpen(false);
   }, [focusNodeById]);
+
+  // - one entry point for `{x} and the marks panel: `` ` `` is the previous node, the rest are marks
+  const jumpToRegister = useCallback((register: string) => {
+    if (register === '`') jumpToPreviousNode();
+    else jumpToMark(register);
+  }, [jumpToPreviousNode, jumpToMark]);
 
   // ─── add text node in direction (shared by keyboard and VS Code command paths) ─
 
@@ -2268,11 +2305,11 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
               const focused = nodesRef.current.find(n => n.selected && !isBandType(n.type));
               if (focused) {
                 marksRef.current = { ...marksRef.current, [reg]: { nodeId: focused.id, viewport: rfRef.current.getViewport() } };
-                vscodePostMessage({ type: 'saveMarks', marks: marksRef.current });
+                vscodePostMessage({ type: 'saveMarks', marks: persistedMarks(marksRef.current) });
               }
             } else {
-              // - `{x}: delegate to jumpToMark (saves `` ` ``, animates, focuses)
-              jumpToMark(reg);
+              // - `{x}: a named mark animates the camera and focuses; `` ` ` `` goes to the previous node
+              jumpToRegister(reg);
             }
           }
           pendingMarkRef.current = null;
@@ -2871,7 +2908,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       gLabelsRef.current = EMPTY_LABELS;
       setGHints([]);
     };
-  }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToMark, engineNodesOf, runEngineAfterMove, canvasPath]); // - nodesRef + spaceSelectedRef carry live state
+  }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToRegister, engineNodesOf, runEngineAfterMove, canvasPath]); // - nodesRef + spaceSelectedRef carry live state
 
   // - expose a viewport snapshot for the AI companion (what the user actually sees:
   // - zoom, on-screen node labels, scroll position within the focused node)
@@ -3724,7 +3761,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         <MarksPanel
           marks={marksRef.current}
           nodes={nodes}
-          onJump={jumpToMark}
+          onJump={jumpToRegister}
           onClose={() => setMarksOpen(false)}
         />
       )}

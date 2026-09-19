@@ -125,6 +125,7 @@ Navigate the canvas without touching the mouse:
 | `Shift+C` | Center viewport on focused node (zoom unchanged) |
 | `Alt+Shift+C` | Center on focused node and zoom to readable scale |
 | `m` `<key>` / `` ` `` `<key>` | Set / jump to mark (`Ctrl+M` opens the marks panel) |
+| `` ` `` `` ` `` | Back to the previous node (press again to return) |
 | `Ctrl+N` | Add node via fuzzy vault search |
 | `Ctrl+F` or `/` | Search within canvas |
 | `Alt+P` | Pin hovered notebook cell output as a standalone node |
