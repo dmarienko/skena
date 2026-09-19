@@ -32,7 +32,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 
-import { patchVimLastLine, patchVimVisualCursor, patchVimExternalSelection } from './nodes/TextNode';
+import { patchVimLastLine, patchVimVisualCursor, patchVimExternalSelection, patchVimDeleteLastLine } from './nodes/TextNode';
 import { stripForHost, rememberWritten, classifyHostText } from './vimClipboard';
 import { useHostMarkdown } from '../hooks/useHostMarkdown';
 import { useHighlightedHtml } from '../lib/codeHighlight';
@@ -580,6 +580,7 @@ export function FloatingChat({
     patchVimLastLine();
     patchVimVisualCursor();
     patchVimExternalSelection();
+    patchVimDeleteLastLine();
     applyVimClipboard();
     editor.onDidFocusEditorText(() => {
       applyVimClipboard();

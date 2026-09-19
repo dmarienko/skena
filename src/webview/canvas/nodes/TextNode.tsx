@@ -388,6 +388,77 @@ export function patchVimExternalSelection(): void {
 
   P.__skenaExternalSelection = true;
 }
+
+/**
+ * Keep the newline that joined a deleted last line to the line above out of the register.
+ *
+ * `dd` on the last line has to delete the newline BEFORE that line — there is none after it —
+ * so monaco-vim widens the range back to the end of the previous line. The text it takes from
+ * that widened range starts with that newline, and pushText then appends another one because
+ * the delete is linewise. On "ab\ncd", `j dd` leaves the buffer as "ab" (right) but registers
+ * "\ncd\n" instead of "cd\n", so `p` pastes a blank line first.
+ *
+ * Fix: re-register the delete operator with the original body, dropping that leading newline
+ * from the register text only. The buffer edit uses the positions, not the text, so it is
+ * unchanged. The one-line-buffer case (anchor.ch = 0) was already right and stays as it was.
+ */
+export function patchVimDeleteLastLine(): void {
+  const CM = VimMode as any;
+  const Vim = CM?.Vim;
+  if (!Vim?.defineOperator || !Vim.getVimGlobalState_ || CM.__skenaDeleteLastLine) return;
+  const Pos = CM.Pos;
+
+  const lineLength  = (cm: any, line: number): number => cm.getLine(line).length;
+  const firstNonWS  = (text: string): number => {
+    if (!text) return 0;
+    const at = text.search(/\S/);
+    return at === -1 ? text.length : at;
+  };
+  const isBefore    = (a: any, b: any): boolean => a.line < b.line || (a.line === b.line && a.ch < b.ch);
+  const clipToContent = (cm: any, cur: any): any => {
+    const vim = cm.state.vim;
+    // - insert and visual mode may sit one past the last character
+    const includeLineBreak = vim.insertMode || vim.visualMode;
+    const line  = Math.min(Math.max(cm.firstLine(), cur.line), cm.lastLine());
+    const maxCh = lineLength(cm, line) - 1 + (includeLineBreak ? 1 : 0);
+    return new Pos(line, Math.min(Math.max(0, cur.ch), maxCh));
+  };
+
+  Vim.defineOperator('delete', function(cm: any, args: any, ranges: any[]) {
+    cm.pushUndoStop();
+    let finalHead: any, text: string;
+    const vim = cm.state.vim;
+    if (!vim.visualBlock) {
+      let anchor = ranges[0].anchor;
+      const head = ranges[0].head;
+      let widenedToPrevLine = false;
+      if (args.linewise && head.line !== cm.firstLine()
+        && anchor.line === cm.lastLine() && anchor.line === head.line - 1) {
+        if (anchor.line === cm.firstLine()) {
+          anchor.ch = 0;
+        } else {
+          anchor = new Pos(anchor.line - 1, lineLength(cm, anchor.line - 1));
+          widenedToPrevLine = true;
+        }
+      }
+      text = cm.getRange(anchor, head);
+      cm.replaceRange('', anchor, head);
+      if (widenedToPrevLine) text = text.slice(1);
+      finalHead = anchor;
+      if (args.linewise) finalHead = new Pos(anchor.line, firstNonWS(cm.getLine(anchor.line)));
+    } else {
+      text = cm.getSelection();
+      cm.replaceSelections(new Array(ranges.length).fill(''));
+      finalHead = isBefore(ranges[0].head, ranges[0].anchor) ? ranges[0].head : ranges[0].anchor;
+    }
+    Vim.getVimGlobalState_().registerController.pushText(
+      args.registerName, 'delete', text, args.linewise, vim.visualBlock,
+    );
+    return clipToContent(cm, finalHead);
+  });
+
+  CM.__skenaDeleteLastLine = true;
+}
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 /**
@@ -720,6 +791,7 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
     patchVimLastLine();
     patchVimVisualCursor();
     patchVimExternalSelection();
+    patchVimDeleteLastLine();
     patchVimJoin(editorInstance, vimStatusRef.current);
 
     // ─── vim mode tracking via MutationObserver ──────────────────────────────
