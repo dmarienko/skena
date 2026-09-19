@@ -5,14 +5,14 @@
  * the host sends back, matched by requestId.
  *
  * Keys while the dialog is open:
- *   ↑ / ↓        → move the highlight
- *   Tab          → next scope (only when the server has scopes)
- *   Enter        → add the highlighted hit to the canvas
- *   Esc          → close
- *   Ctrl+F       → back to the input
+ *   ↑ / ↓, Ctrl+J / Ctrl+K   → move the highlight
+ *   Tab                      → next scope (only when the server has scopes)
+ *   Enter                    → add the highlighted hit to the canvas
+ *   Esc                      → close
+ *   Ctrl+F                   → back to the input
  *
- * ↑ / ↓, Tab and Enter need the input focused. Esc and Ctrl+F work wherever the focus is: while
- * the dialog is open the canvas forwards those two and swallows the rest.
+ * ↑ / ↓, Tab and Enter need the input focused. Esc, Ctrl+F and Ctrl+J/K work wherever the focus
+ * is: while the dialog is open the canvas forwards those and swallows the rest.
  *
  * A server with `facets` also answers with its tag names; a `#tag` the server does not have is
  * left out of the search and named in the status line.
@@ -133,6 +133,10 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
       inputRef.current?.focus();
       inputRef.current?.select();
     };
+    // - Ctrl+J/K pressed while the focus sits on a row, the preview or the server list
+    const onMove = (e: Event) => {
+      dispatch({ kind: 'move', by: (e as CustomEvent<{ by: 1 | -1 }>).detail.by });
+    };
     // - the parent's fetch for Enter failed; it keeps the dialog open and sends the message here
     const onPickError = (e: Event) => {
       setPending('');
@@ -145,6 +149,7 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
     window.addEventListener('skena:knowledgeFacetsResult',  onFacets);
     window.addEventListener('skena:knowledgePickError',     onPickError);
     window.addEventListener('skena:knowledgeFocus',         onFocusInput);
+    window.addEventListener('skena:knowledgeMove',          onMove);
     return () => {
       window.removeEventListener('skena:knowledgeServersResult', onServers);
       window.removeEventListener('skena:knowledgeScopesResult',  onScopes);
@@ -153,6 +158,7 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
       window.removeEventListener('skena:knowledgeFacetsResult',  onFacets);
       window.removeEventListener('skena:knowledgePickError',     onPickError);
       window.removeEventListener('skena:knowledgeFocus',         onFocusInput);
+      window.removeEventListener('skena:knowledgeMove',          onMove);
     };
   }, []);
 
@@ -236,6 +242,8 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
     //   would otherwise both close it on one press
     if (e.key === 'ArrowDown') { e.preventDefault(); dispatch({ kind: 'move', by:  1 }); return; }
     if (e.key === 'ArrowUp')   { e.preventDefault(); dispatch({ kind: 'move', by: -1 }); return; }
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === 'j') { e.preventDefault(); dispatch({ kind: 'move', by:  1 }); return; }
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === 'k') { e.preventDefault(); dispatch({ kind: 'move', by: -1 }); return; }
     // - a server with scopes consumes Tab even before its scope list arrives, so Tab never walks
     // - the focus off to the × button; without scopes there is nothing to cycle and Tab does its
     // - usual job

@@ -2504,13 +2504,18 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         !!active?.closest('.monaco-editor');
 
       // - the knowledge dialog owns the keyboard while it is open: Esc closes it, Ctrl+F puts the
-      // - focus back in its input, and every other key stops here rather than reaching the canvas
+      // - focus back in its input, Ctrl+J/K move the highlight from wherever the focus sits in the
+      // - dialog, and every other key stops here rather than reaching the canvas
       // - (a click on a result row or the preview leaves no input focused, so inField is false)
       if (knowledgeOpenRef.current) {
         if (e.key === 'Escape') { e.preventDefault(); closeKnowledge(); return; }
         if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === 'f') {
           e.preventDefault();
           window.dispatchEvent(new CustomEvent('skena:knowledgeFocus'));
+        }
+        if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'j' || e.key === 'k')) {
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent('skena:knowledgeMove', { detail: { by: e.key === 'j' ? 1 : -1 } }));
         }
         return;
       }

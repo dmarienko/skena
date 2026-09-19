@@ -167,6 +167,7 @@ Configure at least one server in `settings.json` (shared) or `.vscode/settings.l
 | `#tag` | filter by tag, when the server supports tags |
 | `Tab` | cycle the vault, when the server has more than one |
 | `↑` / `↓` | move the highlight |
+| `Ctrl+J` / `Ctrl+K` | same as `↓` / `↑` |
 | `Enter` | add the highlighted result — right of the focused node, or centred if nothing is focused — and close |
 | `Esc` | close |
 | `Ctrl+F` | back to the input, from anywhere in the dialog |
