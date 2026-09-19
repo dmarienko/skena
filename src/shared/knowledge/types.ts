@@ -17,6 +17,8 @@ export interface KnowledgeWrite {
   text:   string;
   tags?:  string[];
   scope?: string;
+  // - a folder / parent inside the scope; the crtx vault requires it
+  dest?:  string;
   source: { canvas: string; nodeIds: string[]; kind: 'node' | 'output' | 'group' | 'ai' };
 }
 

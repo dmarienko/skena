@@ -263,6 +263,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             ]);
             const canvas = normalizeCanvasToOrigin(migrateSections(rawCanvas, Date.now()));
             document.updateFromDisk(canvas);
+            // - knowledge nodes already on the canvas refresh on open, so the providers exist
+            //   before the webview has the canvas — not only once the dialog asks for the list
+            this.knowledge.configure(await getKnowledgeServers());
             send({ type: 'canvasLoaded', canvas, canvasPath: document.uri.fsPath });
             // - a cross-canvas node reference opened this canvas — focus the referenced node now
             // - that the webview has parsed it (document.canvas isn't ready any earlier than this)
@@ -510,8 +513,13 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           break;
         }
         case 'knowledgeOpen': {
-          const url = this.knowledge.provider(msg.server).openUrl(msg.uri);
-          if (url) await vscode.env.openExternal(vscode.Uri.parse(url));
+          try {
+            const url = this.knowledge.provider(msg.server).openUrl(msg.uri);
+            if (url) await vscode.env.openExternal(vscode.Uri.parse(url));
+            else vscode.window.showWarningMessage('no web address for this item');
+          } catch (e) {
+            vscode.window.showWarningMessage((e as Error).message);
+          }
           break;
         }
         // - clipboard relay: webview sandbox blocks navigator.clipboard; route through host

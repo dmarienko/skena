@@ -10,12 +10,16 @@
  *   Enter        → add the highlighted hit to the canvas
  *   Esc          → close
  *   Ctrl+F       → back to the input
+ *
+ * A server with `facets` also answers with its tag names; a `#tag` the server does not have is
+ * left out of the search and named in the status line.
  */
 
 import React, { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import type { KnowledgeHit, KnowledgeText } from '../../shared/knowledge/types';
 import type {
-  MsgKnowledgeFetchResult, MsgKnowledgeScopesResult, MsgKnowledgeSearchResult, MsgKnowledgeServersResult,
+  MsgKnowledgeFacetsResult, MsgKnowledgeFetchResult, MsgKnowledgeScopesResult, MsgKnowledgeSearchResult,
+  MsgKnowledgeServersResult,
 } from '../../shared/types';
 import { MarkdownRenderer } from '../renderers/MarkdownRenderer';
 import { initialState, reduce, splitTags } from './knowledgeSearchState';
@@ -68,14 +72,22 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
   const [preview, setPreview] = useState<{ uri: string; text: KnowledgeText | null; error: string }>({ uri: '', text: null, error: '' });
   // - Enter on a hit whose text is not cached: the parent fetches it and the dialog stays open
   const [pending, setPending] = useState('');
+  // - the tag names each server has, per scope; a key that is absent means "not asked or not
+  // - answered", and then a #tag goes to the server unchecked
+  const [knownTags, setKnownTags] = useState<Map<string, Set<string>>>(new Map());
+  const [tagNote, setTagNote]     = useState('');
 
-  const cache     = useRef<Map<string, KnowledgeText>>(new Map());
-  const inputRef  = useRef<HTMLInputElement>(null);
-  const searchId  = useRef(0);
-  const fetchId   = useRef(0);
-  const scopesId  = useRef(0);
+  const cache      = useRef<Map<string, KnowledgeText>>(new Map());
+  const inputRef   = useRef<HTMLInputElement>(null);
+  const searchId   = useRef(0);
+  const fetchId    = useRef(0);
+  const scopesId   = useRef(0);
+  const facetsId   = useRef(0);
+  // - which (server, scope) the in-flight facets request belongs to
+  const pendingFacetsKey = useRef('');
 
-  const caps = state.servers.find(s => s.name === state.server)?.capabilities;
+  const caps      = state.servers.find(s => s.name === state.server)?.capabilities;
+  const facetsKey = `${state.server}\u0000${state.scope}`;
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -108,6 +120,14 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
       cache.current.set(text.uri, text);
       setPreview(p => (p.uri === text.uri ? { uri: p.uri, text, error: '' } : p));
     };
+    const onFacets = (e: Event) => {
+      const msg = (e as CustomEvent<MsgKnowledgeFacetsResult>).detail;
+      // - an error leaves the key uncached, so the tags stay unchecked rather than all rejected
+      if (msg.requestId !== facetsId.current || msg.error || !msg.tags) return;
+      const names = new Set(msg.tags.map(([t]) => t));
+      const key = pendingFacetsKey.current;
+      setKnownTags(m => new Map(m).set(key, names));
+    };
     // - the parent's fetch for Enter failed; it keeps the dialog open and sends the message here
     const onPickError = (e: Event) => {
       setPending('');
@@ -117,12 +137,14 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
     window.addEventListener('skena:knowledgeScopesResult',  onScopes);
     window.addEventListener('skena:knowledgeSearchResult',  onSearch);
     window.addEventListener('skena:knowledgeFetchResult',   onFetch);
+    window.addEventListener('skena:knowledgeFacetsResult',  onFacets);
     window.addEventListener('skena:knowledgePickError',     onPickError);
     return () => {
       window.removeEventListener('skena:knowledgeServersResult', onServers);
       window.removeEventListener('skena:knowledgeScopesResult',  onScopes);
       window.removeEventListener('skena:knowledgeSearchResult',  onSearch);
       window.removeEventListener('skena:knowledgeFetchResult',   onFetch);
+      window.removeEventListener('skena:knowledgeFacetsResult',  onFacets);
       window.removeEventListener('skena:knowledgePickError',     onPickError);
     };
   }, []);
@@ -135,11 +157,32 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
     vscodePostMessage({ type: 'knowledgeScopes', requestId: id, server: state.server });
   }, [state.server, caps?.scopes]);
 
+  // - the tag names belong to one server and one scope; ask once per pair, and only for a server
+  // - that has facets at all
+  useEffect(() => {
+    if (!state.server || !caps?.facets || knownTags.has(facetsKey)) return;
+    const id = nextRequestId();
+    facetsId.current = id;
+    pendingFacetsKey.current = facetsKey;
+    vscodePostMessage({
+      type: 'knowledgeFacets', requestId: id, server: state.server,
+      ...(state.scope !== 'all' ? { scope: state.scope } : {}),
+    });
+  }, [facetsKey, state.server, state.scope, caps?.facets, knownTags]);
+
   useEffect(() => {
     if (!state.server) return;
     const { text, tags } = splitTags(state.query);
     // - nothing typed yet: clear the list, and no status text to report about it
-    if (!text && tags.length === 0) { dispatch({ kind: 'error', message: '' }); return; }
+    if (!text && tags.length === 0) { setTagNote(''); dispatch({ kind: 'error', message: '' }); return; }
+    // - with the server's tag names in hand, a tag it does not have is left out; without them
+    // - (no facets, or the answer has not arrived) every tag goes as typed
+    const known   = knownTags.get(facetsKey);
+    const unknown = known ? tags.filter(t => !known.has(t)) : [];
+    const useTags = known ? tags.filter(t => known.has(t)) : tags;
+    setTagNote(unknown.length ? `no such tag: ${unknown.join(', ')}` : '');
+    // - the whole query was unknown tags: nothing left to search for
+    if (!text && useTags.length === 0) { dispatch({ kind: 'hits', hits: [] }); return; }
     const timer = setTimeout(() => {
       const id = nextRequestId();
       searchId.current = id;
@@ -147,14 +190,14 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
         type: 'knowledgeSearch', requestId: id, server: state.server,
         query: {
           text, top: 20,
-          ...(caps?.tags && tags.length ? { tags } : {}),
+          ...(caps?.tags && useTags.length ? { tags: useTags } : {}),
           ...(state.scope !== 'all' ? { scope: state.scope } : {}),
           ...(state.recency ? { recency: true } : {}),
         },
       });
     }, 300);
     return () => clearTimeout(timer);
-  }, [state.query, state.server, state.scope, state.recency, caps?.tags]);
+  }, [state.query, state.server, state.scope, state.recency, caps?.tags, facetsKey, knownTags]);
 
   // - the preview follows the highlight once it settles, so walking a list with ↓ fetches once
   const hit = state.hits[state.highlight] as KnowledgeHit | undefined;
@@ -196,7 +239,8 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
     }
   }, [state.scopes.length, state.hits, state.highlight, pick, onClose]);
 
-  const status = pending || preview.error || state.status;
+  // - the dropped-tag note sits ahead of the hit count, and both are shown
+  const status = pending || preview.error || [tagNote, state.status].filter(Boolean).join(' · ');
 
   return (
     <div

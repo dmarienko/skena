@@ -11,6 +11,11 @@ function unwrap<T>(x: unknown): T {
 
 const titleOf = (r: { file: string; heading: string }) => r.heading ? `${r.file} › ${r.heading}` : r.file;
 
+// - the server's own wording for a target that is not there, from crtx-server's mcp_server.py:
+//   "no section 'h' in f; available: [...]", "file not found: 'f'", "unknown vault: 'v'".
+//   "Unknown tool: read_section" is a server too old for the tool, or a wrong kind — not gone.
+const GONE = /no section .+ in |file not found|unknown vault/i;
+
 export function createCrtxProvider(config: KnowledgeServerConfig, transport: ToolTransport): KnowledgeProvider {
   return {
     name: config.name,
@@ -42,7 +47,7 @@ export function createCrtxProvider(config: KnowledgeServerConfig, transport: Too
           ? await transport.callTool('read_section', { vault: r.vault, file: r.file, heading: r.heading })
           : await transport.callTool('read', { vault: r.vault, file: r.file });
       } catch (e) {
-        if (/not found|no such|unknown/i.test((e as Error).message)) {
+        if (GONE.test((e as Error).message)) {
           throw new KnowledgeGoneError((e as Error).message);
         }
         throw e;
@@ -65,11 +70,13 @@ export function createCrtxProvider(config: KnowledgeServerConfig, transport: Too
     // - argument names read off the live tools/list on 2026-09-19 (crtx 1.28.1):
     //   create_note(vault, title, content, tags?, dest?, sections?, links?, session_id?, agent?) —
     //   the crtx vault requires non-empty slug tags from its controlled vocabulary;
-    //   append_note(vault, file, content, session_id?, agent?)
+    //   append_note(vault, file, content, session_id?, agent?).
+    //   create_note replies {ok, file, vault}.
     async write(item: KnowledgeWrite) {
       const res = unwrap<{ uri?: string; file?: string; path?: string; vault?: string }>(await transport.callTool('create_note', {
         vault: item.scope ?? 'crtx', title: item.title, content: item.text, agent: 'skena',
         ...(item.tags?.length ? { tags: item.tags } : {}),
+        ...(item.dest ? { dest: item.dest } : {}),
       }));
       const file = res?.file ?? res?.path ?? '';
       return { uri: res?.uri ?? buildCrtxUri({ vault: res?.vault ?? item.scope ?? 'crtx', file, heading: '' }) };

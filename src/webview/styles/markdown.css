@@ -193,10 +193,11 @@
 :root[data-md-theme="factors"] .skena-markdown tbody tr:hover td { background: var(--f-hover); }
 :root[data-md-theme="factors"] .skena-markdown hr { border: none; border-top: 1px solid var(--f-grid); margin: 10px 0; }
 /* - factors theme: dark node card bg (overrides .skena-node's !important vscode bg).
-   - Applies to text + file nodes (the markdown-bearing ones). .skena-markdown is
+   - Applies to text, file and knowledge nodes (the markdown-bearing ones). .skena-markdown is
    - transparent so this shows through as the content background. */
 :root[data-md-theme="factors"] .skena-node--text,
-:root[data-md-theme="factors"] .skena-node--file {
+:root[data-md-theme="factors"] .skena-node--file,
+:root[data-md-theme="factors"] .skena-node--knowledge {
   background: #0c1117 !important;
 }
 

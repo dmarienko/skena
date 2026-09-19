@@ -1,5 +1,5 @@
 import type { KnowledgeCapabilities, KnowledgeProvider, KnowledgeServerConfig } from '../../shared/knowledge/types';
-import { createProvider, KNOWN_KINDS } from './registry';
+import { createProvider } from './registry';
 import { McpHttpClient } from './mcpHttpClient';
 
 const NO_CAPABILITIES: KnowledgeCapabilities = { scopes: false, tags: false, recency: false, facets: false, write: false };
@@ -11,11 +11,13 @@ const NO_CAPABILITIES: KnowledgeCapabilities = { scopes: false, tags: false, rec
 export class KnowledgeService {
   private providers = new Map<string, KnowledgeProvider>();
   private errors = new Map<string, string>();
+  private configured: string[] = [];
 
   /** - re-read on every webview ready, so a token or url edit takes effect on reload */
   configure(servers: KnowledgeServerConfig[]): void {
     this.providers.clear();
     this.errors.clear();
+    this.configured = servers.map(s => s.name);
     for (const s of servers) {
       try {
         this.providers.set(s.name, createProvider(s, new McpHttpClient({ url: s.url, token: s.token })));
@@ -26,16 +28,19 @@ export class KnowledgeService {
     }
   }
 
+  /** - config order, so the dialog's selector reads as the settings file does */
   list(): { name: string; kind: string; capabilities: KnowledgeCapabilities; error?: string }[] {
-    return [
-      ...[...this.providers.values()].map(p => ({ name: p.name, kind: p.kind, capabilities: p.capabilities })),
-      ...[...this.errors].map(([name, error]) => ({ name, kind: 'unknown', capabilities: NO_CAPABILITIES, error })),
-    ];
+    return this.configured.map(name => {
+      const p = this.providers.get(name);
+      return p
+        ? { name: p.name, kind: p.kind, capabilities: p.capabilities }
+        : { name, kind: 'unknown', capabilities: NO_CAPABILITIES, error: this.errors.get(name) ?? 'not configured' };
+    });
   }
 
   provider(name: string): KnowledgeProvider {
     const p = this.providers.get(name);
-    if (!p) throw new Error(`no knowledge server "${name}" (known kinds: ${KNOWN_KINDS.join(', ')})`);
+    if (!p) throw new Error(`no knowledge server "${name}" (configured: ${this.configured.join(', ') || 'none'})`);
     return p;
   }
 }

@@ -15,6 +15,7 @@
  *   A  — AI chat / agent nodes
  *   R  — portal references to other canvases
  *   D  — node references (diamond) to a node in another canvas
+ *   W  — knowledge results fetched from a knowledge server
  *   G  — group containers
  *   F  — other file types
  *
@@ -36,6 +37,7 @@ export function nodeLabelPrefix(node: CanvasNode): string {
     case 'chat':   return 'A';
     case 'portal': return 'R';
     case 'noderef': return 'D';
+    case 'knowledge': return 'W';
     case 'file': {
       const f = (node as FileNode).file.toLowerCase();
       if (f.endsWith('.ipynb'))                          return 'J';

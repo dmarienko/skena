@@ -65,6 +65,7 @@ interface KnowledgeWrite {
   text:    string;                                          // - markdown; images as data URIs or attachments later
   tags?:   string[];
   scope?:  string;                                          // - vault / database; adapter decides the default
+  dest?:   string;                                          // - a folder / parent inside the scope; the crtx vault requires it
   source:  { canvas: string; nodeIds: string[]; kind: 'node' | 'output' | 'group' | 'ai' };
 }
 ```
@@ -166,7 +167,8 @@ transport concern (a token obtained once, then a bearer header), not an adapter 
 
 Rendering (`src/webview/canvas/nodes/KnowledgeNode.tsx`):
 - header: `<server> › <title> · 2h ago`; a dot before the title while `changed`; buttons: refresh,
-  open (shown only when `openUrl` gave a URL — the host resolves it once and stores nothing).
+  open (always shown; the host resolves the URL on the click, and a source with no web address
+  shows a message instead).
 - body: the cached `text` through the existing `MarkdownRenderer`, read-only.
 - border colour: a new entry in `DEFAULT_NODE_BORDER_BY_TYPE`; `nodeBorderColor('knowledge', …)`.
 - focus clears `changed`.

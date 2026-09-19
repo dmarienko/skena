@@ -763,6 +763,9 @@ async function canvasUpdateNode(args: Record<string, unknown>): Promise<string> 
   const updated = { ...n } as CanvasNode & { tags?: string[] };
 
   if (args.content !== undefined) {
+    // - a knowledge node's text is a cached copy of the server's; editing it here would make the
+    //   node disagree with its source and a refresh would silently undo the edit
+    if (n.type === 'knowledge') return 'content is not settable on a knowledge node — use canvas_add_knowledge';
     if (n.type === 'text') (updated as typeof n & { text: string }).text = args.content as string;
     if (n.type === 'cell') (updated as typeof n & { content: string }).content = args.content as string;
     if (n.type === 'code') (updated as typeof n & { code: string }).code = args.content as string;

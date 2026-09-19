@@ -19,6 +19,7 @@ import {
   ChatNode,
   PortalNode,
   NoderefNode,
+  KnowledgeNode,
   LinkNode,
   ViewportSnapshot,
 } from '../shared/types';
@@ -165,6 +166,7 @@ export function nodeTitle(node: CanvasNode): string {
     case 'chat':   return (node as ChatNode).title;
     case 'portal':  return (node as PortalNode).canvas;
     case 'noderef': return `${(node as NoderefNode).canvas.split('/').pop()} › ${(node as NoderefNode).label}`;
+    case 'knowledge': return (node as KnowledgeNode).title.slice(0, 80);
     default:        return (node as CanvasNodeBase).id.slice(0, 8);
   }
 }
@@ -183,6 +185,9 @@ export async function nodeContent(
       break;
     case 'cell':
       raw = (node as CellNode).content;
+      break;
+    case 'knowledge':
+      raw = (node as KnowledgeNode).text;
       break;
     case 'file': {
       const uri = (node as FileNode).file;

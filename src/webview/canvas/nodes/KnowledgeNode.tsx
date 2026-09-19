@@ -4,7 +4,7 @@
  * server, the source and how old the copy is. Refresh and open go back to the host.
  */
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import { KnowledgeNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
@@ -31,6 +31,16 @@ function ago(iso: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+// - ago() reads the clock at render time, and nothing else re-renders the header; tick once a
+// - minute so "2h ago" does not stay at the value it had when the canvas opened
+function useMinuteTick(): void {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick(n => n + 1), 60_000);
+    return () => clearInterval(t);
+  }, []);
+}
+
 const BUTTON_STYLE: React.CSSProperties = {
   cursor: 'pointer', background: 'transparent', border: 'none', color: 'inherit',
   fontSize: 12, padding: 0, lineHeight: 1, opacity: 0.7,
@@ -38,6 +48,7 @@ const BUTTON_STYLE: React.CSSProperties = {
 
 export function KnowledgeNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as KnowledgeNode & { accentColor?: string };
+  useMinuteTick();
   const selectedStyle = useSelectedStyle(selected);
   const bw = useZoomInvariantBorderWidth(1.5);
   const borderColor = nodeBorderColor('knowledge', node.accentColor);
