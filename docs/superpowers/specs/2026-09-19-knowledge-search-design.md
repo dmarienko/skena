@@ -5,10 +5,12 @@ of the text. The dialog and the node depend on one adapter interface; a server k
 file. First adapter: crtx (`kb` MCP). Second, sketched here to check the shape: Notion.
 
 Decisions taken with the user on 2026-09-19: crtx first; the node keeps a cached copy of the text
-(works on any machine, any server); knowledge search has its own key, `Ctrl+F` stays
-find-in-canvas; `Enter` adds one result and closes; refresh on open for stale nodes plus a manual
+(works on any machine, any server); `Ctrl+F` opens knowledge search, `/` stays find-in-canvas (`Ctrl+F` is taken
+from find-in-canvas, which keeps `/`); `Enter` adds one result and closes; refresh on open for stale nodes plus a manual
 refresh, with a mark when the text changed; an adapter layer so other servers attach without
-touching the dialog or the node.
+touching the dialog or the node; refresh never blocks the canvas; the adapter interface already
+carries a write direction (push a node, an output, a group or an AI result into the server) for a
+later round.
 
 ## 1. Layers
 
@@ -47,20 +49,37 @@ interface KnowledgeText { uri: string; title: string; text: string; fetchedAt: s
 interface KnowledgeProvider {
   readonly name: string;                                   // - from config
   readonly kind: string;                                   // - adapter id: "crtx", "notion", …
-  readonly capabilities: { scopes: boolean; tags: boolean; recency: boolean; facets: boolean };
+  readonly capabilities: { scopes: boolean; tags: boolean; recency: boolean; facets: boolean; write: boolean };
   search(q: KnowledgeQuery): Promise<KnowledgeHit[]>;
   fetch(uri: string): Promise<KnowledgeText>;              // - the text a node caches; used by add and refresh
   scopes(): Promise<string[]>;                             // - vaults / workspaces / databases; [] when unsupported
   facets(scope?: string): Promise<{ tags: [string, number][] }>;  // - {tags: []} when unsupported
   openUrl(uri: string): string | undefined;                // - a browser URL for the header's open button
+  // - write direction (designed now, no UI in v1): push canvas content into the server
+  write(item: KnowledgeWrite): Promise<{ uri: string }>;    // - a new note / page; rejects when !capabilities.write
+  append(uri: string, item: KnowledgeWrite): Promise<void>; // - add to an existing one
+}
+
+interface KnowledgeWrite {
+  title:   string;
+  text:    string;                                          // - markdown; images as data URIs or attachments later
+  tags?:   string[];
+  scope?:  string;                                          // - vault / database; adapter decides the default
+  source:  { canvas: string; nodeIds: string[]; kind: 'node' | 'output' | 'group' | 'ai' };
 }
 ```
+
+The write direction covers the later "push to knowledge" actions: a node, a code output, a group of
+nodes or an AI reply becomes a note (`write`) or is added to one (`append`). The crtx server already
+has `create_note` / `append_note`; Notion has page creation and block append. v1 ships the
+interface and the crtx mapping behind `capabilities.write`; no key or menu item calls it yet.
 
 Rules:
 - Every method returns; errors come back as a rejected promise with a plain message, and
   `KnowledgeService` turns them into `{ error }` for the webview. No adapter throws into the UI.
 - `capabilities` decides which dialog controls appear: no `scopes` → no scope selector; no `tags` →
-  `#tag` tokens stay in the query text; no `facets` → tags are not validated.
+  `#tag` tokens stay in the query text; no `facets` → tags are not validated; no `write` → the
+  future push actions are hidden for that server.
 - `uri` is stable across restarts and machines; it is the node's identity for refresh.
 
 Adding a server kind = one file `src/extension/knowledge/adapters/<kind>.ts` exporting
@@ -94,9 +113,12 @@ allow-list. Tools and the mapping:
 | `scopes` | `list_vaults` | names |
 | `facets` | `facets(vault?)` | `tags` |
 | `openUrl` | — | `http://<host>:8787/#<vault>/<url-encoded file>` |
+| `write` | `create_note(vault, title, text, tags)` | returns the new note's uri |
+| `append` | `append_note(vault, file, text)` | — |
 
 `uri` = the server's own `crtx://<vault>/<file>#<heading>`; parse/build in
-`src/shared/knowledge/crtxUri.ts`. Capabilities: all four true.
+`src/shared/knowledge/crtxUri.ts`. Capabilities: all five true (`write` through `create_note` /
+`append_note`; exact argument names to be read off the server's schema when the mapping is built).
 
 ### 4.2 Notion (`kind: "notion"`) — later; on paper now
 
@@ -107,6 +129,7 @@ allow-list. Tools and the mapping:
 | `scopes` | — | `[]` (capability off) |
 | `facets` | — | off |
 | `openUrl` | — | `https://notion.so/<pageId>` |
+| `write` / `append` | page create / block append | markdown → blocks |
 
 Two things the shape has to allow, and does: a hit without tags or scope, and a `fetch` that
 assembles text from many blocks. Authentication for the official server is OAuth — that is a
@@ -152,9 +175,9 @@ Rendering (`src/webview/canvas/nodes/KnowledgeNode.tsx`):
 
 ## 7. The dialog
 
-`src/webview/canvas/KnowledgeSearch.tsx`, opened by `Ctrl+Shift+F` (handled in the canvas keydown
-like `Ctrl+Shift+H/L`; verified against VS Code's find-in-files in the first build — fallback
-`Ctrl+;`). `Esc` closes. Top-centre of the pane like `CanvasSearch`, wider, preview on the right.
+`src/webview/canvas/KnowledgeSearch.tsx`, opened by `Ctrl+F` (VS Code's find-in-files takes
+`Ctrl+Shift+F`). `CanvasSearch` (find-in-canvas) keeps `/` and loses `Ctrl+F`; while the knowledge
+dialog is open `Ctrl+F` re-focuses its input. `Esc` closes. Top-centre of the pane like `CanvasSearch`, wider, preview on the right.
 
 | Part | Behaviour |
 |---|---|
@@ -173,9 +196,17 @@ text (the text-node rule). One history entry.
 ## 8. Refresh
 
 - On canvas open, after the first paint: every knowledge node whose `fetchedAt` is older than
-  `refreshAfterHours` is refreshed through its server's provider, one at a time, in file order. A
-  server that does not answer stops the run for that server; the node header shows "not reachable"
-  on hover, nothing else.
+  `refreshAfterHours` is refreshed through its server's provider. The run lives in the extension
+  host, not in the webview: the host's network calls are asynchronous and never block the canvas;
+  at most 3 calls in flight per server; results reach the webview as they arrive, batched every
+  250 ms into one `knowledgeRefreshed {nodes: [{id, text?, fetchedAt, changed?, error?}]}` message,
+  so a canvas with hundreds of references repaints a few nodes at a time and stays responsive.
+  Closing the canvas cancels the run. A server that does not answer stops the run for that server;
+  the node header shows "not reachable" on hover, nothing else.
+- CPU-bound adapter work (a Notion adapter turning many blocks into markdown, a large file being
+  split into sections) runs in a `worker_threads` pool in the host, never in the webview and never
+  on the host's main loop for more than one item at a time. The crtx adapter needs none of this —
+  its results are already markdown.
 - Manual: the header button; the MCP tool `canvas_refresh_knowledge` (§9).
 - Different text → `text`, `fetchedAt`, `changed: true`; same text → `fetchedAt` only; the adapter
   reports "gone" (a heading or page no longer exists) → old text kept, `error` shown in the header.
@@ -192,7 +223,10 @@ on the next open). An agent that wants fresh text calls the knowledge server its
 - `test/knowledge-jsonrpc.mjs`: request framing, JSON and SSE parsing, session id round-trip,
   timeout → error.
 - `test/knowledge-crtx.mjs`: the crtx mapping over recorded tool results (search hit → `KnowledgeHit`,
-  `read_section` → `KnowledgeText`, uri parse/build, `openUrl` encoding), with a fake transport.
+  `read_section` → `KnowledgeText`, uri parse/build, `openUrl` encoding, `write`/`append` argument
+  shapes), with a fake transport.
+- `test/knowledge-refresh.mjs` also covers the scheduler as a pure function: at most 3 in flight per
+  server, batching window, cancel drops pending work.
 - `test/knowledge-refresh.mjs`: the stale filter and the changed / same / gone outcomes as pure
   functions over a node and a result.
 - Dialog keyboard behaviour as a pure reducer (`highlight`, `Tab`, `Enter`, `Esc`) if the component
@@ -206,5 +240,6 @@ on the next open). An agent that wants fresh text calls the knowledge server its
 - The Notion adapter itself (§4.2 is the check that the interface fits it), OAuth.
 - `related` / `neighbourhood` views on the canvas (a "what links here" action on a knowledge node
   is the natural next step; it would be a provider capability).
-- Writing back (`create_note`, `append_note`).
+- The push actions (a key or menu item that calls `write` / `append` for a node, an output, a
+  group or an AI reply) — the interface and the crtx mapping ship, the UI does not.
 - Section anchors inside a file for the local `vault://` file node.
