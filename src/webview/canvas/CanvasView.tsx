@@ -30,7 +30,8 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
-import { CanvasData, CanvasNode, CanvasEdge, CanvasViewport, KernelNode, KernelRecord, MsgAddNodeResult, MsgKernelAdded, MsgKernelRemoved, MsgRunOutput, MsgSubCanvasCreated, MsgVerifyPathResult, NodeSide, CanvasMark, ViewportSnapshot } from '../../shared/types';
+import { CanvasData, CanvasNode, CanvasEdge, CanvasViewport, KernelNode, KernelRecord, KnowledgeNode, MsgAddNodeResult, MsgKernelAdded, MsgKernelRemoved, MsgKnowledgeFetchResult, MsgRunOutput, MsgSubCanvasCreated, MsgVerifyPathResult, NodeSide, CanvasMark, ViewportSnapshot } from '../../shared/types';
+import type { KnowledgeHit, KnowledgeText } from '../../shared/knowledge/types';
 import { classifyClipboard } from './paste-classify';
 import { ContextMenu } from './ContextMenu';
 import { CANVAS_COLORS, NODE_SIZE, NEW_NODE, OUTPUT_MAX_W, OUTPUT_MAX_H, READABLE_ZOOM } from '../../shared/constants';
@@ -62,6 +63,7 @@ import { applyPatchesToCanvas, codeCellHeight, columnsOfDeleted as columnsOfDele
 import { useLaneFit, flowGeom } from '../rail/useLaneFit';
 import { connectionLabels, findNearestNode, revealPan, type ConnectionLabel, type EdgeSideContext, type NavDir, type NavNode, type Rect } from './spatialNav';
 import { CanvasSearch } from './CanvasSearch';
+import { KnowledgeSearch } from './KnowledgeSearch';
 import { MarksPanel, type SectionEntry } from './MarksPanel';
 import { LanesContext } from './LanesContext';
 import { KernelsContext } from './KernelsContext';
@@ -502,6 +504,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const [helperLines,  setHelperLines]  = useState<HelperLinesState>({});
   const [contextMenu,  setContextMenu]  = useState<{ screenX: number; screenY: number } | null>(null);
   const [searchOpen,   setSearchOpen]   = useState(false);
+  const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   // - flow coords at right-click time; stored in a ref so add-handlers don't go stale
   const contextMenuFlowPos = useRef<{ flowX: number; flowY: number }>({ flowX: 0, flowY: 0 });
   // - space-pinned node ids: Space toggles a node into/out of this set
@@ -541,7 +544,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const [marksOpen, setMarksOpen] = useState(false);
   // - mirrored so the stable document-level paste listener sees panel state without re-subscribing
   const panelOpenRef = useRef(false);
-  useEffect(() => { panelOpenRef.current = searchOpen || marksOpen; });
+  useEffect(() => { panelOpenRef.current = searchOpen || marksOpen || knowledgeOpen; });
 
   // - restore marks from workspaceState (sent by host on canvas open)
   useEffect(() => {
@@ -2017,6 +2020,57 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     if (topLeft) requestAnimationFrame(() => revealNode(topLeft.id));
   }, [setNodes, setEdges, scheduleSave, pushHistory, revealNode, runEngine]);
 
+  // - a knowledge hit lands where a paste would: the slot right of the focused node, or the pane
+  //   centre with nothing focused. The height stays 300 — a knowledge node is not measured after
+  //   render, only a code cell is.
+  const placeKnowledgeNode = useCallback((hit: KnowledgeHit, text: KnowledgeText) => {
+    const { w, h } = NODE_SIZE.knowledge;
+    const anchor = nodesRef.current.find(n => n.selected && !isBandType(n.type));
+    let target: { x: number; y: number };
+    if (anchor) {
+      const anchorW = Number(anchor.style?.width ?? 200);
+      const slot = directionSlot('L', { x: anchor.position.x, y: anchor.position.y, w: anchorW }, w, h);
+      target = slot ?? findFreePosition(nodesRef.current, anchor.position.x + anchorW + GRID, anchor.position.y, w, h, 1, 0);
+    } else {
+      if (!wrapperRef.current) return;   // - before the pane mounts there is nowhere to centre on
+      const rect = wrapperRef.current.getBoundingClientRect();
+      const { x: vx, y: vy, zoom } = rfRef.current.getViewport();
+      const cx = (rect.width  / 2 - vx) / zoom - w / 2;
+      const cy = (rect.height / 2 - vy) / zoom - h / 2;
+      target = clampToOrigin(snapGrid(cx), snapGrid(cy));
+    }
+    const cn: KnowledgeNode = {
+      id: `knowledge-${Date.now()}`, type: 'knowledge',
+      x: target.x, y: target.y, width: w, height: h,
+      server: hit.server, uri: hit.uri, title: text.title || hit.title,
+      text: text.text, fetchedAt: text.fetchedAt,
+    };
+    window.dispatchEvent(new CustomEvent('skena:addNodeResult', {
+      detail: { type: 'addNodeResult', node: cn, anchorId: anchor?.id } satisfies MsgAddNodeResult,
+    }));
+  }, []); // - no deps: reads refs, not state
+
+  // - Enter in the knowledge dialog. Without the text (the preview had not fetched it yet) the node
+  //   would cache nothing, so fetch first and keep the dialog open until the text is in hand.
+  const handleKnowledgePick = useCallback((hit: KnowledgeHit, text: KnowledgeText | null) => {
+    if (text) { placeKnowledgeNode(hit, text); setKnowledgeOpen(false); return; }
+    // - a timestamp id never equals the dialog's own counter, so it ignores this answer
+    const requestId = Date.now();
+    const onResult = (e: Event) => {
+      const msg = (e as CustomEvent<MsgKnowledgeFetchResult>).detail;
+      if (msg.requestId !== requestId) return;
+      window.removeEventListener('skena:knowledgeFetchResult', onResult);
+      if (msg.error || !msg.text) {
+        window.dispatchEvent(new CustomEvent('skena:knowledgePickError', { detail: { message: msg.error ?? 'no text' } }));
+        return;
+      }
+      placeKnowledgeNode(hit, msg.text);
+      setKnowledgeOpen(false);
+    };
+    window.addEventListener('skena:knowledgeFetchResult', onResult);
+    vscodePostMessage({ type: 'knowledgeFetch', requestId, server: hit.server, uri: hit.uri });
+  }, [placeKnowledgeNode]);
+
   const handleMoveToSubCanvas = useCallback(() => {
     const selectedNodes = nodesRef.current.filter(n => n.selected && !isBandType(n.type));
     if (selectedNodes.length < 2) return;
@@ -2319,14 +2373,16 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         active instanceof HTMLTextAreaElement ||
         !!active?.closest('.monaco-editor');
 
-      // - Ctrl+F or /: open canvas search bar. But NOT while editing — an editor needs its
-      // - own `/` (vim search) and Ctrl+F (find), else `/` blurs the cell and exits edit mode.
-      if (
-        !inField && (
-          ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === 'f') ||
-          (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === '/')
-        )
-      ) {
+      // - Ctrl+F: search the knowledge servers. NOT while editing — an editor needs its own find.
+      if (!inField && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === 'f') {
+        e.preventDefault();
+        setKnowledgeOpen(true);
+        return;
+      }
+
+      // - /: open the find-in-canvas bar. But NOT while editing — an editor needs its own `/`
+      // - (vim search), else `/` blurs the cell and exits edit mode.
+      if (!inField && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === '/') {
         e.preventDefault();
         setSearchOpen(true);
         return;
@@ -3799,6 +3855,12 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           nodes={canvasRef.current.nodes}
           onFocus={focusNodeById}
           onClose={() => setSearchOpen(false)}
+        />
+      )}
+      {knowledgeOpen && (
+        <KnowledgeSearch
+          onPick={handleKnowledgePick}
+          onClose={() => setKnowledgeOpen(false)}
         />
       )}
       {marksOpen && (

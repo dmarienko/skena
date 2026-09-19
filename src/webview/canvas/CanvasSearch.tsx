@@ -1,5 +1,5 @@
 /**
- * CanvasSearch — find-in-canvas overlay (Ctrl+F / /).
+ * CanvasSearch — find-in-canvas overlay (/).
  *
  * Floats at the top-centre of the canvas. Matches nodes by:
  *   • label      N4, J2, r1 … (case-insensitive, prefix OK)
@@ -15,7 +15,6 @@
  *   Enter          → next result
  *   Shift+Enter    → previous result
  *   ↑ / ↓         → previous / next result
- *   Ctrl+F         → re-open / next result (prevents browser find)
  *   Escape         → close
  *
  * The parent calls focusNode(id) whenever the active result changes;
@@ -105,8 +104,6 @@ export function CanvasSearch({ nodes, onFocus, onClose }: Props): JSX.Element {
     }
     if (e.key === 'ArrowDown') { e.preventDefault(); goNext(); return; }
     if (e.key === 'ArrowUp')   { e.preventDefault(); goPrev(); return; }
-    // - absorb Ctrl+F so it doesn't close and re-open the bar
-    if ((e.ctrlKey || e.metaKey) && e.key === 'f') { e.preventDefault(); goNext(); }
   }, [goPrev, goNext, onClose]);
 
   // ─── placeholder ──────────────────────────────────────────────────────────

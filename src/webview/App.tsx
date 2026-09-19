@@ -205,6 +205,16 @@ export function App(): JSX.Element {
         case 'clipboardContent':
           window.dispatchEvent(new CustomEvent('skena:clipboardContent', { detail: msg.text }));
           break;
+        // - the knowledge dialog and the knowledge nodes mount below this listener, so every answer
+        //   from the host's KnowledgeService is re-sent under its own skena: event
+        case 'knowledgeServersResult':
+        case 'knowledgeSearchResult':
+        case 'knowledgeScopesResult':
+        case 'knowledgeFacetsResult':
+        case 'knowledgeRefreshed':
+        case 'knowledgeFetchResult':
+          window.dispatchEvent(new CustomEvent(`skena:${msg.type}`, { detail: msg }));
+          break;
         case 'chatChunk':
         case 'agentNodeCreated':
           window.dispatchEvent(new CustomEvent('skena:chat', { detail: msg }));
