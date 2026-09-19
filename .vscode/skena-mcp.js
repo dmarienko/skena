@@ -3836,6 +3836,8 @@ function nodeLabelPrefix(node) {
       return "R";
     case "noderef":
       return "D";
+    case "knowledge":
+      return "W";
     case "file": {
       const f = node.file.toLowerCase();
       if (f.endsWith(".ipynb"))
@@ -3896,7 +3898,8 @@ var NODE_SIZE = {
   link: { w: 300, h: 100 },
   portal: { w: 200, h: 200 },
   kernel: { w: 140, h: 160 },
-  file: { w: 700, h: 700 }
+  file: { w: 700, h: 700 },
+  knowledge: { w: 700, h: 300 }
 };
 var SECTION_MIN_H = 2 * NODE_SIZE.code.h + 2 * GRID;
 var SECTION_FOLDED_H = GRID;
@@ -5231,6 +5234,8 @@ function nodeSnippet(node) {
       return `${node.agent}: ${node.title}`;
     case "portal":
       return `\u2192 ${node.canvas}`;
+    case "knowledge":
+      return truncate(node.title, 80);
     default:
       return "(unknown)";
   }
@@ -5504,6 +5509,15 @@ Title: ${n.title}`;
     case "portal":
       content = `Sub-canvas: ${n.canvas}`;
       break;
+    case "knowledge":
+      content = `Format: knowledge
+Server: ${n.server}
+Source: ${n.uri}
+Fetched: ${n.fetchedAt}${n.error ? `
+Last refresh failed: ${n.error}` : ""}
+
+${n.text}`;
+      break;
   }
   return [
     ...meta,
@@ -5533,6 +5547,7 @@ async function canvasSearch(args) {
       n.type === "code" ? n.code ?? "" : "",
       n.type === "chat" ? n.title : "",
       n.type === "portal" ? n.canvas : "",
+      n.type === "knowledge" ? `${n.title} ${n.text}` : "",
       d.edges.filter((e) => e.fromNode === n.id || e.toNode === n.id).map((e) => e.label ?? "").join(" ")
     ].join(" ").toLowerCase();
     if (haystack.includes(query))
@@ -5688,6 +5703,8 @@ async function canvasUpdateNode(args) {
     const idx = d.nodes.indexOf(n);
     const updated = { ...n };
     if (args.content !== void 0) {
+      if (n.type === "knowledge")
+        return "content is not settable on a knowledge node \u2014 use canvas_add_knowledge";
       if (n.type === "text")
         updated.text = args.content;
       if (n.type === "cell")
@@ -5737,6 +5754,81 @@ async function canvasUpdateNode(args) {
     const moved = geom ? movedLabels(d, before, [updated.id]) : [];
     await writeCanvas(p, d);
     return `Updated node ${updated.nodeLabel ?? updated.id}` + (clamped.length ? ` \u2014 output cell clamped: ${clamped.join(", ")}` : "") + (moved.length ? ` \u2014 moved ${moved.join(", ")}` : "") + (report.capped ? ` \u2014 ${CAPPED_NOTE}` : "");
+  });
+}
+async function canvasAddKnowledge(args) {
+  const p = resolvePath(args.canvasPath);
+  return withFileLock(p, async () => {
+    const d = await readCanvasOrEmpty(p);
+    const anchorRef = args.after;
+    const anchor = anchorRef !== void 0 ? findNode(d, anchorRef) : void 0;
+    if (anchorRef !== void 0 && !anchor)
+      return `Node not found: ${anchorRef}`;
+    const w = NODE_SIZE.knowledge.w;
+    const h = NODE_SIZE.knowledge.h;
+    const server = args.server ?? "";
+    const uri = args.uri ?? "";
+    let placed = null;
+    if (anchor) {
+      const around = sectionEngineNodes(d.nodes, d.metadata?.sections ?? [], anchor.id) ?? toEngineNodes(d.nodes);
+      placed = insertAfter(around, anchor.id);
+    }
+    const pos = placed ?? (args.x !== void 0 && args.y !== void 0 ? { x: args.x, y: args.y } : autoPlace(d.nodes, w, h));
+    const at = clampToOrigin(snapGrid(pos.x), snapGrid(pos.y));
+    const node = {
+      id: uid(),
+      type: "knowledge",
+      x: at.x,
+      y: at.y,
+      width: w,
+      height: h,
+      server,
+      uri,
+      title: args.title ?? "",
+      text: args.text ?? "",
+      fetchedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      createdBy: "ai"
+    };
+    const labeled = assignLabel(node, d.nodes);
+    const before = geomOf(d);
+    d.nodes.push(labeled);
+    if (anchor && d.metadata?.sections)
+      d.metadata = { ...d.metadata, sections: pinOutputToLane(d.metadata.sections, anchor.id, labeled.id) };
+    const report = {};
+    const own = applyEngine(d, [labeled.id], [], report, anchor ? { id: anchor.id, joining: [labeled.id] } : void 0);
+    Object.assign(d, applyLaneFit(d, Date.now(), own));
+    const moved = movedLabels(d, before, [labeled.id]);
+    await writeCanvas(p, d);
+    const final = d.nodes.find((n) => n.id === labeled.id) ?? labeled;
+    const lines = [
+      `Created node ${labeled.nodeLabel} (id: ${labeled.id})`,
+      "Type: knowledge",
+      `Source: ${server} ${uri}`,
+      `Position: (${final.x}, ${final.y})  Size: ${final.width}\xD7${final.height}`
+    ];
+    if (anchor && (args.x !== void 0 || args.y !== void 0))
+      lines.push(`x/y ignored: placed after ${anchor.nodeLabel ?? anchor.id}`);
+    if (moved.length)
+      lines.push(`Moved: ${moved.join(", ")}`);
+    if (report.capped)
+      lines.push(CAPPED_NOTE);
+    lines.push(`Canvas: ${p}`);
+    return lines.join("\n");
+  });
+}
+var KNOWLEDGE_EPOCH = "1970-01-01T00:00:00.000Z";
+async function canvasRefreshKnowledge(args) {
+  const p = resolvePath(args.canvasPath);
+  return withFileLock(p, async () => {
+    const d = await readCanvas(p);
+    const n = findNode(d, args.ref);
+    if (!n)
+      return `Node not found: ${args.ref}`;
+    if (n.type !== "knowledge")
+      return `Node ${n.nodeLabel ?? n.id} is not a knowledge node`;
+    n.fetchedAt = KNOWLEDGE_EPOCH;
+    await writeCanvas(p, d);
+    return `Marked ${n.nodeLabel ?? n.id} for refresh on the next open`;
   });
 }
 async function canvasRemoveNode(args) {
@@ -6495,6 +6587,36 @@ var TOOLS = [
     }
   },
   {
+    name: "canvas_add_knowledge",
+    description: "Put a result you read from a knowledge server on the canvas as a knowledge node: the server name, the source URI, the title and the text you read, cached in the node so it reads offline. This server holds no knowledge-server token and never calls one \u2014 search the knowledge server yourself and pass the text you got back. The node is marked AI-created and assigned a W label; the canvas refreshes it from its server on a later open. Placement and the layout engine work as in canvas_add_node: `after` puts the node one gap below any node in that node's column and ignores x/y, otherwise x/y (snapped and clamped to the canvas origin) or a free slot right of everything; the column then packs, the pairs to its right are pushed clear, and the sections grow or shrink to fit.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        canvasPath: { type: "string", description: "Path to the .canvas file" },
+        server: { type: "string", description: "Name of the knowledge server the result came from (a skena.knowledge.servers entry, e.g. crtx)" },
+        uri: { type: "string", description: "Source URI as the server gave it (e.g. crtx://crtx/projects/skena.md#state); the canvas refreshes the node from it" },
+        title: { type: "string", description: "Title shown in the node header" },
+        text: { type: "string", description: "The markdown text you read from the server, cached in the node" },
+        after: { type: "string", description: "Label or id of any node: place the new node one gap below it in the same column" },
+        x: { type: "number", description: "X position (auto-placed if omitted; ignored with after)" },
+        y: { type: "number", description: "Y position (auto-placed if omitted; ignored with after)" }
+      },
+      required: ["canvasPath", "server", "uri", "title", "text"]
+    }
+  },
+  {
+    name: "canvas_refresh_knowledge",
+    description: "Mark a knowledge node stale so the canvas fetches its text again the next time it is opened. This server has no knowledge-server token, so it cannot fetch the text itself \u2014 it only dates the node back. To replace the text now, read the source yourself and add a new node with canvas_add_knowledge.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        canvasPath: { type: "string", description: "Path to the .canvas file" },
+        ref: { type: "string", description: "Label (W1, W2\u2026) or id of the knowledge node" }
+      },
+      required: ["canvasPath", "ref"]
+    }
+  },
+  {
     name: "canvas_create",
     description: "Create a new empty .canvas file (with parent directories). No-op if it already exists.",
     inputSchema: {
@@ -6759,6 +6881,12 @@ async function dispatch(msg) {
           break;
         case "canvas_update_node":
           text = await canvasUpdateNode(args);
+          break;
+        case "canvas_add_knowledge":
+          text = await canvasAddKnowledge(args);
+          break;
+        case "canvas_refresh_knowledge":
+          text = await canvasRefreshKnowledge(args);
           break;
         case "canvas_remove_node":
           text = await canvasRemoveNode(args);
