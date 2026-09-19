@@ -8,3 +8,6 @@ test/
 
 # - agent scratch artifacts
 .superpowers/
+
+# - personal overrides (tokens); see src/extension/settings.ts
+.vscode/settings.local.json
