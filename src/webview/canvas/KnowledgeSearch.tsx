@@ -25,7 +25,7 @@ import type {
   MsgKnowledgeServersResult,
 } from '../../shared/types';
 import { MarkdownRenderer } from '../renderers/MarkdownRenderer';
-import { initialState, reduce, splitTags } from './knowledgeSearchState';
+import { initialState, queryFor, reduce, showsFilterRow, showsServerSelector } from './knowledgeSearchState';
 import type { SearchAction, SearchState } from './knowledgeSearchState';
 
 function vscodePostMessage(msg: unknown) {
@@ -98,6 +98,8 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
       const msg = (e as CustomEvent<MsgKnowledgeServersResult>).detail;
       setRows(msg.servers);
       dispatch({ kind: 'servers', servers: msg.servers });
+      // - the host could not read the settings at all; say that rather than "no server configured"
+      if (msg.error) dispatch({ kind: 'error', message: msg.error });
     };
     const onScopes = (e: Event) => {
       const msg = (e as CustomEvent<MsgKnowledgeScopesResult>).detail;
@@ -180,8 +182,7 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
     // - just cleared, the server just switched away from — no longer matches the id
     searchId.current = nextRequestId();
     if (!state.server) return;
-    // - a server without a tags filter gets the #tokens as part of the text, as typed
-    const { text, tags } = caps?.tags ? splitTags(state.query) : { text: state.query.trim(), tags: [] as string[] };
+    const { text, tags } = queryFor(state.query, caps);
     // - nothing typed yet: clear the list, and no status text to report about it
     if (!text && tags.length === 0) { setTagNote(''); dispatch({ kind: 'error', message: '' }); return; }
     // - with the server's tag names in hand, a tag it does not have is left out; without them
@@ -280,7 +281,7 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
           <line x1="10" y1="10" x2="14" y2="14" />
         </svg>
 
-        {rows.length > 1 && (
+        {showsServerSelector(rows) && (
           <select
             value={state.server}
             onChange={e => dispatch({ kind: 'server', name: e.target.value })}
@@ -319,7 +320,7 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
         >×</button>
       </div>
 
-      {(caps?.scopes || caps?.recency) && (
+      {showsFilterRow(caps) && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 8px 5px 27px' }}>
           {caps?.scopes && (
             <span

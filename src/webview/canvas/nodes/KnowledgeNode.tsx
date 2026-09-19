@@ -4,7 +4,7 @@
  * server, the source and how old the copy is. Refresh and open go back to the host.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import { KnowledgeNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
@@ -14,6 +14,7 @@ import { useHostMarkdown } from '../../hooks/useHostMarkdown';
 import { ScrollableContent } from '../../components/ScrollableContent';
 import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
 import { nodeBorderColor } from '../palette';
+import { sanitizeHtmlAttrs } from './knowledgeHtml';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -32,12 +33,21 @@ function ago(iso: string): string {
 }
 
 // - ago() reads the clock at render time, and nothing else re-renders the header; tick once a
-// - minute so "2h ago" does not stay at the value it had when the canvas opened
+// - minute so "2h ago" does not stay at the value it had when the canvas opened. One interval for
+// - every knowledge node on the canvas: it starts with the first node and stops with the last.
+const tickers = new Set<() => void>();
+let tickTimer: ReturnType<typeof setInterval> | null = null;
+
 function useMinuteTick(): void {
   const [, setTick] = useState(0);
   useEffect(() => {
-    const t = setInterval(() => setTick(n => n + 1), 60_000);
-    return () => clearInterval(t);
+    const bump = () => setTick(n => n + 1);
+    tickers.add(bump);
+    tickTimer ??= setInterval(() => { for (const t of tickers) t(); }, 60_000);
+    return () => {
+      tickers.delete(bump);
+      if (tickers.size === 0 && tickTimer) { clearInterval(tickTimer); tickTimer = null; }
+    };
   }, []);
 }
 
@@ -54,6 +64,13 @@ export function KnowledgeNodeComponent({ data, id, selected }: NodeProps): JSX.E
   const borderColor = nodeBorderColor('knowledge', node.accentColor);
   const hostHtml  = useHostMarkdown(node.text);
   const shownHtml = useHighlightedHtml(hostHtml);
+  // - the text came from a knowledge server and the webview CSP allows inline script, so what goes
+  //   in as html is stripped of anything that runs. The MarkdownRenderer path below builds React
+  //   elements instead, where a string event handler is not a handler at all.
+  const safeHtml = useMemo(
+    () => (hostHtml === null ? null : sanitizeHtmlAttrs(shownHtml ?? hostHtml)),
+    [hostHtml, shownHtml],
+  );
 
   return (
     <>
@@ -107,8 +124,8 @@ export function KnowledgeNodeComponent({ data, id, selected }: NodeProps): JSX.E
       </div>
       {/* - baseUri="." so relative image paths (./img.png) resolve against canvas dir */}
       <ScrollableContent scrollKey={id} style={{ padding: '6px 8px 6px 12px' }}>
-        {hostHtml !== null
-          ? <div className="skena-markdown" dangerouslySetInnerHTML={{ __html: shownHtml ?? hostHtml }} />
+        {safeHtml !== null
+          ? <div className="skena-markdown" dangerouslySetInnerHTML={{ __html: safeHtml }} />
           : <MarkdownRenderer content={node.text} baseUri="." />}
       </ScrollableContent>
     </div>

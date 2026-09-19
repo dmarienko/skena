@@ -23,6 +23,21 @@ export function splitTags(query: string): { text: string; tags: string[] } {
   return { text, tags };
 }
 
+// - the two controls a server's capabilities decide, and the query the dialog sends. Kept here so
+//   they are checked without React: the dialog only reads them.
+export function showsServerSelector(rows: { name: string }[]): boolean {
+  return rows.length > 1;
+}
+
+export function showsFilterRow(caps: KnowledgeCapabilities | undefined): boolean {
+  return !!(caps?.scopes || caps?.recency);
+}
+
+// - a server without a tags filter gets the #tokens as part of the text, as typed
+export function queryFor(query: string, caps: KnowledgeCapabilities | undefined): { text: string; tags: string[] } {
+  return caps?.tags ? splitTags(query) : { text: query.trim(), tags: [] };
+}
+
 export function reduce(s: SearchState, a: SearchAction): SearchState {
   switch (a.kind) {
     case 'type':          return { ...s, query: a.query };
