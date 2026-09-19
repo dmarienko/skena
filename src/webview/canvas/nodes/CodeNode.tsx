@@ -21,7 +21,7 @@ import { useLanes } from '../LanesContext';
 import { useKernels } from '../KernelsContext';
 import { CodeRenderer } from '../../renderers/CodeRenderer';
 import { ScrollableContent, setScrollPosition } from '../../components/ScrollableContent';
-import { applyVimClipboard, patchVimNewlineAndIndent, patchVimLastLine, patchVimVisualCursor, patchVimJoin } from './TextNode';
+import { applyVimClipboard, patchVimNewlineAndIndent, patchVimLastLine, patchVimVisualCursor, patchVimExternalSelection, patchVimJoin } from './TextNode';
 import { ensureKernelCompletion, setActiveCodeCell } from './kernelCompletion';
 
 function vscodePostMessage(msg: unknown) {
@@ -221,6 +221,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     patchVimNewlineAndIndent();
     patchVimLastLine();
     patchVimVisualCursor();
+    patchVimExternalSelection();
     patchVimJoin(editorInstance, vimStatusRef.current);
     if (savedViewState.current) editorInstance.restoreViewState(savedViewState.current);
     editorInstance.focus();

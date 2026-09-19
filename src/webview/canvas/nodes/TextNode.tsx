@@ -324,27 +324,69 @@ function syncVisualCursor(cm: any): void {
   dom?.classList.add('skena-vim-visual');
 }
 
+export function scheduleVisualCursorSync(cm: any): void {
+  if (cm.__skenaFatPending) return;
+  cm.__skenaFatPending = true;
+  queueMicrotask(() => { cm.__skenaFatPending = false; syncVisualCursor(cm); });
+}
+
 export function patchVimVisualCursor(): void {
   const P = (VimMode as any)?.prototype;
   if (!P || P.__skenaVisualCursor) return;
-
-  const schedule = (cm: any) => {
-    if (cm.__skenaFatPending) return;
-    cm.__skenaFatPending = true;
-    queueMicrotask(() => { cm.__skenaFatPending = false; syncVisualCursor(cm); });
-  };
 
   for (const name of ['setSelections', 'setSelection', 'setCursor'] as const) {
     const orig = P[name];
     if (!orig) continue;
     P[name] = function(this: any, ...args: any[]) {
       const r = orig.apply(this, args);
-      schedule(this);
+      scheduleVisualCursorSync(this);
       return r;
     };
   }
 
   P.__skenaVisualCursor = true;
+}
+
+/**
+ * Let a selection made with the mouse put vim into visual mode.
+ *
+ * monaco-vim's onCursorActivity only calls handleExternalSelection (the function that enters or
+ * leaves visual mode to match a selection vim did not make) when cm.curOp.isVimOp is false.
+ * CodeMirror builds a fresh curOp per operation so the flag resets by itself; the Monaco adapter
+ * creates one curOp in its constructor and its operation() is just `fn()`, so the first vim key
+ * sets isVimOp = true and nothing ever clears it. From then on every mouse drag is treated as
+ * vim's own work: vim stays in normal mode, `y` yanks the old selection, and the block cursor
+ * drawn by patchVimVisualCursor never moves.
+ *
+ * Fix: clear isVimOp when the outermost operation finishes, and re-run the block cursor sync
+ * after a cursorActivity dispatch. The depth counter matters because a mapped key (<Left> → h)
+ * runs an operation inside an operation and must stay marked as vim's until the outer one ends.
+ */
+export function patchVimExternalSelection(): void {
+  const P = (VimMode as any)?.prototype;
+  if (!P || P.__skenaExternalSelection) return;
+
+  const origOperation = P.operation;
+  P.operation = function(this: any, fn: any, force?: boolean) {
+    this.__skenaOpDepth = (this.__skenaOpDepth ?? 0) + 1;
+    try {
+      return origOperation.call(this, fn, force);
+    } finally {
+      this.__skenaOpDepth -= 1;
+      if (this.__skenaOpDepth === 0 && this.curOp) this.curOp.isVimOp = false;
+    }
+  };
+
+  const origDispatch = P.dispatch;
+  P.dispatch = function(this: any, signal: string, ...args: any[]) {
+    const r = origDispatch.call(this, signal, ...args);
+    // - handleExternalSelection is one of the cursorActivity listeners, so by now vim.sel
+    // - holds the mouse selection and the microtask paints the block on its head
+    if (signal === 'cursorActivity') scheduleVisualCursorSync(this);
+    return r;
+  };
+
+  P.__skenaExternalSelection = true;
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
@@ -677,6 +719,7 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
     patchVimNewlineAndIndent();
     patchVimLastLine();
     patchVimVisualCursor();
+    patchVimExternalSelection();
     patchVimJoin(editorInstance, vimStatusRef.current);
 
     // ─── vim mode tracking via MutationObserver ──────────────────────────────
