@@ -358,28 +358,32 @@ export function patchVimVisualCursor(): void {
  * vim's own work: vim stays in normal mode, `y` yanks the old selection, and the block cursor
  * drawn by patchVimVisualCursor never moves.
  *
- * Fix: clear isVimOp when the outermost operation finishes, and re-run the block cursor sync
- * after a cursorActivity dispatch. The depth counter matters because a mapped key (<Left> → h)
- * runs an operation inside an operation and must stay marked as vim's until the outer one ends.
+ * Fix: clear isVimOp only while dispatching a cursorActivity that Monaco itself marked as
+ * pointer-driven. Monaco's ViewController stamps source: 'mouse' on every click, drag and
+ * double-click (viewController.js:177/192/202/233); that travels through CursorStateChangedEvent
+ * into the ICursorPositionChangedEvent the adapter hands to dispatch (codeEditorWidget.js:1314).
+ * Nothing vim does carries that source, so every vim key path keeps isVimOp exactly as
+ * monaco-vim left it — including the ones that run OUTSIDE cm.operation and would otherwise be
+ * read as external: Esc (handleEsc sits in findKey, before the operation), the / prompt's
+ * onPromptClose, and :s///c's confirm loop.
  */
 export function patchVimExternalSelection(): void {
   const P = (VimMode as any)?.prototype;
   if (!P || P.__skenaExternalSelection) return;
 
-  const origOperation = P.operation;
-  P.operation = function(this: any, fn: any, force?: boolean) {
-    this.__skenaOpDepth = (this.__skenaOpDepth ?? 0) + 1;
-    try {
-      return origOperation.call(this, fn, force);
-    } finally {
-      this.__skenaOpDepth -= 1;
-      if (this.__skenaOpDepth === 0 && this.curOp) this.curOp.isVimOp = false;
-    }
-  };
-
   const origDispatch = P.dispatch;
   P.dispatch = function(this: any, signal: string, ...args: any[]) {
-    const r = origDispatch.call(this, signal, ...args);
+    // - the adapter dispatches cursorActivity as (cm, monacoEvent)
+    const mouse = signal === 'cursorActivity' && args[1]?.source === 'mouse' && this.curOp;
+    let r;
+    if (mouse) {
+      const was = this.curOp.isVimOp;
+      this.curOp.isVimOp = false;
+      try { r = origDispatch.call(this, signal, ...args); }
+      finally { this.curOp.isVimOp = was; }
+    } else {
+      r = origDispatch.call(this, signal, ...args);
+    }
     // - handleExternalSelection is one of the cursorActivity listeners, so by now vim.sel
     // - holds the mouse selection and the microtask paints the block on its head
     if (signal === 'cursorActivity') scheduleVisualCursorSync(this);
