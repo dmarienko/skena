@@ -39,6 +39,7 @@ import { useHostMarkdown } from '../../hooks/useHostMarkdown';
 import { ScrollableContent } from '../../components/ScrollableContent';
 import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
 import { DEFAULT_NODE_BORDER_BY_TYPE } from '../palette';
+import { stripForHost, rememberWritten, classifyHostText } from '../vimClipboard';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -57,16 +58,14 @@ let clipboardCache: { text: string; linewise: boolean } = { text: '', linewise: 
 let pendingPaste = false;
 
 /**
- * - the last text we handed to the host clipboard, plus the register form it came from.
- * - `text` is what the host holds (linewise yanks lose their trailing newline so a paste in
- * - another app does not gain a blank line); `full` is vim's register text, which must keep it.
+ * Hand text to the host clipboard and record it, so a read-back can be recognised as ours.
+ * `full` is the register form; `out` overrides what the host gets for callers that are not
+ * writing a register (the Ctrl+C copy sends the selection verbatim).
  */
-let lastWritten: { text: string; full: string; linewise: boolean } | null = null;
-
-function writeHostClipboard(full: string, linewise: boolean): void {
-  const out = linewise ? full.replace(/\n$/, '') : full;
-  lastWritten = { text: out, full, linewise };
-  vscodePostMessage({ type: 'writeClipboard', text: out });
+function writeHostClipboard(full: string, linewise: boolean, out?: string): void {
+  const sent = out ?? stripForHost(full, linewise);
+  rememberWritten(sent, full, linewise);
+  vscodePostMessage({ type: 'writeClipboard', text: sent });
 }
 
 // ─── vim clipboard wiring ────────────────────────────────────────────────────
@@ -295,8 +294,10 @@ function syncVisualCursor(cm: any): void {
   if (!model) return;
 
   const collection = (cm.__skenaFatCursor ??= editor.createDecorationsCollection());
-  const dom        = editor.getDomNode();
-  const visual     = !!vim && vim.visualMode && !vim.insertMode;
+  // - the container, not getDomNode(): Monaco rewrites the .monaco-editor element's whole
+  // - className on focus / theme / config change, which would drop the class on refocus
+  const dom    = editor.getContainerDomNode();
+  const visual = !!vim?.sel?.head && vim.visualMode && !vim.insertMode;
 
   if (!visual) {
     collection.clear();
@@ -304,10 +305,12 @@ function syncVisualCursor(cm: any): void {
     return;
   }
 
+  // - clamp: vim state can name a line the model no longer has (an edit landed between the
+  // - key and this microtask) and getLineMaxColumn throws past the end
   const head = vim.sel.head;                      // - CodeMirror 0-based {line, ch}
-  const line = head.line + 1;
-  const col  = head.ch + 1;
+  const line = Math.min(Math.max(1, head.line + 1), model.getLineCount());
   const max  = model.getLineMaxColumn(line);
+  const col  = Math.min(Math.max(1, head.ch + 1), max);
   collection.set([col < max
     ? {
       range:   { startLineNumber: line, startColumn: col, endLineNumber: line, endColumn: col + 1 },
@@ -408,22 +411,14 @@ export function patchVimJoin(
 
 /**
  * Take the host clipboard text into the relay register, with the right linewise flag.
- *
- * A read fires on every editor focus, so our own `yy` comes straight back: matching it against
- * what we last wrote restores the register's own text and flag, newline and all. Anything else
- * follows vim's rule for the system clipboard — text ending in a newline is linewise.
+ * A read fires on every editor focus, so our own yank comes straight back — classifyHostText
+ * recognises it and restores the register form, newline and all.
  */
 export function noteHostClipboard(text: string): void {
-  if (lastWritten && text === lastWritten.text) {
-    clipboardCache   = { text: lastWritten.full, linewise: lastWritten.linewise };
-    sysReg.linewise  = lastWritten.linewise;
-    sysReg.keyBuffer = [lastWritten.full];
-    return;
-  }
-  const linewise   = text.endsWith('\n');
-  clipboardCache   = { text, linewise };
-  sysReg.linewise  = linewise;
-  sysReg.keyBuffer = [text];
+  const got        = classifyHostText(text);
+  clipboardCache   = got;
+  sysReg.linewise  = got.linewise;
+  sysReg.keyBuffer = [got.text];
 }
 
 // - module-level skena:clipboardContent listener — registered at bundle load,
@@ -749,7 +744,9 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
         : model.getValueInRange(sel);
       if (text) {
         clipboardCache = { text, linewise: sel.isEmpty() };
-        vscodePostMessage({ type: 'writeClipboard', text });
+        // - the host gets the selection verbatim; recording it stops the next read-back from
+        // - matching an earlier yank of the same text and restoring that yank's linewise flag
+        writeHostClipboard(text, sel.isEmpty(), text);
       }
     });
 

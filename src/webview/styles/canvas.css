@@ -302,13 +302,16 @@
 }
 
 /* - vim visual mode block cursor: Monaco draws its own block at the exclusive selection end,
-   - one character past the last selected one, so hide it and paint the block at vim.sel.head */
-.skena-vim-visual .cursors-layer .cursor { visibility: hidden; }
+   - one character past the last selected one, so hide it and paint the block at vim.sel.head.
+   - Hide the LAYER, not the cursor: ViewCursor.show() puts an inline visibility on .cursor
+   - while the editor is focused, which beats any author rule. .cursors-layer never gets one,
+   - and the cursor's inline `inherit` then inherits hidden. Covers block-mode extra cursors. */
+.skena-vim-visual .cursors-layer { visibility: hidden; }
 .skena-vim-fat-cursor {
-  background: var(--vscode-editorCursor-foreground, #aeafad);
+  background: var(--vscode-editorCursor-foreground, #aeafad) !important;
   color: var(--vscode-editorCursor-background, var(--vscode-editor-background, #1e1e1e)) !important;
 }
 .skena-vim-fat-cursor-eol::after {
   content: '\00a0';
-  background: var(--vscode-editorCursor-foreground, #aeafad);
+  background: var(--vscode-editorCursor-foreground, #aeafad) !important;
 }

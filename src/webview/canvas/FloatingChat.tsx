@@ -33,6 +33,7 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 
 import { patchVimLastLine, patchVimVisualCursor } from './nodes/TextNode';
+import { stripForHost, rememberWritten, classifyHostText } from './vimClipboard';
 import { useHostMarkdown } from '../hooks/useHostMarkdown';
 import { useHighlightedHtml } from '../lib/codeHighlight';
 import { ChatItem, ChatMessage, ChatToolEvent, ChatTokenUsage } from '../../shared/types';
@@ -92,15 +93,13 @@ type VimSingleton = {
 let chatClipboardCache: { text: string; linewise: boolean } = { text: '', linewise: false };
 
 /**
- * - the last text we handed to the host clipboard, plus the register form it came from.
- * - `text` is what the host holds, `full` is vim's register text; a linewise register ends in
- * - "\n" and the host must not carry it, or a paste elsewhere gains a blank line.
+ * Hand text to the host clipboard and record it, so a read-back can be recognised as ours.
+ * `full` is the register form; `out` overrides what the host gets for callers that are not
+ * writing a register (the Ctrl+C copy sends the line verbatim, trailing newline included).
  */
-let chatLastWritten: { text: string; full: string; linewise: boolean } | null = null;
-
 function writeChatClipboard(full: string, linewise: boolean, out?: string): void {
-  const sent = out ?? (linewise ? full.replace(/\n$/, '') : full);
-  chatLastWritten = { text: sent, full, linewise };
+  const sent = out ?? stripForHost(full, linewise);
+  rememberWritten(sent, full, linewise);
   vscodePostMessage({ type: 'writeClipboard', text: sent });
 }
 
@@ -146,21 +145,14 @@ const chatSysReg: VimRegisterLike = {
 
 /**
  * Take the host clipboard text into the relay register, with the right linewise flag.
- * A read fires on every editor focus, so our own copy comes straight back: matching it against
- * what we last wrote restores that copy's text and flag. Anything else follows vim's rule for
- * the system clipboard — text ending in a newline is linewise.
+ * The record is shared with the text-node register, so a yank made in a cell is recognised
+ * here too and keeps its linewise form.
  */
 function noteChatHostClipboard(text: string): void {
-  if (chatLastWritten && text === chatLastWritten.text) {
-    chatClipboardCache   = { text: chatLastWritten.full, linewise: chatLastWritten.linewise };
-    chatSysReg.linewise  = chatLastWritten.linewise;
-    chatSysReg.keyBuffer = [chatLastWritten.full];
-    return;
-  }
-  const linewise       = text.endsWith('\n');
-  chatClipboardCache   = { text, linewise };
-  chatSysReg.linewise  = linewise;
-  chatSysReg.keyBuffer = [text];
+  const got            = classifyHostText(text);
+  chatClipboardCache   = got;
+  chatSysReg.linewise  = got.linewise;
+  chatSysReg.keyBuffer = [got.text];
 }
 
 function getChatVimSingleton(): VimSingleton | undefined {
