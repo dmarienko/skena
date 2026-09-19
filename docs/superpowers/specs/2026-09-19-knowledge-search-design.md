@@ -1,156 +1,210 @@
 # Knowledge search — design
 
 Search a remote knowledge base from the canvas and put a result on it as a node that keeps a copy
-of the text. First server: crtx (`kb` MCP). The node and the client are shaped so another MCP
-server can be added later without changing the node.
+of the text. The dialog and the node depend on one adapter interface; a server kind is one adapter
+file. First adapter: crtx (`kb` MCP). Second, sketched here to check the shape: Notion.
 
-Decisions taken with the user on 2026-09-19: crtx first; the node keeps a cached copy of the section
-(works on any machine, any server); knowledge search has its own key, `Ctrl+F` stays find-in-canvas;
-`Enter` adds one result and closes; refresh on open for stale nodes plus a manual refresh, with a mark
-when the text changed.
+Decisions taken with the user on 2026-09-19: crtx first; the node keeps a cached copy of the text
+(works on any machine, any server); knowledge search has its own key, `Ctrl+F` stays
+find-in-canvas; `Enter` adds one result and closes; refresh on open for stale nodes plus a manual
+refresh, with a mark when the text changed; an adapter layer so other servers attach without
+touching the dialog or the node.
 
-## 1. What the crtx server offers (measured 2026-09-19)
+## 1. Layers
 
-Streamable HTTP, `POST <url>` (JSON-RPC 2.0), `Authorization: Bearer <token>`. A host outside the
-server's allow-list is refused.
+```
+webview   KnowledgeSearch dialog ── KnowledgeNode
+              │ messages (search / fetch / scopes / facets / refresh)
+host      KnowledgeService  — one KnowledgeProvider per configured server
+              │
+adapters  crtxProvider   notionProvider (later)   …one file per kind
+              │
+transport McpHttpClient (streamable HTTP JSON-RPC)   McpStdioClient (later, if a kind needs it)
+```
 
-| Tool | In | Out |
+The dialog and the node never see a tool name, a vault, a page id or a URL scheme. They see
+`KnowledgeProvider`, `KnowledgeHit`, `KnowledgeText` and an opaque `uri` string.
+
+## 2. The adapter interface
+
+`src/shared/knowledge/types.ts`:
+
+```ts
+interface KnowledgeQuery { text: string; scope?: string; tags?: string[]; recency?: boolean; top: number }
+
+interface KnowledgeHit {
+  server:   string;      // - the configured server name, e.g. "crtx" or "notion-work"
+  uri:      string;      // - opaque to the dialog and the node; the adapter builds and reads it
+  title:    string;      // - e.g. "skena.md › 2026-09-19 — state" or a Notion page title
+  subtitle?: string;     // - e.g. the vault, the database or the parent page
+  date?:    string;
+  tags:     string[];
+  snippet:  string;      // - ≤ 200 chars, one line
+}
+
+interface KnowledgeText { uri: string; title: string; text: string; fetchedAt: string }
+
+interface KnowledgeProvider {
+  readonly name: string;                                   // - from config
+  readonly kind: string;                                   // - adapter id: "crtx", "notion", …
+  readonly capabilities: { scopes: boolean; tags: boolean; recency: boolean; facets: boolean };
+  search(q: KnowledgeQuery): Promise<KnowledgeHit[]>;
+  fetch(uri: string): Promise<KnowledgeText>;              // - the text a node caches; used by add and refresh
+  scopes(): Promise<string[]>;                             // - vaults / workspaces / databases; [] when unsupported
+  facets(scope?: string): Promise<{ tags: [string, number][] }>;  // - {tags: []} when unsupported
+  openUrl(uri: string): string | undefined;                // - a browser URL for the header's open button
+}
+```
+
+Rules:
+- Every method returns; errors come back as a rejected promise with a plain message, and
+  `KnowledgeService` turns them into `{ error }` for the webview. No adapter throws into the UI.
+- `capabilities` decides which dialog controls appear: no `scopes` → no scope selector; no `tags` →
+  `#tag` tokens stay in the query text; no `facets` → tags are not validated.
+- `uri` is stable across restarts and machines; it is the node's identity for refresh.
+
+Adding a server kind = one file `src/extension/knowledge/adapters/<kind>.ts` exporting
+`createProvider(config, transport): KnowledgeProvider`, plus one line in the adapter registry.
+
+## 3. Transport
+
+`src/extension/knowledge/mcpHttpClient.ts` — streamable HTTP JSON-RPC 2.0:
+- `initialize` once per process (protocol version, client name), then `callTool(name, args)`.
+- `POST` with `Accept: application/json, text/event-stream`; a JSON body is read as is; an
+  `event-stream` body is read until the message with the matching `id`. `Mcp-Session-Id` from a
+  response is sent back on later calls.
+- 5 s timeout per call. Headers from config (`Authorization: Bearer <token>`).
+- Pure framing (request building, JSON/SSE response parsing) in
+  `src/shared/knowledge/jsonrpc.ts`, unit-tested with recorded bodies.
+
+An adapter receives a transport it did not create, so a stdio transport (for a local Notion MCP
+server started as a process) is a second class with the same `callTool`, not an adapter change.
+
+## 4. Adapters
+
+### 4.1 crtx (`kind: "crtx"`) — v1
+
+Server facts (measured 2026-09-19): streamable HTTP at `POST <url>`, bearer token, host
+allow-list. Tools and the mapping:
+
+| Provider method | Tool | Mapping |
 |---|---|---|
-| `list_vaults` | — | `[{name, path}]` |
-| `search` | `query, vault?, tags?, recency?, top?, full_text?` | per hit `{vault, file, heading, date, tags, id, project, snippet, uri}`; `text` too unless `full_text=false` |
-| `read_section` | `vault, file, heading` | the section's markdown; a missing heading fails and names the real ones |
-| `facets` | `vault?` | `{tags: [[name, count]…], projects: [[name, count]…]}` |
-| `related` | `query, top?` | flat rows with `snippet`, `deep_link` |
+| `search` | `search(query, vault?, tags?, recency?, top, full_text=false)` | hit → `{uri, title: "<file> › <heading>", subtitle: vault, date, tags, snippet}` |
+| `fetch(uri)` | `read_section(vault, file, heading)` (`read(vault, file)` when the heading is empty) | `{uri, title, text, fetchedAt: now}` |
+| `scopes` | `list_vaults` | names |
+| `facets` | `facets(vault?)` | `tags` |
+| `openUrl` | — | `http://<host>:8787/#<vault>/<url-encoded file>` |
 
-`uri` = `crtx://<vault>/<file>#<heading>`; `heading` may be empty. The web reader for a hit is
-`http://<host>:8787/#<vault>/<url-encoded file>`.
+`uri` = the server's own `crtx://<vault>/<file>#<heading>`; parse/build in
+`src/shared/knowledge/crtxUri.ts`. Capabilities: all four true.
 
-## 2. Configuration
+### 4.2 Notion (`kind: "notion"`) — later; on paper now
+
+| Provider method | Tool (official remote MCP / self-hosted `notionApi`) | Mapping |
+|---|---|---|
+| `search` | `notion-search` / `API-post-search` | page → `{uri: "notion://<pageId>", title, subtitle: parent, date: last_edited_time, tags: [], snippet: first text block}` |
+| `fetch(uri)` | `notion-fetch` / `API-get-block-children` | blocks → markdown |
+| `scopes` | — | `[]` (capability off) |
+| `facets` | — | off |
+| `openUrl` | — | `https://notion.so/<pageId>` |
+
+Two things the shape has to allow, and does: a hit without tags or scope, and a `fetch` that
+assembles text from many blocks. Authentication for the official server is OAuth — that is a
+transport concern (a token obtained once, then a bearer header), not an adapter one.
+
+## 5. Configuration
 
 ```jsonc
 // settings.json (shared) or .vscode/settings.local.json (personal; wins per key)
 "skena.knowledge.servers": [
-  { "name": "crtx", "kind": "crtx", "url": "http://aurora-1:8788/mcp", "token": "…" }
+  { "name": "crtx",   "kind": "crtx",   "url": "http://aurora-1:8788/mcp", "token": "…" },
+  { "name": "notion", "kind": "notion", "url": "https://mcp.notion.com/mcp", "token": "…" }
 ],
 "skena.knowledge.refreshAfterHours": 24
 ```
 
-- `kind` selects the tool mapping. v1 knows `crtx` only; a second kind is a new mapping file, not
-  a change to the node or the dialog.
-- The token lives in `settings.local.json` (git-ignored). Read through the existing
-  `settings.ts` merge (`settings.local.json` → `settings.json` → user config).
-- No servers configured: the key opens the dialog with the message "no knowledge server configured
-  (`skena.knowledge.servers`)".
+- `name` is what the node stores; `kind` picks the adapter; the rest is the transport's.
+- Tokens live in `settings.local.json` (git-ignored), read through the existing `settings.ts`
+  merge (`settings.local.json` → `settings.json` → user config).
+- No servers: the key opens the dialog with "no knowledge server configured
+  (`skena.knowledge.servers`)". An unknown `kind`: that entry is listed as unavailable with the
+  reason.
 
-## 3. Host: the MCP client
+## 6. The node
 
-`src/extension/knowledge/mcpHttpClient.ts` — one class per server:
-
-- `initialize` once per process (protocol version, client name), then `tools/call`.
-- Streamable HTTP: `POST` with `Accept: application/json, text/event-stream`; a JSON body is read as
-  is; an `event-stream` body is read until the message with the matching `id`. The
-  `Mcp-Session-Id` response header, when present, is sent back on later calls.
-- Timeouts: 5 s per call. Errors are returned as `{ error: string }`, never thrown into the webview.
-- Pure framing (request building, response parsing, SSE splitting) in
-  `src/shared/knowledge/jsonrpc.ts`, unit-tested with recorded bodies.
-
-`src/extension/knowledge/crtxServer.ts` — the `crtx` mapping: `search(query, opts)`,
-`readSection(uri)`, `listVaults()`, `facets(vault?)`, each turning the tool result into the shared
-types below. `src/shared/knowledge/uri.ts` — `parseKnowledgeUri`, `buildKnowledgeUri`
-(`crtx://vault/file#heading`), `readerUrl(uri, serverUrl)`.
-
-Shared types (`src/shared/knowledge/types.ts`):
-
-```ts
-interface KnowledgeHit   { server: string; uri: string; vault: string; file: string; heading: string;
-                           date?: string; tags: string[]; project?: string; snippet: string }
-interface KnowledgeText  { uri: string; text: string; fetchedAt: string }
-```
-
-Webview ↔ host messages: `knowledgeSearch {server, query, vault?, tags?, recency?}` →
-`knowledgeResults {hits | error}`; `knowledgeRead {server, uri}` → `knowledgeText {text | error}`;
-`knowledgeVaults`/`knowledgeFacets` likewise; `knowledgeRefresh {nodeIds}` (host reads each node's
-uri and answers per node).
-
-## 4. The node
-
-`type: "knowledge"` in the canvas file:
+`type: "knowledge"` in the canvas file — provider-neutral:
 
 ```jsonc
 { "id": "…", "type": "knowledge", "x": 0, "y": 0, "width": 700, "height": 300,
   "server": "crtx", "uri": "crtx://crtx/projects/skena.md#2026-09-19 — state",
   "title": "skena.md › 2026-09-19 — state",
-  "text": "…markdown of the section…", "fetchedAt": "2026-09-19T14:03:00Z",
-  "changed": false }
+  "text": "…markdown…", "fetchedAt": "2026-09-19T14:03:00Z", "changed": false }
 ```
 
 Rendering (`src/webview/canvas/nodes/KnowledgeNode.tsx`):
-
-- header: `crtx › projects/skena.md › 2026-09-19 — state · 2h ago`; a dot before the title while
-  `changed`; two header buttons: refresh, open in the web reader (`readerUrl`).
-- body: the cached `text` through the existing markdown renderer (`MarkdownRenderer`), read-only.
+- header: `<server> › <title> · 2h ago`; a dot before the title while `changed`; buttons: refresh,
+  open (shown only when `openUrl` gave a URL — the host resolves it once and stores nothing).
+- body: the cached `text` through the existing `MarkdownRenderer`, read-only.
 - border colour: a new entry in `DEFAULT_NODE_BORDER_BY_TYPE`; `nodeBorderColor('knowledge', …)`.
-- focus clears `changed` (written to the file like any node change).
-- the node is a column member for the layout engine like a text node (not an output, not a kernel).
-- delete, move, resize, copy/paste, sections, spatial nav, `g` labels: nothing special — it is a
-  node with a `text` body.
+- focus clears `changed`.
+- a column member for the layout engine like a text node. Delete, move, resize, copy/paste,
+  sections, spatial nav, `g` labels: nothing special.
 
-Edges: none created automatically.
-
-## 5. The dialog
+## 7. The dialog
 
 `src/webview/canvas/KnowledgeSearch.tsx`, opened by `Ctrl+Shift+F` (handled in the canvas keydown
-like `Ctrl+Shift+H/L`; to be verified against VS Code's find-in-files in the first build — fallback
-`Ctrl+;`). `Esc` closes. Floats at the top-centre of the pane like `CanvasSearch`, wider, with a
-preview pane on the right.
+like `Ctrl+Shift+H/L`; verified against VS Code's find-in-files in the first build — fallback
+`Ctrl+;`). `Esc` closes. Top-centre of the pane like `CanvasSearch`, wider, preview on the right.
 
 | Part | Behaviour |
 |---|---|
-| server | one selector when more than one server is configured; hidden with one |
-| input | the query; `search` runs 300 ms after the last keystroke with `full_text=false`, `top: 20`; `#tag` tokens in the query become the `tags` filter (validated against `facets`; an unknown tag shows "no such tag" in the status line) |
-| filters row | vault: `all · <names from list_vaults>` (`Tab` cycles); recency toggle |
-| results | one row per hit: `file › heading`, `date`, `snippet`, tags; `↑/↓` move the highlight; the list keeps the server's order |
-| preview | the highlighted hit's section via `read_section`, rendered as markdown; requested 150 ms after the highlight settles; cached per uri for the dialog's life |
-| `Enter` | adds the highlighted hit as a knowledge node (text = the preview's section if already loaded, else fetched now) and closes; the new node is focused and revealed |
-| status line | server name · hit count · "server unreachable" / the error text |
+| server | a selector when more than one server is configured; hidden with one |
+| input | the query; `search` runs 300 ms after the last keystroke, `top: 20`; `#tag` tokens become `tags` when the provider has `tags` (validated against `facets` when it has `facets`; an unknown tag → "no such tag" in the status line) |
+| filters row | scope: `all · <scopes()>` (`Tab` cycles) when the provider has `scopes`; recency toggle when it has `recency` |
+| results | one row per hit: `title`, `subtitle`, `date`, `snippet`, tags; `↑/↓` move the highlight; server order kept |
+| preview | `fetch(uri)` of the highlighted hit, rendered as markdown; requested 150 ms after the highlight settles; cached per uri for the dialog's life |
+| `Enter` | adds the highlighted hit as a knowledge node (the preview's text if loaded, else fetched now) and closes; the node is focused and revealed |
+| status line | server · hit count · "server unreachable" / the error text |
 
 Placement of the new node: the paste rule — `directionSlot('L')` right of the focused node, the
-engine makes room; pane centre when nothing is focused. Size 700 × 300, then the height of the
-rendered text (the text node rule). One history entry.
+engine makes room; pane centre when nothing is focused. 700 × 300, then the height of the rendered
+text (the text-node rule). One history entry.
 
-## 6. Refresh
+## 8. Refresh
 
 - On canvas open, after the first paint: every knowledge node whose `fetchedAt` is older than
-  `refreshAfterHours` is refreshed, one at a time, in file order. A server that does not answer
-  stops the run for that server; nothing is shown except the status in the node header
-  ("not reachable" on hover).
-- Manual: the header button; the MCP tool `canvas_refresh_knowledge` (see §7).
-- A refresh that returns different text sets `text`, `fetchedAt`, `changed: true`; same text sets
-  `fetchedAt` only. A missing heading (the note was restructured) keeps the old text and sets an
-  `error` field shown in the header.
+  `refreshAfterHours` is refreshed through its server's provider, one at a time, in file order. A
+  server that does not answer stops the run for that server; the node header shows "not reachable"
+  on hover, nothing else.
+- Manual: the header button; the MCP tool `canvas_refresh_knowledge` (§9).
+- Different text → `text`, `fetchedAt`, `changed: true`; same text → `fetchedAt` only; the adapter
+  reports "gone" (a heading or page no longer exists) → old text kept, `error` shown in the header.
 
-## 7. MCP parity
+## 9. MCP parity
 
-The skena MCP server is a separate process without the knowledge token, so it does not call the
-knowledge server itself. v1 adds `canvas_add_knowledge {uri, text, title?, server?}` (writes the
-node with the given text, `fetchedAt = now`) and `canvas_refresh_knowledge {ref}` (marks the node
-for refresh: the host refreshes it on the next open or when the webview is live). An agent that
-wants fresh text calls the `kb` server itself and passes the text.
+The skena MCP server is a separate process without the servers' tokens, so it does not call them.
+v1 adds `canvas_add_knowledge {server, uri, title, text}` (writes the node, `fetchedAt = now`) and
+`canvas_refresh_knowledge {ref}` (marks the node; the host refreshes it when the webview is live or
+on the next open). An agent that wants fresh text calls the knowledge server itself and passes it.
 
-## 8. Tests
+## 10. Tests
 
-- `test/knowledge-jsonrpc.mjs`: request framing, JSON and SSE response parsing, session id
-  round-trip, timeout → error.
-- `test/knowledge-uri.mjs`: parse/build round-trips, empty heading, url-encoded file in `readerUrl`.
-- `test/knowledge-refresh.mjs`: the stale filter (`fetchedAt` vs hours), the changed/same/missing
-  outcomes as pure functions over a node and a result.
+- `test/knowledge-jsonrpc.mjs`: request framing, JSON and SSE parsing, session id round-trip,
+  timeout → error.
+- `test/knowledge-crtx.mjs`: the crtx mapping over recorded tool results (search hit → `KnowledgeHit`,
+  `read_section` → `KnowledgeText`, uri parse/build, `openUrl` encoding), with a fake transport.
+- `test/knowledge-refresh.mjs`: the stale filter and the changed / same / gone outcomes as pure
+  functions over a node and a result.
 - Dialog keyboard behaviour as a pure reducer (`highlight`, `Tab`, `Enter`, `Esc`) if the component
   is split that way; otherwise a smoke in the first VSIX.
+- A fake provider (`test/helpers/fakeProvider.mjs`) with all capabilities off, to check the dialog
+  renders no scope/tags controls and the node still adds and refreshes — the Notion shape without
+  Notion.
 
-## 9. Not in v1
+## 11. Not in v1
 
-- Notion or any second server kind (the mapping file is the extension point).
+- The Notion adapter itself (§4.2 is the check that the interface fits it), OAuth.
 - `related` / `neighbourhood` views on the canvas (a "what links here" action on a knowledge node
-  is the natural next step).
-- Writing back to the vault (`create_note`, `append_note`).
+  is the natural next step; it would be a provider capability).
+- Writing back (`create_note`, `append_note`).
 - Section anchors inside a file for the local `vault://` file node.
