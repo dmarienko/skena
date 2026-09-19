@@ -9,7 +9,7 @@ import { NodeProps, Handle, Position } from '@xyflow/react';
 import { NoderefNode } from '../../../shared/types';
 import { formatNodeRef } from '../../../shared/nodeRef';
 import { HANDLE_STYLE } from './nodeShared';
-import { DEFAULT_NODE_BORDER_BY_TYPE } from '../palette';
+import { nodeBorderColor } from '../palette';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -23,7 +23,7 @@ function canvasBasename(p: string): string {
 
 export function NoderefNodeComponent({ data, selected }: NodeProps): JSX.Element {
   const node = data as unknown as NoderefNode & { accentColor?: string };
-  const borderColor = node.accentColor ?? DEFAULT_NODE_BORDER_BY_TYPE.noderef;
+  const borderColor = nodeBorderColor('noderef', node.accentColor);
   const base = canvasBasename(node.canvas);
 
   const open = useCallback(() => {

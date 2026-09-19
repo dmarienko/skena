@@ -38,7 +38,7 @@ import { useHighlightedHtml } from '../../lib/codeHighlight';
 import { useHostMarkdown } from '../../hooks/useHostMarkdown';
 import { ScrollableContent } from '../../components/ScrollableContent';
 import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
-import { DEFAULT_NODE_BORDER_BY_TYPE } from '../palette';
+import { nodeBorderColor } from '../palette';
 import { stripForHost, rememberWritten, classifyHostText } from '../vimClipboard';
 
 function vscodePostMessage(msg: unknown) {
@@ -459,7 +459,7 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
   // - stripped text near cursor line: used to find the matching rendered element
   const pendingAnchorText = useRef<string | null>(null);
 
-  const borderColor = node.accentColor ?? DEFAULT_NODE_BORDER_BY_TYPE.text;
+  const borderColor = nodeBorderColor('text', node.accentColor);
   const isDark = document.body.classList.contains('vscode-dark') ||
                  document.body.classList.contains('vscode-high-contrast');
 

@@ -35,6 +35,8 @@ export const DEFAULT_NODE_BORDER_BY_TYPE = {
  * expression every node component uses, so an edge coloured with it matches the border of the node
  * it leaves. Undefined for a type the table does not know.
  */
+export function nodeBorderColor(type: keyof typeof DEFAULT_NODE_BORDER_BY_TYPE, accentColor?: string): string;
+export function nodeBorderColor(type: string | undefined, accentColor?: string): string | undefined;
 export function nodeBorderColor(type: string | undefined, accentColor?: string): string | undefined {
   return accentColor ?? DEFAULT_NODE_BORDER_BY_TYPE[type as keyof typeof DEFAULT_NODE_BORDER_BY_TYPE];
 }

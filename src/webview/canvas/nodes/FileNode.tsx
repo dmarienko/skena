@@ -36,7 +36,7 @@ import { ImageRenderer } from '../../renderers/ImageRenderer';
 import { HtmlShadow } from '../../renderers/HtmlShadow';
 import { useHighlightedHtml } from '../../lib/codeHighlight';
 import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
-import { DEFAULT_NODE_BORDER_BY_TYPE } from '../palette';
+import { nodeBorderColor } from '../palette';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -172,7 +172,7 @@ function FileNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     }
   }, [openInEditor]);
 
-  const borderColor = node.accentColor ?? DEFAULT_NODE_BORDER_BY_TYPE.file;
+  const borderColor = nodeBorderColor('file', node.accentColor);
 
   return (
     <>

@@ -13,7 +13,7 @@ import { initVimMode } from 'monaco-vim';
 import { CodeNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
-import { DEFAULT_NODE_BORDER_BY_TYPE } from '../palette';
+import { nodeBorderColor } from '../palette';
 import { makeCellKernelResolver } from '../../../shared/kernelBinding';
 import type { SectionLane } from '../../../shared/sectionLanes';
 import type { KernelRecord } from '../../../shared/types';
@@ -65,7 +65,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as CodeNode & { accentColor?: string };
   const bw = useZoomInvariantBorderWidth(1.5);
   const selectedStyle = useSelectedStyle(selected);
-  const borderColor = node.accentColor ?? DEFAULT_NODE_BORDER_BY_TYPE.code;
+  const borderColor = nodeBorderColor('code', node.accentColor);
   const [code, setCode] = useState(node.code ?? '');
   const [editing, setEditing] = useState(false);
   // - use the VS Code editor font (family + size) so the Monaco editor matches the shiki

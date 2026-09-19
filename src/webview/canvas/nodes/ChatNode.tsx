@@ -7,13 +7,13 @@ import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import { ChatNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
-import { DEFAULT_NODE_BORDER_BY_TYPE } from '../palette';
+import { nodeBorderColor } from '../palette';
 
 export function ChatNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as ChatNode & { accentColor?: string };
   const selectedStyle = useSelectedStyle(selected);
   const bw = useZoomInvariantBorderWidth(1.5);
-  const borderColor = node.accentColor ?? DEFAULT_NODE_BORDER_BY_TYPE.chat;
+  const borderColor = nodeBorderColor('chat', node.accentColor);
 
   return (
     <>

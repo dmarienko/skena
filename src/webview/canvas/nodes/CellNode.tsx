@@ -13,13 +13,13 @@ import { MarkdownRenderer } from '../../renderers/MarkdownRenderer';
 import { PlotlyRenderer } from '../../renderers/PlotlyRenderer';
 import { ScrollableContent } from '../../components/ScrollableContent';
 import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
-import { DEFAULT_NODE_BORDER_BY_TYPE } from '../palette';
+import { nodeBorderColor } from '../palette';
 
 export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as CellNode & { accentColor?: string };
   const selectedStyle = useSelectedStyle(selected);
   const bw = useZoomInvariantBorderWidth(1.5);
-  const borderColor = node.accentColor ?? DEFAULT_NODE_BORDER_BY_TYPE.cell;
+  const borderColor = nodeBorderColor('cell', node.accentColor);
 
   // - cap oversized HTML (e.g. a huge dataframe) BEFORE it becomes DOM, so an existing giant cell
   //   from disk can't freeze the canvas on load. New runs are already capped host-side.

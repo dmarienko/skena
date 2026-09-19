@@ -8,7 +8,7 @@ import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import { PortalNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { useZoomInvariantBorderWidth } from './nodeShared';
-import { DEFAULT_NODE_BORDER_BY_TYPE } from '../palette';
+import { nodeBorderColor } from '../palette';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -22,7 +22,7 @@ function canvasBasename(p: string): string {
 
 export function PortalNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as PortalNode & { accentColor?: string };
-  const borderColor = node.accentColor ?? DEFAULT_NODE_BORDER_BY_TYPE.portal;
+  const borderColor = nodeBorderColor('portal', node.accentColor);
   const bw = useZoomInvariantBorderWidth(2);
 
   const open = () => vscodePostMessage({ type: 'openFile', uri: node.canvas });

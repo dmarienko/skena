@@ -8,7 +8,7 @@ import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import { LinkNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
-import { DEFAULT_NODE_BORDER_BY_TYPE } from '../palette';
+import { nodeBorderColor } from '../palette';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -31,7 +31,7 @@ export function LinkNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
   const node = data as unknown as LinkNode & { accentColor?: string };
   const selectedStyle = useSelectedStyle(selected);
   const bw = useZoomInvariantBorderWidth(1.5);
-  const borderColor = node.accentColor ?? DEFAULT_NODE_BORDER_BY_TYPE.link;
+  const borderColor = nodeBorderColor('link', node.accentColor);
   const favicon = getFaviconUrl(node.url);
 
   const open = () => vscodePostMessage({ type: 'openFile', uri: node.url });
