@@ -120,6 +120,12 @@ export function MarksPanel({ marks, nodes, sections, onJump, onPickSection, onCl
   // - all displayed rows can be chosen; start on the first
   const [sel, setSel] = useState(0);
 
+  // - a section can vanish on reload while the panel stays open; without this Enter goes at
+  //   rows[sel] === undefined and does nothing
+  useEffect(() => {
+    if (sel >= rows.length) setSel(0);
+  }, [rows.length, sel]);
+
   const rowRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   // - scroll selected row into view
@@ -201,8 +207,10 @@ export function MarksPanel({ marks, nodes, sections, onJump, onPickSection, onCl
           letterSpacing: '0.04em',
           textTransform: 'uppercase',
         }}>
-          {sectionRows.length > 0
+          {sectionRows.length > 0 && entries.length > 0
             ? 'Sections & bookmarks'
+            : sectionRows.length > 0
+            ? 'Sections'
             : `Bookmarks ${entries.length > 0 ? `(${entries.length})` : ''}`}
         </div>
 
