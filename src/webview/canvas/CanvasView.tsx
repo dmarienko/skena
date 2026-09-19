@@ -1749,18 +1749,14 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   // - per-lane count of nodes handlePickSection can actually focus: memberIds includes band (group)
   //   nodes, which a pick skips, so the marks panel row and the folded band both read from here
   const laneFocusableCounts = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const l of derivedLanes) {
-      const members = new Set(l.memberIds);
-      m.set(l.id, nodes.filter(n => members.has(n.id) && !isBandType(n.type)).length);
-    }
-    return m;
+    const band = new Set(nodes.filter(n => isBandType(n.type)).map(n => n.id));
+    return new Map(derivedLanes.map(l => [l.id, l.memberIds.filter(id => !band.has(id)).length]));
   }, [derivedLanes, nodes]);
 
   // - the section rows of the marks panel: stack order, the rail's title for an untitled one
   const marksSections = useMemo<SectionEntry[]>(() => derivedLanes.map(l => ({
     id: l.id, label: l.label, title: l.title?.trim() || fmtDateTime(l.createdAt),
-    count: laneFocusableCounts.get(l.id) ?? l.memberIds.length, folded: !!l.folded,
+    count: laneFocusableCounts.get(l.id) ?? 0, folded: !!l.folded,
   })), [derivedLanes, laneFocusableCounts]);
 
   /**

@@ -120,10 +120,10 @@ export function MarksPanel({ marks, nodes, sections, onJump, onPickSection, onCl
   // - all displayed rows can be chosen; start on the first
   const [sel, setSel] = useState(0);
 
-  // - a section can vanish on reload while the panel stays open; without this Enter goes at
-  //   rows[sel] === undefined and does nothing
+  // - a section can vanish on reload while the panel stays open; this keeps the selection usable
+  //   after the row list shrinks, without a keypress
   useEffect(() => {
-    if (sel >= rows.length) setSel(0);
+    if (rows.length > 0 && sel >= rows.length) setSel(rows.length - 1);
   }, [rows.length, sel]);
 
   const rowRefs = useRef<(HTMLDivElement | null)[]>([]);

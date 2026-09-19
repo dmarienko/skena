@@ -32,7 +32,7 @@ export function SectionSeparators({ lanes, kernels, focusableCounts }: { lanes: 
         //   a kernel node's is its name
         const kernelName = kernel ? (kernel.kind === 'record' ? kernel.label : kernel.name) : null;
         // - the count of nodes a pick can actually focus: memberIds also holds band (group) nodes
-        const count = `${focusableCounts.get(l.id) ?? l.memberIds.length} nodes`;
+        const count = `${focusableCounts.get(l.id) ?? 0} nodes`;
         // - flow-space text: it scales with the canvas, so it keeps its place in the band at any zoom
         return (
           <div key={`${l.id}-band`}
@@ -40,7 +40,7 @@ export function SectionSeparators({ lanes, kernels, focusableCounts }: { lanes: 
             <div style={{ fontFamily: FONT, fontWeight: 600, fontSize: 12 * zoom, color, whiteSpace: 'nowrap', maxWidth: '70%', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {l.title?.trim() || fmtDateTime(l.createdAt)}
             </div>
-            <div style={{ fontFamily: FONT, fontSize: 10.5 * zoom, color: 'var(--sk-text2)', whiteSpace: 'nowrap' }}>
+            <div style={{ fontFamily: FONT, fontSize: 10.5 * zoom, color: 'var(--sk-text2)', whiteSpace: 'nowrap', maxWidth: '70%', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {kernelName ? `${count} · ${kernelName}` : count}
             </div>
           </div>
