@@ -4,12 +4,15 @@
  * knowledgeServers / knowledgeSearch / knowledgeFetch / knowledgeScopes and reads the answers
  * the host sends back, matched by requestId.
  *
- * Keys while the input has focus:
+ * Keys while the dialog is open:
  *   ↑ / ↓        → move the highlight
  *   Tab          → next scope (only when the server has scopes)
  *   Enter        → add the highlighted hit to the canvas
  *   Esc          → close
  *   Ctrl+F       → back to the input
+ *
+ * ↑ / ↓, Tab and Enter need the input focused. Esc and Ctrl+F work wherever the focus is: while
+ * the dialog is open the canvas forwards those two and swallows the rest.
  *
  * A server with `facets` also answers with its tag names; a `#tag` the server does not have is
  * left out of the search and named in the status line.
@@ -33,10 +36,6 @@ function vscodePostMessage(msg: unknown) {
 // - request can be recognised and dropped
 let requestCounter = 0;
 const nextRequestId = (): number => ++requestCounter;
-
-// - the host's skena.knowledge.refreshAfterHours, remembered from the server list for the
-// - staleness check that refreshes nodes on canvas open
-export let knowledgeRefreshAfterHours = 24;
 
 type ServerRow = MsgKnowledgeServersResult['servers'][number];
 
@@ -97,7 +96,6 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
   useEffect(() => {
     const onServers = (e: Event) => {
       const msg = (e as CustomEvent<MsgKnowledgeServersResult>).detail;
-      knowledgeRefreshAfterHours = msg.refreshAfterHours;
       setRows(msg.servers);
       dispatch({ kind: 'servers', servers: msg.servers });
     };
@@ -128,6 +126,11 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
       const key = pendingFacetsKey.current;
       setKnownTags(m => new Map(m).set(key, names));
     };
+    // - Ctrl+F pressed while the focus sits on a row, the preview or the server list
+    const onFocusInput = () => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    };
     // - the parent's fetch for Enter failed; it keeps the dialog open and sends the message here
     const onPickError = (e: Event) => {
       setPending('');
@@ -139,6 +142,7 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
     window.addEventListener('skena:knowledgeFetchResult',   onFetch);
     window.addEventListener('skena:knowledgeFacetsResult',  onFacets);
     window.addEventListener('skena:knowledgePickError',     onPickError);
+    window.addEventListener('skena:knowledgeFocus',         onFocusInput);
     return () => {
       window.removeEventListener('skena:knowledgeServersResult', onServers);
       window.removeEventListener('skena:knowledgeScopesResult',  onScopes);
@@ -146,6 +150,7 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
       window.removeEventListener('skena:knowledgeFetchResult',   onFetch);
       window.removeEventListener('skena:knowledgeFacetsResult',  onFacets);
       window.removeEventListener('skena:knowledgePickError',     onPickError);
+      window.removeEventListener('skena:knowledgeFocus',         onFocusInput);
     };
   }, []);
 
@@ -171,8 +176,12 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
   }, [facetsKey, state.server, state.scope, caps?.facets, knownTags]);
 
   useEffect(() => {
+    // - this run replaces whatever is in flight, so a reply to the previous request — the query
+    // - just cleared, the server just switched away from — no longer matches the id
+    searchId.current = nextRequestId();
     if (!state.server) return;
-    const { text, tags } = splitTags(state.query);
+    // - a server without a tags filter gets the #tokens as part of the text, as typed
+    const { text, tags } = caps?.tags ? splitTags(state.query) : { text: state.query.trim(), tags: [] as string[] };
     // - nothing typed yet: clear the list, and no status text to report about it
     if (!text && tags.length === 0) { setTagNote(''); dispatch({ kind: 'error', message: '' }); return; }
     // - with the server's tag names in hand, a tag it does not have is left out; without them
@@ -215,17 +224,20 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
   }, [hit?.uri, hit?.server]);
 
   const pick = useCallback((h: KnowledgeHit) => {
+    if (pending) return;   // - a fetch for the previous Enter is still out
     const text = cache.current.get(h.uri) ?? null;
     setPending(text ? '' : 'fetching…');
     onPick(h, text);
-  }, [onPick]);
+  }, [onPick, pending]);
 
   const onKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Escape')    { e.preventDefault(); onClose(); return; }
     if (e.key === 'ArrowDown') { e.preventDefault(); dispatch({ kind: 'move', by:  1 }); return; }
     if (e.key === 'ArrowUp')   { e.preventDefault(); dispatch({ kind: 'move', by: -1 }); return; }
-    // - with no scopes there is nothing to cycle, so Tab keeps its usual job
-    if (e.key === 'Tab' && state.scopes.length > 0) { e.preventDefault(); dispatch({ kind: 'cycleScope' }); return; }
+    // - a server with scopes consumes Tab even before its scope list arrives, so Tab never walks
+    // - the focus off to the × button; without scopes there is nothing to cycle and Tab does its
+    // - usual job
+    if (e.key === 'Tab' && caps?.scopes) { e.preventDefault(); dispatch({ kind: 'cycleScope' }); return; }
     if (e.key === 'Enter') {
       e.preventDefault();
       const h = state.hits[state.highlight];
@@ -237,10 +249,11 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
       inputRef.current?.focus();
       inputRef.current?.select();
     }
-  }, [state.scopes.length, state.hits, state.highlight, pick, onClose]);
+  }, [caps?.scopes, state.hits, state.highlight, pick, onClose]);
 
-  // - the dropped-tag note sits ahead of the hit count, and both are shown
-  const status = pending || preview.error || [tagNote, state.status].filter(Boolean).join(' · ');
+  // - the hit count and the message of the moment are two segments, so neither hides the other
+  const note   = pending || preview.error || tagNote;
+  const status = [state.status, note].filter(Boolean).join(' · ');
 
   return (
     <div

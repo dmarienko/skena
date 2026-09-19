@@ -546,7 +546,12 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const [marksOpen, setMarksOpen] = useState(false);
   // - mirrored so the stable document-level paste listener sees panel state without re-subscribing
   const panelOpenRef = useRef(false);
-  useEffect(() => { panelOpenRef.current = searchOpen || marksOpen || knowledgeOpen; });
+  // - same for the keydown handler, which hands the keyboard to the knowledge dialog while it is open
+  const knowledgeOpenRef = useRef(false);
+  useEffect(() => {
+    panelOpenRef.current     = searchOpen || marksOpen || knowledgeOpen;
+    knowledgeOpenRef.current = knowledgeOpen;
+  });
 
   // - restore marks from workspaceState (sent by host on canvas open)
   useEffect(() => {
@@ -2022,6 +2027,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     if (topLeft) requestAnimationFrame(() => revealNode(topLeft.id));
   }, [setNodes, setEdges, scheduleSave, pushHistory, revealNode, runEngine]);
 
+  // - counts the knowledge nodes this canvas has added, so two within the same millisecond differ
+  const knowledgeSeq = useRef(0);
+
   // - a knowledge hit lands where a paste would: the slot right of the focused node, or the pane
   //   centre with nothing focused. The height stays 300 — a knowledge node is not measured after
   //   render, only a code cell is.
@@ -2042,7 +2050,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       target = clampToOrigin(snapGrid(cx), snapGrid(cy));
     }
     const cn: KnowledgeNode = {
-      id: `knowledge-${Date.now()}`, type: 'knowledge',
+      id: `knowledge-${Date.now()}-${knowledgeSeq.current++}`, type: 'knowledge',
       x: target.x, y: target.y, width: w, height: h,
       server: hit.server, uri: hit.uri, title: text.title || hit.title,
       text: text.text, fetchedAt: text.fetchedAt,
@@ -2052,16 +2060,23 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     }));
   }, []); // - no deps: reads refs, not state
 
+  // - one count of the picks this canvas has started; closing the dialog bumps it, so the fetch
+  //   a closed dialog left in flight adds nothing when it lands
+  const pickSeq = useRef(0);
+  const closeKnowledge = useCallback(() => { pickSeq.current++; setKnowledgeOpen(false); }, []);
+
   // - Enter in the knowledge dialog. Without the text (the preview had not fetched it yet) the node
   //   would cache nothing, so fetch first and keep the dialog open until the text is in hand.
   const handleKnowledgePick = useCallback((hit: KnowledgeHit, text: KnowledgeText | null) => {
     if (text) { placeKnowledgeNode(hit, text); setKnowledgeOpen(false); return; }
     // - a timestamp id never equals the dialog's own counter, so it ignores this answer
     const requestId = Date.now();
+    const seq = pickSeq.current;
     const onResult = (e: Event) => {
       const msg = (e as CustomEvent<MsgKnowledgeFetchResult>).detail;
       if (msg.requestId !== requestId) return;
       window.removeEventListener('skena:knowledgeFetchResult', onResult);
+      if (seq !== pickSeq.current) return;   // - Esc came first: this pick was called off
       if (msg.error || !msg.text) {
         window.dispatchEvent(new CustomEvent('skena:knowledgePickError', { detail: { message: msg.error ?? 'no text' } }));
         return;
@@ -2468,6 +2483,18 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         active instanceof HTMLInputElement ||
         active instanceof HTMLTextAreaElement ||
         !!active?.closest('.monaco-editor');
+
+      // - the knowledge dialog owns the keyboard while it is open: Esc closes it, Ctrl+F puts the
+      // - focus back in its input, and every other key stops here rather than reaching the canvas
+      // - (a click on a result row or the preview leaves no input focused, so inField is false)
+      if (knowledgeOpenRef.current) {
+        if (e.key === 'Escape') { e.preventDefault(); closeKnowledge(); return; }
+        if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === 'f') {
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent('skena:knowledgeFocus'));
+        }
+        return;
+      }
 
       // - Ctrl+F: search the knowledge servers. NOT while editing — an editor needs its own find.
       if (!inField && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === 'f') {
@@ -3104,7 +3131,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       gLabelsRef.current = EMPTY_LABELS;
       setGHints([]);
     };
-  }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToRegister, engineNodesOf, runEngineAfterMove, canvasPath]); // - nodesRef + spaceSelectedRef carry live state
+  }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, closeKnowledge, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToRegister, engineNodesOf, runEngineAfterMove, canvasPath]); // - nodesRef + spaceSelectedRef carry live state
 
   // - expose a viewport snapshot for the AI companion (what the user actually sees:
   // - zoom, on-screen node labels, scroll position within the focused node)
@@ -3956,7 +3983,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       {knowledgeOpen && (
         <KnowledgeSearch
           onPick={handleKnowledgePick}
-          onClose={() => setKnowledgeOpen(false)}
+          onClose={closeKnowledge}
         />
       )}
       {marksOpen && (
