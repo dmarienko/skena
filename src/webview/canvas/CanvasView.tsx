@@ -1952,8 +1952,13 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     const anchor = nodesRef.current.find(n => n.selected && !isBandType(n.type));
     let target: { x: number; y: number };
     if (anchor) {
+      // - the slot one gap right of the anchor, the same one `Alt+X l` adds into. A node already
+      // - sitting there is no reason to look further along the row: the engine below runs with the
+      // - group as the mover and moves what it covers. Null only when the slot falls outside the
+      // - canvas, which an 'L' slot right of a clamped anchor cannot.
       const anchorW = Number(anchor.style?.width ?? 200);
-      target = findFreePosition(nodesRef.current, anchor.position.x + anchorW + GRID, anchor.position.y, groupW, groupH, 1, 0);
+      const slot = directionSlot('L', { x: anchor.position.x, y: anchor.position.y, w: anchorW }, groupW, groupH);
+      target = slot ?? findFreePosition(nodesRef.current, anchor.position.x + anchorW + GRID, anchor.position.y, groupW, groupH, 1, 0);
     } else {
       // - no focus: centre on the React Flow pane, which starts right of the rail
       if (!wrapperRef.current) return;   // - before the pane mounts there is nowhere to centre on
