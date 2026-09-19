@@ -2095,8 +2095,16 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       .map(n => ({ id: n.id, server: n.server, uri: n.uri, text: n.text, fetchedAt: n.fetchedAt })),
   []); // - canvasRef is a ref, always current
 
+  // - the host runs one refresh per canvas and a second request cancels the first, so a node's
+  //   button pressed while the open-canvas refresh is still running waits its turn instead of
+  //   cutting that run short. The host says when it is done; the waiting targets go then.
+  const refreshRunning = useRef(false);
+  const refreshQueued  = useRef<RefreshTarget[]>([]);
+
   const postKnowledgeRefresh = useCallback((targets: RefreshTarget[]) => {
     if (targets.length === 0) return;
+    if (refreshRunning.current) { refreshQueued.current.push(...targets); return; }
+    refreshRunning.current = true;
     vscodePostMessage({
       type: 'knowledgeRefresh',
       nodes: targets.map(({ id, server, uri, text }) => ({ id, server, uri, text })),
@@ -2138,7 +2146,14 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   //   entry — the user did nothing to undo.
   useEffect(() => {
     const handler = (e: Event) => {
-      const batch = (e as CustomEvent<MsgKnowledgeRefreshed>).detail.nodes;
+      const { nodes: batch, done: finished } = (e as CustomEvent<MsgKnowledgeRefreshed>).detail;
+      if (finished) {
+        refreshRunning.current = false;
+        // - by id: the same node clicked twice while waiting is fetched once
+        const queued = [...new Map(refreshQueued.current.map(t => [t.id, t])).values()];
+        refreshQueued.current = [];
+        if (queued.length > 0) postKnowledgeRefresh(queued);
+      }
       const byId = new Map(batch.map(o => [o.id, o]));
       const fields = (o: RefreshOutcome) => ({
         ...(o.text      !== undefined ? { text:      o.text }      : {}),
@@ -2164,23 +2179,27 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     };
     window.addEventListener('skena:knowledgeRefreshed', handler);
     return () => window.removeEventListener('skena:knowledgeRefreshed', handler);
-  }, [setNodes, scheduleSave]);
+  }, [setNodes, scheduleSave, postKnowledgeRefresh]);
 
   // - the dot means "the server's text moved since you last read this node"; selecting the node is
   //   that read, so it goes away
   useEffect(() => {
-    const selected = nodesRef.current.find(n => n.selected && n.type === 'knowledge');
-    if (!selected || !(selected.data as unknown as KnowledgeNode).changed) return;
-    const id = selected.id;
+    const ids = new Set(
+      nodesRef.current
+        .filter(n => n.selected && n.type === 'knowledge' && (n.data as unknown as KnowledgeNode).changed)
+        .map(n => n.id),
+    );
+    if (ids.size === 0) return;
     canvasRef.current = {
       ...canvasRef.current,
-      nodes: canvasRef.current.nodes.map(n => (n.id === id && n.type === 'knowledge' ? { ...n, changed: false } : n)),
+      nodes: canvasRef.current.nodes.map(n => (ids.has(n.id) && n.type === 'knowledge' ? { ...n, changed: false } : n)),
     };
-    setNodes(nds => nds.map(n => (n.id === id ? { ...n, data: { ...n.data, changed: false } } : n)));
+    setNodes(nds => nds.map(n => (ids.has(n.id) ? { ...n, data: { ...n.data, changed: false } } : n)));
     scheduleSave();
-  // - the selection pattern, not the whole array: a drag must not re-run this
+  // - the selected ids and their marks, not the whole array: a drag must not re-run this, but a
+  //   refresh landing on a node that is already selected must
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes.map(n => n.selected ? n.id : '').join(','), setNodes, scheduleSave]);
+  }, [nodes.map(n => n.selected ? `${n.id}:${(n.data as unknown as KnowledgeNode).changed ? 1 : 0}` : '').join(','), setNodes, scheduleSave]);
 
   const handleMoveToSubCanvas = useCallback(() => {
     const selectedNodes = nodesRef.current.filter(n => n.selected && !isBandType(n.type));
@@ -3104,6 +3123,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         active instanceof HTMLTextAreaElement ||
         active?.closest('.monaco-editor')
       ) return;
+      // - the knowledge dialog owns the keyboard while it is open, and a click on a result row
+      //   leaves no input focused, so the check above does not cover it
+      if (knowledgeOpenRef.current) return;
       // - mid mark/chord sequence → let the bubble handler consume it as before
       if (pendingMarkRef.current !== null || chordRef.current) return;
       e.preventDefault();

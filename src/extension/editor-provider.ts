@@ -477,8 +477,13 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         case 'moveToSubCanvas': await this.handleMoveToSubCanvas(msg, canvasDir, send); break;
         // - knowledge: settings are re-read here, so editing a token or a url only needs a reload
         case 'knowledgeServers': {
-          this.knowledge.configure(await getKnowledgeServers());
-          send({ type: 'knowledgeServersResult', servers: this.knowledge.list(), refreshAfterHours: await getKnowledgeRefreshAfterHours() });
+          try {
+            this.knowledge.configure(await getKnowledgeServers());
+            send({ type: 'knowledgeServersResult', servers: this.knowledge.list(), refreshAfterHours: await getKnowledgeRefreshAfterHours() });
+          } catch (e) {
+            // - the webview waits for this answer before it refreshes anything, so it always gets one
+            send({ type: 'knowledgeServersResult', servers: [], refreshAfterHours: 24, error: (e as Error).message });
+          }
           break;
         }
         case 'knowledgeSearch': {
@@ -515,8 +520,13 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           break;
         }
         case 'knowledgeRefresh': {
-          // - the fetches run here so the canvas stays responsive; outcomes come back in batches
-          knowledgeRefreshRun = this.knowledge.startRefresh(msg.nodes, batch => send({ type: 'knowledgeRefreshed', nodes: batch }));
+          // - the fetches run here so the canvas stays responsive; outcomes come back in batches.
+          //   Keyed by canvas path: another canvas opening does not cancel this one's run
+          knowledgeRefreshRun = this.knowledge.startRefresh(
+            document.uri.fsPath,
+            msg.nodes,
+            (batch, finished) => send({ type: 'knowledgeRefreshed', nodes: batch, done: finished }),
+          );
           break;
         }
         case 'knowledgeOpen': {

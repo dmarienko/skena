@@ -231,7 +231,8 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
   }, [onPick, pending]);
 
   const onKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Escape')    { e.preventDefault(); onClose(); return; }
+    // - no Escape here: while the dialog is open the canvas keydown handler owns it, so the two
+    //   would otherwise both close it on one press
     if (e.key === 'ArrowDown') { e.preventDefault(); dispatch({ kind: 'move', by:  1 }); return; }
     if (e.key === 'ArrowUp')   { e.preventDefault(); dispatch({ kind: 'move', by: -1 }); return; }
     // - a server with scopes consumes Tab even before its scope list arrives, so Tab never walks
@@ -249,7 +250,7 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
       inputRef.current?.focus();
       inputRef.current?.select();
     }
-  }, [caps?.scopes, state.hits, state.highlight, pick, onClose]);
+  }, [caps?.scopes, state.hits, state.highlight, pick]);
 
   // - the hit count and the message of the moment are two segments, so neither hides the other
   const note   = pending || preview.error || tagNote;

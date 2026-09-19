@@ -11,6 +11,12 @@ const NO_CAPABILITIES: KnowledgeCapabilities = { scopes: false, tags: false, rec
 //   fill in, rarely enough that a canvas with hundreds of them repaints a few at a time
 const BATCH_MS = 250;
 
+// - the failures that mean the server itself did not answer, so the rest of its targets would fail
+//   the same way: a timeout or an HTTP status from McpHttpClient, undici's bare "fetch failed", and
+//   this file's own "no knowledge server". Anything else (a uri that does not parse, an unknown
+//   tool name) belongs to the one node that asked for it.
+const TRANSPORT = /timed out after|^HTTP \d|fetch failed|^no knowledge server /;
+
 /**
  * Owns one provider per configured server. Nothing here talks to the network: a provider is built
  * from its config, and the transport connects on its first tool call.
@@ -19,8 +25,8 @@ export class KnowledgeService {
   private providers = new Map<string, KnowledgeProvider>();
   private errors = new Map<string, string>();
   private configured: string[] = [];
-  /** - the run started by the last startRefresh, so the next one can cancel it */
-  private refreshing: { cancel(): void } | null = null;
+  /** - the open run per canvas, so a second canvas does not cancel the first one's fetches */
+  private refreshing = new Map<string, { cancel(): void }>();
 
   /** - re-read on every webview ready, so a token or url edit takes effect on reload */
   configure(servers: KnowledgeServerConfig[]): void {
@@ -55,20 +61,28 @@ export class KnowledgeService {
 
   /**
    * Fetch each target again and report the outcomes in batches. The calls run here, off the
-   * webview, at most MAX_IN_FLIGHT per server; a server that fails once drops the rest of its
-   * targets. One run at a time: a new call cancels the previous one.
+   * webview, at most MAX_IN_FLIGHT per server; a server that did not answer drops the rest of its
+   * targets. One run per key (the canvas path): a new call cancels the previous run of that key
+   * only. The last emit of a run carries finished = true, whether it ran out or was cancelled.
    */
-  startRefresh(targets: RefreshTarget[], emit: (batch: RefreshOutcome[]) => void): { cancel(): void } {
-    this.refreshing?.cancel();
+  startRefresh(
+    key: string,
+    targets: RefreshTarget[],
+    emit: (batch: RefreshOutcome[], finished: boolean) => void,
+  ): { cancel(): void } {
+    this.refreshing.get(key)?.cancel();
     const q = newQueue(targets);
     let cancelled = false;
+    let stopped = false;
     let timer: ReturnType<typeof setInterval> | null = null;
 
     const stop = () => {
+      if (stopped) return;
+      stopped = true;
       if (timer) clearInterval(timer);
       timer = null;
-      if (q.ready.length > 0) emit(drain(q));
-      if (this.refreshing === handle) this.refreshing = null;
+      if (this.refreshing.get(key) === handle) this.refreshing.delete(key);
+      emit(drain(q), true);
     };
 
     const fetchOne = async (t: RefreshTarget) => {
@@ -78,10 +92,13 @@ export class KnowledgeService {
         settle(q, t, outcomeOf(t, { text: got.text, title: got.title, fetchedAt: got.fetchedAt }));
       } catch (e) {
         if (cancelled) return;
-        // - a uri that no longer resolves is this node's problem; anything else (no such server,
-        //   timeout, HTTP error) is the server's, so the run for that server stops
+        // - a uri that no longer resolves is this node's problem, and so is a malformed one; only a
+        //   server that did not answer stops the rest of its targets
         if (e instanceof KnowledgeGoneError) settle(q, t, outcomeOf(t, { gone: e.message }));
-        else settle(q, t, outcomeOf(t, { error: (e as Error).message }), true);
+        else {
+          const msg = (e as Error).message;
+          settle(q, t, outcomeOf(t, { error: msg }), TRANSPORT.test(msg));
+        }
       }
       if (!cancelled) fillSlots();
     };
@@ -92,15 +109,14 @@ export class KnowledgeService {
 
     const handle = {
       cancel: () => {
-        if (cancelled) return;
         cancelled = true;
         stop();
       },
     };
-    this.refreshing = handle;
+    this.refreshing.set(key, handle);
 
     timer = setInterval(() => {
-      if (q.ready.length > 0) emit(drain(q));
+      if (q.ready.length > 0) emit(drain(q), false);
       if (done(q)) stop();
     }, BATCH_MS);
     fillSlots();

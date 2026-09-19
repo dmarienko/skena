@@ -6,6 +6,7 @@
 // - type-only, so the sectionLanes ↔ types cycle is erased at build time
 import type { SectionLane } from './sectionLanes';
 import type { KnowledgeCapabilities, KnowledgeHit, KnowledgeQuery, KnowledgeText } from './knowledge/types';
+import type { RefreshOutcome } from './knowledge/refresh';
 
 // ─── JSON Canvas spec types ───────────────────────────────────────────────────
 
@@ -453,6 +454,8 @@ export interface MsgKnowledgeServersResult {
   type: 'knowledgeServersResult';
   servers: { name: string; kind: string; capabilities: KnowledgeCapabilities; error?: string }[];
   refreshAfterHours: number;
+  /** - the host could not read the settings at all; the list is empty for that reason */
+  error?: string;
 }
 export interface MsgKnowledgeSearchResult { type: 'knowledgeSearchResult'; requestId: number; hits?: KnowledgeHit[]; error?: string }
 export interface MsgKnowledgeFetchResult  { type: 'knowledgeFetchResult';  requestId: number; text?: KnowledgeText; error?: string }
@@ -460,7 +463,9 @@ export interface MsgKnowledgeScopesResult { type: 'knowledgeScopesResult'; reque
 export interface MsgKnowledgeFacetsResult { type: 'knowledgeFacetsResult'; requestId: number; tags?: [string, number][]; error?: string }
 export interface MsgKnowledgeRefreshed {
   type: 'knowledgeRefreshed';
-  nodes: { id: string; text?: string; title?: string; fetchedAt?: string; changed?: boolean; error?: string }[];
+  nodes: RefreshOutcome[];
+  /** - the last message of a run, whether it ran out or was cancelled; the batch may be empty */
+  done?: boolean;
 }
 
 export type HostToWebview =
