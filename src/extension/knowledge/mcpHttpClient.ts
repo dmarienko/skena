@@ -1,4 +1,5 @@
-import { buildRequest, parseJsonBody, parseSseBody, pickResponse, toolResultText } from '../../shared/knowledge/jsonrpc';
+import { buildRequest, hasResponse, parseJsonBody, parseSseBody, pickResponse, toolResultText } from '../../shared/knowledge/jsonrpc';
+import type { RpcMessage } from '../../shared/knowledge/jsonrpc';
 import type { ToolTransport } from '../../shared/knowledge/types';
 
 export interface McpHttpClientOptions { url: string; token?: string; timeoutMs?: number; clientName?: string }
@@ -17,6 +18,41 @@ function describeErrorBody(body: string): string {
   }
 }
 
+// - the call's own deadline and the caller's cancel as one signal; AbortSignal.any arrived in
+//   Node 20 and the host may be older
+function anySignal(deadline: AbortSignal, external?: AbortSignal): AbortSignal {
+  if (!external) return deadline;
+  const any = (AbortSignal as unknown as { any?: (s: AbortSignal[]) => AbortSignal }).any;
+  if (any) return any([deadline, external]);
+  const ctl = new AbortController();
+  if (deadline.aborted || external.aborted) ctl.abort();
+  else for (const s of [deadline, external]) s.addEventListener('abort', () => ctl.abort(), { once: true });
+  return ctl.signal;
+}
+
+// - an event-stream reply is a stream the server may keep open after the answer: read block by
+//   block and stop at the frame this request waited for, rather than at the end of the stream
+async function readSseUntil(res: Response, id: number): Promise<RpcMessage[]> {
+  if (!res.body) return parseSseBody(await res.text());
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  const msgs: RpcMessage[] = [];
+  let buf = '';
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (value) buf += decoder.decode(value, { stream: true });
+      const blocks = buf.split(/\r?\n\r?\n/);
+      // - what follows the last blank line is a block the server is still writing
+      buf = done ? '' : blocks.pop() ?? '';
+      for (const b of blocks) msgs.push(...parseSseBody(b));
+      if (done || hasResponse(msgs, id)) return msgs;
+    }
+  } finally {
+    void reader.cancel();
+  }
+}
+
 // - streamable HTTP: every request is a POST; the reply is JSON or an SSE stream holding the reply
 export class McpHttpClient implements ToolTransport {
   private nextId = 1;
@@ -26,18 +62,21 @@ export class McpHttpClient implements ToolTransport {
   constructor(private readonly opts: McpHttpClientOptions) {}
 
   // - one deadline for the whole call: initialize, the initialized notice and tools/call all share
-  //   it, so a cold first call cannot take three timeouts' worth of waiting
-  async callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
+  //   it, so a cold first call cannot take three timeouts' worth of waiting. `signal` is the
+  //   caller's own cancel; a call it aborts rejects with "cancelled", not with the timeout text
+  async callTool(name: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), this.opts.timeoutMs ?? 5000);
+    const combined = anySignal(ctl.signal, signal);
     try {
       try {
-        return await this.call(name, args, ctl.signal);
+        return await this.call(name, args, combined);
       } catch (e) {
+        if (signal?.aborted) throw new Error('cancelled');
         if (this.sessionId && LOST_SESSION.test((e as Error).message)) {
           this.sessionId = undefined;
           this.initialized = undefined;
-          return await this.call(name, args, ctl.signal);
+          return await this.call(name, args, combined);
         }
         throw e;
       }
@@ -57,18 +96,19 @@ export class McpHttpClient implements ToolTransport {
         capabilities: {},
         clientInfo: { name: this.opts.clientName ?? 'skena', version: '1' },
       }, signal);
-      await this.post(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }), false, signal);
+      await this.post(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }), null, signal);
     })().catch(e => { this.initialized = undefined; throw e; });
     return this.initialized;
   }
 
   private async request(method: string, params: unknown, signal: AbortSignal): Promise<unknown> {
     const id = this.nextId++;
-    const msgs = await this.post(buildRequest(id, method, params), true, signal);
+    const msgs = await this.post(buildRequest(id, method, params), id, signal);
     return pickResponse(msgs, id);
   }
 
-  private async post(body: string, expectReply: boolean, signal: AbortSignal) {
+  // - expect is the request id whose reply to read back, or null for a notification
+  private async post(body: string, expect: number | null, signal: AbortSignal): Promise<RpcMessage[]> {
     try {
       const res = await fetch(this.opts.url, {
         method: 'POST',
@@ -83,10 +123,13 @@ export class McpHttpClient implements ToolTransport {
       });
       const sid = res.headers.get('mcp-session-id');
       if (sid) this.sessionId = sid;
-      const text = await res.text();
-      if (!res.ok) throw new Error(`HTTP ${res.status} from ${this.opts.url}${describeErrorBody(text)}`);
-      if (!expectReply) return [];
-      return (res.headers.get('content-type') ?? '').includes('text/event-stream') ? parseSseBody(text) : parseJsonBody(text);
+      if (!res.ok) throw new Error(`HTTP ${res.status} from ${this.opts.url}${describeErrorBody(await res.text())}`);
+      // - a notification has no reply to wait for; release the socket without reading the body,
+      //   which a server is free to leave open
+      if (expect === null) { void res.body?.cancel(); return []; }
+      return (res.headers.get('content-type') ?? '').includes('text/event-stream')
+        ? await readSseUntil(res, expect)
+        : parseJsonBody(await res.text());
     } catch (e) {
       if ((e as Error).name === 'AbortError') throw new Error(`${this.opts.url} timed out after ${this.opts.timeoutMs ?? 5000} ms`);
       throw e;

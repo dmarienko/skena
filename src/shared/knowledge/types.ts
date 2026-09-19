@@ -29,7 +29,8 @@ export interface KnowledgeProvider {
   readonly kind: string;
   readonly capabilities: KnowledgeCapabilities;
   search(q: KnowledgeQuery): Promise<KnowledgeHit[]>;
-  fetch(uri: string): Promise<KnowledgeText>;
+  // - signal: the caller's cancel (a refresh run being dropped); an aborted fetch rejects with "cancelled"
+  fetch(uri: string, signal?: AbortSignal): Promise<KnowledgeText>;
   scopes(): Promise<string[]>;
   facets(scope?: string): Promise<{ tags: [string, number][] }>;
   openUrl(uri: string): string | undefined;
@@ -40,7 +41,7 @@ export interface KnowledgeProvider {
 export interface KnowledgeServerConfig { name: string; kind: string; url: string; token?: string }
 
 /** - the one thing an adapter needs from a transport */
-export interface ToolTransport { callTool(name: string, args: Record<string, unknown>): Promise<unknown> }
+export interface ToolTransport { callTool(name: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> }
 
 /** - thrown by adapters when a uri no longer resolves (heading or page gone); refresh keeps the old text */
 export class KnowledgeGoneError extends Error {

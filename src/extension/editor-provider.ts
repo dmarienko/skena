@@ -522,11 +522,16 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         case 'knowledgeRefresh': {
           // - the fetches run here so the canvas stays responsive; outcomes come back in batches.
           //   Keyed by canvas path: another canvas opening does not cancel this one's run
-          knowledgeRefreshRun = this.knowledge.startRefresh(
-            document.uri.fsPath,
-            msg.nodes,
-            (batch, finished) => send({ type: 'knowledgeRefreshed', nodes: batch, done: finished }),
-          );
+          try {
+            knowledgeRefreshRun = this.knowledge.startRefresh(
+              document.uri.fsPath,
+              msg.nodes,
+              (batch, finished) => send({ type: 'knowledgeRefreshed', nodes: batch, done: finished }),
+            );
+          } catch {
+            // - the webview counts a refresh as running until a done batch arrives, so it gets one
+            send({ type: 'knowledgeRefreshed', nodes: [], done: true });
+          }
           break;
         }
         case 'knowledgeOpen': {

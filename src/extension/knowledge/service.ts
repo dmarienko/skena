@@ -22,22 +22,31 @@ const TRANSPORT = /timed out after|^HTTP \d|fetch failed|^no knowledge server /;
  * from its config, and the transport connects on its first tool call.
  */
 export class KnowledgeService {
-  private providers = new Map<string, KnowledgeProvider>();
+  /** - the live provider per server, with the config JSON it was built from */
+  private providers = new Map<string, { configJson: string; provider: KnowledgeProvider }>();
   private errors = new Map<string, string>();
   private configured: string[] = [];
   /** - the open run per canvas, so a second canvas does not cancel the first one's fetches */
   private refreshing = new Map<string, { cancel(): void }>();
 
-  /** - re-read on every webview ready, so a token or url edit takes effect on reload */
+  /**
+   * Re-read on every webview ready, so a token or url edit takes effect on reload. A server whose
+   * config did not change keeps its provider: the transport holds the session id and the
+   * initialize handshake, and rebuilding it would re-initialize against the server on every Ctrl+F.
+   */
   configure(servers: KnowledgeServerConfig[]): void {
-    this.providers.clear();
     this.errors.clear();
     this.configured = servers.map(s => s.name);
+    const names = new Set(this.configured);
+    for (const name of [...this.providers.keys()]) if (!names.has(name)) this.providers.delete(name);
     for (const s of servers) {
+      const configJson = JSON.stringify(s);
+      if (this.providers.get(s.name)?.configJson === configJson) continue;
       try {
-        this.providers.set(s.name, createProvider(s, new McpHttpClient({ url: s.url, token: s.token })));
+        this.providers.set(s.name, { configJson, provider: createProvider(s, new McpHttpClient({ url: s.url, token: s.token })) });
       } catch (e) {
         // - an unknown kind is listed as unavailable with its reason, not dropped
+        this.providers.delete(s.name);
         this.errors.set(s.name, (e as Error).message);
       }
     }
@@ -46,7 +55,7 @@ export class KnowledgeService {
   /** - config order, so the dialog's selector reads as the settings file does */
   list(): { name: string; kind: string; capabilities: KnowledgeCapabilities; error?: string }[] {
     return this.configured.map(name => {
-      const p = this.providers.get(name);
+      const p = this.providers.get(name)?.provider;
       return p
         ? { name: p.name, kind: p.kind, capabilities: p.capabilities }
         : { name, kind: 'unknown', capabilities: NO_CAPABILITIES, error: this.errors.get(name) ?? 'not configured' };
@@ -54,7 +63,7 @@ export class KnowledgeService {
   }
 
   provider(name: string): KnowledgeProvider {
-    const p = this.providers.get(name);
+    const p = this.providers.get(name)?.provider;
     if (!p) throw new Error(`no knowledge server "${name}" (configured: ${this.configured.join(', ') || 'none'})`);
     return p;
   }
@@ -72,6 +81,9 @@ export class KnowledgeService {
   ): { cancel(): void } {
     this.refreshing.get(key)?.cancel();
     const q = newQueue(targets);
+    // - one controller for the whole run, so cancel drops the calls already out instead of
+    //   leaving them to their timeouts
+    const ctl = new AbortController();
     let cancelled = false;
     let stopped = false;
     let timer: ReturnType<typeof setInterval> | null = null;
@@ -87,7 +99,7 @@ export class KnowledgeService {
 
     const fetchOne = async (t: RefreshTarget) => {
       try {
-        const got = await this.provider(t.server).fetch(t.uri);
+        const got = await this.provider(t.server).fetch(t.uri, ctl.signal);
         if (cancelled) return;
         settle(q, t, outcomeOf(t, { text: got.text, title: got.title, fetchedAt: got.fetchedAt }));
       } catch (e) {
@@ -110,6 +122,7 @@ export class KnowledgeService {
     const handle = {
       cancel: () => {
         cancelled = true;
+        ctl.abort();
         stop();
       },
     };

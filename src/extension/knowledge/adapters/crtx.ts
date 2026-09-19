@@ -11,6 +11,13 @@ function unwrap<T>(x: unknown): T {
 
 const titleOf = (r: { file: string; heading: string }) => r.heading ? `${r.file} › ${r.heading}` : r.file;
 
+// - the transport parses a reply that is JSON, so a section whose whole text is JSON arrives as an
+//   object or an array; String() on one of those reads "[object Object]", so show it as JSON
+function asText(v: unknown): string {
+  if (v === null || v === undefined) return '';
+  return typeof v === 'string' ? v : JSON.stringify(v, null, 2);
+}
+
 // - the server's own wording for a target that is not there, from crtx-server's mcp_server.py:
 //   "no section 'h' in f; available: [...]", "file not found: 'f'", "unknown vault: 'v'".
 //   "Unknown tool: read_section" is a server too old for the tool, or a wrong kind — not gone.
@@ -39,20 +46,20 @@ export function createCrtxProvider(config: KnowledgeServerConfig, transport: Too
       }));
     },
 
-    async fetch(uri: string): Promise<KnowledgeText> {
+    async fetch(uri: string, signal?: AbortSignal): Promise<KnowledgeText> {
       const r = parseCrtxUri(uri);
       let text: unknown;
       try {
         text = r.heading
-          ? await transport.callTool('read_section', { vault: r.vault, file: r.file, heading: r.heading })
-          : await transport.callTool('read', { vault: r.vault, file: r.file });
+          ? await transport.callTool('read_section', { vault: r.vault, file: r.file, heading: r.heading }, signal)
+          : await transport.callTool('read', { vault: r.vault, file: r.file }, signal);
       } catch (e) {
         if (GONE.test((e as Error).message)) {
           throw new KnowledgeGoneError((e as Error).message);
         }
         throw e;
       }
-      return { uri, title: titleOf(r), text: String(unwrap(text) ?? ''), fetchedAt: new Date().toISOString() };
+      return { uri, title: titleOf(r), text: asText(unwrap(text)), fetchedAt: new Date().toISOString() };
     },
 
     async scopes(): Promise<string[]> {

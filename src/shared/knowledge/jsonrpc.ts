@@ -25,6 +25,12 @@ export function parseSseBody(body: string): RpcMessage[] {
   return out;
 }
 
+// - which frames end the wait for this id's reply: its own, or one of the whole-request errors
+//   pickResponse reads below
+export function hasResponse(msgs: RpcMessage[], id: number): boolean {
+  return msgs.some(m => m.id === id || (m.error && typeof m.id !== 'number'));
+}
+
 export function pickResponse(msgs: RpcMessage[], id: number): unknown {
   const m = msgs.find(x => x.id === id);
   if (m) {
@@ -38,10 +44,19 @@ export function pickResponse(msgs: RpcMessage[], id: number): unknown {
   throw new Error(`no response for request ${id}`);
 }
 
-// - MCP tool results carry `content: [{type:'text', text}]`; servers put JSON in the text
+// - MCP tool results carry `content: [{type:'text', text}]`; servers put JSON in the text. The crtx
+//   server sends one text item per hit and the whole answer again as `structuredContent`, so
+//   joining the items would give "{…}{…}", which parses as nothing.
 export function toolResultText(result: unknown): unknown {
-  const r = result as { isError?: boolean; content?: { type: string; text?: string }[] };
-  const text = (r.content ?? []).filter(c => c.type === 'text').map(c => c.text ?? '').join('');
-  if (r.isError) throw new Error(text || 'tool error');
+  const r = result as { isError?: boolean; structuredContent?: unknown; content?: { type: string; text?: string }[] };
+  const parts = (r.content ?? []).filter(c => c.type === 'text').map(c => c.text ?? '');
+  if (r.isError) throw new Error(parts.join('') || 'tool error');
+  if (r.structuredContent !== undefined && r.structuredContent !== null) return r.structuredContent;
+  if (parts.length > 1) {
+    // - JSON.parse never returns undefined, so it marks a part that is not JSON
+    const each = parts.map(p => { try { return JSON.parse(p) as unknown; } catch { return undefined; } });
+    if (each.every(v => v !== undefined)) return each;
+  }
+  const text = parts.join('');
   try { return JSON.parse(text); } catch { return text; }
 }

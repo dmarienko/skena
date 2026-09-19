@@ -51,7 +51,7 @@ interface KnowledgeProvider {
   readonly kind: string;                                   // - adapter id: "crtx", "notion", …
   readonly capabilities: { scopes: boolean; tags: boolean; recency: boolean; facets: boolean; write: boolean };
   search(q: KnowledgeQuery): Promise<KnowledgeHit[]>;
-  fetch(uri: string): Promise<KnowledgeText>;              // - the text a node caches; used by add and refresh
+  fetch(uri: string, signal?: AbortSignal): Promise<KnowledgeText>;  // - the text a node caches; used by add and refresh; signal = the refresh run's cancel
   scopes(): Promise<string[]>;                             // - vaults / workspaces / databases; [] when unsupported
   facets(scope?: string): Promise<{ tags: [string, number][] }>;  // - {tags: []} when unsupported
   openUrl(uri: string): string | undefined;                // - a browser URL for the header's open button
