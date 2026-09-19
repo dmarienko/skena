@@ -126,3 +126,22 @@ export const OUTPUT_MIN_W     = 600;
 export const OUTPUT_MAX_W     = 1400;
 export const OUTPUT_MAX_H     = 900;
 export const OUTPUT_DEFAULT_H = 300;
+
+/**
+ * Estimating what a code cell's text needs, in px, for a caller with no editor to measure: the
+ * MCP server (`estimateCodeNeedPx` in ./layoutEngine.ts). The webview measures the real thing
+ * (`CodeNode.reportHeight`) and that replaces the estimate on the first edit, so the 50px
+ * CODE_H_STEP only has to absorb the error.
+ *   line   = Monaco's `lineHeight`, set to Math.round(fontSize * 1.3) off the VS Code editor
+ *            font size — 14 by default (the fallback when the var is missing is 12), so 18.
+ *   chrome = what the cell puts around the editor box, all from CodeNode's own styles:
+ *            3   node border, useZoomInvariantBorderWidth(1.5) top + bottom
+ *            6   header padding, '3px 40px 3px 14px'
+ *            1   header borderBottom
+ *            17  header text line — the tallest item is the 14px status glyph, at the browser's
+ *                `normal` line height (~1.2); nothing sets one on the node
+ *            12  vim status bar, 10px text at that same `normal` line height, no vertical padding
+ *            = 39. Monaco's own `padding` option is { top: 0, bottom: 0 } and adds nothing.
+ */
+export const CODE_LINE_H_ESTIMATE = 18;
+export const CODE_CHROME_ESTIMATE = 39;

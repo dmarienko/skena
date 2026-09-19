@@ -34,7 +34,7 @@ import { NODE_SIZE, OUTPUT_MAX_W, OUTPUT_MAX_H } from '../../shared/constants';
 import { clampToOrigin } from '../../shared/bounds';
 import { applyLaneFit, deriveLanes, outputCellGeom, pinOutputToLane, pruneFoldedIds, sectionByRef, insertLaneAt, foldLane, unfoldLane, sectionTargetHeight, parkFirstLaneAtOrigin, memberCodeCellsInRunOrder, type SectionLane } from '../../shared/sectionLanes';
 import { resolveCellKernel, cellKernelView, kernelById, upstreamCellsForRun, resolveKernelCellsInCanvas, type KernelLike } from '../../shared/kernelBinding';
-import { layoutSection, reflowSection, insertAfter, forkOf, placeOutput, applyPatchesToCanvas, columnsOfDeleted, sectionEngineNodes, sectionMembership, toEngineNodes } from '../../shared/layoutEngine';
+import { layoutSection, reflowSection, insertAfter, forkOf, placeOutput, applyPatchesToCanvas, columnsOfDeleted, sectionEngineNodes, sectionMembership, toEngineNodes, codeCellHeight, estimateCodeNeedPx } from '../../shared/layoutEngine';
 import { resolveKernelConfig, type KernelServerConfig } from '../jupyter/config';
 import { executeCell, startKernel, shutdownKernel } from '../jupyter/client';
 import { renderOutput, hasVisibleOutput } from '../jupyter/output';
@@ -655,7 +655,11 @@ async function canvasAddNode(args: Record<string, unknown>): Promise<string> {
   const type = (args.type as string | undefined) ?? (anchor?.type === 'code' ? 'code' : 'text');
   const dims = defaultDims(type);
   const w    = (args.width  as number | undefined) ?? dims.w;
-  const h    = (args.height as number | undefined) ?? dims.h;
+  // - a code cell written here is as tall as its text needs, the way the webview sizes one the user
+  //   edits; an explicit height still wins. `codeCellHeight` steps by 50, off the 100 grid, so that
+  //   height is the one size not snapped.
+  const sized = type === 'code' && args.height === undefined && typeof args.content === 'string';
+  const h     = sized ? codeCellHeight(estimateCodeNeedPx(args.content as string)) : ((args.height as number | undefined) ?? dims.h);
 
   let placed: { x: number; y: number } | null = null;
   if (anchor) {
@@ -684,7 +688,7 @@ async function canvasAddNode(args: Record<string, unknown>): Promise<string> {
     x:         at.x,
     y:         at.y,
     width:     snapGrid(w),
-    height:    snapGrid(h),
+    height:    sized ? h : snapGrid(h),
     createdBy: 'ai' as const,
     ...(args.color ? { color: args.color as CanvasNodeBase['color'] } : {}),
     ...(args.tags  ? { tags:  args.tags  as string[] } : {}),
@@ -773,6 +777,13 @@ async function canvasUpdateNode(args: Record<string, unknown>): Promise<string> 
   if (args.y      !== undefined) updated.y      = at.y;
   if (args.width  !== undefined) updated.width  = snapGrid(args.width  as number);
   if (args.height !== undefined) updated.height = snapGrid(args.height as number);
+  // - new text, no explicit height: the cell is re-sized to what it now needs, growing or shrinking
+  //   as the webview does on an edit. That is a geometry change, so the column re-packs around it.
+  let resized = false;
+  if (args.content !== undefined && n.type === 'code' && args.height === undefined) {
+    updated.height = codeCellHeight(estimateCodeNeedPx(args.content as string));
+    resized = updated.height !== n.height;
+  }
 
   // - an output cell's column is the pair's, so an oversized one would overlap the pair to its right
   const isOutput = d.nodes.some(o => o.type === 'code' && o.outputNodeId === n.id);
@@ -783,7 +794,7 @@ async function canvasUpdateNode(args: Record<string, unknown>): Promise<string> 
   const before = geomOf(d);
   d.nodes[idx] = updated;
   // - a move or a resize re-packs the node's column and bumps whatever it now really overlaps
-  const geom = args.x !== undefined || args.y !== undefined || args.width !== undefined || args.height !== undefined;
+  const geom = args.x !== undefined || args.y !== undefined || args.width !== undefined || args.height !== undefined || resized;
   // - a section too dense for the bump walk to clear is reported, not silently left overlapping
   const report: { capped?: boolean } = {};
   const own  = geom ? applyEngine(d, [updated.id], [], report) : new Map<string, number>();
@@ -1559,7 +1570,7 @@ const TOOLS = [
         x:          { type: 'number', description: 'X position (auto-placed if omitted; ignored with after/forkOf)' },
         y:          { type: 'number', description: 'Y position (auto-placed if omitted; ignored with after/forkOf)' },
         width:      { type: 'number', description: 'Width in canvas units (default: type-dependent)' },
-        height:     { type: 'number', description: 'Height in canvas units (default: type-dependent)' },
+        height:     { type: 'number', description: 'Height in canvas units (default: type-dependent; a code cell with content is sized to the lines it holds, up to 900)' },
         after:      { type: 'string', description: 'Label or id of any node: place the new node one gap below it in the same column (type defaults to code under a code cell, else text)' },
         forkOf:     { type: 'string', description: 'Label or id of a code cell: start a new column pair beside its pair (type defaults to code)' },
         side:       { type: 'string', description: 'forkOf side: right (default) or left; a left fork that would start before the canvas origin is refused' },
@@ -1569,7 +1580,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_update_node',
-    description: 'Update an existing node: content, tags, color, label, and/or move/resize it. Partial — only supplied fields change. Move/resize uses absolute canvas coordinates and runs the layout engine: the node\'s column is packed, the column pairs to its right are pushed clear, and the notes it covers move down. An output cell is clamped to 1400 wide by 900 high so it cannot overlap the pair to its right. Sections fit their content: a node placed past its section\'s bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Supplied coordinates are snapped to the grid and clamped to the canvas origin.',
+    description: 'Update an existing node: content, tags, color, label, and/or move/resize it. Partial — only supplied fields change. New code content with no explicit height re-sizes the cell to the lines it now holds (grows or shrinks, up to 900) and counts as a resize. Move/resize uses absolute canvas coordinates and runs the layout engine: the node\'s column is packed, the column pairs to its right are pushed clear, and the notes it covers move down. An output cell is clamped to 1400 wide by 900 high so it cannot overlap the pair to its right. Sections fit their content: a node placed past its section\'s bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Supplied coordinates are snapped to the grid and clamped to the canvas origin.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1582,7 +1593,7 @@ const TOOLS = [
         x:          { type: 'number', description: 'Move: absolute x (left)' },
         y:          { type: 'number', description: 'Move: absolute y (top)' },
         width:      { type: 'number', description: 'Resize: width' },
-        height:     { type: 'number', description: 'Resize: height' },
+        height:     { type: 'number', description: 'Resize: height (omit it with new code content and the cell is re-sized to the lines it now holds)' },
       },
       required: ['canvasPath', 'ref'],
     },

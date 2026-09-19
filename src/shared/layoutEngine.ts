@@ -1,4 +1,4 @@
-import { GRID, NODE_SIZE, CODE_MAX_H, CODE_H_STEP, OUTPUT_MIN_W, OUTPUT_DEFAULT_H } from './constants';
+import { GRID, NODE_SIZE, CODE_MAX_H, CODE_H_STEP, CODE_LINE_H_ESTIMATE, CODE_CHROME_ESTIMATE, OUTPUT_MIN_W, OUTPUT_DEFAULT_H } from './constants';
 import { snapGrid } from './grid';
 import { deriveLanes, type SectionLane } from './sectionLanes';
 
@@ -38,6 +38,19 @@ const gridUp = (v: number) => Math.ceil(v / GRID) * GRID;
 export function codeCellHeight(neededPx: number): number {
   const raw = Math.ceil(Math.max(0, neededPx) / CODE_H_STEP) * CODE_H_STEP;
   return Math.min(CODE_MAX_H, Math.max(NODE_SIZE.code.h, raw));
+}
+
+/**
+ * What a code cell's text needs in px, for a caller with no editor to measure it: the line count
+ * times a line height, plus the chrome the cell puts around the editor (both estimated, see
+ * CODE_LINE_H_ESTIMATE in ./constants.ts). The webview measures the real numbers off the live DOM
+ * (`CodeNode.reportHeight`) and that replaces this on the user's first edit, so only the CODE_H_STEP
+ * of `codeCellHeight` has to absorb the difference. A trailing newline counts as a line, as Monaco
+ * shows it.
+ */
+export function estimateCodeNeedPx(code: string): number {
+  const lines = code.split('\n').length;
+  return lines * CODE_LINE_H_ESTIMATE + CODE_CHROME_ESTIMATE;
 }
 
 /** Ids of output cells owned by a code cell (the nodes that ride with a cell instead of a column). */
