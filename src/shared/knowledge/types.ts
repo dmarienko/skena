@@ -41,4 +41,10 @@ export interface KnowledgeServerConfig { name: string; kind: string; url: string
 export interface ToolTransport { callTool(name: string, args: Record<string, unknown>): Promise<unknown> }
 
 /** - thrown by adapters when a uri no longer resolves (heading or page gone); refresh keeps the old text */
-export class KnowledgeGoneError extends Error {}
+export class KnowledgeGoneError extends Error {
+  // - subclassing Error leaves `.name` as "Error"; set it so callers can tell this error apart by name
+  constructor(message?: string) {
+    super(message);
+    this.name = 'KnowledgeGoneError';
+  }
+}

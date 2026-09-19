@@ -245,6 +245,40 @@
           "description": "Notion MCP server integration for vault://notion/<page-id> URIs",
           "scope": "window"
         },
+        "skena.knowledge.servers": {
+          "type": "array",
+          "default": [],
+          "scope": "window",
+          "markdownDescription": "Knowledge servers for `Ctrl+F` search. Each item: `{ name, kind, url, token }`. `kind` selects the adapter (`crtx`). Put the entry with the token in `.vscode/settings.local.json`.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              },
+              "token": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "kind",
+              "url"
+            ]
+          }
+        },
+        "skena.knowledge.refreshAfterHours": {
+          "type": "number",
+          "default": 24,
+          "scope": "window",
+          "description": "A knowledge node older than this is refreshed from its server when the canvas opens."
+        },
         "skena.ai.apiKey": {
           "type": "string",
           "default": "",

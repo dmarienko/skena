@@ -43,10 +43,7 @@ export function createCrtxProvider(config: KnowledgeServerConfig, transport: Too
           : await transport.callTool('read', { vault: r.vault, file: r.file });
       } catch (e) {
         if (/not found|no such|unknown/i.test((e as Error).message)) {
-          // - a bare `class KnowledgeGoneError extends Error {}` leaves `.name` as "Error"; set it so callers can tell the error apart by name
-          const gone = new KnowledgeGoneError((e as Error).message);
-          gone.name = 'KnowledgeGoneError';
-          throw gone;
+          throw new KnowledgeGoneError((e as Error).message);
         }
         throw e;
       }

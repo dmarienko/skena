@@ -5,6 +5,7 @@
 
 // - type-only, so the sectionLanes ↔ types cycle is erased at build time
 import type { SectionLane } from './sectionLanes';
+import type { KnowledgeCapabilities, KnowledgeHit, KnowledgeQuery, KnowledgeText } from './knowledge/types';
 
 // ─── JSON Canvas spec types ───────────────────────────────────────────────────
 
@@ -17,7 +18,7 @@ export type NodeSide = 'top' | 'right' | 'bottom' | 'left';
 export type StandardNodeType = 'file' | 'text' | 'group' | 'link';
 
 /** Skena extension node types (Obsidian ignores unknown types gracefully) */
-export type SkenaNodeType = 'cell' | 'chat' | 'portal' | 'kernel' | 'code' | 'noderef';
+export type SkenaNodeType = 'cell' | 'chat' | 'portal' | 'kernel' | 'code' | 'noderef' | 'knowledge';
 
 export type NodeType = StandardNodeType | SkenaNodeType;
 
@@ -143,6 +144,23 @@ export interface CodeNode extends CanvasNodeBase {
   lastStatus?: 'ok' | 'error' | 'running';
 }
 
+/** A result from a knowledge server, with a cached copy of its text so the node reads offline */
+export interface KnowledgeNode extends CanvasNodeBase {
+  type: 'knowledge';
+  /** - the skena.knowledge.servers entry this came from */
+  server: string;
+  /** - opaque to the webview; only the server's adapter understands it */
+  uri: string;
+  title: string;
+  text: string;
+  /** - ISO timestamp of the last successful fetch; drives the staleness check on open */
+  fetchedAt: string;
+  /** - set when a refresh brought back different text */
+  changed?: boolean;
+  /** - last refresh failure, kept so the node can show it without losing the cached text */
+  error?: string;
+}
+
 export type CanvasNode =
   | FileNode
   | TextNode
@@ -153,7 +171,8 @@ export type CanvasNode =
   | PortalNode
   | NoderefNode
   | KernelNode
-  | CodeNode;
+  | CodeNode
+  | KnowledgeNode;
 
 export interface CanvasEdge {
   id: string;
@@ -428,6 +447,22 @@ export interface MsgClipboardContent {
   text: string;
 }
 
+// - host → webview: answers to the knowledge messages below; every request carries a requestId the
+// - dialog matches, and a failed call comes back as the same message type with `error` set.
+export interface MsgKnowledgeServersResult {
+  type: 'knowledgeServersResult';
+  servers: { name: string; kind: string; capabilities: KnowledgeCapabilities; error?: string }[];
+  refreshAfterHours: number;
+}
+export interface MsgKnowledgeSearchResult { type: 'knowledgeSearchResult'; requestId: number; hits?: KnowledgeHit[]; error?: string }
+export interface MsgKnowledgeFetchResult  { type: 'knowledgeFetchResult';  requestId: number; text?: KnowledgeText; error?: string }
+export interface MsgKnowledgeScopesResult { type: 'knowledgeScopesResult'; requestId: number; scopes?: string[]; error?: string }
+export interface MsgKnowledgeFacetsResult { type: 'knowledgeFacetsResult'; requestId: number; tags?: [string, number][]; error?: string }
+export interface MsgKnowledgeRefreshed {
+  type: 'knowledgeRefreshed';
+  nodes: { id: string; text?: string; title?: string; fetchedAt?: string; changed?: boolean; error?: string }[];
+}
+
 export type HostToWebview =
   | MsgCanvasLoaded
   | MsgNodesFromDrop
@@ -469,7 +504,13 @@ export type HostToWebview =
   | MsgNewSectionTrigger
   | MsgDoDelete
   | MsgCompleteResult
-  | MsgInspectResult;
+  | MsgInspectResult
+  | MsgKnowledgeServersResult
+  | MsgKnowledgeSearchResult
+  | MsgKnowledgeFetchResult
+  | MsgKnowledgeScopesResult
+  | MsgKnowledgeFacetsResult
+  | MsgKnowledgeRefreshed;
 
 // - host → webview: the "Skena: Add Kernel" command asks the webview to relay an
 // - addKernel message back to the host (where the QuickPick runs).
@@ -716,6 +757,16 @@ export interface MsgMarksRestored {
   marks: Record<string, CanvasMark>;
 }
 
+// - webview → host: the dialog and the knowledge nodes never see a tool name or a URL scheme; the
+// - host's KnowledgeService picks the adapter by `server`.
+export interface MsgKnowledgeServers { type: 'knowledgeServers' }
+export interface MsgKnowledgeSearch  { type: 'knowledgeSearch'; requestId: number; server: string; query: KnowledgeQuery }
+export interface MsgKnowledgeFetch   { type: 'knowledgeFetch';  requestId: number; server: string; uri: string }
+export interface MsgKnowledgeScopes  { type: 'knowledgeScopes'; requestId: number; server: string }
+export interface MsgKnowledgeFacets  { type: 'knowledgeFacets'; requestId: number; server: string; scope?: string }
+export interface MsgKnowledgeRefresh { type: 'knowledgeRefresh'; nodes: { id: string; server: string; uri: string; text: string }[] }
+export interface MsgKnowledgeOpen    { type: 'knowledgeOpen'; server: string; uri: string }
+
 export type WebviewToHost =
   | MsgRequestFile
   | MsgSaveCanvas
@@ -752,7 +803,14 @@ export type WebviewToHost =
   | MsgRemoveKernel
   | MsgConfirmDelete
   | MsgComplete
-  | MsgInspect;
+  | MsgInspect
+  | MsgKnowledgeServers
+  | MsgKnowledgeSearch
+  | MsgKnowledgeFetch
+  | MsgKnowledgeScopes
+  | MsgKnowledgeFacets
+  | MsgKnowledgeRefresh
+  | MsgKnowledgeOpen;
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────
 

@@ -23,6 +23,7 @@ import * as vscode from 'vscode';
 import * as fs     from 'fs/promises';
 import * as path   from 'path';
 import { VaultConfig } from '../shared/types';
+import type { KnowledgeServerConfig } from '../shared/knowledge/types';
 
 // ─── file reader ──────────────────────────────────────────────────────────────
 
@@ -102,4 +103,35 @@ export async function getVaultDirectories(): Promise<string[]> {
   }
 
   return vscode.workspace.getConfiguration('skena').get<string[]>('vaultDirectories') ?? ['.'];
+}
+
+/**
+ * Return the effective `skena.knowledge.servers` list.
+ * Priority: settings.local.json → settings.json → VS Code user config.
+ */
+export async function getKnowledgeServers(): Promise<KnowledgeServerConfig[]> {
+  const [local, base] = await readWorkspaceSettings();
+
+  if (Array.isArray(local?.['skena.knowledge.servers'])) {
+    return local!['skena.knowledge.servers'] as KnowledgeServerConfig[];
+  }
+  if (Array.isArray(base?.['skena.knowledge.servers'])) {
+    return base!['skena.knowledge.servers'] as KnowledgeServerConfig[];
+  }
+
+  return vscode.workspace.getConfiguration('skena').get<KnowledgeServerConfig[]>('knowledge.servers') ?? [];
+}
+
+/**
+ * Return the effective `skena.knowledge.refreshAfterHours`.
+ * Priority: settings.local.json → settings.json → VS Code user config; 24 if unset or not a number.
+ */
+export async function getKnowledgeRefreshAfterHours(): Promise<number> {
+  const [local, base] = await readWorkspaceSettings();
+
+  const v = local?.['skena.knowledge.refreshAfterHours']
+    ?? base?.['skena.knowledge.refreshAfterHours']
+    ?? vscode.workspace.getConfiguration('skena').get<number>('knowledge.refreshAfterHours');
+
+  return typeof v === 'number' && v >= 0 ? v : 24;
 }

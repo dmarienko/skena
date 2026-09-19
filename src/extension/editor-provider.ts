@@ -20,7 +20,8 @@ import { VaultIndexer } from './vault-indexer';
 import { FileWatcher } from './file-watcher';
 import { parseNotebook } from './notebook-parser';
 import { renderMarkdownToHtml } from './markdown-html';
-import { getVaults } from './settings';
+import { getVaults, getKnowledgeServers, getKnowledgeRefreshAfterHours } from './settings';
+import { KnowledgeService } from './knowledge/service';
 import { createLLMClient, CANVAS_TOOLS, ILLMClient } from './llm-client';
 import { buildSystemPrompt, buildStaticSystemPrompt, buildCanvasContext, nodeTitle, nodeContent } from './context-builder';
 import { assignLabel } from '../shared/nodeLabels';
@@ -158,6 +159,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
   private pendingFocus = new Map<string, string>();
 
   private runningSections = new Set<string>();   // - one run per section at a time
+
+  /** - providers for skena.knowledge.servers; reconfigured from settings on every webview ready */
+  private knowledge = new KnowledgeService();
 
   /** - lazily-created LLM client; null until first chat request */
   private _llmClient: ILLMClient | null = null;
@@ -466,6 +470,50 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         }
         case 'addNodeRequest': await this.handleAddNodeRequest(msg, canvasDir, resolver, send); break;
         case 'moveToSubCanvas': await this.handleMoveToSubCanvas(msg, canvasDir, send); break;
+        // - knowledge: settings are re-read here, so editing a token or a url only needs a reload
+        case 'knowledgeServers': {
+          this.knowledge.configure(await getKnowledgeServers());
+          send({ type: 'knowledgeServersResult', servers: this.knowledge.list(), refreshAfterHours: await getKnowledgeRefreshAfterHours() });
+          break;
+        }
+        case 'knowledgeSearch': {
+          try {
+            send({ type: 'knowledgeSearchResult', requestId: msg.requestId, hits: await this.knowledge.provider(msg.server).search(msg.query) });
+          } catch (e) {
+            send({ type: 'knowledgeSearchResult', requestId: msg.requestId, error: (e as Error).message });
+          }
+          break;
+        }
+        case 'knowledgeFetch': {
+          try {
+            send({ type: 'knowledgeFetchResult', requestId: msg.requestId, text: await this.knowledge.provider(msg.server).fetch(msg.uri) });
+          } catch (e) {
+            send({ type: 'knowledgeFetchResult', requestId: msg.requestId, error: (e as Error).message });
+          }
+          break;
+        }
+        case 'knowledgeScopes': {
+          try {
+            send({ type: 'knowledgeScopesResult', requestId: msg.requestId, scopes: await this.knowledge.provider(msg.server).scopes() });
+          } catch (e) {
+            send({ type: 'knowledgeScopesResult', requestId: msg.requestId, error: (e as Error).message });
+          }
+          break;
+        }
+        case 'knowledgeFacets': {
+          try {
+            const facets = await this.knowledge.provider(msg.server).facets(msg.scope);
+            send({ type: 'knowledgeFacetsResult', requestId: msg.requestId, tags: facets.tags });
+          } catch (e) {
+            send({ type: 'knowledgeFacetsResult', requestId: msg.requestId, error: (e as Error).message });
+          }
+          break;
+        }
+        case 'knowledgeOpen': {
+          const url = this.knowledge.provider(msg.server).openUrl(msg.uri);
+          if (url) await vscode.env.openExternal(vscode.Uri.parse(url));
+          break;
+        }
         // - clipboard relay: webview sandbox blocks navigator.clipboard; route through host
         case 'requestClipboardRead': {
           const text = await vscode.env.clipboard.readText();
