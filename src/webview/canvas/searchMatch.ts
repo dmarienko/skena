@@ -44,6 +44,8 @@ export function nodeContent(n: CanvasNode): string {
       return (n.format === 'image' || n.format === 'plotly') ? '' : stripDataUris(n.content);
     case 'chat':   return `${n.agent} ${n.title}`;
     case 'portal': return n.canvas;
+    // - the cached copy is what is on screen, so '/' searches it, not the server
+    case 'knowledge': return `${n.title} ${stripDataUris(n.text)}`;
     default:       return '';
   }
 }

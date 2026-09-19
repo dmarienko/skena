@@ -38,6 +38,7 @@ export const NODE_SIZE = {
   portal: { w: 200, h: 200 },
   kernel: { w: 140, h: 160 },
   file:   { w: 700, h: 700 },
+  knowledge: { w: 700, h: 300 },
 } as const;
 
 // - bigger, deliberate size for a brand-new node created by directional-add (Alt+X /

@@ -266,6 +266,7 @@ function nodeSnippet(node: CanvasNode): string {
     case 'kernel':  return `kernel: ${node.displayName ?? node.server}${node.kernelId ? ' (live)' : ''}`;
     case 'chat':    return `${node.agent}: ${node.title}`;
     case 'portal':  return `→ ${node.canvas}`;
+    case 'knowledge': return truncate(node.title, 80);
     default:        return '(unknown)';
   }
 }
@@ -552,6 +553,7 @@ async function canvasRead(args: Record<string, unknown>): Promise<string> {
     case 'kernel': content = `Kernel: ${n.displayName ?? 'kernel'}  Server: ${n.server}  ${n.kernelId ? `Live id: ${n.kernelId}` : '(not started)'}`; break;
     case 'chat':   content = `Agent: ${n.agent}  Model: ${n.model ?? 'default'}\nTitle: ${n.title}`; break;
     case 'portal': content = `Sub-canvas: ${n.canvas}`; break;
+    case 'knowledge': content = `Format: knowledge\nServer: ${n.server}\nSource: ${n.uri}\nFetched: ${n.fetchedAt}${n.error ? `\nLast refresh failed: ${n.error}` : ''}\n\n${n.text}`; break;
   }
 
   return [
@@ -583,6 +585,7 @@ async function canvasSearch(args: Record<string, unknown>): Promise<string> {
       n.type === 'code'   ? (n.code ?? '') : '',
       n.type === 'chat'   ? n.title    : '',
       n.type === 'portal' ? n.canvas   : '',
+      n.type === 'knowledge' ? `${n.title} ${n.text}` : '',
       d.edges.filter(e => e.fromNode === n.id || e.toNode === n.id).map(e => e.label ?? '').join(' '),
     ].join(' ').toLowerCase();
 

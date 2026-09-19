@@ -50,6 +50,7 @@ import { PortalNodeComponent } from './nodes/PortalNode';
 import { NoderefNodeComponent } from './nodes/NoderefNode';
 import { KernelNodeComponent } from './nodes/KernelNode';
 import { CodeNodeComponent }   from './nodes/CodeNode';
+import { KnowledgeNodeComponent } from './nodes/KnowledgeNode';
 import { LabeledEdgeComponent } from './edges/LabeledEdge';
 import { HelperLines } from './HelperLines';
 import { SectionSeparators } from './SectionSeparators';
@@ -78,6 +79,7 @@ const NODE_TYPES: NodeTypes = {
   noderef: NoderefNodeComponent,
   kernel: KernelNodeComponent,
   code:   CodeNodeComponent,
+  knowledge: KnowledgeNodeComponent,
 };
 
 // - band-type nodes (group) are visual backdrops: skipped by snapping, nav, overlap checks
