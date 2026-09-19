@@ -141,6 +141,7 @@ Sections are horizontal lanes running down the canvas — a node belongs to the 
 - **Reflow section** snaps every code cell onto the nearest column, closes the holes in each column, sits the column pairs one gap apart left to right, and moves the notes a cell covers down out of the way. It is the only whole-section move — every other edit touches one column.
 - **`+`** at the bottom of the rail adds a new section under the last one.
 - Sections fit their content: a node placed past a section's bottom edge grows that section, slack shrinks it (never below the minimum), and the sections and nodes below move by the same amount.
+- A **folded** section draws its title and its node count (plus the kernel name when one is bound) in the band it collapses to, and **`Ctrl+M`** lists every section above the bookmarks — choosing one unfolds it and focuses its first node.
 
 **From MCP** — `canvas_add_node` takes `after` (a code cell: the new code cell goes under it in the same column) and `forkOf` with `side` (`right` by default, or `left`: a new column pair beside that cell's pair); both place the node themselves and ignore `x`/`y`. `canvas_reflow_section` runs the same reflow as the rail menu. Every MCP write follows the same engine rules as the UI — the touched column is packed, the column pairs to its right are pushed clear, covered notes move down, no node crosses a section boundary, and the sections re-fit afterwards.
 

@@ -1,12 +1,12 @@
 /**
- * MarksPanel — popup list of all stored vim-style canvas bookmarks.
+ * MarksPanel — popup list of the canvas sections and of all stored vim-style bookmarks.
  *
  * Open with Ctrl+M from canvas navigation mode.
- * Keys: ↑/↓ navigate, Enter jump, Escape close.
+ * Keys: ↑/↓ navigate, Enter go (a section unfolds and focuses its first node), Escape close.
  * Stale entries (node removed) are shown dimmed and skipped by Enter.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Node } from '@xyflow/react';
 import { CanvasMark } from '../../shared/types';
 
@@ -42,16 +42,45 @@ interface MarkEntry {
   jumpable: boolean;
 }
 
-interface Props {
-  marks:   Record<string, CanvasMark>;
-  nodes:   Node[];
-  onJump:  (register: string) => void;
-  onClose: () => void;
+/** One section of the canvas, in stack order; the caller resolves the title it shows. */
+export interface SectionEntry {
+  id:     string;
+  label:  string;
+  title:  string;
+  count:  number;
+  folded: boolean;
 }
+
+/** A selectable row of the panel: the sections first, then the marks. */
+type Row =
+  | { kind: 'section'; key: string; badge: string; title: string; meta: string; id: string }
+  | { kind: 'mark';    key: string; badge: string; title: string; meta: string; register: string };
+
+interface Props {
+  marks:         Record<string, CanvasMark>;
+  nodes:         Node[];
+  sections:      SectionEntry[];
+  onJump:        (register: string) => void;
+  onPickSection: (id: string) => void;
+  onClose:       () => void;
+}
+
+const GroupLabel = ({ children }: { children: React.ReactNode }): JSX.Element => (
+  <div style={{
+    padding:       '5px 12px 2px',
+    fontSize:      10,
+    fontFamily:    'var(--vscode-font-family)',
+    color:         'var(--vscode-descriptionForeground, #888)',
+    letterSpacing: '0.04em',
+    textTransform: 'uppercase',
+  }}>
+    {children}
+  </div>
+);
 
 // ─── component ────────────────────────────────────────────────────────────────
 
-export function MarksPanel({ marks, nodes, onJump, onClose }: Props): JSX.Element {
+export function MarksPanel({ marks, nodes, sections, onJump, onPickSection, onClose }: Props): JSX.Element {
   // - build sorted entry list: named marks first (alphabetical), then `` ` ``
   const entries: MarkEntry[] = [];
   const sorted = Object.entries(marks)
@@ -78,8 +107,18 @@ export function MarksPanel({ marks, nodes, onJump, onClose }: Props): JSX.Elemen
     entries.push({ register: '`', mark: previous, title, jumpable: true });
   }
 
-  // - all displayed entries are jumpable; start on first
-  const [sel, setSel] = useState(entries.length > 0 ? 0 : 0);
+  const sectionRows: Row[] = sections.map(s => ({
+    kind: 'section', key: `section:${s.id}`, id: s.id, badge: s.label, title: s.title,
+    meta: `${s.count} nodes${s.folded ? ' · folded' : ''}`,
+  }));
+  const markRows: Row[] = entries.map(e => ({
+    kind: 'mark', key: `mark:${e.register}`, register: e.register, badge: e.register, title: e.title, meta: '',
+  }));
+  // - the section stack reads top to bottom, so it goes above the marks and the panel opens on it
+  const rows: Row[] = [...sectionRows, ...markRows];
+
+  // - all displayed rows can be chosen; start on the first
+  const [sel, setSel] = useState(0);
 
   const rowRefs = useRef<(HTMLDivElement | null)[]>([]);
 
@@ -87,6 +126,12 @@ export function MarksPanel({ marks, nodes, onJump, onClose }: Props): JSX.Elemen
   useEffect(() => {
     rowRefs.current[sel]?.scrollIntoView({ block: 'nearest' });
   }, [sel]);
+
+  // - a mark jumps to its node, a section unfolds and focuses its first; both close the panel
+  const activate = useCallback((row: Row) => {
+    if (row.kind === 'section') onPickSection(row.id);
+    else onJump(row.register);
+  }, [onJump, onPickSection]);
 
   // - keyboard navigation (capture phase: beats Monaco + any canvas handler)
   useEffect(() => {
@@ -96,25 +141,26 @@ export function MarksPanel({ marks, nodes, onJump, onClose }: Props): JSX.Elemen
         onClose();
         return;
       }
+      if (rows.length === 0) return;
       if (e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'j')) {
         e.preventDefault(); e.stopPropagation();
-        setSel(s => (s + 1) % entries.length);
+        setSel(s => (s + 1) % rows.length);
         return;
       }
       if (e.key === 'ArrowUp' || (e.ctrlKey && e.key === 'k')) {
         e.preventDefault(); e.stopPropagation();
-        setSel(s => (s - 1 + entries.length) % entries.length);
+        setSel(s => (s - 1 + rows.length) % rows.length);
         return;
       }
       if (e.key === 'Enter') {
         e.preventDefault(); e.stopPropagation();
-        if (entries[sel]) onJump(entries[sel].register);
+        if (rows[sel]) activate(rows[sel]);
         return;
       }
     };
     window.addEventListener('keydown', handler, { capture: true });
     return () => window.removeEventListener('keydown', handler, { capture: true });
-  }, [entries, sel, onJump, onClose]);
+  }, [rows, sel, activate, onClose]);
 
   return (
     // - click backdrop to close
@@ -155,10 +201,12 @@ export function MarksPanel({ marks, nodes, onJump, onClose }: Props): JSX.Elemen
           letterSpacing: '0.04em',
           textTransform: 'uppercase',
         }}>
-          Bookmarks {entries.length > 0 ? `(${entries.filter(e => e.jumpable).length})` : ''}
+          {sectionRows.length > 0
+            ? 'Sections & bookmarks'
+            : `Bookmarks ${entries.length > 0 ? `(${entries.length})` : ''}`}
         </div>
 
-        {entries.length === 0 ? (
+        {rows.length === 0 ? (
           <div style={{
             padding:    '16px 12px',
             fontSize:   13,
@@ -169,61 +217,79 @@ export function MarksPanel({ marks, nodes, onJump, onClose }: Props): JSX.Elemen
           </div>
         ) : (
           <div style={{ overflow: 'auto' }}>
-            {entries.map((entry, i) => {
+            {rows.map((row, i) => {
               const isSelected = i === sel;
               return (
-                <div
-                  key={entry.register}
-                  ref={el => { rowRefs.current[i] = el; }}
-                  onClick={() => onJump(entry.register)}
-                  style={{
-                    display:    'flex',
-                    alignItems: 'center',
-                    gap:        10,
-                    padding:    '5px 12px',
-                    cursor:     'pointer',
-                    background: isSelected
-                      ? 'var(--vscode-list-activeSelectionBackground, #094771)'
-                      : 'transparent',
-                    color: isSelected
-                      ? 'var(--vscode-list-activeSelectionForeground, #fff)'
-                      : 'var(--vscode-foreground, #ccc)',
-                  }}
-                  onMouseEnter={() => setSel(i)}
-                >
-                  {/* register key badge */}
-                  <span style={{
-                    fontFamily:  'var(--vscode-editor-font-family, monospace)',
-                    fontSize:    12,
-                    minWidth:    18,
-                    textAlign:   'center',
-                    background:  isSelected
-                      ? 'rgba(255,255,255,0.15)'
-                      : 'var(--vscode-badge-background, #4d4d4d)',
-                    color: isSelected
-                      ? 'inherit'
-                      : 'var(--vscode-badge-foreground, #fff)',
-                    borderRadius: 3,
-                    padding:     '1px 5px',
-                    flexShrink:  0,
-                  }}>
-                    {entry.register}
-                  </span>
+                <React.Fragment key={row.key}>
+                  {/* - the group labels only appear once there are sections to separate from the marks */}
+                  {i === 0 && sectionRows.length > 0 && <GroupLabel>Sections</GroupLabel>}
+                  {i === sectionRows.length && sectionRows.length > 0 && markRows.length > 0 && <GroupLabel>Bookmarks</GroupLabel>}
+                  <div
+                    ref={el => { rowRefs.current[i] = el; }}
+                    onClick={() => activate(row)}
+                    style={{
+                      display:    'flex',
+                      alignItems: 'center',
+                      gap:        10,
+                      padding:    '5px 12px',
+                      cursor:     'pointer',
+                      background: isSelected
+                        ? 'var(--vscode-list-activeSelectionBackground, #094771)'
+                        : 'transparent',
+                      color: isSelected
+                        ? 'var(--vscode-list-activeSelectionForeground, #fff)'
+                        : 'var(--vscode-foreground, #ccc)',
+                    }}
+                    onMouseEnter={() => setSel(i)}
+                  >
+                    {/* register key / section label badge */}
+                    <span style={{
+                      fontFamily:  'var(--vscode-editor-font-family, monospace)',
+                      fontSize:    12,
+                      minWidth:    18,
+                      textAlign:   'center',
+                      background:  isSelected
+                        ? 'rgba(255,255,255,0.15)'
+                        : 'var(--vscode-badge-background, #4d4d4d)',
+                      color: isSelected
+                        ? 'inherit'
+                        : 'var(--vscode-badge-foreground, #fff)',
+                      borderRadius: 3,
+                      padding:     '1px 5px',
+                      flexShrink:  0,
+                    }}>
+                      {row.badge}
+                    </span>
 
-                  {/* separator */}
-                  <span style={{ color: 'var(--vscode-descriptionForeground, #666)', flexShrink: 0 }}>—</span>
+                    {/* separator */}
+                    <span style={{ color: 'var(--vscode-descriptionForeground, #666)', flexShrink: 0 }}>—</span>
 
-                  {/* title */}
-                  <span style={{
-                    fontFamily: 'var(--vscode-font-family)',
-                    fontSize:   13,
-                    overflow:   'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}>
-                    {entry.title}
-                  </span>
-                </div>
+                    {/* title */}
+                    <span style={{
+                      fontFamily: 'var(--vscode-font-family)',
+                      fontSize:   13,
+                      overflow:   'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {row.title}
+                    </span>
+
+                    {/* - a section's node count, and `folded` when it is */}
+                    {row.meta !== '' && (
+                      <span style={{
+                        fontFamily: 'var(--vscode-font-family)',
+                        fontSize:   11,
+                        color:      isSelected ? 'inherit' : 'var(--vscode-descriptionForeground, #888)',
+                        whiteSpace: 'nowrap',
+                        flexShrink: 0,
+                        marginLeft: 'auto',
+                      }}>
+                        {row.meta}
+                      </span>
+                    )}
+                  </div>
+                </React.Fragment>
               );
             })}
           </div>
@@ -235,9 +301,9 @@ export function MarksPanel({ marks, nodes, onJump, onClose }: Props): JSX.Elemen
           fontSize:     10,
           fontFamily:   'var(--vscode-font-family)',
           color:        'var(--vscode-descriptionForeground, #666)',
-          borderTop:    entries.length > 0 ? '1px solid var(--vscode-editorWidget-border, #454545)' : 'none',
+          borderTop:    rows.length > 0 ? '1px solid var(--vscode-editorWidget-border, #454545)' : 'none',
         }}>
-          ↑↓ navigate  ·  Enter jump  ·  Esc close
+          ↑↓ navigate  ·  Enter go  ·  Esc close
         </div>
       </div>
     </div>

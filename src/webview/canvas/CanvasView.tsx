@@ -55,12 +55,13 @@ import { HelperLines } from './HelperLines';
 import { SectionSeparators } from './SectionSeparators';
 import { EdgeFollowHints, type EdgeHint } from './EdgeFollowHints';
 import { SectionRail, type RailKernel } from '../rail/SectionRail';
+import { fmtDateTime } from '../rail/RailSegment';
 import { deriveLanes, fitLanes, sortLanes, insertLaneAt, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
 import { applyPatchesToCanvas, codeCellHeight, columnsOfDeleted as columnsOfDeletedIn, forkOf, insertAfter, layoutSection, reflowSection, sectionEngineNodes, sectionMembership, type EngineNode, type LayoutOpts, type Patches } from '../../shared/layoutEngine';
 import { useLaneFit, flowGeom } from '../rail/useLaneFit';
 import { connectionLabels, findNearestNode, revealPan, type ConnectionLabel, type EdgeSideContext, type NavDir, type NavNode, type Rect } from './spatialNav';
 import { CanvasSearch } from './CanvasSearch';
-import { MarksPanel  } from './MarksPanel';
+import { MarksPanel, type SectionEntry } from './MarksPanel';
 import { LanesContext } from './LanesContext';
 import { KernelsContext } from './KernelsContext';
 import { EdgeRoutesContext } from './EdgeRoutesContext';
@@ -1744,6 +1745,36 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     if (register === '`') jumpToPreviousNode();
     else jumpToMark(register);
   }, [jumpToPreviousNode, jumpToMark]);
+
+  // - the section rows of the marks panel: stack order, the rail's title for an untitled one
+  const marksSections = useMemo<SectionEntry[]>(() => derivedLanes.map(l => ({
+    id: l.id, label: l.label, title: l.title?.trim() || fmtDateTime(l.createdAt),
+    count: l.memberIds.length, folded: !!l.folded,
+  })), [derivedLanes]);
+
+  /**
+   * Go to a section from the marks panel: unfold it when folded, then focus its first node (by y,
+   * then x). An empty section only unfolds, and the camera pans to its top instead. The focus waits
+   * a frame because the unfold moves the nodes below in this tick.
+   */
+  const handlePickSection = useCallback((id: string) => {
+    setMarksOpen(false);
+    const lane = derivedLanes.find(l => l.id === id);
+    if (!lane) return;
+    if (lane.folded) foldLaneRef.current(id);   // - the same action unfolds
+    const members = new Set(lane.memberIds);
+    const first = nodes
+      .filter(n => members.has(n.id) && !isBandType(n.type))
+      .sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x)[0];
+    if (first) {
+      requestAnimationFrame(() => focusNodeById(first.id));
+      return;
+    }
+    if (!rfRef.current) return;
+    const { x, zoom } = rfRef.current.getViewport();
+    const c = clampCam(x, -lane.top * zoom, zoom);
+    rfRef.current.setViewport({ x: c.x, y: c.y, zoom }, { duration: 250 });
+  }, [derivedLanes, nodes, focusNodeById, clampCam]);
 
   // ─── add text node in direction (shared by keyboard and VS Code command paths) ─
 
@@ -3719,7 +3750,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         elevateEdgesOnSelect
       >
         <Background variant={BackgroundVariant.Dots} gap={GRID} size={1} color="var(--vscode-editorIndentGuide-background)" />
-        <SectionSeparators lanes={derivedLanes} />
+        <SectionSeparators lanes={derivedLanes} kernels={railKernels} />
         <EdgeFollowHints hints={gHints} />
         <HelperLines horizontal={helperLines.horizontal} vertical={helperLines.vertical} />
         <Controls showInteractive={false} showFitView={false}>
@@ -3761,7 +3792,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         <MarksPanel
           marks={marksRef.current}
           nodes={nodes}
+          sections={marksSections}
           onJump={jumpToRegister}
+          onPickSection={handlePickSection}
           onClose={() => setMarksOpen(false)}
         />
       )}
