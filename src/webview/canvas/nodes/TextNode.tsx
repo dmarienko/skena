@@ -406,7 +406,7 @@ export function patchVimExternalSelection(): void {
  * from the register text only. The buffer edit uses the positions, not the text, so it is
  * unchanged. The one-line-buffer case (anchor.ch = 0) was already right and stays as it was.
  *
- * The guard is also widened from monaco-vim's "anchor is the last line and head is one past it"
+ * The condition is also widened from monaco-vim's "anchor is the last line and head is one past it"
  * to "head is past the last line", which is the condition the widening actually exists for: a
  * linewise range reaching the document end has no newline after it, whatever line it starts on.
  * Without that, `dG` / `Vjd` starting anywhere above the last line left a stray empty line.
