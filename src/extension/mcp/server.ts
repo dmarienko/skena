@@ -777,10 +777,11 @@ async function canvasUpdateNode(args: Record<string, unknown>): Promise<string> 
   if (args.y      !== undefined) updated.y      = at.y;
   if (args.width  !== undefined) updated.width  = snapGrid(args.width  as number);
   if (args.height !== undefined) updated.height = snapGrid(args.height as number);
-  // - new text, no explicit height: the cell is re-sized to what it now needs, growing or shrinking
-  //   as the webview does on an edit. That is a geometry change, so the column re-packs around it.
+  // - text that really CHANGED, no explicit height: the cell is re-sized to what it now needs,
+  //   growing or shrinking as the webview does on an edit. Re-sending the same text changes nothing,
+  //   so a cell given a height by hand keeps it. A new height re-packs the column, as a resize does.
   let resized = false;
-  if (args.content !== undefined && n.type === 'code' && args.height === undefined) {
+  if (n.type === 'code' && args.height === undefined && args.content !== undefined && (args.content as string) !== n.code) {
     updated.height = codeCellHeight(estimateCodeNeedPx(args.content as string));
     resized = updated.height !== n.height;
   }
@@ -1570,7 +1571,7 @@ const TOOLS = [
         x:          { type: 'number', description: 'X position (auto-placed if omitted; ignored with after/forkOf)' },
         y:          { type: 'number', description: 'Y position (auto-placed if omitted; ignored with after/forkOf)' },
         width:      { type: 'number', description: 'Width in canvas units (default: type-dependent)' },
-        height:     { type: 'number', description: 'Height in canvas units (default: type-dependent; a code cell with content is sized to the lines it holds, up to 900)' },
+        height:     { type: 'number', description: 'Height in canvas units (default: type-dependent; a code cell with content is sized to the lines it holds, between 300 and 900)' },
         after:      { type: 'string', description: 'Label or id of any node: place the new node one gap below it in the same column (type defaults to code under a code cell, else text)' },
         forkOf:     { type: 'string', description: 'Label or id of a code cell: start a new column pair beside its pair (type defaults to code)' },
         side:       { type: 'string', description: 'forkOf side: right (default) or left; a left fork that would start before the canvas origin is refused' },
@@ -1580,7 +1581,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_update_node',
-    description: 'Update an existing node: content, tags, color, label, and/or move/resize it. Partial — only supplied fields change. New code content with no explicit height re-sizes the cell to the lines it now holds (grows or shrinks, up to 900) and counts as a resize. Move/resize uses absolute canvas coordinates and runs the layout engine: the node\'s column is packed, the column pairs to its right are pushed clear, and the notes it covers move down. An output cell is clamped to 1400 wide by 900 high so it cannot overlap the pair to its right. Sections fit their content: a node placed past its section\'s bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Supplied coordinates are snapped to the grid and clamped to the canvas origin.',
+    description: 'Update an existing node: content, tags, color, label, and/or move/resize it. Partial — only supplied fields change. Code content that CHANGES the cell\'s text, with no explicit height, re-sizes it to the lines it now holds (grows or shrinks, 300 to 900) and counts as a resize; re-sending the same text re-sizes nothing, so a height set by hand is kept. Move/resize uses absolute canvas coordinates and runs the layout engine: the node\'s column is packed, the column pairs to its right are pushed clear, and the notes it covers move down. An output cell is clamped to 1400 wide by 900 high so it cannot overlap the pair to its right. Sections fit their content: a node placed past its section\'s bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Supplied coordinates are snapped to the grid and clamped to the canvas origin.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1593,7 +1594,7 @@ const TOOLS = [
         x:          { type: 'number', description: 'Move: absolute x (left)' },
         y:          { type: 'number', description: 'Move: absolute y (top)' },
         width:      { type: 'number', description: 'Resize: width' },
-        height:     { type: 'number', description: 'Resize: height (omit it with new code content and the cell is re-sized to the lines it now holds)' },
+        height:     { type: 'number', description: 'Resize: height (omit it and code content that CHANGES the text re-sizes the cell to the lines it now holds, 300 to 900)' },
       },
       required: ['canvasPath', 'ref'],
     },

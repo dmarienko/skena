@@ -130,18 +130,23 @@ export const OUTPUT_DEFAULT_H = 300;
 /**
  * Estimating what a code cell's text needs, in px, for a caller with no editor to measure: the
  * MCP server (`estimateCodeNeedPx` in ./layoutEngine.ts). The webview measures the real thing
- * (`CodeNode.reportHeight`) and that replaces the estimate on the first edit, so the 50px
- * CODE_H_STEP only has to absorb the error.
- *   line   = Monaco's `lineHeight`, set to Math.round(fontSize * 1.3) off the VS Code editor
- *            font size — 14 by default (the fallback when the var is missing is 12), so 18.
- *   chrome = what the cell puts around the editor box, all from CodeNode's own styles:
- *            3   node border, useZoomInvariantBorderWidth(1.5) top + bottom
+ * (`CodeNode.reportHeight`, `box.offsetHeight - dom.offsetHeight`) and that replaces the estimate
+ * on the user's first edit, so the 50px CODE_H_STEP only has to absorb the error.
+ *   line   = Monaco's `lineHeight`, Math.round(fontSize * 1.3) off the VS Code editor font size.
+ *            18 assumes the default `editor.fontSize` 14. The MCP process cannot read that setting,
+ *            so at 16 the real line is 21px and a cell opens about two 50px steps short until the
+ *            first edit measures it.
+ *   chrome = what the cell puts around the editor box, from CodeNode's own styles:
  *            6   header padding, '3px 40px 3px 14px'
  *            1   header borderBottom
  *            17  header text line — the tallest item is the 14px status glyph, at the browser's
  *                `normal` line height (~1.2); nothing sets one on the node
  *            12  vim status bar, 10px text at that same `normal` line height, no vertical padding
- *            = 39. Monaco's own `padding` option is { top: 0, bottom: 0 } and adds nothing.
+ *            = 36, taken to 39 as a small margin. The node border is not in it: `.skena-node` is
+ *            content-box, so it sits outside the height reportHeight measures, and its width is
+ *            zoom-dependent anyway (useZoomInvariantBorderWidth(1.5) is 1.5 * BORDER_WIDTH_SCALE
+ *            1.8 = 2.7 at zoom 1, more zoomed out). Monaco's `padding` option is
+ *            { top: 0, bottom: 0 } and adds nothing.
  */
 export const CODE_LINE_H_ESTIMATE = 18;
 export const CODE_CHROME_ESTIMATE = 39;
