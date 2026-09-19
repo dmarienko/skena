@@ -304,24 +304,26 @@ export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patch
 export function reflowSection(input: EngineNode[]): Patches {
   const nodes = clone(input);
   const map = byId(nodes);
-  // - snap x onto columns, left → right: a node joins the nearest column established so far when it
-  //   sits within half a pair width, else it starts one at its own snapped x. A node is never a
-  //   candidate column for itself — that is what leaves an off-column node in its own column.
-  //   Every column member takes part, not only code cells: a note or a file at a column's snapped x
-  //   is already a member of it (`deriveColumns`), so Reflow pulls one parked beside a column onto
-  //   it rather than leaving it hanging there. Outputs and kernel badges are no members and keep
-  //   their x here; an output is put back on its pair's slot by `packColumn` below.
+  // - snap x onto columns, left → right: a node joins the nearest column found so far when it sits
+  //   within half a pair width, else it starts one at its own snapped x. A node is never a candidate
+  //   column for itself — that is what leaves an off-column node in its own column.
   const owners = outputOwners(nodes);
-  const members = nodes.filter(n => isMember(n, owners))
-    .sort((a, b) => snapGrid(a.x) - snapGrid(b.x) || a.y - b.y || a.id.localeCompare(b.id));
+  const sweep = (a: EngineNode, b: EngineNode) => snapGrid(a.x) - snapGrid(b.x) || a.y - b.y || a.id.localeCompare(b.id);
   const half = (NODE_SIZE.code.w + GRID + OUTPUT_MIN_W) / 2;
   const xs: number[] = [];
-  for (const n of members) {
+  const adopt = (n: EngineNode) => {
     const sx = snapGrid(n.x);
     const near = xs.filter(x => Math.abs(x - sx) <= half).sort((a, b) => Math.abs(a - sx) - Math.abs(b - sx))[0];
     if (near === undefined) xs.push(sx);
     n.x = near ?? sx;
-  }
+  };
+  // - the code cells alone decide where the columns are: they carry the outputs and the pair widths,
+  //   so a note parked beside them must not drag a whole pair sideways.
+  for (const n of nodes.filter(n => n.type === 'code').sort(sweep)) adopt(n);
+  // - then every other member joins the nearest of those columns, or starts one where none is in
+  //   reach — a list the later notes can join in turn. An output is no member: it keeps its x here
+  //   and `packColumn` below puts it back on its pair's slot. A kernel badge is parked by hand.
+  for (const n of nodes.filter(n => isMember(n, owners) && n.type !== 'code').sort(sweep)) adopt(n);
   const columns = deriveColumns(nodes);
   const pairs = derivePairs(nodes, columns);
   for (const pair of pairs) packColumn(pair, map);
