@@ -4480,16 +4480,20 @@ function reflowSection(input) {
   const nodes = clone(input);
   const map = byId(nodes);
   const owners = outputOwners(nodes);
-  const members = nodes.filter((n) => isMember(n, owners)).sort((a, b) => snapGrid(a.x) - snapGrid(b.x) || a.y - b.y || a.id.localeCompare(b.id));
+  const sweep = (a, b) => snapGrid(a.x) - snapGrid(b.x) || a.y - b.y || a.id.localeCompare(b.id);
   const half = (NODE_SIZE.code.w + GRID + OUTPUT_MIN_W) / 2;
   const xs = [];
-  for (const n of members) {
+  const adopt = (n) => {
     const sx = snapGrid(n.x);
     const near = xs.filter((x) => Math.abs(x - sx) <= half).sort((a, b) => Math.abs(a - sx) - Math.abs(b - sx))[0];
     if (near === void 0)
       xs.push(sx);
     n.x = near ?? sx;
-  }
+  };
+  for (const n of nodes.filter((n2) => n2.type === "code").sort(sweep))
+    adopt(n);
+  for (const n of nodes.filter((n2) => isMember(n2, owners) && n2.type !== "code").sort(sweep))
+    adopt(n);
   const columns = deriveColumns(nodes);
   const pairs = derivePairs(nodes, columns);
   for (const pair of pairs)
@@ -5710,7 +5714,7 @@ async function canvasUpdateNode(args) {
     if (args.height !== void 0)
       updated.height = snapGrid(args.height);
     let resized = false;
-    if (args.content !== void 0 && n.type === "code" && args.height === void 0) {
+    if (n.type === "code" && args.height === void 0 && args.content !== void 0 && args.content !== n.code) {
       updated.height = codeCellHeight(estimateCodeNeedPx(args.content));
       resized = updated.height !== n.height;
     }
@@ -6462,7 +6466,7 @@ var TOOLS = [
         x: { type: "number", description: "X position (auto-placed if omitted; ignored with after/forkOf)" },
         y: { type: "number", description: "Y position (auto-placed if omitted; ignored with after/forkOf)" },
         width: { type: "number", description: "Width in canvas units (default: type-dependent)" },
-        height: { type: "number", description: "Height in canvas units (default: type-dependent; a code cell with content is sized to the lines it holds, up to 900)" },
+        height: { type: "number", description: "Height in canvas units (default: type-dependent; a code cell with content is sized to the lines it holds, between 300 and 900)" },
         after: { type: "string", description: "Label or id of any node: place the new node one gap below it in the same column (type defaults to code under a code cell, else text)" },
         forkOf: { type: "string", description: "Label or id of a code cell: start a new column pair beside its pair (type defaults to code)" },
         side: { type: "string", description: "forkOf side: right (default) or left; a left fork that would start before the canvas origin is refused" }
@@ -6472,7 +6476,7 @@ var TOOLS = [
   },
   {
     name: "canvas_update_node",
-    description: "Update an existing node: content, tags, color, label, and/or move/resize it. Partial \u2014 only supplied fields change. New code content with no explicit height re-sizes the cell to the lines it now holds (grows or shrinks, up to 900) and counts as a resize. Move/resize uses absolute canvas coordinates and runs the layout engine: the node's column is packed, the column pairs to its right are pushed clear, and the notes it covers move down. An output cell is clamped to 1400 wide by 900 high so it cannot overlap the pair to its right. Sections fit their content: a node placed past its section's bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Supplied coordinates are snapped to the grid and clamped to the canvas origin.",
+    description: "Update an existing node: content, tags, color, label, and/or move/resize it. Partial \u2014 only supplied fields change. Code content that CHANGES the cell's text, with no explicit height, re-sizes it to the lines it now holds (grows or shrinks, 300 to 900) and counts as a resize; re-sending the same text re-sizes nothing, so a height set by hand is kept. Move/resize uses absolute canvas coordinates and runs the layout engine: the node's column is packed, the column pairs to its right are pushed clear, and the notes it covers move down. An output cell is clamped to 1400 wide by 900 high so it cannot overlap the pair to its right. Sections fit their content: a node placed past its section's bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Supplied coordinates are snapped to the grid and clamped to the canvas origin.",
     inputSchema: {
       type: "object",
       properties: {
@@ -6485,7 +6489,7 @@ var TOOLS = [
         x: { type: "number", description: "Move: absolute x (left)" },
         y: { type: "number", description: "Move: absolute y (top)" },
         width: { type: "number", description: "Resize: width" },
-        height: { type: "number", description: "Resize: height (omit it with new code content and the cell is re-sized to the lines it now holds)" }
+        height: { type: "number", description: "Resize: height (omit it and code content that CHANGES the text re-sizes the cell to the lines it now holds, 300 to 900)" }
       },
       required: ["canvasPath", "ref"]
     }
