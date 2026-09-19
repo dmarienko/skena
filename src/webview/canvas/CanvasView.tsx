@@ -30,8 +30,10 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
-import { CanvasData, CanvasNode, CanvasEdge, CanvasViewport, KernelNode, KernelRecord, KnowledgeNode, MsgAddNodeResult, MsgKernelAdded, MsgKernelRemoved, MsgKnowledgeFetchResult, MsgRunOutput, MsgSubCanvasCreated, MsgVerifyPathResult, NodeSide, CanvasMark, ViewportSnapshot } from '../../shared/types';
+import { CanvasData, CanvasNode, CanvasEdge, CanvasViewport, KernelNode, KernelRecord, KnowledgeNode, MsgAddNodeResult, MsgKernelAdded, MsgKernelRemoved, MsgKnowledgeFetchResult, MsgKnowledgeRefresh, MsgKnowledgeRefreshed, MsgKnowledgeServersResult, MsgRunOutput, MsgSubCanvasCreated, MsgVerifyPathResult, NodeSide, CanvasMark, ViewportSnapshot } from '../../shared/types';
 import type { KnowledgeHit, KnowledgeText } from '../../shared/knowledge/types';
+import type { RefreshOutcome, RefreshTarget } from '../../shared/knowledge/refresh';
+import { staleTargets } from '../../shared/knowledge/refresh';
 import { classifyClipboard } from './paste-classify';
 import { ContextMenu } from './ContextMenu';
 import { CANVAS_COLORS, NODE_SIZE, NEW_NODE, OUTPUT_MAX_W, OUTPUT_MAX_H, READABLE_ZOOM } from '../../shared/constants';
@@ -2070,6 +2072,100 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     window.addEventListener('skena:knowledgeFetchResult', onResult);
     vscodePostMessage({ type: 'knowledgeFetch', requestId, server: hit.server, uri: hit.uri });
   }, [placeKnowledgeNode]);
+
+  // - the knowledge nodes of this canvas, as the refresh runner takes them
+  const knowledgeTargets = useCallback((): RefreshTarget[] =>
+    canvasRef.current.nodes
+      .filter((n): n is KnowledgeNode => n.type === 'knowledge')
+      .map(n => ({ id: n.id, server: n.server, uri: n.uri, text: n.text, fetchedAt: n.fetchedAt })),
+  []); // - canvasRef is a ref, always current
+
+  const postKnowledgeRefresh = useCallback((targets: RefreshTarget[]) => {
+    if (targets.length === 0) return;
+    vscodePostMessage({
+      type: 'knowledgeRefresh',
+      nodes: targets.map(({ id, server, uri, text }) => ({ id, server, uri, text })),
+    } satisfies MsgKnowledgeRefresh);
+  }, []);
+
+  // - on open, after the canvas is painted: the host answers knowledgeServers with the hours a
+  //   copy may keep, and the copies older than that go back to it to be fetched again
+  useEffect(() => {
+    const onServers = (e: Event) => {
+      window.removeEventListener('skena:knowledgeServersResult', onServers);
+      const { refreshAfterHours } = (e as CustomEvent<MsgKnowledgeServersResult>).detail;
+      postKnowledgeRefresh(staleTargets(knowledgeTargets(), new Date(), refreshAfterHours));
+    };
+    const frame = requestAnimationFrame(() => {
+      if (knowledgeTargets().length === 0) return;   // - no knowledge node: nothing to ask about
+      window.addEventListener('skena:knowledgeServersResult', onServers);
+      vscodePostMessage({ type: 'knowledgeServers' });
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('skena:knowledgeServersResult', onServers);
+    };
+  }, [knowledgeTargets, postKnowledgeRefresh]);
+
+  // - the node's own refresh button: that one node, however fresh its copy is
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { id } = (e as CustomEvent<{ id: string }>).detail;
+      const target = knowledgeTargets().find(t => t.id === id);
+      if (target) postKnowledgeRefresh([target]);
+    };
+    window.addEventListener('skena:knowledgeRefresh', handler);
+    return () => window.removeEventListener('skena:knowledgeRefresh', handler);
+  }, [knowledgeTargets, postKnowledgeRefresh]);
+
+  // - a batch of refresh outcomes. Only the fields the host sent move: a failed fetch keeps the
+  //   cached text and shows its reason, a successful one clears a previous reason. No history
+  //   entry — the user did nothing to undo.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const batch = (e as CustomEvent<MsgKnowledgeRefreshed>).detail.nodes;
+      const byId = new Map(batch.map(o => [o.id, o]));
+      const fields = (o: RefreshOutcome) => ({
+        ...(o.text      !== undefined ? { text:      o.text }      : {}),
+        ...(o.title     !== undefined ? { title:     o.title }     : {}),
+        ...(o.fetchedAt !== undefined ? { fetchedAt: o.fetchedAt } : {}),
+        ...(o.changed   !== undefined ? { changed:   o.changed }   : {}),
+        error: o.error,
+      });
+      let touched = false;
+      const nextNodes = canvasRef.current.nodes.map(n => {
+        const o = n.type === 'knowledge' ? byId.get(n.id) : undefined;
+        if (!o) return n;
+        touched = true;
+        return { ...n, ...fields(o) };
+      });
+      if (!touched) return;
+      canvasRef.current = { ...canvasRef.current, nodes: nextNodes };
+      setNodes(nds => nds.map(n => {
+        const o = n.type === 'knowledge' ? byId.get(n.id) : undefined;
+        return o ? { ...n, data: { ...n.data, ...fields(o) } } : n;
+      }));
+      scheduleSave();
+    };
+    window.addEventListener('skena:knowledgeRefreshed', handler);
+    return () => window.removeEventListener('skena:knowledgeRefreshed', handler);
+  }, [setNodes, scheduleSave]);
+
+  // - the dot means "the server's text moved since you last read this node"; selecting the node is
+  //   that read, so it goes away
+  useEffect(() => {
+    const selected = nodesRef.current.find(n => n.selected && n.type === 'knowledge');
+    if (!selected || !(selected.data as unknown as KnowledgeNode).changed) return;
+    const id = selected.id;
+    canvasRef.current = {
+      ...canvasRef.current,
+      nodes: canvasRef.current.nodes.map(n => (n.id === id && n.type === 'knowledge' ? { ...n, changed: false } : n)),
+    };
+    setNodes(nds => nds.map(n => (n.id === id ? { ...n, data: { ...n.data, changed: false } } : n)));
+    scheduleSave();
+  // - the selection pattern, not the whole array: a drag must not re-run this
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodes.map(n => n.selected ? n.id : '').join(','), setNodes, scheduleSave]);
 
   const handleMoveToSubCanvas = useCallback(() => {
     const selectedNodes = nodesRef.current.filter(n => n.selected && !isBandType(n.type));

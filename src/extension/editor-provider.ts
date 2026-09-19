@@ -233,6 +233,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     // - async kernel poll (or run) can resolve AFTER the panel closes and post to a dead webview,
     // - which throws an uncaught "Webview is disposed" (floods on reload). No-op once disposed.
     let panelDisposed = false;
+    // - the knowledge refresh started for this canvas, so closing it stops the pending fetches
+    let knowledgeRefreshRun: { cancel(): void } | null = null;
     const send = (msg: HostToWebview) => {
       if (panelDisposed) return;
       try { panel.webview.postMessage(msg); } catch { /* - panel disposed mid-async */ }
@@ -512,6 +514,11 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           }
           break;
         }
+        case 'knowledgeRefresh': {
+          // - the fetches run here so the canvas stays responsive; outcomes come back in batches
+          knowledgeRefreshRun = this.knowledge.startRefresh(msg.nodes, batch => send({ type: 'knowledgeRefreshed', nodes: batch }));
+          break;
+        }
         case 'knowledgeOpen': {
           try {
             const url = this.knowledge.provider(msg.server).openUrl(msg.uri);
@@ -716,6 +723,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       }
       // - kill this canvas's persistent harness process when its panel closes
       this._llmClient?.disposeSession?.(document.uri.fsPath);
+      knowledgeRefreshRun?.cancel();
       manager.stopPolling();
       canvasWatcher.dispose();
       workspaceWatcher.dispose();
