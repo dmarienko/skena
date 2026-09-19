@@ -91,6 +91,19 @@ type VimSingleton = {
 
 let chatClipboardCache: { text: string; linewise: boolean } = { text: '', linewise: false };
 
+/**
+ * - the last text we handed to the host clipboard, plus the register form it came from.
+ * - `text` is what the host holds, `full` is vim's register text; a linewise register ends in
+ * - "\n" and the host must not carry it, or a paste elsewhere gains a blank line.
+ */
+let chatLastWritten: { text: string; full: string; linewise: boolean } | null = null;
+
+function writeChatClipboard(full: string, linewise: boolean, out?: string): void {
+  const sent = out ?? (linewise ? full.replace(/\n$/, '') : full);
+  chatLastWritten = { text: sent, full, linewise };
+  vscodePostMessage({ type: 'writeClipboard', text: sent });
+}
+
 /** - relay register: routes vim y/p through the extension-host clipboard */
 const chatSysReg: VimRegisterLike = {
   keyBuffer:         [''],
@@ -100,11 +113,12 @@ const chatSysReg: VimRegisterLike = {
   searchQueries:     [],
 
   setText(text: string, linewise: boolean, blockwise?: boolean) {
-    this.keyBuffer = [text ?? ''];
+    const full = text ?? '';
+    this.keyBuffer = [full];
     this.linewise  = !!linewise;
     this.blockwise = !!blockwise;
-    chatClipboardCache = { text: text ?? '', linewise: !!linewise };
-    vscodePostMessage({ type: 'writeClipboard', text: text ?? '' });
+    chatClipboardCache = { text: full, linewise: !!linewise };
+    writeChatClipboard(full, !!linewise);
   },
   pushText(text: string, linewise: boolean) {
     if (linewise) {
@@ -114,7 +128,7 @@ const chatSysReg: VimRegisterLike = {
     this.keyBuffer.push(text);
     const full = this.keyBuffer.join('');
     chatClipboardCache = { text: full, linewise: this.linewise };
-    vscodePostMessage({ type: 'writeClipboard', text: full });
+    writeChatClipboard(full, this.linewise);
   },
   clear() {
     this.keyBuffer         = [];
@@ -129,6 +143,25 @@ const chatSysReg: VimRegisterLike = {
   pushInsertModeChanges(changes: unknown) { this.insertModeChanges.push(changes); },
   pushSearchQuery(query: string)          { this.searchQueries.push(query); },
 };
+
+/**
+ * Take the host clipboard text into the relay register, with the right linewise flag.
+ * A read fires on every editor focus, so our own copy comes straight back: matching it against
+ * what we last wrote restores that copy's text and flag. Anything else follows vim's rule for
+ * the system clipboard — text ending in a newline is linewise.
+ */
+function noteChatHostClipboard(text: string): void {
+  if (chatLastWritten && text === chatLastWritten.text) {
+    chatClipboardCache   = { text: chatLastWritten.full, linewise: chatLastWritten.linewise };
+    chatSysReg.linewise  = chatLastWritten.linewise;
+    chatSysReg.keyBuffer = [chatLastWritten.full];
+    return;
+  }
+  const linewise       = text.endsWith('\n');
+  chatClipboardCache   = { text, linewise };
+  chatSysReg.linewise  = linewise;
+  chatSysReg.keyBuffer = [text];
+}
 
 function getChatVimSingleton(): VimSingleton | undefined {
   return (VimMode as unknown as Record<string, unknown>).Vim as VimSingleton | undefined;
@@ -293,10 +326,7 @@ export function FloatingChat({
   useEffect(() => {
     const handler = (e: Event) => {
       const text = (e as CustomEvent<string>).detail ?? '';
-      // - sync the module-level cache and sysReg
-      chatClipboardCache  = { text, linewise: false };
-      chatSysReg.linewise  = false;
-      chatSysReg.keyBuffer = [text];
+      noteChatHostClipboard(text);
 
       if (pendingPasteRef.current) {
         pendingPasteRef.current = false;
@@ -597,7 +627,9 @@ export function FloatingChat({
           : model.getValueInRange(sel);
         if (text) {
           chatClipboardCache = { text, linewise: sel.isEmpty() };
-          vscodePostMessage({ type: 'writeClipboard', text });
+          // - a whole-line copy keeps its trailing newline on the host: that is what Ctrl+C
+          // - in VS Code puts there too, and the newline rule reads it back as linewise
+          writeChatClipboard(text, sel.isEmpty(), text);
         }
       },
     );

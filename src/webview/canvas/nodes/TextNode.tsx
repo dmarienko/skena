@@ -56,6 +56,19 @@ let clipboardCache: { text: string; linewise: boolean } = { text: '', linewise: 
  */
 let pendingPaste = false;
 
+/**
+ * - the last text we handed to the host clipboard, plus the register form it came from.
+ * - `text` is what the host holds (linewise yanks lose their trailing newline so a paste in
+ * - another app does not gain a blank line); `full` is vim's register text, which must keep it.
+ */
+let lastWritten: { text: string; full: string; linewise: boolean } | null = null;
+
+function writeHostClipboard(full: string, linewise: boolean): void {
+  const out = linewise ? full.replace(/\n$/, '') : full;
+  lastWritten = { text: out, full, linewise };
+  vscodePostMessage({ type: 'writeClipboard', text: out });
+}
+
 // ─── vim clipboard wiring ────────────────────────────────────────────────────
 //
 // - monaco-vim 0.4.4 does NOT implement the `clipboard` option (unnamedplus),
@@ -108,11 +121,12 @@ const sysReg: VimRegisterLike = {
   searchQueries:     [],
 
   setText(text: string, linewise: boolean, blockwise?: boolean) {
-    this.keyBuffer = [text ?? ''];
+    const full = text ?? '';
+    this.keyBuffer = [full];
     this.linewise  = !!linewise;
     this.blockwise = !!blockwise;
-    clipboardCache = { text: text ?? '', linewise: !!linewise };
-    vscodePostMessage({ type: 'writeClipboard', text: text ?? '' });
+    clipboardCache = { text: full, linewise: !!linewise };
+    writeHostClipboard(full, !!linewise);
   },
   pushText(text: string, linewise: boolean) {
     if (linewise) {
@@ -122,7 +136,7 @@ const sysReg: VimRegisterLike = {
     this.keyBuffer.push(text);
     const full = this.keyBuffer.join('');
     clipboardCache = { text: full, linewise: this.linewise };
-    vscodePostMessage({ type: 'writeClipboard', text: full });
+    writeHostClipboard(full, this.linewise);
   },
   clear() {
     this.keyBuffer         = [];
@@ -392,14 +406,30 @@ export function patchVimJoin(
   });
 }
 
+/**
+ * Take the host clipboard text into the relay register, with the right linewise flag.
+ *
+ * A read fires on every editor focus, so our own `yy` comes straight back: matching it against
+ * what we last wrote restores the register's own text and flag, newline and all. Anything else
+ * follows vim's rule for the system clipboard — text ending in a newline is linewise.
+ */
+export function noteHostClipboard(text: string): void {
+  if (lastWritten && text === lastWritten.text) {
+    clipboardCache   = { text: lastWritten.full, linewise: lastWritten.linewise };
+    sysReg.linewise  = lastWritten.linewise;
+    sysReg.keyBuffer = [lastWritten.full];
+    return;
+  }
+  const linewise   = text.endsWith('\n');
+  clipboardCache   = { text, linewise };
+  sysReg.linewise  = linewise;
+  sysReg.keyBuffer = [text];
+}
+
 // - module-level skena:clipboardContent listener — registered at bundle load,
 // - fires for both the proactive push on webviewReady AND every requestClipboardRead response.
-// - Updates clipboardCache AND syncs sysReg.linewise so vim paste reads the right flag.
 window.addEventListener('skena:clipboardContent', (e: Event) => {
-  const text = (e as CustomEvent<string>).detail ?? '';
-  clipboardCache    = { text, linewise: false };
-  sysReg.linewise   = false;   // - pasted text from host is always character-wise
-  sysReg.keyBuffer  = [text];  // - keep keyBuffer in sync as fallback
+  noteHostClipboard((e as CustomEvent<string>).detail ?? '');
 });
 
 // ─── component ────────────────────────────────────────────────────────────────
@@ -553,7 +583,7 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
   useEffect(() => {
     const handler = (e: Event) => {
       const text = (e as CustomEvent<string>).detail ?? '';
-      clipboardCache = { text, linewise: false };
+      noteHostClipboard(text);
 
       if (pendingPaste) {
         pendingPaste = false;
