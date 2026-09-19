@@ -402,14 +402,20 @@ export function patchVimExternalSelection(): void {
  * the delete is linewise. On "ab\ncd", `j dd` leaves the buffer as "ab" (right) but registers
  * "\ncd\n" instead of "cd\n", so `p` pastes a blank line first.
  *
- * Fix: re-register the delete operator with the original body, dropping that leading newline
+ * Fix: re-register the delete operator with the original body, dropping that leading line break
  * from the register text only. The buffer edit uses the positions, not the text, so it is
  * unchanged. The one-line-buffer case (anchor.ch = 0) was already right and stays as it was.
+ *
+ * The guard is also widened from monaco-vim's "anchor is the last line and head is one past it"
+ * to "head is past the last line", which is the condition the widening actually exists for: a
+ * linewise range reaching the document end has no newline after it, whatever line it starts on.
+ * Without that, `dG` / `Vjd` starting anywhere above the last line left a stray empty line.
  */
 export function patchVimDeleteLastLine(): void {
   const CM = VimMode as any;
+  const P  = CM?.prototype;
   const Vim = CM?.Vim;
-  if (!Vim?.defineOperator || !Vim.getVimGlobalState_ || CM.__skenaDeleteLastLine) return;
+  if (!P || !Vim?.defineOperator || !Vim.getVimGlobalState_ || P.__skenaDeleteLastLine) return;
   const Pos = CM.Pos;
 
   const lineLength  = (cm: any, line: number): number => cm.getLine(line).length;
@@ -436,8 +442,7 @@ export function patchVimDeleteLastLine(): void {
       let anchor = ranges[0].anchor;
       const head = ranges[0].head;
       let widenedToPrevLine = false;
-      if (args.linewise && head.line !== cm.firstLine()
-        && anchor.line === cm.lastLine() && anchor.line === head.line - 1) {
+      if (args.linewise && head.line > cm.lastLine()) {
         if (anchor.line === cm.firstLine()) {
           anchor.ch = 0;
         } else {
@@ -445,9 +450,12 @@ export function patchVimDeleteLastLine(): void {
           widenedToPrevLine = true;
         }
       }
+      // - relies on patchVimLastLine having clipped the past-the-end head for getRange and
+      // - replaceRange, so this must run after it
       text = cm.getRange(anchor, head);
       cm.replaceRange('', anchor, head);
-      if (widenedToPrevLine) text = text.slice(1);
+      // - the model's own line break, which may be CRLF; the register keeps plain \n
+      if (widenedToPrevLine) text = text.slice(cm.editor.getModel()?.getEOL().length ?? 1);
       finalHead = anchor;
       if (args.linewise) finalHead = new Pos(anchor.line, firstNonWS(cm.getLine(anchor.line)));
     } else {
@@ -461,7 +469,7 @@ export function patchVimDeleteLastLine(): void {
     return clipToContent(cm, finalHead);
   });
 
-  CM.__skenaDeleteLastLine = true;
+  P.__skenaDeleteLastLine = true;
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
