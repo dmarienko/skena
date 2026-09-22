@@ -24,26 +24,15 @@ import * as fs     from 'fs/promises';
 import * as path   from 'path';
 import { VaultConfig } from '../shared/types';
 import type { KnowledgeServerConfig } from '../shared/knowledge/types';
+import { parseSettingsJson } from './settingsJson';
 
 // ─── file reader ──────────────────────────────────────────────────────────────
-
-/**
- * Parse VS Code's relaxed JSON (allows comments and trailing commas).
- * Strips // and block comments, then removes trailing commas before ] or }.
- */
-function parseRelaxedJson(raw: string): Record<string, unknown> {
-  const stripped = raw
-    .replace(/\/\/[^\n]*/g, '')               // - line comments
-    .replace(/\/\*[\s\S]*?\*\//g, '')         // - block comments
-    .replace(/,(\s*[}\]])/g, '$1');           // - trailing commas
-  return JSON.parse(stripped) as Record<string, unknown>;
-}
 
 /** Read a settings JSON file; returns null if missing or unparseable. */
 async function readJson(filePath: string): Promise<Record<string, unknown> | null> {
   try {
     const raw = await fs.readFile(filePath, 'utf-8');
-    return parseRelaxedJson(raw);
+    return parseSettingsJson(raw);
   } catch {
     return null;
   }
