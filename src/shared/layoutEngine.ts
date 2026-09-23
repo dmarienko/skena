@@ -170,9 +170,8 @@ function overlaps(a: { x: number; y: number; w: number; h: number }, b: { x: num
 //   are not obstacles: the members themselves, the outputs of those members (this same pack puts
 //   them on their cells' rows, so their old y says nothing), and a kernel badge, which the user
 //   parks where they like and the bumps keep clear, as before.
-function obstaclesOf(pair: Pair, nodes: EngineNode[]): EngineNode[] {
+function obstaclesOf(pair: Pair, nodes: EngineNode[], owners: Map<string, string>): EngineNode[] {
   const members = new Set(pair.column.cellIds);
-  const owners = outputOwners(nodes);
   return nodes.filter(n => !members.has(n.id) && n.type !== 'kernel' && !members.has(owners.get(n.id) ?? ''));
 }
 
@@ -203,7 +202,7 @@ function rowStart(start: number, x: number, member: EngineNode, obstacles: Engin
 //   goes back to the pair's x slot: Reflow (the explicit tidy) takes every one of them, a regular
 //   call only the ones whose pair the operation itself broke. An output the user parked overlaps
 //   nothing where it is, so pulling it left starts a bump the section never needed.
-function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode>, riders: Map<string, string>, out?: Patches, toSlot: (cellId: string, output: EngineNode, wasY: number) => boolean = () => true): void {
+function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode>, riders: Map<string, string>, owners: Map<string, string>, out?: Patches, toSlot: (cellId: string, output: EngineNode, wasY: number) => boolean = () => true): void {
   const x = pair.column.x;
   const place = (cell: EngineNode, y: number) => {
     const wasY = cell.y;
@@ -213,10 +212,13 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
     if (o && (o.x !== ox || o.y !== y)) { if (out) out[o.id] = { x: ox, y }; o.x = ox; o.y = y; }
   };
   const members = pair.column.cellIds.map(id => map.get(id)!);
+  const own = new Set(pair.column.cellIds);
   // - the riders first, each on the row of the cell its edge comes from (§3.5), two on one row
-  //   stacking in id order. A rider whose source is not in this section is no rider: it packs.
+  //   stacking in id order. A rider whose source is not in this section is no rider: it packs. Nor
+  //   is one whose source is a member of THIS column: Reflow snaps columns before it packs and can
+  //   put the two in one, and reading a column-mate's y as a fixed row walks the column down.
   const anchored = members
-    .map(cell => ({ cell, at: map.get(riders.get(cell.id) ?? '')?.y }))
+    .map(cell => { const s = riders.get(cell.id); return { cell, at: s !== undefined && !own.has(s) ? map.get(s)?.y : undefined }; })
     .filter((a): a is { cell: EngineNode; at: number } => a.at !== undefined)
     .sort((a, b) => a.at - b.at || a.cell.id.localeCompare(b.cell.id));
   let prevRider: number | null = null;
@@ -227,7 +229,7 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
   // - in y order, and nothing else this pack moves is in the list, so one ordering serves every
   //   member. The riders join it: they are fixed rows the rest of the column packs around.
   const fixed = anchored.map(a => a.cell);
-  const obstacles = [...obstaclesOf(pair, nodes), ...fixed].sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));
+  const obstacles = [...obstaclesOf(pair, nodes, owners), ...fixed].sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));
   const taken = new Set(fixed.map(c => c.id));
   let prevBottom: number | null = null;
   for (const cell of members) {
@@ -423,7 +425,7 @@ export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patch
   for (const pair of pairs) if (touched.has(pair.column.x)) {
     // - an output goes back on the slot when the operation moved its code cell AND left it off that
     //   cell's row: the pair is broken, and a cell the user dragged takes its output with it
-    packColumn(pair, nodes, map, riders, packed, (id, o, wasY) => movers.has(id) && o.y !== wasY);
+    packColumn(pair, nodes, map, riders, owners, packed, (id, o, wasY) => movers.has(id) && o.y !== wasY);
     // - the pack owns the column it just laid out: a bump moves what is in its way, never it, so the
     //   two never fight over the same cell and the next call packs it to the same place
     for (const id of pair.column.cellIds) { pinned.add(id); const outId = map.get(id)!.outputNodeId; if (outId) pinned.add(outId); }
@@ -460,7 +462,7 @@ export function reflowSection(input: EngineNode[], opts: { riders?: Map<string, 
   //   and `packColumn` below puts it back on its pair's slot. A kernel badge is parked by hand.
   for (const n of nodes.filter(n => isMember(n, owners) && n.type !== 'code').sort(sweep)) adopt(n);
   const riders = opts.riders ?? new Map<string, string>();
-  const packAll = () => { for (const pair of derivePairs(nodes, deriveColumns(nodes))) packColumn(pair, nodes, map, riders); };
+  const packAll = () => { for (const pair of derivePairs(nodes, deriveColumns(nodes))) packColumn(pair, nodes, map, riders, owners); };
   packAll();
   // - pairs tight left → right, the first keeping its x; outputs re-measured after the packs. Run
   //   again while it still moves something: a column's width is read off the members that stay clear

@@ -978,12 +978,24 @@ async function canvasUpdateEdge(args: Record<string, unknown>): Promise<string> 
     const d = await readCanvas(p);
     const e = findEdge(d, args.ref);
     if (!e) return `Edge not found: ${JSON.stringify(args.ref)}`;
+    // - a new pair of sides can make this edge hold its target on the source's row, or let it go
+    //   (§3.5): read the anchoring before and after the change and run the engine when it differs
+    const around = sectionEngineNodes(d.nodes, d.metadata?.sections ?? [], e.toNode) ?? toEngineNodes(d.nodes);
+    const was = ridersOf(around, [e]).has(e.toNode);
     if (args.label    !== undefined) e.label    = args.label as string;
     if (args.color    !== undefined) e.color    = args.color as CanvasEdge['color'];
     if (args.fromSide !== undefined) e.fromSide = args.fromSide as CanvasEdge['fromSide'];
     if (args.toSide   !== undefined) e.toSide   = args.toSide as CanvasEdge['toSide'];
+    const before = geomOf(d);
+    const report: { capped?: boolean } = {};
+    if (ridersOf(around, [e]).has(e.toNode) !== was) {
+      Object.assign(d, applyLaneFit(d, Date.now(), applyEngine(d, [e.toNode], [], report)));
+    }
+    const moved = movedLabels(d, before);
     await writeCanvas(p, d);
-    return `Updated edge ${e.id}`;
+    return `Updated edge ${e.id}`
+      + (moved.length ? ` — moved ${moved.join(', ')}` : '')
+      + (report.capped ? ` — ${CAPPED_NOTE}` : '');
   }); // - withFileLock
 }
 

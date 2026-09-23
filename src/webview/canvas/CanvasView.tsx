@@ -1491,6 +1491,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           .map(e => e.id),
       );
     }
+    // - the same read as onConnect: this edge may anchor its target on the source's row, and the
+    //   input edge it replaces may release one — both read while the old edges are still there (§3.5)
+    const held = anchoredBy([...canvasRef.current.edges.filter(e => staleIds.has(e.id)), newEdge]);
     pushHistory();
     setEdges(eds => addEdge(toFlowEdge(newEdge), eds.filter(e => !staleIds.has(e.id))));
     canvasRef.current = {
@@ -1498,7 +1501,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       edges: [...canvasRef.current.edges.filter(e => !staleIds.has(e.id)), newEdge],
     };
     scheduleSave();
-  }, [setEdges, scheduleSave, pushHistory, screenToFlowPosition]);
+    runEngineForCells(held);
+  }, [setEdges, scheduleSave, pushHistory, screenToFlowPosition, anchoredBy, runEngineForCells]);
 
   const onNodesDelete = useCallback((deleted: Node[]) => {
     pushHistory();
@@ -1665,10 +1669,12 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         canvasRef.current = { ...canvasRef.current, edges: [...canvasRef.current.edges, ...newEdges] };
       }
       scheduleSave();
+      // - these are right → left edges: one onto a code cell holds it on the source's row (§3.5)
+      runEngineForCells(anchoredBy(newEdges));
     };
     window.addEventListener('skena:nodesFromDrop', handler);
     return () => window.removeEventListener('skena:nodesFromDrop', handler);
-  }, [setNodes, setEdges, scheduleSave, pushHistory]);
+  }, [setNodes, setEdges, scheduleSave, pushHistory, anchoredBy, runEngineForCells]);
 
   // ─── keyboard navigation between nodes (hjkl / arrow keys) ──────────────────
 
