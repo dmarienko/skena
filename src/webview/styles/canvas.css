@@ -1,5 +1,17 @@
 /* React Flow canvas customizations */
 
+/* - SECTION RAIL COLOURS — tune here. Light values on :root; dark values scoped to the body
+   - classes VS Code sets for its dark / high-contrast themes (the same check isDarkTheme()
+   - in canvas/palette.ts makes in JS for the --sk-* variables). */
+:root {
+  --skena-rail-bg: #f5f5f7;
+  --skena-rail-border: #d1d1d6;
+}
+body.vscode-dark, body.vscode-high-contrast {
+  --skena-rail-bg: #050505;
+  --skena-rail-border: #20d0b030;
+}
+
 .react-flow__background { background: var(--vscode-editor-background); }
 .react-flow__minimap    { border-radius: 4px; overflow: hidden; }
 .react-flow__controls   { background: var(--vscode-sideBar-background); border: 1px solid var(--vscode-editorWidget-border); border-radius: 4px; }

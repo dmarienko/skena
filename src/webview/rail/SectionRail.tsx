@@ -67,7 +67,7 @@ export function SectionRail({ lanes, kernels, selectedNodeId, onFold, onRun, onR
   useEffect(() => { if (pop && !byId.has(pop.laneId)) setPop(null); }, [pop, lanes]);
 
   return (
-    <div style={{ width: RAIL_W, flex: '0 0 auto', position: 'relative', background: 'var(--sk-bg1)', borderRight: '1px solid var(--sk-border)', overflow: 'hidden' }}>
+    <div style={{ width: RAIL_W, flex: '0 0 auto', position: 'relative', background: 'var(--skena-rail-bg)', borderRight: '1px solid var(--skena-rail-border)', overflow: 'hidden' }}>
       <div style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: PLUS_H, overflow: 'hidden' }}>
         {segs.map(seg => {
           const lane = byId.get(seg.id);
@@ -83,7 +83,7 @@ export function SectionRail({ lanes, kernels, selectedNodeId, onFold, onRun, onR
       </div>
       {/* - paddingLeft 10 puts the + on the same axis as a segment's controls, which start right of the stripe */}
       <button title="new section" onClick={onNewSection}
-        style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: PLUS_H, display: 'flex', alignItems: 'center', justifyContent: 'center', paddingLeft: 10, background: 'var(--sk-bg1)', border: 'none', borderTop: '1px solid var(--sk-border)', cursor: 'pointer', color: 'var(--sk-text2)', fontFamily: 'system-ui, -apple-system, sans-serif', fontSize: 16, lineHeight: 1 }}>
+        style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: PLUS_H, display: 'flex', alignItems: 'center', justifyContent: 'center', paddingLeft: 10, background: 'var(--skena-rail-bg)', border: 'none', borderTop: '1px solid var(--skena-rail-border)', cursor: 'pointer', color: 'var(--sk-text2)', fontFamily: 'system-ui, -apple-system, sans-serif', fontSize: 16, lineHeight: 1 }}>
         +
       </button>
       {pop && popLane && pop.kind === 'kernel' && (
