@@ -25,6 +25,7 @@ import type {
   MsgKnowledgeServersResult,
 } from '../../shared/types';
 import { MarkdownRenderer } from '../renderers/MarkdownRenderer';
+import { useKnowledgeAssets } from './knowledgeAssets';
 import { initialState, queryFor, reduce, showsFilterRow, showsServerSelector } from './knowledgeSearchState';
 import type { SearchAction, SearchState } from './knowledgeSearchState';
 
@@ -87,6 +88,8 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
 
   const caps      = state.servers.find(s => s.name === state.server)?.capabilities;
   const facetsKey = `${state.server}\u0000${state.scope}`;
+  // - the preview shows the section's images, from the same cache the nodes use
+  const { swapMarkdown } = useKnowledgeAssets(state.server);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -397,7 +400,7 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
           }}
         >
           {preview.text
-            ? <MarkdownRenderer content={preview.text.text} baseUri="." />
+            ? <MarkdownRenderer content={swapMarkdown(preview.text.text)} baseUri="." />
             : <span style={{ opacity: 0.6 }}>{preview.error || (hit ? 'loading…' : '')}</span>}
         </div>
       </div>

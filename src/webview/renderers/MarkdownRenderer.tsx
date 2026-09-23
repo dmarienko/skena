@@ -9,7 +9,8 @@
  * Images: relative src paths (./img.png, ../assets/logo.svg) are resolved
  * relative to baseUri (the markdown file's canvas URI), then fetched through
  * useFileContent to obtain a vscode-resource:// URI the webview sandbox allows.
- * External http/https/data: URIs render directly.
+ * A src with a scheme (http:, https:, data:, a knowledge server's crtx:) renders
+ * as written.
  */
 
 import React, { useMemo, memo } from 'react';
@@ -28,16 +29,12 @@ interface MarkdownRendererProps {
   baseUri?: string;
 }
 
+// - an absolute uri of any scheme: http:, data:, and a knowledge server's own crtx:. None of them
+//   is a path to resolve, so the img renders with the src as written
+const ABSOLUTE = /^[a-z][a-z0-9+.-]*:/i;
+
 function resolveImageSrc(src: string, baseUri: string | undefined): string | null {
-  if (
-    !src ||
-    src.startsWith('http://') ||
-    src.startsWith('https://') ||
-    src.startsWith('data:') ||
-    src.startsWith('blob:')
-  ) {
-    return null;
-  }
+  if (!src || ABSOLUTE.test(src)) return null;
   if (!baseUri) return null;
 
   let dir = '';
@@ -91,10 +88,11 @@ function MarkdownRendererInner({ content, baseUri }: MarkdownRendererProps): JSX
         {children}
       </a>
     ),
-    img: ({ src, alt }: React.HTMLProps<HTMLImageElement>) => {
+    img: ({ src, alt, title }: React.HTMLProps<HTMLImageElement>) => {
       const resolved = resolveImageSrc(src ?? '', baseUri);
       if (resolved === null) {
-        return <img src={src} alt={alt ?? ''} style={{ maxWidth: '100%', display: 'block' }} />;
+        // - title carries the reason an image the host could not read stays broken
+        return <img src={src} alt={alt ?? ''} title={title} style={{ maxWidth: '100%', display: 'block' }} />;
       }
       return <InlineImage uri={resolved} alt={alt ?? ''} />;
     },

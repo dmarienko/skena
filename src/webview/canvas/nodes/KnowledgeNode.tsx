@@ -15,6 +15,7 @@ import { ScrollableContent } from '../../components/ScrollableContent';
 import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
 import { nodeBorderColor } from '../palette';
 import { sanitizeHtmlAttrs } from './knowledgeHtml';
+import { useKnowledgeAssets } from '../knowledgeAssets';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -64,13 +65,17 @@ export function KnowledgeNodeComponent({ data, id, selected }: NodeProps): JSX.E
   const borderColor = nodeBorderColor('knowledge', node.accentColor);
   const hostHtml  = useHostMarkdown(node.text);
   const shownHtml = useHighlightedHtml(hostHtml);
+  // - the images the text refers to by the server's uri; the host fetches them, these two put the
+  //   data urls in
+  const { swapHtml, swapMarkdown } = useKnowledgeAssets(node.server);
   // - the text came from a knowledge server and the webview CSP allows inline script, so what goes
   //   in as html is stripped of anything that runs. The MarkdownRenderer path below builds React
   //   elements instead, where a string event handler is not a handler at all.
   const safeHtml = useMemo(
-    () => (hostHtml === null ? null : sanitizeHtmlAttrs(shownHtml ?? hostHtml)),
-    [hostHtml, shownHtml],
+    () => (hostHtml === null ? null : swapHtml(sanitizeHtmlAttrs(shownHtml ?? hostHtml))),
+    [hostHtml, shownHtml, swapHtml],
   );
+  const shownText = useMemo(() => swapMarkdown(node.text), [node.text, swapMarkdown]);
 
   return (
     <>
@@ -119,7 +124,7 @@ export function KnowledgeNodeComponent({ data, id, selected }: NodeProps): JSX.E
       <ScrollableContent scrollKey={id} style={{ padding: '6px 8px 6px 12px' }}>
         {safeHtml !== null
           ? <div className="skena-markdown" dangerouslySetInnerHTML={{ __html: safeHtml }} />
-          : <MarkdownRenderer content={node.text} baseUri="." />}
+          : <MarkdownRenderer content={shownText} baseUri="." />}
       </ScrollableContent>
     </div>
     <NodeResizer
