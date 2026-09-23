@@ -81,12 +81,22 @@ export function deriveColumns(nodes: EngineNode[], movers = new Set<string>()): 
     const g = groups.get(x);
     if (g) g.push(n); else groups.set(x, [n]);
   }
-  return [...groups.entries()]
+  const columns = [...groups.entries()]
     .sort((a, b) => a[0] - b[0])
     .map(([x, cells]) => {
       cells.sort((a, b) => a.y - b.y || Number(movers.has(b.id)) - Number(movers.has(a.id)) || a.id.localeCompare(b.id));
-      return { x, width: Math.max(...cells.map(c => c.w)), cellIds: cells.map(c => c.id) };
+      return { x, cells };
     });
+  // - a member that reaches over the next column, or stops short of it by less than a gap, does not
+  //   set this column's width (§3.4): it is an obstacle that column packs around, not a reason to
+  //   send it further right. The width is the widest member that stays clear; a column whose members
+  //   all reach over keeps its widest, as before, there being no narrower one to read the pair off.
+  return columns.map((c, i) => {
+    const nextX = columns[i + 1]?.x;
+    const inside = nextX === undefined ? c.cells : c.cells.filter(m => c.x + m.w + GRID <= nextX);
+    const widths = (inside.length > 0 ? inside : c.cells).map(m => m.w);
+    return { x: c.x, width: Math.max(...widths), cellIds: c.cells.map(m => m.id) };
+  });
 }
 
 /**
@@ -130,18 +140,56 @@ function overlaps(a: { x: number; y: number; w: number; h: number }, b: { x: num
   return !(sepX || sepY);
 }
 
-// - pack one column tight top → bottom, whatever the node types in it; outputs take their code
-//   cell's y and are placed here rather than as members. `toSlot` decides whether
-//   an output also goes back to the pair's x slot: Reflow (the explicit tidy) takes every one of
-//   them, a regular call only the ones whose pair the operation itself broke. An output the user
+// - what a column packs around (§3.4): every node of the section that is not one of its members —
+//   a wide cell of the column left of it, a note parked across it, another column's output. Three
+//   are not obstacles: the members themselves, the outputs of those members (this same pack puts
+//   them on their cells' rows, so their old y says nothing), and a kernel badge, which the user
+//   parks where they like and the bumps keep clear, as before.
+function obstaclesOf(pair: Pair, nodes: EngineNode[]): EngineNode[] {
+  const members = new Set(pair.column.cellIds);
+  const owners = outputOwners(nodes);
+  return nodes.filter(n => !members.has(n.id) && n.type !== 'kernel' && !members.has(owners.get(n.id) ?? ''));
+}
+
+/**
+ * The row a member takes: `start`, moved under every obstacle it would sit in. `obstacles` comes in
+ * y order, so one pass down skips a whole stack of them.
+ * An obstacle is in the way when its x-span crosses the member's, and one coming from the LEFT also
+ * when it stops within a gap of the column — the same line `deriveColumns` draws for a member that
+ * is too wide to set its column's width. A node at or right of the column that merely touches it is
+ * not an obstacle: the bumps move it right rather than sending the column under it (§3.2).
+ * On y the row has to clear the obstacle by a full grid gap, the distance the bumps ask for
+ * everywhere else, so the pack never leaves behind an overlap of its own making.
+ */
+function rowStart(start: number, x: number, member: EngineNode, obstacles: EngineNode[]): number {
+  let y = start;
+  for (const o of obstacles) {
+    const gap = o.x < x ? GRID : 0;
+    if (o.x + o.w + gap <= x || x + member.w <= o.x) continue;
+    if (o.y + o.h + GRID <= y || y + member.h + GRID <= o.y) continue;
+    y = o.y + o.h + GRID;
+  }
+  return y;
+}
+
+// - pack one column tight top → bottom, whatever the node types in it, around whatever crosses it;
+//   outputs take their code cell's y and are placed here rather than as members. `toSlot` decides
+//   whether an output also goes back to the pair's x slot: Reflow (the explicit tidy) takes every one
+//   of them, a regular call only the ones whose pair the operation itself broke. An output the user
 //   parked overlaps nothing where it is, so pulling it left starts a bump the section never needed.
-function packColumn(pair: Pair, map: Map<string, EngineNode>, out?: Patches, toSlot: (cellId: string, output: EngineNode, wasY: number) => boolean = () => true): void {
+function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode>, out?: Patches, toSlot: (cellId: string, output: EngineNode, wasY: number) => boolean = () => true): void {
   let prevBottom: number | null = null;
+  // - in y order, and nothing this pack moves is in the list, so one ordering serves every member
+  const obstacles = obstaclesOf(pair, nodes).sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));
   for (const id of pair.column.cellIds) {
     const cell = map.get(id)!;
     const wasY = cell.y;
-    const y = prevBottom === null ? snapGrid(cell.y) : prevBottom + GRID;
     const x = pair.column.x;
+    // - the head of the column keeps its own y, obstacles or not: it is where the user left it (or
+    //   where they just dropped it), and a node it lands on is the bumps' business (§3.2). Only a
+    //   stacked row skips, which is what puts a cell packed into the column under the wide cell
+    //   crossing it rather than inside it.
+    const y = prevBottom === null ? snapGrid(cell.y) : rowStart(prevBottom + GRID, x, cell, obstacles);
     if (x !== cell.x || y !== cell.y) { if (out) out[id] = { x, y }; cell.x = x; cell.y = y; }
     const o = map.get(cell.outputNodeId ?? '');
     const ox = o ? (toSlot(id, o, wasY) ? pair.outputX : Math.max(o.x, pair.outputX)) : 0;
@@ -291,7 +339,7 @@ export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patch
   for (const pair of pairs) if (touched.has(pair.column.x)) {
     // - an output goes back on the slot when the operation moved its code cell AND left it off that
     //   cell's row: the pair is broken, and a cell the user dragged takes its output with it
-    packColumn(pair, map, packed, (id, o, wasY) => movers.has(id) && o.y !== wasY);
+    packColumn(pair, nodes, map, packed, (id, o, wasY) => movers.has(id) && o.y !== wasY);
     // - the pack owns the column it just laid out: a bump moves what is in its way, never it, so the
     //   two never fight over the same cell and the next call packs it to the same place
     for (const id of pair.column.cellIds) { pinned.add(id); const outId = map.get(id)!.outputNodeId; if (outId) pinned.add(outId); }
@@ -324,21 +372,32 @@ export function reflowSection(input: EngineNode[]): Patches {
   //   reach — a list the later notes can join in turn. An output is no member: it keeps its x here
   //   and `packColumn` below puts it back on its pair's slot. A kernel badge is parked by hand.
   for (const n of nodes.filter(n => isMember(n, owners) && n.type !== 'code').sort(sweep)) adopt(n);
-  const columns = deriveColumns(nodes);
-  const pairs = derivePairs(nodes, columns);
-  for (const pair of pairs) packColumn(pair, map);
-  // - pairs tight left → right (the first keeps its x); outputs re-measured after the packs
-  const tight = derivePairs(nodes, deriveColumns(nodes));
-  for (let i = 1; i < tight.length; i++) {
-    const want = gridUp(tight[i - 1].right + GRID);
-    const dx = want - tight[i].column.x;
-    if (dx === 0) continue;
-    for (const id of tight[i].column.cellIds) {
-      const cell = map.get(id)!; cell.x += dx;
-      const o = map.get(cell.outputNodeId ?? ''); if (o) o.x += dx;
+  const packAll = () => { for (const pair of derivePairs(nodes, deriveColumns(nodes))) packColumn(pair, nodes, map); };
+  packAll();
+  // - pairs tight left → right, the first keeping its x; outputs re-measured after the packs. Run
+  //   again while it still moves something: a column's width is read off the members that stay clear
+  //   of the NEXT column (§3.4), so moving that column changes the width, and the width decides where
+  //   the column goes. Two or three rounds settle it; the cap is there so a shape that keeps changing
+  //   stops rather than spins, and the next Reflow finishes it.
+  for (let round = 0; round < 8; round++) {
+    const tight = derivePairs(nodes, deriveColumns(nodes));
+    let moved = false;
+    for (let i = 1; i < tight.length; i++) {
+      const want = gridUp(tight[i - 1].right + GRID);
+      const dx = want - tight[i].column.x;
+      if (dx === 0) continue;
+      for (const id of tight[i].column.cellIds) {
+        const cell = map.get(id)!; cell.x += dx;
+        const o = map.get(cell.outputNodeId ?? ''); if (o) o.x += dx;
+      }
+      tight[i].column.x += dx; tight[i].outputX += dx; tight[i].right += dx;
+      moved = true;
     }
-    tight[i].column.x += dx; tight[i].outputX += dx; tight[i].right += dx;
+    if (!moved) break;
   }
+  // - and packed once more: the columns have moved sideways, so which wide cell crosses which
+  //   column has changed with them. Without this the next Reflow would pack them differently.
+  packAll();
   return diff(input, nodes);
 }
 
