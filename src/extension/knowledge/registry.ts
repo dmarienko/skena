@@ -1,14 +1,14 @@
-import type { KnowledgeProvider, KnowledgeServerConfig, ToolTransport } from '../../shared/knowledge/types';
+import type { AssetFetch, KnowledgeProvider, KnowledgeServerConfig, ToolTransport } from '../../shared/knowledge/types';
 import { createCrtxProvider } from './adapters/crtx';
 
-const KINDS: Record<string, (c: KnowledgeServerConfig, t: ToolTransport) => KnowledgeProvider> = {
+const KINDS: Record<string, (c: KnowledgeServerConfig, t: ToolTransport, a?: AssetFetch) => KnowledgeProvider> = {
   crtx: createCrtxProvider,
 };
 
 export const KNOWN_KINDS = Object.keys(KINDS);
 
-export function createProvider(config: KnowledgeServerConfig, transport: ToolTransport): KnowledgeProvider {
+export function createProvider(config: KnowledgeServerConfig, transport: ToolTransport, assetFetch?: AssetFetch): KnowledgeProvider {
   const make = KINDS[config.kind];
   if (!make) throw new Error(`unknown knowledge server kind "${config.kind}" (known: ${KNOWN_KINDS.join(', ')})`);
-  return make(config, transport);
+  return make(config, transport, assetFetch);
 }

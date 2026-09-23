@@ -22,7 +22,7 @@ export interface KnowledgeWrite {
   source: { canvas: string; nodeIds: string[]; kind: 'node' | 'output' | 'group' | 'ai' };
 }
 
-export interface KnowledgeCapabilities { scopes: boolean; tags: boolean; recency: boolean; facets: boolean; write: boolean }
+export interface KnowledgeCapabilities { scopes: boolean; tags: boolean; recency: boolean; facets: boolean; write: boolean; assets: boolean }
 
 export interface KnowledgeProvider {
   readonly name: string;
@@ -34,11 +34,17 @@ export interface KnowledgeProvider {
   scopes(): Promise<string[]>;
   facets(scope?: string): Promise<{ tags: [string, number][] }>;
   openUrl(uri: string): string | undefined;
+  // - an image the text refers to by a uri of this provider's own scheme; rejects when
+  //   !capabilities.assets, when the uri is not one this provider serves, or on a failed request
+  asset(uri: string, signal?: AbortSignal): Promise<{ mime: string; bytes: Uint8Array }>;
   write(item: KnowledgeWrite): Promise<{ uri: string }>;
   append(uri: string, item: KnowledgeWrite): Promise<void>;
 }
 
 export interface KnowledgeServerConfig { name: string; kind: string; url: string; token?: string }
+
+/** - how an adapter reads a file from its server's plain HTTP side, with the transport's headers */
+export type AssetFetch = (url: string, signal?: AbortSignal) => Promise<{ mime: string; bytes: Uint8Array }>;
 
 /** - the one thing an adapter needs from a transport */
 export interface ToolTransport { callTool(name: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> }

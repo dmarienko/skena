@@ -85,6 +85,27 @@ export class McpHttpClient implements ToolTransport {
     } finally { clearTimeout(timer); }
   }
 
+  // - a plain GET on the server's HTTP side (an image, a file), with the same headers and the same
+  //   deadline as a tool call; the body is read whole, so this is for small files
+  async getWithAuth(url: string, signal?: AbortSignal): Promise<{ mime: string; bytes: Uint8Array }> {
+    const ctl = new AbortController();
+    const timeoutMs = this.opts.timeoutMs ?? 5000;
+    const timer = setTimeout(() => ctl.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, {
+        headers: { ...(this.opts.token ? { authorization: `Bearer ${this.opts.token}` } : {}) },
+        signal: anySignal(ctl.signal, signal),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText} from ${url}`);
+      const mime = (res.headers.get('content-type') ?? 'application/octet-stream').split(';')[0].trim();
+      return { mime, bytes: new Uint8Array(await res.arrayBuffer()) };
+    } catch (e) {
+      if (signal?.aborted) throw new Error('cancelled');
+      if ((e as Error).name === 'AbortError') throw new Error(`${url} timed out after ${timeoutMs} ms`);
+      throw e;
+    } finally { clearTimeout(timer); }
+  }
+
   private async call(name: string, args: Record<string, unknown>, signal: AbortSignal): Promise<unknown> {
     await this.ensureInitialized(signal);
     const result = await this.request('tools/call', { name, arguments: args }, signal);

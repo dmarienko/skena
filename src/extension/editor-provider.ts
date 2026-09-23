@@ -526,6 +526,15 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           }
           break;
         }
+        case 'knowledgeAsset': {
+          try {
+            send({ type: 'knowledgeAssetResult', uri: msg.uri, dataUrl: await this.knowledge.asset(msg.server, msg.uri) });
+          } catch (e) {
+            // - a failed image stays a broken image in the node, with this text on hover
+            send({ type: 'knowledgeAssetResult', uri: msg.uri, error: (e as Error).message });
+          }
+          break;
+        }
         case 'knowledgeRefresh': {
           // - the fetches run here so the canvas stays responsive; outcomes come back in batches.
           //   Keyed by canvas path: another canvas opening does not cancel this one's run

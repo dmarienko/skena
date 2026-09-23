@@ -1,5 +1,5 @@
-import { KnowledgeGoneError, type KnowledgeHit, type KnowledgeProvider, type KnowledgeQuery, type KnowledgeServerConfig, type KnowledgeText, type KnowledgeWrite, type ToolTransport } from '../../../shared/knowledge/types';
-import { buildCrtxUri, crtxReaderUrl, parseCrtxUri } from '../../../shared/knowledge/crtxUri';
+import { KnowledgeGoneError, type AssetFetch, type KnowledgeHit, type KnowledgeProvider, type KnowledgeQuery, type KnowledgeServerConfig, type KnowledgeText, type KnowledgeWrite, type ToolTransport } from '../../../shared/knowledge/types';
+import { buildCrtxUri, crtxAssetUrl, crtxReaderUrl, parseCrtxUri } from '../../../shared/knowledge/crtxUri';
 
 interface CrtxHit { vault: string; file: string; heading: string; date?: string; tags?: string[]; snippet?: string; uri?: string; text?: string }
 
@@ -23,11 +23,91 @@ function asText(v: unknown): string {
 //   "Unknown tool: read_section" is a server too old for the tool, or a wrong kind — not gone.
 const GONE = /no section .+ in |file not found|unknown vault/i;
 
-export function createCrtxProvider(config: KnowledgeServerConfig, transport: ToolTransport): KnowledgeProvider {
+// - the directory a note lives in, "" for a note at the vault root
+const dirOf = (file: string) => (file.includes('/') ? file.slice(0, file.lastIndexOf('/')) : '');
+
+// - an absolute reference of any scheme (http:, https:, data:) is left as it is
+const HAS_SCHEME = /^[a-z][a-z0-9+.-]*:/i;
+
+// - a markdown image: ![alt](path), with an optional "title" after the path
+const IMAGE = /!\[([^\]]*)\]\(\s*<?([^)\s>]*)>?((?:\s+(?:"[^"]*"|'[^']*'))?)\s*\)/g;
+
+// - a fenced block opens and closes with three or more backticks or tildes
+const FENCE = /^\s{0,3}(`{3,}|~{3,})/;
+
+/**
+ * The path a reference points at, from the vault root, or null when it walks out of the vault.
+ * A leading "/" is read as the vault root, which is what the server's own reader does.
+ */
+export function resolveInVault(dir: string, path: string): string | null {
+  const parts = path.startsWith('/') || !dir ? [] : dir.split('/');
+  for (const seg of path.split('/')) {
+    if (seg === '' || seg === '.') continue;
+    if (seg === '..') {
+      if (!parts.length) return null;
+      parts.pop();
+      continue;
+    }
+    parts.push(seg);
+  }
+  return parts.join('/');
+}
+
+const isVaultAsset = (file: string) => file.startsWith('assets/') && !file.split('/').includes('..');
+
+// - `fn` runs on the text of the line, never on what is inside a `code span`
+function outsideCodeSpans(line: string, fn: (text: string) => string): string {
+  let out = '';
+  let i = 0;
+  while (i < line.length) {
+    const tick = line.indexOf('`', i);
+    if (tick < 0) return out + fn(line.slice(i));
+    out += fn(line.slice(i, tick));
+    let run = 0;
+    while (line[tick + run] === '`') run++;
+    const close = line.indexOf('`'.repeat(run), tick + run);
+    // - backticks that never close are text, not the start of a span
+    if (close < 0) return out + line.slice(tick);
+    out += line.slice(tick, close + run);
+    i = close + run;
+  }
+  return out;
+}
+
+/**
+ * Point every image in a note at the vault's own copy. A relative path that lands under the
+ * vault's assets/ becomes a crtx uri, which the node can then ask the host for. A path that lands
+ * anywhere else is not an image this server serves: the leading "!" is escaped so the line reads
+ * as the text it is instead of as a broken image. Code spans and fenced blocks are left alone —
+ * a note that writes `![](rel)` to talk about the syntax keeps its sample.
+ */
+export function rewriteImageRefs(text: string, ref: { vault: string; file: string }): string {
+  const dir = dirOf(ref.file);
+  const rewriteProse = (prose: string) => prose.replace(IMAGE, (whole, alt: string, path: string, title: string, offset: number, all: string) => {
+    if (all[offset - 1] === '\\') return whole;
+    if (HAS_SCHEME.test(path)) return whole;
+    const resolved = resolveInVault(dir, path);
+    if (resolved === null || !isVaultAsset(resolved)) return `\\${whole}`;
+    return `![${alt}](${buildCrtxUri({ vault: ref.vault, file: resolved, heading: '' })}${title})`;
+  });
+
+  let fence = '';
+  return text.split('\n').map(line => {
+    const m = FENCE.exec(line);
+    if (fence) {
+      if (m && m[1][0] === fence[0] && m[1].length >= fence.length) fence = '';
+      return line;
+    }
+    if (m) { fence = m[1]; return line; }
+    return outsideCodeSpans(line, rewriteProse);
+  }).join('\n');
+}
+
+export function createCrtxProvider(config: KnowledgeServerConfig, transport: ToolTransport, assetFetch?: AssetFetch): KnowledgeProvider {
   return {
     name: config.name,
     kind: 'crtx',
-    capabilities: { scopes: true, tags: true, recency: true, facets: true, write: true },
+    capabilities: { scopes: true, tags: true, recency: true, facets: true, write: true, assets: true },
 
     async search(q: KnowledgeQuery): Promise<KnowledgeHit[]> {
       const args: Record<string, unknown> = { query: q.text, top: q.top, full_text: false };
@@ -59,7 +139,8 @@ export function createCrtxProvider(config: KnowledgeServerConfig, transport: Too
         }
         throw e;
       }
-      return { uri, title: titleOf(r), text: asText(unwrap(text)), fetchedAt: new Date().toISOString() };
+      // - the cached copy carries the image uris, so a node renders the same text on any machine
+      return { uri, title: titleOf(r), text: rewriteImageRefs(asText(unwrap(text)), r), fetchedAt: new Date().toISOString() };
     },
 
     async scopes(): Promise<string[]> {
@@ -73,6 +154,15 @@ export function createCrtxProvider(config: KnowledgeServerConfig, transport: Too
     },
 
     openUrl(uri: string) { return crtxReaderUrl(uri, config.url); },
+
+    // - the images rewriteImageRefs pointed at; the web app serves them from the vault's assets/
+    //   on port 8787, behind the same bearer token as the MCP endpoint
+    async asset(uri: string, signal?: AbortSignal) {
+      const r = parseCrtxUri(uri);
+      if (!isVaultAsset(r.file)) throw new Error(`not an asset of this server: ${uri}`);
+      if (!assetFetch) throw new Error(`server "${config.name}" cannot read assets`);
+      return assetFetch(crtxAssetUrl(uri, config.url), signal);
+    },
 
     // - argument names read off the live tools/list on 2026-09-19 (crtx 1.28.1):
     //   create_note(vault, title, content, tags?, dest?, sections?, links?, session_id?, agent?) —

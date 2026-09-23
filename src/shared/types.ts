@@ -461,6 +461,8 @@ export interface MsgKnowledgeSearchResult { type: 'knowledgeSearchResult'; reque
 export interface MsgKnowledgeFetchResult  { type: 'knowledgeFetchResult';  requestId: number; text?: KnowledgeText; error?: string }
 export interface MsgKnowledgeScopesResult { type: 'knowledgeScopesResult'; requestId: number; scopes?: string[]; error?: string }
 export interface MsgKnowledgeFacetsResult { type: 'knowledgeFacetsResult'; requestId: number; tags?: [string, number][]; error?: string }
+/** - host → webview: one image a knowledge node asked for, as a data url it can put in an <img> */
+export interface MsgKnowledgeAssetResult { type: 'knowledgeAssetResult'; uri: string; dataUrl?: string; error?: string }
 export interface MsgKnowledgeRefreshed {
   type: 'knowledgeRefreshed';
   nodes: RefreshOutcome[];
@@ -515,6 +517,7 @@ export type HostToWebview =
   | MsgKnowledgeFetchResult
   | MsgKnowledgeScopesResult
   | MsgKnowledgeFacetsResult
+  | MsgKnowledgeAssetResult
   | MsgKnowledgeRefreshed;
 
 // - host → webview: the "Skena: Add Kernel" command asks the webview to relay an
@@ -770,6 +773,8 @@ export interface MsgKnowledgeFetch   { type: 'knowledgeFetch';  requestId: numbe
 export interface MsgKnowledgeScopes  { type: 'knowledgeScopes'; requestId: number; server: string }
 export interface MsgKnowledgeFacets  { type: 'knowledgeFacets'; requestId: number; server: string; scope?: string }
 export interface MsgKnowledgeRefresh { type: 'knowledgeRefresh'; nodes: { id: string; server: string; uri: string; text: string }[] }
+/** - webview → host: an image the rendered text refers to by the server's own uri */
+export interface MsgKnowledgeAsset   { type: 'knowledgeAsset';  server: string; uri: string }
 export interface MsgKnowledgeOpen    { type: 'knowledgeOpen'; server: string; uri: string }
 
 export type WebviewToHost =
@@ -815,6 +820,7 @@ export type WebviewToHost =
   | MsgKnowledgeScopes
   | MsgKnowledgeFacets
   | MsgKnowledgeRefresh
+  | MsgKnowledgeAsset
   | MsgKnowledgeOpen;
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────

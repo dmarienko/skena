@@ -5,7 +5,7 @@ import { done, drain, newQueue, outcomeOf, settle, takeNext } from '../../shared
 import { createProvider } from './registry';
 import { McpHttpClient } from './mcpHttpClient';
 
-const NO_CAPABILITIES: KnowledgeCapabilities = { scopes: false, tags: false, recency: false, facets: false, write: false };
+const NO_CAPABILITIES: KnowledgeCapabilities = { scopes: false, tags: false, recency: false, facets: false, write: false, assets: false };
 
 // - how often finished fetches go to the webview as one message: often enough to watch the nodes
 //   fill in, rarely enough that a canvas with hundreds of them repaints a few at a time
@@ -16,6 +16,10 @@ const BATCH_MS = 250;
 //   this file's own "no knowledge server". Anything else (a uri that does not parse, an unknown
 //   tool name) belongs to the one node that asked for it.
 const TRANSPORT = /timed out after|^HTTP \d|fetch failed|^no knowledge server /;
+
+// - how much of the images fetched this session is kept in memory; the oldest go first. A node
+//   keeps its text in the canvas file, never its images, so every open asks for them again
+const ASSET_CACHE_BYTES = 50 * 1024 * 1024;
 
 /**
  * Owns one provider per configured server. Nothing here talks to the network: a provider is built
@@ -28,6 +32,9 @@ export class KnowledgeService {
   private configured: string[] = [];
   /** - the open run per canvas, so a second canvas does not cancel the first one's fetches */
   private refreshing = new Map<string, { cancel(): void }>();
+  /** - images already fetched, as the data urls the webview puts in an <img src> */
+  private assets = new Map<string, { dataUrl: string; bytes: number }>();
+  private assetBytes = 0;
 
   /**
    * Re-read on every webview ready, so a token or url edit takes effect on reload. A server whose
@@ -43,7 +50,8 @@ export class KnowledgeService {
       const configJson = JSON.stringify(s);
       if (this.providers.get(s.name)?.configJson === configJson) continue;
       try {
-        this.providers.set(s.name, { configJson, provider: createProvider(s, new McpHttpClient({ url: s.url, token: s.token })) });
+        const http = new McpHttpClient({ url: s.url, token: s.token });
+        this.providers.set(s.name, { configJson, provider: createProvider(s, http, (url, signal) => http.getWithAuth(url, signal)) });
       } catch (e) {
         // - an unknown kind is listed as unavailable with its reason, not dropped
         this.providers.delete(s.name);
@@ -66,6 +74,29 @@ export class KnowledgeService {
     const p = this.providers.get(name)?.provider;
     if (!p) throw new Error(`no knowledge server "${name}" (configured: ${this.configured.join(', ') || 'none'})`);
     return p;
+  }
+
+  /**
+   * The data url for one image, from the session's cache or from the server. The uri is the one
+   * the adapter wrote into the node's text, so the same image asked for by two nodes is fetched
+   * once.
+   */
+  async asset(server: string, uri: string): Promise<string> {
+    const cached = this.assets.get(uri);
+    if (cached) return cached.dataUrl;
+    const got = await this.provider(server).asset(uri);
+    const dataUrl = `data:${got.mime};base64,${Buffer.from(got.bytes).toString('base64')}`;
+    // - one image larger than the whole cache is served but not kept
+    if (dataUrl.length <= ASSET_CACHE_BYTES) {
+      for (const [oldest, entry] of this.assets) {
+        if (this.assetBytes + dataUrl.length <= ASSET_CACHE_BYTES) break;
+        this.assets.delete(oldest);
+        this.assetBytes -= entry.bytes;
+      }
+      this.assets.set(uri, { dataUrl, bytes: dataUrl.length });
+      this.assetBytes += dataUrl.length;
+    }
+    return dataUrl;
   }
 
   /**

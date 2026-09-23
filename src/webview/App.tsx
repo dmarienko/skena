@@ -213,6 +213,7 @@ export function App(): JSX.Element {
         case 'knowledgeFacetsResult':
         case 'knowledgeRefreshed':
         case 'knowledgeFetchResult':
+        case 'knowledgeAssetResult':
           window.dispatchEvent(new CustomEvent(`skena:${msg.type}`, { detail: msg }));
           break;
         case 'chatChunk':
