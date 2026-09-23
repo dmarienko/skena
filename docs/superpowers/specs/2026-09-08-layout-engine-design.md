@@ -166,8 +166,8 @@ bump rule (§3.2) instead of the column stepping under it.
 
 **The column head.** Only a stacked row skips obstacles. The head keeps its own snapped y whatever
 crosses it — it is where the user left it; a node it lands on is the bump rule's business. The one
-exception is a rider's row (§3.5): the head clears that and drops below a rider it used to sit
-above.
+exception is the row of a node anchored by an edge (§3.5): the head clears that row and drops below
+such a node it used to sit above.
 
 **Reflow.** Reflow's tight pass runs again while it still moves a column, at most 8 rounds, then
 packs every column once more: a column's width is read off the members that stay clear of the next
@@ -183,37 +183,44 @@ reserve the slot only for columns that hold an output.)
 ### 3.5 A sequence edge anchors its target to the source's row (decided 2026-09-23)
 
 A code cell that is the target of a sequence edge (code → code) leaving the source's right border
-and entering the target's left border, with the source in a column strictly left of the target's,
-rides on the source's row: its y is the source's y, the way an output rides on its cell. In its own
-column it is a fixed row: the other members pack around it (§3.4 treats it as an obstacle of its
-own column). When the source moves, the rider moves with it, and the rider's column is re-packed.
-Two riders on one row in one column stack, the second under the first (id order). A rider whose
-source sits in the same column, or in a column to the right, is not a rider — those edges stay
-drawings.
+and entering the target's left border, with the source in a column strictly left of the target's, is
+anchored to the source's row: its y is the source's y, the way an output takes its code cell's y. In
+its own column that row is fixed and the other members pack around it (§3.4 treats it as an obstacle
+of its own column). When the source moves, the anchored node moves with it and its column is
+re-packed. Two nodes anchored to one row in one column stack, the second under the first (id order).
+An edge whose source sits in the same column, or in a column to the right, anchors nothing — those
+edges stay drawings.
 
-**A source in the same column is no source.** A rider whose source is a member of the same column is
-not a rider for that pack, whatever the riders map says: Reflow snaps columns before it packs and can
-put the two in one column, and anchoring a cell on its own column-mate walked the column down 800 px
-per call before this rule.
+**A source in the same column is no source.** A node whose source is a member of the same column is
+not anchored for that pack, whatever the `riders` map says: Reflow snaps columns before it packs and
+can put the two in one column, and anchoring a cell on its own column-mate walked the column down
+800 px per call before this rule.
 
 Removing the edge releases the cell: the webview runs the engine for the target's column at once
 and the cell packs up to the first row it clears (E14 lifts to y 1100, under E15). Adding such an
 edge anchors the target at once (it moves onto the source's row; its old column re-packs).
 
-**Bumps.** No bump moves a rider on its own — it is pinned wherever it sits in the section, so what
-it is in the way of is what moves. A rider follows a downward bump of its source, with its own
-output; a sideways bump changes no y. The columns a call packs are the movers' columns plus,
-transitively, the columns of the riders of anything in a packed column; the pack runs left to right,
-so a source is placed before the rider that reads its y. (Open with the user: pin riders only in the
-packed columns. Measured over 1500 random dense sections with today's section-wide pinning: 6.8 % of
-calls are non-idempotent, against 3.7 % on the same sections with no riders, and 11 calls raise the
-overlap count; nothing of it shows on H1, H4 or H5.)
+**Bumps.** The engine does not move an anchored node inside the columns the operation packs. Anywhere
+else a bump treats it like any node: it can be pushed off its row (a sideways push takes its whole
+column, a downward push what is below it), and the next pack of its column puts it back on the
+source's row. Decided 2026-09-23 on the H4 case where a node dropped on an anchored node left both
+overlapping with nothing reported. An anchored node follows a downward bump of its source, with its
+own output; a sideways bump changes no y. The columns a call packs are the movers' columns plus,
+transitively, the columns of the nodes anchored to anything in a packed column; the pack runs left to
+right, so a source is placed before the node that reads its y.
 
-**What the anchor does not promise.** A rider the operation itself moved is a mover and can yield
-downward off its source's row when a node above leaves it nowhere to step aside (§3.2); it settles
-one gap below that node and stays — measured: a rider on row 600 with a note reaching y 800 over it
-lands at 900, and the next call moves nothing. A rider fixes its row against the head of its own
-column: a member that sat above it is packed below it.
+Measured over the same 1500 random dense sections: protecting an anchored node only in the packed
+columns and protecting it everywhere in the section give a different first call on 13 of them, and on
+none of the 13 does the packed-columns rule leave more overlap (8 fewer over the 13). The
+non-idempotent share (6.8 %, against 3.7 % with no anchoring at all), the capped count (0) and the 11
+calls that raise the overlap count are the same either way. On H1, H4 and H5, every node as the mover:
+capped 0, overlap growth 0, non-idempotent 0 under both rules.
+
+**What the anchor does not promise.** An anchored node the operation itself moved is a mover and can
+yield downward off its source's row when a node above leaves it nowhere to step aside (§3.2); it
+settles one gap below that node and stays — measured: an anchored node on row 600 with a note
+reaching y 800 over it lands at 900, and the next call moves nothing. An anchored node fixes its row
+against the head of its own column: a member that sat above it is packed below it.
 
 The engine takes the anchoring as an input: `layoutSection(nodes, { riders })` /
 `reflowSection(nodes, { riders })` with `riders: Map<targetId, sourceId>`, computed by every caller
