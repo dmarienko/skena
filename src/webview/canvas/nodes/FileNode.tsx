@@ -191,14 +191,6 @@ function FileNodeInner({ data, id, selected }: NodeProps): JSX.Element {
       }}
       onClick={onCmdClick}
     >
-      <NodeResizer
-        minWidth={120} minHeight={80}
-        isVisible={selected}
-        onResizeEnd={(_, p) => window.dispatchEvent(new CustomEvent('skena:nodeResize', {
-          detail: { id, x: Math.round(p.x), y: Math.round(p.y), width: Math.round(p.width), height: Math.round(p.height) },
-        }))}
-      />
-
       <NodeHeader
         fileType={fileType}
         uri={node.file}
@@ -214,6 +206,13 @@ function FileNodeInner({ data, id, selected }: NodeProps): JSX.Element {
         sourceNodeId={id}
       />
     </div>
+    <NodeResizer
+      minWidth={120} minHeight={80}
+      isVisible={selected}
+      onResizeEnd={(_, p) => window.dispatchEvent(new CustomEvent('skena:nodeResize', {
+        detail: { id, x: Math.round(p.x), y: Math.round(p.y), width: Math.round(p.width), height: Math.round(p.height) },
+      }))}
+    />
     <Handle type="source" position={Position.Top}    id="top"    style={HANDLE_STYLE} />
     <Handle type="source" position={Position.Right}  id="right"  style={HANDLE_STYLE} />
     <Handle type="source" position={Position.Bottom} id="bottom" style={HANDLE_STYLE} />

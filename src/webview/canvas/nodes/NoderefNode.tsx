@@ -5,7 +5,7 @@
  */
 
 import React, { useCallback } from 'react';
-import { NodeProps, Handle, Position } from '@xyflow/react';
+import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import { NoderefNode } from '../../../shared/types';
 import { formatNodeRef } from '../../../shared/nodeRef';
 import { HANDLE_STYLE } from './nodeShared';
@@ -21,7 +21,7 @@ function canvasBasename(p: string): string {
   return name.endsWith('.canvas') ? name.slice(0, -7) : name;
 }
 
-export function NoderefNodeComponent({ data, selected }: NodeProps): JSX.Element {
+export function NoderefNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as NoderefNode & { accentColor?: string };
   const borderColor = nodeBorderColor('noderef', node.accentColor);
   const base = canvasBasename(node.canvas);
@@ -77,6 +77,13 @@ export function NoderefNodeComponent({ data, selected }: NodeProps): JSX.Element
           </div>
         </div>
       </div>
+      <NodeResizer
+        minWidth={120} minHeight={80}
+        isVisible={selected}
+        onResizeEnd={(_, p) => window.dispatchEvent(new CustomEvent('skena:nodeResize', {
+          detail: { id, x: Math.round(p.x), y: Math.round(p.y), width: Math.round(p.width), height: Math.round(p.height) },
+        }))}
+      />
       <Handle type="source" position={Position.Top}    id="top"    style={HANDLE_STYLE} />
       <Handle type="source" position={Position.Right}  id="right"  style={HANDLE_STYLE} />
       <Handle type="source" position={Position.Bottom} id="bottom" style={HANDLE_STYLE} />

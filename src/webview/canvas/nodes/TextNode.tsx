@@ -942,13 +942,6 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
         }
       }}
     >
-      <NodeResizer
-        minWidth={120} minHeight={80}
-        isVisible={selected && !editing}
-        onResizeEnd={(_, p) => window.dispatchEvent(new CustomEvent('skena:nodeResize', {
-          detail: { id, x: Math.round(p.x), y: Math.round(p.y), width: Math.round(p.width), height: Math.round(p.height) },
-        }))}
-      />
       {editing ? (
         // - block React Flow from stealing pointer AND keyboard events while Monaco is active
         // - (space = pan, arrow keys = nudge, delete = delete node, etc.); the click is stopped too,
@@ -1009,6 +1002,13 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
       )}
     </div>
     {/* - handles outside overflow:hidden wrapper → not clipped, render above scrollable content */}
+    <NodeResizer
+      minWidth={120} minHeight={80}
+      isVisible={selected && !editing}
+      onResizeEnd={(_, p) => window.dispatchEvent(new CustomEvent('skena:nodeResize', {
+        detail: { id, x: Math.round(p.x), y: Math.round(p.y), width: Math.round(p.width), height: Math.round(p.height) },
+      }))}
+    />
     <Handle type="source" position={Position.Top}    id="top"    style={HANDLE_STYLE} />
     <Handle type="source" position={Position.Right}  id="right"  style={HANDLE_STYLE} />
     <Handle type="source" position={Position.Bottom} id="bottom" style={HANDLE_STYLE} />

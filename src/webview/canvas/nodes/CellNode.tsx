@@ -55,14 +55,6 @@ export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
         ...selectedStyle,
       }}
     >
-      <NodeResizer
-        minWidth={100} minHeight={60}
-        isVisible={selected}
-        onResizeEnd={(_, p) => window.dispatchEvent(new CustomEvent('skena:nodeResize', {
-          detail: { id, x: Math.round(p.x), y: Math.round(p.y), width: Math.round(p.width), height: Math.round(p.height) },
-        }))}
-      />
-
       <ScrollableContent ref={scrollRef} scrollKey={id}>
         {node.format === 'markdown' && <MarkdownRenderer content={node.content} />}
         {node.format === 'image'    && <img src={node.content} alt="cell" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />}
@@ -70,6 +62,13 @@ export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
         {node.format === 'plotly'   && <PlotlyRenderer json={node.content} />}
       </ScrollableContent>
     </div>
+    <NodeResizer
+      minWidth={100} minHeight={60}
+      isVisible={selected}
+      onResizeEnd={(_, p) => window.dispatchEvent(new CustomEvent('skena:nodeResize', {
+        detail: { id, x: Math.round(p.x), y: Math.round(p.y), width: Math.round(p.width), height: Math.round(p.height) },
+      }))}
+    />
     <Handle type="source" position={Position.Top}    id="top"    style={HANDLE_STYLE} />
     <Handle type="source" position={Position.Right}  id="right"  style={HANDLE_STYLE} />
     <Handle type="source" position={Position.Bottom} id="bottom" style={HANDLE_STYLE} />

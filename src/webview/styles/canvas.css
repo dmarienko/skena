@@ -120,17 +120,55 @@ body.vscode-dark, body.vscode-high-contrast {
 }
 
 /* ─── Resize controls ─────────────────────────────────────────────────────── */
+/* - React Flow's NodeResizer renders four `.line` controls on the borders and four `.handle`
+   - controls on the corners, all `position: absolute`. In each node component they sit outside
+   - `.skena-node` — inside it `contain: layout style paint` would make it their containing block
+   - and clip them to its padding box, which is what left the corner handles a quarter of their
+   - size. They come after `.skena-node` and before the connection handles in the DOM, so they
+   - take the pointer over the outermost 5px of the node's own content, and a drag from a
+   - connection handle still starts an edge. */
 .react-flow__resize-control.handle {
   width:  14px;
   height: 14px;
   background: var(--vscode-focusBorder, #007acc);
   border: 2px solid var(--vscode-editorWidget-background, var(--vscode-sideBar-background, #2a2a2a));
   border-radius: 3px;
+  /* - the two lines meeting at a corner overlap the handle; the corner takes the drag */
+  z-index: 1;
 }
-.react-flow__resize-control.line {
-  border-color: var(--vscode-focusBorder, #007acc);
-  opacity: 0.35;
+
+/* - each border line is a 10px strip straddling its edge — 5px outside, 5px inside — so the
+   - border itself can be grabbed. React Flow gives the line 1px, a half-pixel transform and the
+   - cursor for its side (ns-resize top/bottom, ew-resize left/right); the cursors stay, the rest
+   - is replaced here. Its 1px border would land on the strip's outer edge, so it is dropped and
+   - the visible hairline is drawn by ::after down the middle of the strip, on the node edge. */
+.react-flow__resize-control.line.top,
+.react-flow__resize-control.line.bottom {
+  height: 10px;
+  border-width: 0;
+  transform: none;
 }
+.react-flow__resize-control.line.top    { top: -5px; }
+.react-flow__resize-control.line.bottom { top: auto; bottom: -5px; }
+.react-flow__resize-control.line.left,
+.react-flow__resize-control.line.right {
+  width: 10px;
+  border-width: 0;
+  transform: none;
+}
+.react-flow__resize-control.line.left  { left: -5px; }
+.react-flow__resize-control.line.right { left: auto; right: -5px; }
+
+.react-flow__resize-control.line::after {
+  content: '';
+  position: absolute;
+  background: var(--vscode-focusBorder, #007acc);
+  opacity: 0.45;
+}
+.react-flow__resize-control.line.top::after,
+.react-flow__resize-control.line.bottom::after { left: 0; right: 0; top: 5px; height: 1px; }
+.react-flow__resize-control.line.left::after,
+.react-flow__resize-control.line.right::after  { top: 0; bottom: 0; left: 5px; width: 1px; }
 
 /* ─── Handles ─────────────────────────────────────────────────────────────── */
 .react-flow__handle {
