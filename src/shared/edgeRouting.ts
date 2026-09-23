@@ -3,8 +3,9 @@ import { GRID } from './constants';
 /**
  * Edge routing for one section (spec 2026-09-11-edges-design.md §1–§2). The layout engine leaves a
  * full grid between columns and between rows, so every edge can run on the centre line of a gap.
- * This module builds that grid of crossings once per section, routes every edge on it with a
- * shortest path that pays for its corners, spreads the edges of one border 10 px apart, and puts
+ * This module builds that grid of crossings once per section, adds to it, for each edge, the two
+ * lines that edge's own end points stand on, routes the edge on the two together with a shortest
+ * path that pays for its corners, spreads the edges of one border 10 px apart, and puts
  * parallel runs on one line into 10 px lanes so that no two edges are drawn over each other.
  * Pure — no React, no DOM.
  */
@@ -54,9 +55,11 @@ export const LANE_STEP = 10;
 /** - a corner costs one grid of length */
 export const BEND_COST = GRID;
 // - the crossings cost one clear test each to build and one Dijkstra state per direction per edge to
-//   search: 40 000 of them (100 nodes sharing no column and no row) take 5.3 s for 99 long edges.
-//   A section just under the cap (3 844 crossings, 31 such nodes) takes 4 ms for 30 chained edges and
-//   0.43 s for 99 long ones. Past the cap a section is not routed — the old per-edge router draws it.
+//   search, and each edge adds a crossing of its own on every line it meets (two lines x 62 lines =
+//   124 more on a section at the cap). 40 000 crossings (100 nodes sharing no column and no row) take
+//   10.8 s for 99 long edges. A section just under the cap (3 844 crossings, 31 such nodes) takes
+//   11 ms for 30 chained edges and 0.88 s for 99 long ones. Past the cap a section is not routed —
+//   the old per-edge router draws it.
 export const MAX_CROSSINGS = 4000;
 
 const HALF = GRID / 2;
@@ -305,10 +308,7 @@ const lineBelow = (vals: number[], v: number) => { let i = -1; while (i + 1 < va
 const lineAbove = (vals: number[], v: number) => { let i = vals.length; while (i - 1 >= 0 && vals[i - 1] > v) i--; return i < vals.length ? i : -1; };
 
 /** Where a route starts and stops being a grid run: one step out of the node, on the nearest line. */
-interface EndPoint { at: Point; vertical: boolean; line: number }
-
-/** What one end of an edge put into the graph: its own vertex, and the vertex it has on each line. */
-interface Attached { id: number; onLine: Map<number, number> }
+interface EndPoint { at: Point; vertical: boolean }
 
 function endPointOf(g: GapGraph, end: BorderEnd): EndPoint | null {
   const vertical = isHorizontal(end.side);
@@ -316,8 +316,17 @@ function endPointOf(g: GapGraph, end: BorderEnd): EndPoint | null {
   const v = vertical ? end.at[0] : end.at[1];
   const line = end.side === 'right' || end.side === 'bottom' ? lineAbove(vals, v) : lineBelow(vals, v);
   if (line < 0) return null;
-  return { at: vertical ? [vals[line], end.at[1]] : [end.at[0], vals[line]], vertical, line };
+  return { at: vertical ? [vals[line], end.at[1]] : [end.at[0], vals[line]], vertical };
 }
+
+/** Sorted union of `base` and `vals`; `from[i]` is the index in `base`, or -1 for an added line. */
+function mergeLines(base: number[], vals: number[]): { all: number[]; from: number[] } {
+  const all = [...new Set([...base, ...vals])].sort((a, b) => a - b);
+  const index = new Map(base.map((v, i) => [v, i] as const));
+  return { all, from: all.map(v => index.get(v) ?? -1) };
+}
+
+const STEPS: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
 /**
  * Waypoints of one edge: the exit point, the two end points with the grid run between them, the
@@ -331,8 +340,17 @@ function routeOne(nodes: RouteNode[], g: GapGraph, source: BorderEnd, target: Bo
 
   const ny = g.ys.length;
   const size = g.nbrs.length;
-  // - the vertices this edge adds to the section's grid, numbered from `size` up
+  // - the section's lines plus this edge's own two: the row a left or right end point stands on, the
+  //   column a top or bottom one stands on. Both end points are then crossings, each of them reaching
+  //   every line of the section in one run, so an offset of less than a row costs two corners, not
+  //   four. Only this edge searches on them; the section's own grid is untouched.
+  const cols = mergeLines(g.xs, [src, tgt].filter(p => !p.vertical).map(p => p.at[0]));
+  const rows = mergeLines(g.ys, [src, tgt].filter(p => p.vertical).map(p => p.at[1]));
+  const xs = cols.all, ys = rows.all, nyAll = ys.length;
+
+  // - the crossings on the added lines, numbered from `size` up; their links live in `extra`
   const added: Point[] = [];
+  const ids = new Map<number, number>();
   const extra = new Map<number, number[]>();
   const join = (a: number, b: number) => {
     for (const [from, to] of [[a, b], [b, a]]) {
@@ -340,77 +358,48 @@ function routeOne(nodes: RouteNode[], g: GapGraph, source: BorderEnd, target: Bo
       if (list) list.push(to); else extra.set(from, [to]);
     }
   };
-  const add = (p: Point): number => { added.push(p); return size + added.length - 1; };
+  const idAt = (i: number, j: number): number => {
+    const xi = cols.from[i], yi = rows.from[j];
+    if (xi >= 0 && yi >= 0) return xi * ny + yi;
+    const key = i * nyAll + j;
+    const have = ids.get(key);
+    if (have !== undefined) return have;
+    added.push([xs[i], ys[j]]);
+    ids.set(key, size + added.length - 1);
+    return size + added.length - 1;
+  };
   const pointAt = (i: number): Point =>
     i < size ? [g.xs[Math.floor(i / ny)], g.ys[i % ny]] : added[i - size];
+  const open = (i: number, j: number) => clearSeg(nodes, xs[i], ys[j], xs[i], ys[j]);
 
-  /**
-   * An end point that lands exactly on a crossing is that crossing. Otherwise it is off the grid —
-   * the lines come from the node borders and the point sits at the middle of one — so a route can
-   * only leave it along the line it stands on. That costs two extra corners whenever the gap between
-   * the two nodes is wider than one grid, because then the two end points land on the two different
-   * lines of that gap. So the end point also gets the step sideways to the line on either side of it,
-   * to each line in `want`, and from there the two crossings that step sits between. The step may
-   * cross a gap but not a whole node: a run from one side of a node to the other belongs in the gaps,
-   * not beside the node at the height of a border, where no lane can move it off another run.
-   */
-  const attach = (p: EndPoint, want: number[]): Attached => {
-    const own = p.vertical ? g.ys : g.xs;
-    const along = p.vertical ? p.at[1] : p.at[0];
-    const exact = own.indexOf(along);
-    if (exact >= 0 && g.free(p.vertical ? p.line : exact, p.vertical ? exact : p.line)) {
-      return { id: p.vertical ? p.line * ny + exact : exact * ny + p.line, onLine: new Map() };
+  // - ties one crossing of an added line to its neighbour along both lines through it. A step back is
+  //   taken only onto the section's own grid, since a crossing on an added line steps forward itself.
+  const tie = (i: number, j: number) => {
+    if (!open(i, j)) return;
+    const here = idAt(i, j);
+    for (const [di, dj] of STEPS) {
+      const a = i + di, b = j + dj;
+      if (a < 0 || a >= xs.length || b < 0 || b >= nyAll) continue;
+      if ((di < 0 || dj < 0) && (cols.from[a] < 0 || rows.from[b] < 0)) continue;
+      if (!open(a, b) || !clearSeg(nodes, xs[i], ys[j], xs[a], ys[b])) continue;
+      join(here, idAt(a, b));
     }
-    const other = p.vertical ? g.xs : g.ys;
-    const on = (j: number): Point => p.vertical ? [other[j], along] : [along, other[j]];
-    // - ties the vertex on line `j` to the two crossings it sits between on that line
-    const tie = (id: number, j: number) => {
-      const a = on(j);
-      for (const k of [lineBelow(own, along), lineAbove(own, along)]) {
-        if (k < 0) continue;
-        const xi = p.vertical ? j : k, yi = p.vertical ? k : j;
-        if (g.free(xi, yi) && clearSeg(nodes, a[0], a[1], g.xs[xi], g.ys[yi])) join(id, xi * ny + yi);
-      }
-    };
-    // - the node the point belongs to always blocks one side, since the point sits on its border
-    const nodeBetween = (a: number, b: number) => {
-      const lo = Math.min(a, b), hi = Math.max(a, b);
-      return nodes.some(n => p.vertical ? n.x > lo && n.x + n.w < hi : n.y > lo && n.y + n.h < hi);
-    };
-    const here = add([p.at[0], p.at[1]]);
-    const onLine = new Map<number, number>([[p.line, here]]);
-    tie(here, p.line);
-    for (const j of [p.line - 1, p.line + 1, ...want]) {
-      if (j < 0 || j >= other.length || onLine.has(j)) continue;
-      if (nodeBetween(other[p.line], other[j])) continue;
-      const a = on(j);
-      if (!clearSeg(nodes, p.at[0], p.at[1], a[0], a[1])) continue;
-      const id = add(a);
-      join(here, id);
-      tie(id, j);
-      onLine.set(j, id);
-    }
-    return { id: here, onLine };
   };
-  // - both ends run along lines of the same axis, so the line one of them stands on is a line the
-  //   other can aim for. Across two axes the two line numbers mean different things.
-  const sameAxis = src.vertical === tgt.vertical;
-  const aimAt = (p: EndPoint) => sameAxis ? [p.line - 1, p.line, p.line + 1] : [];
-  const from = attach(src, aimAt(tgt));
-  const to = attach(tgt, aimAt(src));
-  // - on a line both end points reached, the run from one to the other is a link. Without it a route
-  //   between two off-grid points has to step out to a crossing and back, two corners it never needs.
-  if (sameAxis) for (const [j, a] of from.onLine) {
-    const b = to.onLine.get(j);
-    if (b === undefined) continue;
-    const u = pointAt(a), v = pointAt(b);
-    if ((u[0] !== v[0] || u[1] !== v[1]) && clearSeg(nodes, u[0], u[1], v[0], v[1])) join(a, b);
-  }
-  // - the two end points may face each other on one line: that is the straight edge, no crossing needed
-  if ((src.at[0] === tgt.at[0] || src.at[1] === tgt.at[1]) && clearSeg(nodes, src.at[0], src.at[1], tgt.at[0], tgt.at[1])) join(from.id, to.id);
+  for (let j = 0; j < nyAll; j++) if (rows.from[j] < 0) for (let i = 0; i < xs.length; i++) tie(i, j);
+  for (let i = 0; i < xs.length; i++) if (cols.from[i] < 0)
+    for (let j = 0; j < nyAll; j++) if (rows.from[j] >= 0) tie(i, j);
+
+  const xAt = new Map(xs.map((v, i) => [v, i] as const));
+  const yAt = new Map(ys.map((v, j) => [v, j] as const));
+  const vertexOf = (p: Point): number | null => {
+    const i = xAt.get(p[0]), j = yAt.get(p[1]);
+    return i === undefined || j === undefined || !open(i, j) ? null : idAt(i, j);
+  };
+  const from = vertexOf(src.at), to = vertexOf(tgt.at);
+  if (from === null || to === null) return null;
 
   // - the route meets the entry segment head on, so the goal direction is the target side reversed
-  const path = shortestPath(g, extra, pointAt, size + added.length, from.id, OUT_DIR[source.side], to.id, OUT_DIR[target.side] ^ 1);
+  const path = shortestPath(g, extra, pointAt, size + added.length, from, OUT_DIR[source.side], to, OUT_DIR[target.side] ^ 1);
   if (!path) return null;
   return [source.at, ...simplify(path.map(pointAt)), target.at];
 }
