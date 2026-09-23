@@ -252,15 +252,15 @@ const dirBetween = (a: Point, b: Point): number => b[0] > a[0] ? 0 : b[0] < a[0]
 const OUT_DIR: Record<Side, number> = { right: 0, left: 1, bottom: 2, top: 3 };
 
 /**
- * Shortest orthogonal path from `start` to `goal` over the crossings plus the two end points in
- * `extra`. Cost = length + BEND_COST per change of direction, counting the corner where the route
- * leaves the exit segment and the one where it meets the entry segment.
+ * Shortest orthogonal path from `start` to `goal` over the `count` vertices: the section's crossings
+ * and, past them, the vertices this edge added, whose links are in `extra`. Cost = length + BEND_COST
+ * per change of direction, counting the corner where the route leaves the exit segment and the one
+ * where it meets the entry segment.
  */
 function shortestPath(
-  g: GapGraph, extra: Map<number, number[]>, at: (i: number) => Point,
+  g: GapGraph, extra: Map<number, number[]>, at: (i: number) => Point, count: number,
   start: number, startDir: number, goal: number, goalDir: number,
 ): number[] | null {
-  const count = g.nbrs.length + 2;
   const dist = new Float64Array(count * 4).fill(Infinity);
   const prev = new Int32Array(count * 4).fill(-1);
   const done = new Uint8Array(count * 4);
@@ -327,6 +327,8 @@ function routeOne(nodes: RouteNode[], g: GapGraph, source: BorderEnd, target: Bo
 
   const ny = g.ys.length;
   const size = g.nbrs.length;
+  // - the vertices this edge adds to the section's grid, numbered from `size` up
+  const added: Point[] = [];
   const extra = new Map<number, number[]>();
   const join = (a: number, b: number) => {
     for (const [from, to] of [[a, b], [b, a]]) {
@@ -334,30 +336,61 @@ function routeOne(nodes: RouteNode[], g: GapGraph, source: BorderEnd, target: Bo
       if (list) list.push(to); else extra.set(from, [to]);
     }
   };
-  // - an end point that lands exactly on a crossing is that crossing; otherwise it is a vertex of its
-  //   own, tied to the two crossings it sits between on its line
-  const attach = (p: EndPoint, spare: number): number => {
-    const vals = p.vertical ? g.ys : g.xs;
-    const along = p.vertical ? p.at[1] : p.at[0];
-    const exact = vals.indexOf(along);
-    const crossing = (k: number) => p.vertical ? p.line * ny + k : k * ny + p.line;
-    if (exact >= 0 && g.free(p.vertical ? p.line : exact, p.vertical ? exact : p.line)) return crossing(exact);
-    for (const k of [lineBelow(vals, along), lineAbove(vals, along)]) {
-      if (k < 0) continue;
-      const to: Point = p.vertical ? [p.at[0], vals[k]] : [vals[k], p.at[1]];
-      if (g.free(p.vertical ? p.line : k, p.vertical ? k : p.line) && clearSeg(nodes, p.at[0], p.at[1], to[0], to[1])) join(spare, crossing(k));
-    }
-    return spare;
-  };
+  const add = (p: Point): number => { added.push(p); return size + added.length - 1; };
   const pointAt = (i: number): Point =>
-    i === size ? src.at : i === size + 1 ? tgt.at : [g.xs[Math.floor(i / ny)], g.ys[i % ny]];
-  const from = attach(src, size);
-  const to = attach(tgt, size + 1);
+    i < size ? [g.xs[Math.floor(i / ny)], g.ys[i % ny]] : added[i - size];
+
+  /**
+   * An end point that lands exactly on a crossing is that crossing. Otherwise it is off the grid —
+   * the lines come from the node borders and the point sits at the middle of one — so a route can
+   * only leave it along the line it stands on. That costs two extra corners whenever the gap between
+   * the two nodes is wider than one grid, because then the two end points land on the two different
+   * lines of that gap. So the end point also gets the step sideways to the line on either side of it,
+   * and from there the two crossings that step sits between. The step may cross a gap but not a whole
+   * node: a run from one side of a node to the other belongs in the gaps, not beside the node at the
+   * height of a border, where no lane can move it off another run.
+   */
+  const attach = (p: EndPoint): number => {
+    const own = p.vertical ? g.ys : g.xs;
+    const along = p.vertical ? p.at[1] : p.at[0];
+    const exact = own.indexOf(along);
+    if (exact >= 0 && g.free(p.vertical ? p.line : exact, p.vertical ? exact : p.line)) {
+      return p.vertical ? p.line * ny + exact : exact * ny + p.line;
+    }
+    const other = p.vertical ? g.xs : g.ys;
+    const on = (j: number): Point => p.vertical ? [other[j], along] : [along, other[j]];
+    // - ties the vertex on line `j` to the two crossings it sits between on that line
+    const tie = (id: number, j: number) => {
+      const a = on(j);
+      for (const k of [lineBelow(own, along), lineAbove(own, along)]) {
+        if (k < 0) continue;
+        const xi = p.vertical ? j : k, yi = p.vertical ? k : j;
+        if (g.free(xi, yi) && clearSeg(nodes, a[0], a[1], g.xs[xi], g.ys[yi])) join(id, xi * ny + yi);
+      }
+    };
+    const nodeBetween = (a: number, b: number) => {
+      const lo = Math.min(a, b), hi = Math.max(a, b);
+      return nodes.some(n => p.vertical ? n.x > lo && n.x + n.w < hi : n.y > lo && n.y + n.h < hi);
+    };
+    const here = add([p.at[0], p.at[1]]);
+    tie(here, p.line);
+    for (const j of [p.line - 1, p.line + 1]) {
+      if (j < 0 || j >= other.length || nodeBetween(other[p.line], other[j])) continue;
+      const a = on(j);
+      if (!clearSeg(nodes, p.at[0], p.at[1], a[0], a[1])) continue;
+      const id = add(a);
+      join(here, id);
+      tie(id, j);
+    }
+    return here;
+  };
+  const from = attach(src);
+  const to = attach(tgt);
   // - the two end points may face each other on one line: that is the straight edge, no crossing needed
   if ((src.at[0] === tgt.at[0] || src.at[1] === tgt.at[1]) && clearSeg(nodes, src.at[0], src.at[1], tgt.at[0], tgt.at[1])) join(from, to);
 
   // - the route meets the entry segment head on, so the goal direction is the target side reversed
-  const path = shortestPath(g, extra, pointAt, from, OUT_DIR[source.side], to, OUT_DIR[target.side] ^ 1);
+  const path = shortestPath(g, extra, pointAt, size + added.length, from, OUT_DIR[source.side], to, OUT_DIR[target.side] ^ 1);
   if (!path) return null;
   return [source.at, ...simplify(path.map(pointAt)), target.at];
 }
