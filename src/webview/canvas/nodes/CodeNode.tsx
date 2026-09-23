@@ -520,7 +520,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
         document.body,
       )}
       <NodeResizer
-        minWidth={160} minHeight={90} isVisible={selected}
+        minWidth={160} minHeight={90} isVisible={selected && !editing}
         onResizeEnd={(_, p) => window.dispatchEvent(new CustomEvent('skena:nodeResize', {
           detail: { id, x: Math.round(p.x), y: Math.round(p.y), width: Math.round(p.width), height: Math.round(p.height) },
         }))}

@@ -1047,8 +1047,11 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     const y2 = Math.max(...boxes.map(b => b.y + b.h));
     const deletedIds = new Set(deleted.map(n => n.id));
     return focusAfterDelete(
+      // - a multi-section delete picks the first deleted non-band node's section
       { x: x1, y: y1, w: x2 - x1, h: y2 - y1, sectionId: sectionOf.get(gone[0].id) },
       nodesRef.current
+        // - kernel badges are excluded here (never a focus candidate) but not from `gone` above,
+        //   so a deleted kernel badge still widens the box the next focus is picked near
         .filter(n => !deletedIds.has(n.id) && !isBandType(n.type) && n.type !== 'kernel')
         .map(n => ({ id: n.id, ...geom(n), hidden: hiddenByFoldRef.current.has(n.id), sectionId: sectionOf.get(n.id) })),
     );

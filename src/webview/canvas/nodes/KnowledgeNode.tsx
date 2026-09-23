@@ -122,7 +122,6 @@ export function KnowledgeNodeComponent({ data, id, selected }: NodeProps): JSX.E
           : <MarkdownRenderer content={node.text} baseUri="." />}
       </ScrollableContent>
     </div>
-    {/* - handles outside overflow:hidden wrapper → not clipped, render above scrollable content */}
     <NodeResizer
       minWidth={120} minHeight={80}
       isVisible={selected}
@@ -130,6 +129,8 @@ export function KnowledgeNodeComponent({ data, id, selected }: NodeProps): JSX.E
         detail: { id, x: Math.round(p.x), y: Math.round(p.y), width: Math.round(p.width), height: Math.round(p.height) },
       }))}
     />
+    {/* - .skena-node is contain: layout style paint (canvas.css) → clips absolutely-positioned
+        children, so the handles sit here, after it, not inside the overflow:hidden wrapper above */}
     <Handle type="source" position={Position.Top}    id="top"    style={HANDLE_STYLE} />
     <Handle type="source" position={Position.Right}  id="right"  style={HANDLE_STYLE} />
     <Handle type="source" position={Position.Bottom} id="bottom" style={HANDLE_STYLE} />

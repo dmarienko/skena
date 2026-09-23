@@ -107,8 +107,8 @@ function spanGap(aNear: number, aLen: number, bNear: number, bLen: number): numb
 }
 
 /**
- * How far two boxes sit apart, edge to edge — the same measure the direction keys use, without a
- * direction: the horizontal and vertical clearances combined, each 0 where the two spans overlap.
+ * How far two boxes sit apart, edge to edge like `navScore`, but both axes combined and without a
+ * direction: the horizontal and vertical clearances, each 0 where the two spans overlap.
  * Two boxes that overlap on both axes are 0 apart.
  */
 function boxGap(a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }): number {
