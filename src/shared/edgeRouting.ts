@@ -54,8 +54,9 @@ export const LANE_STEP = 10;
 /** - a corner costs one grid of length */
 export const BEND_COST = GRID;
 // - the crossings cost one clear test each to build and one Dijkstra state per direction per edge to
-//   search: 40 000 of them (100 nodes sharing no column and no row) take 5.5 s for 99 long edges,
-//   4 000 take 0.2 s. A section past the cap is not routed — the old per-edge router draws its edges.
+//   search: 40 000 of them (100 nodes sharing no column and no row) take 5.3 s for 99 long edges.
+//   A section just under the cap (3 844 crossings, 31 such nodes) takes 4 ms for 30 chained edges and
+//   0.43 s for 99 long ones. Past the cap a section is not routed — the old per-edge router draws it.
 export const MAX_CROSSINGS = 4000;
 
 const HALF = GRID / 2;
@@ -306,6 +307,9 @@ const lineAbove = (vals: number[], v: number) => { let i = vals.length; while (i
 /** Where a route starts and stops being a grid run: one step out of the node, on the nearest line. */
 interface EndPoint { at: Point; vertical: boolean; line: number }
 
+/** What one end of an edge put into the graph: its own vertex, and the vertex it has on each line. */
+interface Attached { id: number; onLine: Map<number, number> }
+
 function endPointOf(g: GapGraph, end: BorderEnd): EndPoint | null {
   const vertical = isHorizontal(end.side);
   const vals = vertical ? g.xs : g.ys;
@@ -346,16 +350,16 @@ function routeOne(nodes: RouteNode[], g: GapGraph, source: BorderEnd, target: Bo
    * only leave it along the line it stands on. That costs two extra corners whenever the gap between
    * the two nodes is wider than one grid, because then the two end points land on the two different
    * lines of that gap. So the end point also gets the step sideways to the line on either side of it,
-   * and from there the two crossings that step sits between. The step may cross a gap but not a whole
-   * node: a run from one side of a node to the other belongs in the gaps, not beside the node at the
-   * height of a border, where no lane can move it off another run.
+   * to each line in `want`, and from there the two crossings that step sits between. The step may
+   * cross a gap but not a whole node: a run from one side of a node to the other belongs in the gaps,
+   * not beside the node at the height of a border, where no lane can move it off another run.
    */
-  const attach = (p: EndPoint): number => {
+  const attach = (p: EndPoint, want: number[]): Attached => {
     const own = p.vertical ? g.ys : g.xs;
     const along = p.vertical ? p.at[1] : p.at[0];
     const exact = own.indexOf(along);
     if (exact >= 0 && g.free(p.vertical ? p.line : exact, p.vertical ? exact : p.line)) {
-      return p.vertical ? p.line * ny + exact : exact * ny + p.line;
+      return { id: p.vertical ? p.line * ny + exact : exact * ny + p.line, onLine: new Map() };
     }
     const other = p.vertical ? g.xs : g.ys;
     const on = (j: number): Point => p.vertical ? [other[j], along] : [along, other[j]];
@@ -368,29 +372,45 @@ function routeOne(nodes: RouteNode[], g: GapGraph, source: BorderEnd, target: Bo
         if (g.free(xi, yi) && clearSeg(nodes, a[0], a[1], g.xs[xi], g.ys[yi])) join(id, xi * ny + yi);
       }
     };
+    // - the node the point belongs to always blocks one side, since the point sits on its border
     const nodeBetween = (a: number, b: number) => {
       const lo = Math.min(a, b), hi = Math.max(a, b);
       return nodes.some(n => p.vertical ? n.x > lo && n.x + n.w < hi : n.y > lo && n.y + n.h < hi);
     };
     const here = add([p.at[0], p.at[1]]);
+    const onLine = new Map<number, number>([[p.line, here]]);
     tie(here, p.line);
-    for (const j of [p.line - 1, p.line + 1]) {
-      if (j < 0 || j >= other.length || nodeBetween(other[p.line], other[j])) continue;
+    for (const j of [p.line - 1, p.line + 1, ...want]) {
+      if (j < 0 || j >= other.length || onLine.has(j)) continue;
+      if (nodeBetween(other[p.line], other[j])) continue;
       const a = on(j);
       if (!clearSeg(nodes, p.at[0], p.at[1], a[0], a[1])) continue;
       const id = add(a);
       join(here, id);
       tie(id, j);
+      onLine.set(j, id);
     }
-    return here;
+    return { id: here, onLine };
   };
-  const from = attach(src);
-  const to = attach(tgt);
+  // - both ends run along lines of the same axis, so the line one of them stands on is a line the
+  //   other can aim for. Across two axes the two line numbers mean different things.
+  const sameAxis = src.vertical === tgt.vertical;
+  const aimAt = (p: EndPoint) => sameAxis ? [p.line - 1, p.line, p.line + 1] : [];
+  const from = attach(src, aimAt(tgt));
+  const to = attach(tgt, aimAt(src));
+  // - on a line both end points reached, the run from one to the other is a link. Without it a route
+  //   between two off-grid points has to step out to a crossing and back, two corners it never needs.
+  if (sameAxis) for (const [j, a] of from.onLine) {
+    const b = to.onLine.get(j);
+    if (b === undefined) continue;
+    const u = pointAt(a), v = pointAt(b);
+    if ((u[0] !== v[0] || u[1] !== v[1]) && clearSeg(nodes, u[0], u[1], v[0], v[1])) join(a, b);
+  }
   // - the two end points may face each other on one line: that is the straight edge, no crossing needed
-  if ((src.at[0] === tgt.at[0] || src.at[1] === tgt.at[1]) && clearSeg(nodes, src.at[0], src.at[1], tgt.at[0], tgt.at[1])) join(from, to);
+  if ((src.at[0] === tgt.at[0] || src.at[1] === tgt.at[1]) && clearSeg(nodes, src.at[0], src.at[1], tgt.at[0], tgt.at[1])) join(from.id, to.id);
 
   // - the route meets the entry segment head on, so the goal direction is the target side reversed
-  const path = shortestPath(g, extra, pointAt, size + added.length, from, OUT_DIR[source.side], to, OUT_DIR[target.side] ^ 1);
+  const path = shortestPath(g, extra, pointAt, size + added.length, from.id, OUT_DIR[source.side], to.id, OUT_DIR[target.side] ^ 1);
   if (!path) return null;
   return [source.at, ...simplify(path.map(pointAt)), target.at];
 }
