@@ -142,15 +142,43 @@ One algorithm behind every row of §2, run per section:
 
 A node whose x-span crosses a column is an obstacle for that column, whatever column it belongs to.
 Packing a column skips over obstacles: a member's row starts at `prevBottom + GRID`, and while that
-row would intersect an obstacle (an obstacle's y-span meets `[y, y + h)` and its x-span meets the
-member's), it moves to `obstacle.bottom + GRID`. Outputs still ride at their cell's row; a collision
-there is left to the bump rule as before.
+row would sit in an obstacle it moves to `obstacle.bottom + GRID`. Outputs still ride at their
+cell's row; a collision there is left to the bump rule as before.
 
-A member that crosses the NEXT column's x is a spanning cell: it keeps its place in its column's
-y-order but does not widen the column — the pair's width and the tight pass use the widest member
-that does not cross the next column. So on H4's S2 the 1500-wide E15 in column 0 no longer sends
-column 800 to x 2300 on Reflow, and a cell packed into column 800 lands under E15 (y 1100), not
-inside it (y 600).
+**Width.** A member sets its column's width only when it leaves a full grid gap before the next
+column: `column.x + w + GRID <= nextColumn.x`. Anything wider is a spanning cell: it keeps its place
+in its column's y-order but does not widen the column, and both the pair's width and the tight pass
+read the widest member that stays clear. So on H4's S2 the 1600-wide E15 in column 0 no longer sends
+column 800 to x 2400 on Reflow, and a cell packed into column 800 lands under E15 (y 1100), not
+inside it (y 600). The gap term keeps the rule stable across the tight pass, which places the next
+column at `column.x + width + GRID + outputW + GRID`: a spanning cell stops spanning as soon as the
+column beside it moves, and the gap is the slack that stops the two readings swapping back and
+forth. Measured over 1500 random dense sections: the two rules give a different Reflow on 211 of
+them, and the plain `column.x + w <= nextColumn.x` rule leaves 44 sections non-idempotent against
+the gap rule's 35. On H1, H4 and H5 the two agree everywhere.
+
+**The obstacle test.** The row clears an obstacle by a full grid gap on y, the distance the bump
+rule asks for everywhere: the obstacle counts while `obstacle.y + obstacle.h + GRID > y` and
+`y + member.h + GRID > obstacle.y`. On x an obstacle to the LEFT of the column counts when it
+reaches within a grid gap of the column x (the line the width rule draws); one at or right of the
+column counts only on a real crossing, so a node the column merely touches is moved right by the
+bump rule (§3.2) instead of the column stepping under it.
+
+**The column head.** Only a stacked row skips obstacles. The head keeps its own snapped y whatever
+crosses it — it is where the user left it; a node it lands on is the bump rule's business. The one
+exception is a rider's row (§3.5): the head clears that and drops below a rider it used to sit
+above.
+
+**Reflow.** Reflow's tight pass runs again while it still moves a column, at most 8 rounds, then
+packs every column once more: a column's width is read off the members that stay clear of the next
+column, so moving a column changes which of its neighbour's members span. Measured: 3 rounds on H1's
+section, 2 on H4's S1 and S2, at most 5 over 1500 random dense sections, the cap never reached.
+
+**The pair rule on Reflow.** The pair rule of §1 still applies: a column holding a code cell reserves
+`OUTPUT_MIN_W` (600) plus two gaps for its output column whether or not any of its cells has an
+output. On H4's S2 that puts column 800 at 1500 on Reflow, not back at 800 — 700 px right of where
+the user left it, and 900 px left of the 2400 the widest-member rule gives. (Open with the user:
+reserve the slot only for columns that hold an output.)
 
 ### 3.5 A sequence edge anchors its target to the source's row (decided 2026-09-23)
 
@@ -163,15 +191,39 @@ Two riders on one row in one column stack, the second under the first (id order)
 source sits in the same column, or in a column to the right, is not a rider — those edges stay
 drawings.
 
+**A source in the same column is no source.** A rider whose source is a member of the same column is
+not a rider for that pack, whatever the riders map says: Reflow snaps columns before it packs and can
+put the two in one column, and anchoring a cell on its own column-mate walked the column down 800 px
+per call before this rule.
+
 Removing the edge releases the cell: the webview runs the engine for the target's column at once
-and the cell packs up to its ceiling (E14 lifts to y 1100 under E15). Adding such an edge anchors
-the target at once (it moves onto the source's row; its old column re-packs).
+and the cell packs up to the first row it clears (E14 lifts to y 1100, under E15). Adding such an
+edge anchors the target at once (it moves onto the source's row; its old column re-packs).
+
+**Bumps.** No bump moves a rider on its own — it is pinned wherever it sits in the section, so what
+it is in the way of is what moves. A rider follows a downward bump of its source, with its own
+output; a sideways bump changes no y. The columns a call packs are the movers' columns plus,
+transitively, the columns of the riders of anything in a packed column; the pack runs left to right,
+so a source is placed before the rider that reads its y. (Open with the user: pin riders only in the
+packed columns. Measured over 1500 random dense sections with today's section-wide pinning: 6.8 % of
+calls are non-idempotent, against 3.7 % on the same sections with no riders, and 11 calls raise the
+overlap count; nothing of it shows on H1, H4 or H5.)
+
+**What the anchor does not promise.** A rider the operation itself moved is a mover and can yield
+downward off its source's row when a node above leaves it nowhere to step aside (§3.2); it settles
+one gap below that node and stays — measured: a rider on row 600 with a note reaching y 800 over it
+lands at 900, and the next call moves nothing. A rider fixes its row against the head of its own
+column: a member that sat above it is packed below it.
 
 The engine takes the anchoring as an input: `layoutSection(nodes, { riders })` /
 `reflowSection(nodes, { riders })` with `riders: Map<targetId, sourceId>`, computed by every caller
 from the canvas edges with one shared pure `ridersOf(nodes, edges)` in `layoutEngine.ts`. Callers:
 the webview (`runEngine`, `runEngineAfterMove`, edge add/remove), the host (`layoutAround`), the
-MCP server (`applyEngine`, `canvas_add_edge`, `canvas_remove_edge`).
+MCP server (`applyEngine`, `canvas_add_edge`, `canvas_remove_edge`, `canvas_update_edge`).
+
+Every edge path that creates or drops an anchor runs the engine for the target: webview `onConnect`,
+`onConnectEnd`, `skena:nodesFromDrop`, keyboard connect/disconnect, edge delete; MCP
+`canvas_add_edge`, `canvas_remove_edge`, `canvas_update_edge`.
 
 ## 4. Reflow, MCP, undo, phases
 
