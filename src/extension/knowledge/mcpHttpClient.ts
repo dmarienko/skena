@@ -7,6 +7,12 @@ export interface McpHttpClientOptions { url: string; token?: string; timeoutMs?:
 // - a lost session: the server 404s the request, or answers 200 with a JSON-RPC error naming it
 const LOST_SESSION = /HTTP 404|Missing session ID/;
 
+// - a well-formed mime type, "type/subtype" only (the ";…" of a content-type header is split off
+//   before this runs). A server-controlled header ends up in an <img src="data:…"> and in a
+//   markdown image destination downstream, so anything else — quotes, whitespace, a stray ")" —
+//   is replaced rather than carried through
+const MIME = /^[a-z0-9][a-z0-9.+-]*\/[a-z0-9][a-z0-9.+-]*$/i;
+
 // - an HTTP error body: its JSON-RPC error message if it has one, else a snippet of the raw text
 function describeErrorBody(body: string): string {
   if (!body) return '';
@@ -97,7 +103,8 @@ export class McpHttpClient implements ToolTransport {
         signal: anySignal(ctl.signal, signal),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText} from ${url}`);
-      const mime = (res.headers.get('content-type') ?? 'application/octet-stream').split(';')[0].trim();
+      const rawMime = (res.headers.get('content-type') ?? '').split(';')[0].trim();
+      const mime = MIME.test(rawMime) ? rawMime : 'application/octet-stream';
       return { mime, bytes: new Uint8Array(await res.arrayBuffer()) };
     } catch (e) {
       if (signal?.aborted) throw new Error('cancelled');

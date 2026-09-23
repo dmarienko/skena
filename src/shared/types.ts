@@ -462,7 +462,7 @@ export interface MsgKnowledgeFetchResult  { type: 'knowledgeFetchResult';  reque
 export interface MsgKnowledgeScopesResult { type: 'knowledgeScopesResult'; requestId: number; scopes?: string[]; error?: string }
 export interface MsgKnowledgeFacetsResult { type: 'knowledgeFacetsResult'; requestId: number; tags?: [string, number][]; error?: string }
 /** - host → webview: one image a knowledge node asked for, as a data url it can put in an <img> */
-export interface MsgKnowledgeAssetResult { type: 'knowledgeAssetResult'; uri: string; dataUrl?: string; error?: string }
+export interface MsgKnowledgeAssetResult { type: 'knowledgeAssetResult'; server: string; uri: string; dataUrl?: string; error?: string }
 export interface MsgKnowledgeRefreshed {
   type: 'knowledgeRefreshed';
   nodes: RefreshOutcome[];

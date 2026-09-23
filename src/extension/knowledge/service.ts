@@ -32,9 +32,12 @@ export class KnowledgeService {
   private configured: string[] = [];
   /** - the open run per canvas, so a second canvas does not cancel the first one's fetches */
   private refreshing = new Map<string, { cancel(): void }>();
-  /** - images already fetched, as the data urls the webview puts in an <img src> */
+  /** - images already fetched, as the data urls the webview puts in an <img src>, keyed by server + uri */
   private assets = new Map<string, { dataUrl: string; bytes: number }>();
   private assetBytes = 0;
+  /** - an asset fetch already in flight for a key, so two nodes asking for the same image at once
+   *    share the one request instead of asking the provider twice */
+  private assetsInFlight = new Map<string, Promise<string>>();
 
   /**
    * Re-read on every webview ready, so a token or url edit takes effect on reload. A server whose
@@ -79,24 +82,36 @@ export class KnowledgeService {
   /**
    * The data url for one image, from the session's cache or from the server. The uri is the one
    * the adapter wrote into the node's text, so the same image asked for by two nodes is fetched
-   * once.
+   * once — and if both ask before the first fetch has come back, they share that one request too.
    */
   async asset(server: string, uri: string): Promise<string> {
-    const cached = this.assets.get(uri);
+    const key = `${server}\u0000${uri}`;
+    const cached = this.assets.get(key);
     if (cached) return cached.dataUrl;
-    const got = await this.provider(server).asset(uri);
-    const dataUrl = `data:${got.mime};base64,${Buffer.from(got.bytes).toString('base64')}`;
-    // - one image larger than the whole cache is served but not kept
-    if (dataUrl.length <= ASSET_CACHE_BYTES) {
-      for (const [oldest, entry] of this.assets) {
-        if (this.assetBytes + dataUrl.length <= ASSET_CACHE_BYTES) break;
-        this.assets.delete(oldest);
-        this.assetBytes -= entry.bytes;
+    const inFlight = this.assetsInFlight.get(key);
+    if (inFlight) return inFlight;
+
+    const fetching = (async () => {
+      const got = await this.provider(server).asset(uri);
+      const dataUrl = `data:${got.mime};base64,${Buffer.from(got.bytes).toString('base64')}`;
+      // - one image larger than the whole cache is served but not kept
+      if (dataUrl.length <= ASSET_CACHE_BYTES) {
+        for (const [oldest, entry] of this.assets) {
+          if (this.assetBytes + dataUrl.length <= ASSET_CACHE_BYTES) break;
+          this.assets.delete(oldest);
+          this.assetBytes -= entry.bytes;
+        }
+        this.assets.set(key, { dataUrl, bytes: dataUrl.length });
+        this.assetBytes += dataUrl.length;
       }
-      this.assets.set(uri, { dataUrl, bytes: dataUrl.length });
-      this.assetBytes += dataUrl.length;
+      return dataUrl;
+    })();
+    this.assetsInFlight.set(key, fetching);
+    try {
+      return await fetching;
+    } finally {
+      this.assetsInFlight.delete(key);
     }
-    return dataUrl;
   }
 
   /**

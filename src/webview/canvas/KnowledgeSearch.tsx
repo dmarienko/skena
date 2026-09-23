@@ -18,7 +18,7 @@
  * left out of the search and named in the status line.
  */
 
-import React, { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { KnowledgeHit, KnowledgeText } from '../../shared/knowledge/types';
 import type {
   MsgKnowledgeFacetsResult, MsgKnowledgeFetchResult, MsgKnowledgeScopesResult, MsgKnowledgeSearchResult,
@@ -268,6 +268,13 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
   const note   = pending || preview.error || tagNote;
   const status = [state.status, note].filter(Boolean).join(' · ');
 
+  // - re-swapped only when the previewed text or an image it references changes, not on every
+  //   keystroke in the search box
+  const previewText = useMemo(
+    () => preview.text ? swapMarkdown(preview.text.text) : null,
+    [preview.text, swapMarkdown],
+  );
+
   return (
     <div
       className="skena-knowledge-search nowheel"
@@ -399,8 +406,8 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
             color: 'var(--vscode-input-foreground, #ccc)',
           }}
         >
-          {preview.text
-            ? <MarkdownRenderer content={swapMarkdown(preview.text.text)} baseUri="." />
+          {previewText !== null
+            ? <MarkdownRenderer content={previewText} baseUri="." />
             : <span style={{ opacity: 0.6 }}>{preview.error || (hit ? 'loading…' : '')}</span>}
         </div>
       </div>

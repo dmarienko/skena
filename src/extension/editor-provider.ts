@@ -528,10 +528,10 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         }
         case 'knowledgeAsset': {
           try {
-            send({ type: 'knowledgeAssetResult', uri: msg.uri, dataUrl: await this.knowledge.asset(msg.server, msg.uri) });
+            send({ type: 'knowledgeAssetResult', server: msg.server, uri: msg.uri, dataUrl: await this.knowledge.asset(msg.server, msg.uri) });
           } catch (e) {
             // - a failed image stays a broken image in the node, with this text on hover
-            send({ type: 'knowledgeAssetResult', uri: msg.uri, error: (e as Error).message });
+            send({ type: 'knowledgeAssetResult', server: msg.server, uri: msg.uri, error: (e as Error).message });
           }
           break;
         }

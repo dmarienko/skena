@@ -29,8 +29,17 @@ const dirOf = (file: string) => (file.includes('/') ? file.slice(0, file.lastInd
 // - an absolute reference of any scheme (http:, https:, data:) is left as it is
 const HAS_SCHEME = /^[a-z][a-z0-9+.-]*:/i;
 
-// - a markdown image: ![alt](path), with an optional "title" after the path
-const IMAGE = /!\[([^\]]*)\]\(\s*<?([^)\s>]*)>?((?:\s+(?:"[^"]*"|'[^']*'))?)\s*\)/g;
+// - a markdown image: ![alt](path), with an optional "title" after the path. A path in <angle
+//   brackets> may hold spaces; a bare path may not
+const IMAGE = /!\[([^\]]*)\]\(\s*(?:<([^<>\n]*)>|([^)\s]*))((?:\s+(?:"[^"]*"|'[^']*'))?)\s*\)/g;
+
+// - a path is percent-encoded when it names a file with a space or another character markdown's
+//   bare (non-<…>) form cannot carry; decode before resolving, so "a%20b.svg" and "<a b.svg>"
+//   land on the same vault file. Not everything after a stray "%" is a valid escape — keep the
+//   path as written rather than throw one away
+function decodePath(path: string): string {
+  try { return decodeURIComponent(path); } catch { return path; }
+}
 
 // - a fenced block opens and closes with three or more backticks or tildes
 const FENCE = /^\s{0,3}(`{3,}|~{3,})/;
@@ -83,13 +92,17 @@ function outsideCodeSpans(line: string, fn: (text: string) => string): string {
  */
 export function rewriteImageRefs(text: string, ref: { vault: string; file: string }): string {
   const dir = dirOf(ref.file);
-  const rewriteProse = (prose: string) => prose.replace(IMAGE, (whole, alt: string, path: string, title: string, offset: number, all: string) => {
-    if (all[offset - 1] === '\\') return whole;
-    if (HAS_SCHEME.test(path)) return whole;
-    const resolved = resolveInVault(dir, path);
-    if (resolved === null || !isVaultAsset(resolved)) return `\\${whole}`;
-    return `![${alt}](${buildCrtxUri({ vault: ref.vault, file: resolved, heading: '' })}${title})`;
-  });
+  const rewriteProse = (prose: string) => prose.replace(
+    IMAGE,
+    (whole, alt: string, anglePath: string | undefined, barePath: string | undefined, title: string, offset: number, all: string) => {
+      if (all[offset - 1] === '\\') return whole;
+      const path = decodePath(anglePath ?? barePath ?? '');
+      if (HAS_SCHEME.test(path)) return whole;
+      const resolved = resolveInVault(dir, path);
+      if (resolved === null || !isVaultAsset(resolved)) return `\\${whole}`;
+      return `![${alt}](${buildCrtxUri({ vault: ref.vault, file: resolved, heading: '' })}${title})`;
+    },
+  );
 
   let fence = '';
   return text.split('\n').map(line => {
