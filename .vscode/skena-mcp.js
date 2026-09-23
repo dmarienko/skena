@@ -4284,6 +4284,24 @@ function outputOwners(nodes) {
       owners.set(n.outputNodeId, n.id);
   return owners;
 }
+function ridersOf(nodes, edges) {
+  const map = byId(nodes);
+  const best = /* @__PURE__ */ new Map();
+  for (const e of edges) {
+    if ((e.fromSide ?? "right") !== "right" || (e.toSide ?? "left") !== "left")
+      continue;
+    const from = map.get(e.fromNode);
+    const to = map.get(e.toNode);
+    if (!from || !to || from.type !== "code" || to.type !== "code")
+      continue;
+    if (snapGrid(from.x) >= snapGrid(to.x))
+      continue;
+    const held = best.get(to.id);
+    if (!held || snapGrid(from.x) < snapGrid(held.x) || snapGrid(from.x) === snapGrid(held.x) && from.id < held.id)
+      best.set(to.id, from);
+  }
+  return new Map([...best].map(([target, source]) => [target, source.id]));
+}
 var isMember = (n, owners) => !owners.has(n.id) && n.type !== "kernel";
 function deriveColumns(nodes, movers = /* @__PURE__ */ new Set()) {
   const owners = outputOwners(nodes);
@@ -4298,9 +4316,15 @@ function deriveColumns(nodes, movers = /* @__PURE__ */ new Set()) {
     else
       groups.set(x, [n]);
   }
-  return [...groups.entries()].sort((a, b) => a[0] - b[0]).map(([x, cells]) => {
+  const columns = [...groups.entries()].sort((a, b) => a[0] - b[0]).map(([x, cells]) => {
     cells.sort((a, b) => a.y - b.y || Number(movers.has(b.id)) - Number(movers.has(a.id)) || a.id.localeCompare(b.id));
-    return { x, width: Math.max(...cells.map((c) => c.w)), cellIds: cells.map((c) => c.id) };
+    return { x, cells };
+  });
+  return columns.map((c, i) => {
+    const nextX = columns[i + 1]?.x;
+    const inside = nextX === void 0 ? c.cells : c.cells.filter((m) => c.x + m.w + GRID <= nextX);
+    const widths = (inside.length > 0 ? inside : c.cells).map((m) => m.w);
+    return { x: c.x, width: Math.max(...widths), cellIds: c.cells.map((m) => m.id) };
   });
 }
 function derivePairs(nodes, columns) {
@@ -4333,27 +4357,60 @@ function overlaps(a, b) {
   const sepY = a.y + a.h + GRID <= b.y || b.y + b.h + GRID <= a.y;
   return !(sepX || sepY);
 }
-function packColumn(pair, map, out, toSlot = () => true) {
-  let prevBottom = null;
-  for (const id of pair.column.cellIds) {
-    const cell = map.get(id);
+function obstaclesOf(pair, nodes, owners) {
+  const members = new Set(pair.column.cellIds);
+  return nodes.filter((n) => !members.has(n.id) && n.type !== "kernel" && !members.has(owners.get(n.id) ?? ""));
+}
+function rowStart(start, x, member, obstacles) {
+  let y = start;
+  for (const o of obstacles) {
+    const gap = o.x < x ? GRID : 0;
+    if (o.x + o.w + gap <= x || x + member.w <= o.x)
+      continue;
+    if (o.y + o.h + GRID <= y || y + member.h + GRID <= o.y)
+      continue;
+    y = o.y + o.h + GRID;
+  }
+  return y;
+}
+function packColumn(pair, nodes, map, riders, owners, out, toSlot = () => true) {
+  const x = pair.column.x;
+  const place = (cell, y) => {
     const wasY = cell.y;
-    const y = prevBottom === null ? snapGrid(cell.y) : prevBottom + GRID;
-    const x = pair.column.x;
     if (x !== cell.x || y !== cell.y) {
       if (out)
-        out[id] = { x, y };
+        out[cell.id] = { x, y };
       cell.x = x;
       cell.y = y;
     }
     const o = map.get(cell.outputNodeId ?? "");
-    const ox = o ? toSlot(id, o, wasY) ? pair.outputX : Math.max(o.x, pair.outputX) : 0;
+    const ox = o ? toSlot(cell.id, o, wasY) ? pair.outputX : Math.max(o.x, pair.outputX) : 0;
     if (o && (o.x !== ox || o.y !== y)) {
       if (out)
         out[o.id] = { x: ox, y };
       o.x = ox;
       o.y = y;
     }
+  };
+  const members = pair.column.cellIds.map((id) => map.get(id));
+  const own = new Set(pair.column.cellIds);
+  const anchored = members.map((cell) => {
+    const s = riders.get(cell.id);
+    return { cell, at: s !== void 0 && !own.has(s) ? map.get(s)?.y : void 0 };
+  }).filter((a) => a.at !== void 0).sort((a, b) => a.at - b.at || a.cell.id.localeCompare(b.cell.id));
+  let prevRider = null;
+  for (const a of anchored) {
+    place(a.cell, prevRider === null ? a.at : Math.max(a.at, prevRider + GRID));
+    prevRider = rowBottom(a.cell, map);
+  }
+  const fixed = anchored.map((a) => a.cell);
+  const obstacles = [...obstaclesOf(pair, nodes, owners), ...fixed].sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));
+  const taken = new Set(fixed.map((c) => c.id));
+  let prevBottom = null;
+  for (const cell of members) {
+    if (taken.has(cell.id))
+      continue;
+    place(cell, prevBottom === null ? rowStart(snapGrid(cell.y), x, cell, fixed) : rowStart(prevBottom + GRID, x, cell, obstacles));
     prevBottom = rowBottom(cell, map);
   }
 }
@@ -4372,6 +4429,27 @@ function bumpGroup(node, nodes, owners, map, downward) {
   }
   return group;
 }
+function withRiders(moving, riders, map) {
+  const out = [...moving];
+  const seen = new Set(out.map((n) => n.id));
+  for (let i = 0; i < out.length; i++) {
+    for (const [target, source] of riders) {
+      if (source !== out[i].id || seen.has(target))
+        continue;
+      const rider = map.get(target);
+      if (!rider)
+        continue;
+      seen.add(target);
+      out.push(rider);
+      const o = map.get(rider.outputNodeId ?? "");
+      if (o && !seen.has(o.id)) {
+        seen.add(o.id);
+        out.push(o);
+      }
+    }
+  }
+  return out;
+}
 function nextBump(nodes, owners, pinned, active) {
   const moved = nodes.filter((n) => active.has(n.id)).sort((a, b) => a.id.localeCompare(b.id));
   const rest = [...nodes].sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));
@@ -4389,7 +4467,7 @@ function nextBump(nodes, owners, pinned, active) {
   }
   return null;
 }
-function resolveBumps(nodes, owners, pinned, placed, active, opts = {}) {
+function resolveBumps(nodes, owners, riders, pinned, placed, active, opts = {}) {
   const map = byId(nodes);
   const before = nodes.map((n) => ({ node: n, x: n.x, y: n.y }));
   for (let guard = opts.maxSteps ?? nodes.length * 4 + 32; guard > 0; guard--) {
@@ -4410,17 +4488,17 @@ function resolveBumps(nodes, owners, pinned, placed, active, opts = {}) {
         active.add(n.id);
       }
     else if (yields)
-      for (const n of bumpGroup(mover, nodes, owners, map, true)) {
+      for (const n of withRiders(bumpGroup(mover, nodes, owners, map, true), riders, map)) {
         n.y += drop;
         active.add(n.id);
       }
-    else
-      for (const n of bumpGroup(other, nodes, owners, map, true)) {
-        if (!pinned.has(n.id) && !held.has(n.id)) {
-          n.y += dy;
-          active.add(n.id);
-        }
+    else {
+      const group = bumpGroup(other, nodes, owners, map, true).filter((n) => !pinned.has(n.id) && !held.has(n.id));
+      for (const n of withRiders(group, riders, map).filter((n2) => !held.has(n2.id))) {
+        n.y += dy;
+        active.add(n.id);
       }
+    }
   }
   if (!nextBump(nodes, owners, pinned, active))
     return;
@@ -4449,6 +4527,7 @@ function layoutSection(input, opts = {}) {
   const map = byId(nodes);
   const movers = new Set(opts.moverIds ?? []);
   const owners = outputOwners(nodes);
+  const riders = opts.riders ?? /* @__PURE__ */ new Map();
   const pairs = derivePairs(nodes, deriveColumns(nodes, movers));
   const packed = {};
   const touched = /* @__PURE__ */ new Set();
@@ -4466,9 +4545,22 @@ function layoutSection(input, opts = {}) {
   if (opts.columnX !== void 0)
     touched.add(snapGrid(opts.columnX));
   const placed = new Set(pinned);
+  for (let more = true; more; ) {
+    more = false;
+    for (const [target, source] of riders) {
+      const r = map.get(target), s = map.get(source);
+      if (!r || !s || touched.has(snapGrid(r.x)) || !touched.has(snapGrid(s.x)))
+        continue;
+      touched.add(snapGrid(r.x));
+      more = true;
+    }
+  }
+  for (const target of riders.keys())
+    if (map.has(target))
+      pinned.add(target);
   for (const pair of pairs)
     if (touched.has(pair.column.x)) {
-      packColumn(pair, map, packed, (id, o, wasY) => movers.has(id) && o.y !== wasY);
+      packColumn(pair, nodes, map, riders, owners, packed, (id, o, wasY) => movers.has(id) && o.y !== wasY);
       for (const id of pair.column.cellIds) {
         pinned.add(id);
         const outId = map.get(id).outputNodeId;
@@ -4476,10 +4568,10 @@ function layoutSection(input, opts = {}) {
           pinned.add(outId);
       }
     }
-  resolveBumps(nodes, owners, pinned, placed, /* @__PURE__ */ new Set([...movers, ...Object.keys(packed)]), { report: opts.report, maxSteps: opts.maxSteps });
+  resolveBumps(nodes, owners, riders, pinned, placed, /* @__PURE__ */ new Set([...movers, ...Object.keys(packed)]), { report: opts.report, maxSteps: opts.maxSteps });
   return diff(input, nodes);
 }
-function reflowSection(input) {
+function reflowSection(input, opts = {}) {
   const nodes = clone(input);
   const map = byId(nodes);
   const owners = outputOwners(nodes);
@@ -4497,27 +4589,36 @@ function reflowSection(input) {
     adopt(n);
   for (const n of nodes.filter((n2) => isMember(n2, owners) && n2.type !== "code").sort(sweep))
     adopt(n);
-  const columns = deriveColumns(nodes);
-  const pairs = derivePairs(nodes, columns);
-  for (const pair of pairs)
-    packColumn(pair, map);
-  const tight = derivePairs(nodes, deriveColumns(nodes));
-  for (let i = 1; i < tight.length; i++) {
-    const want = gridUp(tight[i - 1].right + GRID);
-    const dx = want - tight[i].column.x;
-    if (dx === 0)
-      continue;
-    for (const id of tight[i].column.cellIds) {
-      const cell = map.get(id);
-      cell.x += dx;
-      const o = map.get(cell.outputNodeId ?? "");
-      if (o)
-        o.x += dx;
+  const riders = opts.riders ?? /* @__PURE__ */ new Map();
+  const packAll = () => {
+    for (const pair of derivePairs(nodes, deriveColumns(nodes)))
+      packColumn(pair, nodes, map, riders, owners);
+  };
+  packAll();
+  for (let round = 0; round < 8; round++) {
+    const tight = derivePairs(nodes, deriveColumns(nodes));
+    let moved = false;
+    for (let i = 1; i < tight.length; i++) {
+      const want = gridUp(tight[i - 1].right + GRID);
+      const dx = want - tight[i].column.x;
+      if (dx === 0)
+        continue;
+      for (const id of tight[i].column.cellIds) {
+        const cell = map.get(id);
+        cell.x += dx;
+        const o = map.get(cell.outputNodeId ?? "");
+        if (o)
+          o.x += dx;
+      }
+      tight[i].column.x += dx;
+      tight[i].outputX += dx;
+      tight[i].right += dx;
+      moved = true;
     }
-    tight[i].column.x += dx;
-    tight[i].outputX += dx;
-    tight[i].right += dx;
+    if (!moved)
+      break;
   }
+  packAll();
   return diff(input, nodes);
 }
 function insertAfter(nodes, afterId) {
@@ -5331,7 +5432,8 @@ function applyEngine(d, movers, holes = [], report, anchor) {
       jobs.push({ members, columnX: h.columnX });
   }
   for (const job of jobs) {
-    const patches = layoutSection(toEngineNodes(d.nodes.filter((n) => job.members.has(n.id))), { moverIds: job.moverIds, columnX: job.columnX, report });
+    const members = toEngineNodes(d.nodes.filter((n) => job.members.has(n.id)));
+    const patches = layoutSection(members, { moverIds: job.moverIds, columnX: job.columnX, riders: ridersOf(members, d.edges), report });
     if (Object.keys(patches).length === 0)
       continue;
     d.nodes = applyPatchesToCanvas(d.nodes, patches);
@@ -5882,8 +5984,15 @@ async function canvasAddEdge(args) {
       ...args.color ? { color: args.color } : {}
     };
     d.edges.push(edge);
+    const before = geomOf(d);
+    const report = {};
+    const around = sectionEngineNodes(d.nodes, d.metadata?.sections ?? [], tn.id) ?? toEngineNodes(d.nodes);
+    if (ridersOf(around, [edge]).has(tn.id)) {
+      Object.assign(d, applyLaneFit(d, Date.now(), applyEngine(d, [tn.id], [], report)));
+    }
+    const moved = movedLabels(d, before);
     await writeCanvas(p, d);
-    return `Connected ${fn.nodeLabel ?? fn.id} \u2192 ${tn.nodeLabel ?? tn.id}  (edge id: ${edge.id})`;
+    return `Connected ${fn.nodeLabel ?? fn.id} \u2192 ${tn.nodeLabel ?? tn.id}  (edge id: ${edge.id})` + (moved.length ? ` \u2014 moved ${moved.join(", ")}` : "") + (report.capped ? ` \u2014 ${CAPPED_NOTE}` : "");
   });
 }
 async function canvasUpdateEdge(args) {
@@ -5893,6 +6002,8 @@ async function canvasUpdateEdge(args) {
     const e = findEdge(d, args.ref);
     if (!e)
       return `Edge not found: ${JSON.stringify(args.ref)}`;
+    const around = sectionEngineNodes(d.nodes, d.metadata?.sections ?? [], e.toNode) ?? toEngineNodes(d.nodes);
+    const was = ridersOf(around, [e]).has(e.toNode);
     if (args.label !== void 0)
       e.label = args.label;
     if (args.color !== void 0)
@@ -5901,8 +6012,14 @@ async function canvasUpdateEdge(args) {
       e.fromSide = args.fromSide;
     if (args.toSide !== void 0)
       e.toSide = args.toSide;
+    const before = geomOf(d);
+    const report = {};
+    if (ridersOf(around, [e]).has(e.toNode) !== was) {
+      Object.assign(d, applyLaneFit(d, Date.now(), applyEngine(d, [e.toNode], [], report)));
+    }
+    const moved = movedLabels(d, before);
     await writeCanvas(p, d);
-    return `Updated edge ${e.id}`;
+    return `Updated edge ${e.id}` + (moved.length ? ` \u2014 moved ${moved.join(", ")}` : "") + (report.capped ? ` \u2014 ${CAPPED_NOTE}` : "");
   });
 }
 async function canvasRemoveEdge(args) {
@@ -5912,9 +6029,16 @@ async function canvasRemoveEdge(args) {
     const e = findEdge(d, args.ref);
     if (!e)
       return `Edge not found: ${JSON.stringify(args.ref)}`;
+    const around = sectionEngineNodes(d.nodes, d.metadata?.sections ?? [], e.toNode) ?? toEngineNodes(d.nodes);
+    const released = ridersOf(around, [e]).has(e.toNode);
     d.edges = d.edges.filter((x) => x.id !== e.id);
+    const before = geomOf(d);
+    const report = {};
+    if (released)
+      Object.assign(d, applyLaneFit(d, Date.now(), applyEngine(d, [e.toNode], [], report)));
+    const moved = movedLabels(d, before);
     await writeCanvas(p, d);
-    return `Removed edge ${e.id}`;
+    return `Removed edge ${e.id}` + (moved.length ? ` \u2014 moved ${moved.join(", ")}` : "") + (report.capped ? ` \u2014 ${CAPPED_NOTE}` : "");
   });
 }
 async function canvasLayout(args) {
@@ -6353,7 +6477,8 @@ async function canvasReflowSection(args) {
     const derived = deriveLanes(d.nodes, lanes).find((l) => l.id === lane.id);
     const label = derived?.label ?? lane.id;
     const members = new Set(derived?.memberIds ?? []);
-    const patches = reflowSection(toEngineNodes(d.nodes.filter((n) => members.has(n.id))));
+    const around = toEngineNodes(d.nodes.filter((n) => members.has(n.id)));
+    const patches = reflowSection(around, { riders: ridersOf(around, d.edges) });
     const count = Object.keys(patches).length;
     if (count === 0)
       return `Reflowed ${label}: nothing moved`;
