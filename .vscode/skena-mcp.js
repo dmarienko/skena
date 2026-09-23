@@ -4555,9 +4555,11 @@ function layoutSection(input, opts = {}) {
       more = true;
     }
   }
-  for (const target of riders.keys())
-    if (map.has(target))
+  for (const target of riders.keys()) {
+    const t = map.get(target);
+    if (t && touched.has(snapGrid(t.x)))
       pinned.add(target);
+  }
   for (const pair of pairs)
     if (touched.has(pair.column.x)) {
       packColumn(pair, nodes, map, riders, owners, packed, (id, o, wasY) => movers.has(id) && o.y !== wasY);
