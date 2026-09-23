@@ -138,6 +138,41 @@ One algorithm behind every row of §2, run per section:
 5. **Determinism.** Same input → same output; the result holds only the nodes that changed; a second
    run on the result changes nothing.
 
+### 3.4 Wide cells are obstacles, not column widths (decided 2026-09-23)
+
+A node whose x-span crosses a column is an obstacle for that column, whatever column it belongs to.
+Packing a column skips over obstacles: a member's row starts at `prevBottom + GRID`, and while that
+row would intersect an obstacle (an obstacle's y-span meets `[y, y + h)` and its x-span meets the
+member's), it moves to `obstacle.bottom + GRID`. Outputs still ride at their cell's row; a collision
+there is left to the bump rule as before.
+
+A member that crosses the NEXT column's x is a spanning cell: it keeps its place in its column's
+y-order but does not widen the column — the pair's width and the tight pass use the widest member
+that does not cross the next column. So on H4's S2 the 1500-wide E15 in column 0 no longer sends
+column 800 to x 2300 on Reflow, and a cell packed into column 800 lands under E15 (y 1100), not
+inside it (y 600).
+
+### 3.5 A sequence edge anchors its target to the source's row (decided 2026-09-23)
+
+A code cell that is the target of a sequence edge (code → code) leaving the source's right border
+and entering the target's left border, with the source in a column strictly left of the target's,
+rides on the source's row: its y is the source's y, the way an output rides on its cell. In its own
+column it is a fixed row: the other members pack around it (§3.4 treats it as an obstacle of its
+own column). When the source moves, the rider moves with it, and the rider's column is re-packed.
+Two riders on one row in one column stack, the second under the first (id order). A rider whose
+source sits in the same column, or in a column to the right, is not a rider — those edges stay
+drawings.
+
+Removing the edge releases the cell: the webview runs the engine for the target's column at once
+and the cell packs up to its ceiling (E14 lifts to y 1100 under E15). Adding such an edge anchors
+the target at once (it moves onto the source's row; its old column re-packs).
+
+The engine takes the anchoring as an input: `layoutSection(nodes, { riders })` /
+`reflowSection(nodes, { riders })` with `riders: Map<targetId, sourceId>`, computed by every caller
+from the canvas edges with one shared pure `ridersOf(nodes, edges)` in `layoutEngine.ts`. Callers:
+the webview (`runEngine`, `runEngineAfterMove`, edge add/remove), the host (`layoutAround`), the
+MCP server (`applyEngine`, `canvas_add_edge`, `canvas_remove_edge`).
+
 ## 4. Reflow, MCP, undo, phases
 
 - **Reflow section** — rail segment menu entry and MCP `canvas_reflow_section(ref)`. The only time
