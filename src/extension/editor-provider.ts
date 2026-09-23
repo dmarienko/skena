@@ -76,7 +76,7 @@ import { parseNodeRef } from '../shared/nodeRef';
 import { MAX_FILE_FULL_BYTES, MAX_FILE_PREVIEW_BYTES, MAX_NOTEBOOK_BYTES, NODE_SIZE } from '../shared/constants';
 import { normalizeCanvasToOrigin } from '../shared/bounds';
 import { migrateSections, memberCodeCellsInRunOrder, applyLaneFit, outputCellGeom, pinOutputToLane } from '../shared/sectionLanes';
-import { layoutSection, placeOutput, applyPatchesToCanvas, sectionEngineNodes, sectionMembership, type LayoutOpts } from '../shared/layoutEngine';
+import { layoutSection, placeOutput, applyPatchesToCanvas, ridersOf, sectionEngineNodes, sectionMembership, type LayoutOpts } from '../shared/layoutEngine';
 
 // - where a run's output cell goes: its pair's output column, its code cell's y. The fallback covers
 //   a canvas with no sections; a code cell inside one is always in a column, so it cannot miss there.
@@ -100,7 +100,9 @@ function layoutAround(canvas: CanvasData, nodeId: string, opts: LayoutOpts, join
   const around   = sectionEngineNodes(canvas.nodes, sections, nodeId, joining);
   if (!around) return new Map();
   const own = sectionMembership(canvas.nodes, sections, nodeId, joining);
-  canvas.nodes = applyPatchesToCanvas(canvas.nodes, layoutSection(around, opts));
+  // - the cells a sequence edge holds on another cell's row (§3.5), as the webview reads them
+  const riders = ridersOf(around, canvas.edges);
+  canvas.nodes = applyPatchesToCanvas(canvas.nodes, layoutSection(around, { ...opts, riders }));
   return own;
 }
 

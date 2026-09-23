@@ -61,7 +61,7 @@ import { EdgeFollowHints, type EdgeHint } from './EdgeFollowHints';
 import { SectionRail, type RailKernel } from '../rail/SectionRail';
 import { fmtDateTime } from '../rail/RailSegment';
 import { allFolded, deriveLanes, fitLanes, groupIdsByLane, sortLanes, insertLaneAt, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
-import { applyPatchesToCanvas, codeCellHeight, columnsOfDeleted as columnsOfDeletedIn, forkOf, insertAfter, layoutSection, reflowSection, sectionEngineNodes, sectionMembership, type EngineNode, type LayoutOpts, type Patches } from '../../shared/layoutEngine';
+import { applyPatchesToCanvas, codeCellHeight, columnsOfDeleted as columnsOfDeletedIn, forkOf, insertAfter, layoutSection, reflowSection, ridersOf, sectionEngineNodes, sectionMembership, type EngineNode, type LayoutOpts, type Patches } from '../../shared/layoutEngine';
 import { useLaneFit, flowGeom } from '../rail/useLaneFit';
 import { connectionLabels, findNearestNode, focusAfterDelete, revealPan, type ConnectionLabel, type EdgeSideContext, type NavDir, type NavNode, type Rect } from './spatialNav';
 import { CanvasSearch } from './CanvasSearch';
@@ -978,7 +978,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     // - a section too dense for the bump walk to clear leaves overlaps behind: say so, as the MCP
     //   replies do, rather than leaving the user to find them
     const report: { capped?: boolean } = {};
-    const patches = opts.reflow ? reflowSection(engineNodes) : layoutSection(engineNodes, { ...opts, report });
+    // - the cells a sequence edge holds on another cell's row (§3.5), read off the live edges
+    const riders = ridersOf(engineNodes, canvasRef.current.edges);
+    const patches = opts.reflow ? reflowSection(engineNodes, { riders }) : layoutSection(engineNodes, { ...opts, riders, report });
     if (report.capped) {
       const sectionId = anchor.sectionId ?? deriveLanes(canvasRef.current.nodes, canvasRef.current.metadata?.sections ?? [])
         .find(l => anchor.nodeId !== undefined && l.memberIds.includes(anchor.nodeId))?.id ?? '';
@@ -1012,6 +1014,25 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       const grabbed = grabbedId !== undefined && moverIds.includes(grabbedId) ? grabbedId : moverIds[0];
       runEngine({ nodeId: grabbed }, { moverIds });
     }
+  }, [runEngine]);
+
+  /**
+   * Which cells these edges hold on another cell's row (§3.5). Read it with the canvas as it stands
+   * — BEFORE an edge or its source goes, since afterwards nothing says the cell was ever held there.
+   */
+  const anchoredBy = useCallback((changed: CanvasEdge[]): string[] => {
+    const held = new Set<string>();
+    for (const e of changed) {
+      const around = engineNodesOf({ nodeId: e.toNode });
+      if (around && ridersOf(around, [e]).has(e.toNode)) held.add(e.toNode);
+    }
+    return [...held];
+  }, [engineNodesOf]);
+
+  // - and the run that follows the edge change: each cell moves onto its source's row, or packs up
+  //   the column the edge was holding it out of
+  const runEngineForCells = useCallback((ids: string[]) => {
+    for (const id of ids) runEngine({ nodeId: id }, { moverIds: [id] });
   }, [runEngine]);
 
   // - a delete leaves a hole nothing moved into: read, BEFORE the removal, which column of which
@@ -1132,6 +1153,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     }
     pushHistory();
     const doomed = new Set(target.memberIds);
+    // - a surviving cell an edge held on a deleted cell's row is released and packs up (§3.5)
+    const released = anchoredBy(canvasRef.current.edges.filter(e => doomed.has(e.fromNode) || doomed.has(e.toNode)))
+      .filter(id => !doomed.has(id));
     setNodes(nds => nds.filter(n => !doomed.has(n.id)));
     setEdges(eds => eds.filter(e => !doomed.has(e.source) && !doomed.has(e.target)));
     canvasRef.current = {
@@ -1140,7 +1164,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       edges: canvasRef.current.edges.filter(e => !doomed.has(e.fromNode) && !doomed.has(e.toNode)),
     };
     commitLanes(parkFirstLaneAtOrigin(pruneFoldedIds(lanes.filter(l => l.id !== id), doomed)));
-  }, [derivedLanes, lanes, commitLanes, pushHistory, setNodes, setEdges]);
+    runEngineForCells(released);
+  }, [derivedLanes, lanes, commitLanes, pushHistory, setNodes, setEdges, anchoredBy, runEngineForCells]);
 
   const handleRunLane = useCallback((id: string) => {
     vscodePostMessage({ type: 'runSection', sectionId: id });
@@ -1379,13 +1404,17 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           .map(e => e.id),
       );
     }
+    // - a sequence edge right → left anchors its target on the source's row, and the input edge it
+    //   replaces released one: read both while the old edges are still there (§3.5)
+    const held = anchoredBy([...canvasRef.current.edges.filter(e => staleIds.has(e.id)), newEdge]);
     setEdges(eds => addEdge(toFlowEdge(newEdge), eds.filter(e => !staleIds.has(e.id))));
     canvasRef.current = {
       ...canvasRef.current,
       edges: [...canvasRef.current.edges.filter(e => !staleIds.has(e.id)), newEdge],
     };
     scheduleSave();
-  }, [setEdges, scheduleSave, pushHistory]);
+    runEngineForCells(held);
+  }, [setEdges, scheduleSave, pushHistory, anchoredBy, runEngineForCells]);
 
   // - drop connection on node body (not on a specific handle) → connect to nearest side
   const onConnectEnd: OnConnectEnd = useCallback((event, connectionState) => {
@@ -1478,6 +1507,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     for (const id of deletedIds) spaceSelectedRef.current.delete(id);
     const holes = columnsOfDeleted(deletedIds);
     const sectionOf = sectionOfNodes();
+    // - a surviving cell an edge held on a deleted cell's row is released and packs up (§3.5)
+    const released = anchoredBy(canvasRef.current.edges.filter(e => deletedIds.has(e.fromNode) || deletedIds.has(e.toNode)))
+      .filter(id => !deletedIds.has(id));
     const updated: CanvasData = {
       ...canvasRef.current,                                                                       // - preserve viewport, metadata, etc.
       nodes: canvasRef.current.nodes.filter(n => !deletedIds.has(n.id)),
@@ -1500,12 +1532,14 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       setNodes(nds => nds.map(n => n.id === id ? { ...n, data: { ...n.data, outputNodeId: undefined } } : n));
       scheduleSave();
       for (const h of holes) runEngine({ sectionId: h.sectionId }, { columnX: h.columnX });
+      runEngineForCells(released);
       requestAnimationFrame(() => focusNodeById(id));
       return;
     }
     scheduleSave();
     // - the column closes the hole the delete left; nothing else moves
     for (const h of holes) runEngine({ sectionId: h.sectionId }, { columnX: h.columnX });
+    runEngineForCells(released);
 
     // - auto-focus the nearest surviving node so spatial navigation resumes immediately
     const bestId = nextFocusAfterDelete(deleted, sectionOf);
@@ -1517,18 +1551,21 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     }
   // - focusNodeById is a stable useCallback declared below; nodesRef always current
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scheduleSave, pushHistory, pruneFolded, runEngine, columnsOfDeleted, sectionOfNodes, nextFocusAfterDelete]);
+  }, [scheduleSave, pushHistory, pruneFolded, runEngine, columnsOfDeleted, sectionOfNodes, nextFocusAfterDelete, anchoredBy, runEngineForCells]);
 
   const onEdgesDelete = useCallback((deleted: Edge[]) => {
     pushHistory();
     const deletedIds = new Set(deleted.map(e => e.id));
+    // - a cell one of these edges held on its source's row is released and packs up (§3.5)
+    const held = anchoredBy(canvasRef.current.edges.filter(e => deletedIds.has(e.id)));
     const updated: CanvasData = {
       ...canvasRef.current,
       edges: canvasRef.current.edges.filter(e => !deletedIds.has(e.id)),
     };
     canvasRef.current = updated;
     scheduleSave();
-  }, [scheduleSave, pushHistory]);
+    runEngineForCells(held);
+  }, [scheduleSave, pushHistory, anchoredBy, runEngineForCells]);
 
   const onNodeDoubleClick = useCallback((_: React.MouseEvent, node: Node) => {
     // - open file in VS Code editor on Cmd+click is handled inside FileNode itself
@@ -2256,6 +2293,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     const holes = columnsOfDeleted(deletedIds);
     const sectionOf = sectionOfNodes();
 
+    // - a surviving cell an edge held on a deleted cell's row is released and packs up (§3.5)
+    const released = anchoredBy(canvasRef.current.edges.filter(e => deletedIds.has(e.fromNode) || deletedIds.has(e.toNode)))
+      .filter(id => !deletedIds.has(id));
     const updated: CanvasData = {
       ...canvasRef.current,                                                                       // - preserve viewport, metadata, etc.
       nodes: canvasRef.current.nodes.filter(n => !deletedIds.has(n.id)),
@@ -2279,6 +2319,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       setEdges(eds => eds.filter(e => !deletedIds.has(e.source) && !deletedIds.has(e.target)));
       scheduleSave();
       for (const h of holes) runEngine({ sectionId: h.sectionId }, { columnX: h.columnX });
+      runEngineForCells(released);
       requestAnimationFrame(() => focusNodeById(id));
       return;
     }
@@ -2287,11 +2328,12 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     scheduleSave();
     // - the column closes the hole the delete left; nothing else moves
     for (const h of holes) runEngine({ sectionId: h.sectionId }, { columnX: h.columnX });
+    runEngineForCells(released);
 
     // - focus the nearest surviving node (same logic as onNodesDelete)
     const bestId = nextFocusAfterDelete(toDelete, sectionOf);
     if (bestId) { const id = bestId; requestAnimationFrame(() => focusNodeById(id)); }
-  }, [setNodes, setEdges, pushHistory, scheduleSave, focusNodeById, pruneFolded, runEngine, columnsOfDeleted, sectionOfNodes, nextFocusAfterDelete]);
+  }, [setNodes, setEdges, pushHistory, scheduleSave, focusNodeById, pruneFolded, runEngine, columnsOfDeleted, sectionOfNodes, nextFocusAfterDelete, anchoredBy, runEngineForCells]);
 
   // - confirm a destructive delete via a host modal; resolves when doDelete arrives
   const confirmResolveRef = useRef<((v: boolean) => void) | null>(null);
@@ -3076,8 +3118,12 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         if (existing.length > 0) {
           // - disconnect: remove all edges between the two nodes
           const toRemove = new Set(existing.map(ce => ce.id));
+          const held = anchoredBy(existing);
           setEdges(eds => eds.filter(fe => !toRemove.has(fe.id)));
           canvasRef.current = { ...canvasRef.current, edges: canvasRef.current.edges.filter(ce => !toRemove.has(ce.id)) };
+          scheduleSave();
+          runEngineForCells(held);
+          return;
         } else {
           // - connect: add edge with sides chosen by direction vector between centres
           const pw = Number(pinnedNode.style?.width  ?? 400), ph = Number(pinnedNode.style?.height ?? 300);
@@ -3094,11 +3140,13 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
             toSide,
             toEnd:    'arrow',
           };
+          const held = anchoredBy([newEdge]);
           setEdges(eds => addEdge(toFlowEdge(newEdge), eds));
           canvasRef.current = { ...canvasRef.current, edges: [...canvasRef.current.edges, newEdge] };
+          scheduleSave();
+          runEngineForCells(held);
+          return;
         }
-        scheduleSave();
-        return;
       }
 
       const dir = keyToDir(e.key);
@@ -3179,7 +3227,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       gLabelsRef.current = EMPTY_LABELS;
       setGHints([]);
     };
-  }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, closeKnowledge, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToRegister, engineNodesOf, runEngineAfterMove, canvasPath]); // - nodesRef + spaceSelectedRef carry live state
+  }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, closeKnowledge, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToRegister, engineNodesOf, runEngineAfterMove, anchoredBy, runEngineForCells, canvasPath]); // - nodesRef + spaceSelectedRef carry live state
 
   // - expose a viewport snapshot for the AI companion (what the user actually sees:
   // - zoom, on-screen node labels, scroll position within the focused node)

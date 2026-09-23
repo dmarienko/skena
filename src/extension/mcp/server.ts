@@ -34,7 +34,7 @@ import { NODE_SIZE, OUTPUT_MAX_W, OUTPUT_MAX_H } from '../../shared/constants';
 import { clampToOrigin } from '../../shared/bounds';
 import { applyLaneFit, deriveLanes, outputCellGeom, pinOutputToLane, pruneFoldedIds, sectionByRef, insertLaneAt, foldLane, unfoldLane, sectionTargetHeight, parkFirstLaneAtOrigin, memberCodeCellsInRunOrder, type SectionLane } from '../../shared/sectionLanes';
 import { resolveCellKernel, cellKernelView, kernelById, upstreamCellsForRun, resolveKernelCellsInCanvas, type KernelLike } from '../../shared/kernelBinding';
-import { layoutSection, reflowSection, insertAfter, forkOf, placeOutput, applyPatchesToCanvas, columnsOfDeleted, sectionEngineNodes, sectionMembership, toEngineNodes, codeCellHeight, estimateCodeNeedPx } from '../../shared/layoutEngine';
+import { layoutSection, reflowSection, insertAfter, forkOf, placeOutput, applyPatchesToCanvas, columnsOfDeleted, ridersOf, sectionEngineNodes, sectionMembership, toEngineNodes, codeCellHeight, estimateCodeNeedPx } from '../../shared/layoutEngine';
 import { resolveKernelConfig, type KernelServerConfig } from '../jupyter/config';
 import { executeCell, startKernel, shutdownKernel } from '../jupyter/client';
 import { renderOutput, hasVisibleOutput } from '../jupyter/output';
@@ -367,7 +367,9 @@ function applyEngine(d: CanvasData, movers: string[], holes: { sectionId: string
   for (const h of holes) { const members = take(h.sectionId); if (members) jobs.push({ members, columnX: h.columnX }); }
 
   for (const job of jobs) {
-    const patches = layoutSection(toEngineNodes(d.nodes.filter(n => job.members.has(n.id))), { moverIds: job.moverIds, columnX: job.columnX, report });
+    const members = toEngineNodes(d.nodes.filter(n => job.members.has(n.id)));
+    // - the cells a sequence edge holds on another cell's row (§3.5), as the webview reads them
+    const patches = layoutSection(members, { moverIds: job.moverIds, columnX: job.columnX, riders: ridersOf(members, d.edges), report });
     if (Object.keys(patches).length === 0) continue;
     d.nodes = applyPatchesToCanvas(d.nodes, patches);
   }
@@ -954,8 +956,19 @@ async function canvasAddEdge(args: Record<string, unknown>): Promise<string> {
     ...(args.color ? { color: args.color as CanvasEdge['color'] } : {}),
   };
   d.edges.push(edge);
+  // - a sequence edge right → left holds its target on the source's row (§3.5): the engine runs with
+  //   the target as the mover, as the webview does when the user draws one
+  const before = geomOf(d);
+  const report: { capped?: boolean } = {};
+  const around = sectionEngineNodes(d.nodes, d.metadata?.sections ?? [], tn.id) ?? toEngineNodes(d.nodes);
+  if (ridersOf(around, [edge]).has(tn.id)) {
+    Object.assign(d, applyLaneFit(d, Date.now(), applyEngine(d, [tn.id], [], report)));
+  }
+  const moved = movedLabels(d, before);
   await writeCanvas(p, d);
-  return `Connected ${fn.nodeLabel ?? fn.id} → ${tn.nodeLabel ?? tn.id}  (edge id: ${edge.id})`;
+  return `Connected ${fn.nodeLabel ?? fn.id} → ${tn.nodeLabel ?? tn.id}  (edge id: ${edge.id})`
+    + (moved.length ? ` — moved ${moved.join(', ')}` : '')
+    + (report.capped ? ` — ${CAPPED_NOTE}` : '');
   }); // - withFileLock
 }
 
@@ -980,9 +993,18 @@ async function canvasRemoveEdge(args: Record<string, unknown>): Promise<string> 
     const d = await readCanvas(p);
     const e = findEdge(d, args.ref);
     if (!e) return `Edge not found: ${JSON.stringify(args.ref)}`;
+    // - read it before the edge goes: afterwards nothing says the target was ever held on that row
+    const around = sectionEngineNodes(d.nodes, d.metadata?.sections ?? [], e.toNode) ?? toEngineNodes(d.nodes);
+    const released = ridersOf(around, [e]).has(e.toNode);
     d.edges = d.edges.filter(x => x.id !== e.id);
+    const before = geomOf(d);
+    const report: { capped?: boolean } = {};
+    if (released) Object.assign(d, applyLaneFit(d, Date.now(), applyEngine(d, [e.toNode], [], report)));
+    const moved = movedLabels(d, before);
     await writeCanvas(p, d);
-    return `Removed edge ${e.id}`;
+    return `Removed edge ${e.id}`
+      + (moved.length ? ` — moved ${moved.join(', ')}` : '')
+      + (report.capped ? ` — ${CAPPED_NOTE}` : '');
   }); // - withFileLock
 }
 
@@ -1462,7 +1484,8 @@ async function canvasReflowSection(args: Record<string, unknown>): Promise<strin
     const label   = derived?.label ?? lane.id;
 
     const members = new Set(derived?.memberIds ?? []);
-    const patches = reflowSection(toEngineNodes(d.nodes.filter(n => members.has(n.id))));
+    const around  = toEngineNodes(d.nodes.filter(n => members.has(n.id)));
+    const patches = reflowSection(around, { riders: ridersOf(around, d.edges) });
     const count   = Object.keys(patches).length;
     // - nothing moved: no write, so a reflow of a packed section leaves the file's mtime alone
     if (count === 0) return `Reflowed ${label}: nothing moved`;

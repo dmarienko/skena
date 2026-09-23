@@ -20,7 +20,9 @@ export interface Pair { column: Column; outputX: number; outputW: number; right:
 // - `report` is filled in by the call: `capped` says the bump walk stopped with overlaps still
 //   there (a dense section), so the caller can tell the user to reflow. `maxSteps` overrides how
 //   many steps that walk gets (default `nodes.length * 4 + 32`), which is how the cap is tested.
-export interface LayoutOpts { moverIds?: Iterable<string>; columnX?: number; report?: { capped?: boolean }; maxSteps?: number }
+// - `riders` is the anchoring of §3.5: target id → source id, one entry per cell that rides on
+//   another cell's row. Every caller builds it from the canvas edges with `ridersOf` below.
+export interface LayoutOpts { moverIds?: Iterable<string>; columnX?: number; riders?: Map<string, string>; report?: { capped?: boolean }; maxSteps?: number }
 
 const byId = (nodes: EngineNode[]) => new Map(nodes.map(n => [n.id, n] as const));
 
@@ -59,6 +61,29 @@ export function outputOwners(nodes: EngineNode[]): Map<string, string> {
   const ids = new Set(nodes.map(n => n.id));
   for (const n of nodes) if (n.type === 'code' && n.outputNodeId && ids.has(n.outputNodeId)) owners.set(n.outputNodeId, n.id);
   return owners;
+}
+
+/**
+ * Which cells ride on another cell's row (§3.5): target id → source id. A sequence edge counts when
+ * both ends are code cells of this section, it leaves the source's right border and enters the
+ * target's left one (a side the file leaves out is that border), and the source's column is strictly
+ * left of the target's. Everything else — a bottom-to-top edge down one column, an edge drawn back
+ * to the left — stays a drawing and moves nothing. A target several edges point at takes the leftmost
+ * source, ties going to the lower id, so the result does not depend on the edge order in the file.
+ */
+export function ridersOf(nodes: EngineNode[], edges: { fromNode: string; toNode: string; fromSide?: string; toSide?: string }[]): Map<string, string> {
+  const map = byId(nodes);
+  const best = new Map<string, EngineNode>();
+  for (const e of edges) {
+    if ((e.fromSide ?? 'right') !== 'right' || (e.toSide ?? 'left') !== 'left') continue;
+    const from = map.get(e.fromNode);
+    const to   = map.get(e.toNode);
+    if (!from || !to || from.type !== 'code' || to.type !== 'code') continue;
+    if (snapGrid(from.x) >= snapGrid(to.x)) continue;
+    const held = best.get(to.id);
+    if (!held || snapGrid(from.x) < snapGrid(held.x) || (snapGrid(from.x) === snapGrid(held.x) && from.id < held.id)) best.set(to.id, from);
+  }
+  return new Map([...best].map(([target, source]) => [target, source.id] as const));
 }
 
 // - a kernel badge is a 140×160 marker the user parks where they like, so it is no column member:
@@ -173,27 +198,46 @@ function rowStart(start: number, x: number, member: EngineNode, obstacles: Engin
 }
 
 // - pack one column tight top → bottom, whatever the node types in it, around whatever crosses it;
-//   outputs take their code cell's y and are placed here rather than as members. `toSlot` decides
-//   whether an output also goes back to the pair's x slot: Reflow (the explicit tidy) takes every one
-//   of them, a regular call only the ones whose pair the operation itself broke. An output the user
-//   parked overlaps nothing where it is, so pulling it left starts a bump the section never needed.
-function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode>, out?: Patches, toSlot: (cellId: string, output: EngineNode, wasY: number) => boolean = () => true): void {
-  let prevBottom: number | null = null;
-  // - in y order, and nothing this pack moves is in the list, so one ordering serves every member
-  const obstacles = obstaclesOf(pair, nodes).sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));
-  for (const id of pair.column.cellIds) {
-    const cell = map.get(id)!;
+//   outputs take their code cell's y and are placed here rather than as members, and a rider takes
+//   its source's row (§3.5) rather than a slot in the stack. `toSlot` decides whether an output also
+//   goes back to the pair's x slot: Reflow (the explicit tidy) takes every one of them, a regular
+//   call only the ones whose pair the operation itself broke. An output the user parked overlaps
+//   nothing where it is, so pulling it left starts a bump the section never needed.
+function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode>, riders: Map<string, string>, out?: Patches, toSlot: (cellId: string, output: EngineNode, wasY: number) => boolean = () => true): void {
+  const x = pair.column.x;
+  const place = (cell: EngineNode, y: number) => {
     const wasY = cell.y;
-    const x = pair.column.x;
+    if (x !== cell.x || y !== cell.y) { if (out) out[cell.id] = { x, y }; cell.x = x; cell.y = y; }
+    const o = map.get(cell.outputNodeId ?? '');
+    const ox = o ? (toSlot(cell.id, o, wasY) ? pair.outputX : Math.max(o.x, pair.outputX)) : 0;
+    if (o && (o.x !== ox || o.y !== y)) { if (out) out[o.id] = { x: ox, y }; o.x = ox; o.y = y; }
+  };
+  const members = pair.column.cellIds.map(id => map.get(id)!);
+  // - the riders first, each on the row of the cell its edge comes from (§3.5), two on one row
+  //   stacking in id order. A rider whose source is not in this section is no rider: it packs.
+  const anchored = members
+    .map(cell => ({ cell, at: map.get(riders.get(cell.id) ?? '')?.y }))
+    .filter((a): a is { cell: EngineNode; at: number } => a.at !== undefined)
+    .sort((a, b) => a.at - b.at || a.cell.id.localeCompare(b.cell.id));
+  let prevRider: number | null = null;
+  for (const a of anchored) {
+    place(a.cell, prevRider === null ? a.at : Math.max(a.at, prevRider + GRID));
+    prevRider = rowBottom(a.cell, map);
+  }
+  // - in y order, and nothing else this pack moves is in the list, so one ordering serves every
+  //   member. The riders join it: they are fixed rows the rest of the column packs around.
+  const fixed = anchored.map(a => a.cell);
+  const obstacles = [...obstaclesOf(pair, nodes), ...fixed].sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));
+  const taken = new Set(fixed.map(c => c.id));
+  let prevBottom: number | null = null;
+  for (const cell of members) {
+    if (taken.has(cell.id)) continue;
     // - the head of the column keeps its own y, obstacles or not: it is where the user left it (or
     //   where they just dropped it), and a node it lands on is the bumps' business (§3.2). Only a
     //   stacked row skips, which is what puts a cell packed into the column under the wide cell
-    //   crossing it rather than inside it.
-    const y = prevBottom === null ? snapGrid(cell.y) : rowStart(prevBottom + GRID, x, cell, obstacles);
-    if (x !== cell.x || y !== cell.y) { if (out) out[id] = { x, y }; cell.x = x; cell.y = y; }
-    const o = map.get(cell.outputNodeId ?? '');
-    const ox = o ? (toSlot(id, o, wasY) ? pair.outputX : Math.max(o.x, pair.outputX)) : 0;
-    if (o && (o.x !== ox || o.y !== y)) { if (out) out[o.id] = { x: ox, y }; o.x = ox; o.y = y; }
+    //   crossing it rather than inside it. A rider's row is the exception the head does clear: this
+    //   same pack has just put it there, and neither of the two would give way to a bump.
+    place(cell, prevBottom === null ? rowStart(snapGrid(cell.y), x, cell, fixed) : rowStart(prevBottom + GRID, x, cell, obstacles));
     prevBottom = rowBottom(cell, map);
   }
 }
@@ -211,6 +255,25 @@ function bumpGroup(node: EngineNode, nodes: EngineNode[], owners: Map<string, st
   const group = [...taken];
   for (const c of taken) { const o = map.get(c.outputNodeId ?? ''); if (o) group.push(o); }
   return group;
+}
+
+// - the nodes a downward bump moves, plus the riders of every one of them and those riders' outputs
+//   (§3.5): a source that drops without its riders leaves them off the row they are anchored to. The
+//   list grows as it is walked, so a rider of a rider comes too.
+function withRiders(moving: EngineNode[], riders: Map<string, string>, map: Map<string, EngineNode>): EngineNode[] {
+  const out = [...moving];
+  const seen = new Set(out.map(n => n.id));
+  for (let i = 0; i < out.length; i++) {
+    for (const [target, source] of riders) {
+      if (source !== out[i].id || seen.has(target)) continue;
+      const rider = map.get(target);
+      if (!rider) continue;
+      seen.add(target); out.push(rider);
+      const o = map.get(rider.outputNodeId ?? '');
+      if (o && !seen.has(o.id)) { seen.add(o.id); out.push(o); }
+    }
+  }
+  return out;
 }
 
 // - the overlap to resolve next: the nodes this call moved, in id order, against every other node by
@@ -245,7 +308,7 @@ function nextBump(nodes: EngineNode[], owners: Map<string, string>, pinned: Set<
  * does not actually reach is left alone. `report.capped` is set when the walk ran out of steps with
  * overlaps still on the section.
  */
-function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, pinned: Set<string>, placed: Set<string>, active: Set<string>, opts: { report?: { capped?: boolean }; maxSteps?: number } = {}): void {
+function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, riders: Map<string, string>, pinned: Set<string>, placed: Set<string>, active: Set<string>, opts: { report?: { capped?: boolean }; maxSteps?: number } = {}): void {
   const map = byId(nodes);
   const before = nodes.map(n => ({ node: n, x: n.x, y: n.y }));
   // - the cap is a real limit, not a formality: a dense section (a diagonal staircase, a tight grid)
@@ -281,9 +344,15 @@ function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, pinned: 
     //   exactly as it was — the same walk that never closes as a column sliding with it. It is held
     //   back, and its pair partner with it, so a code cell and its output stay on one row.
     const held = new Set([mover.id, owners.get(mover.id) ?? mover.outputNodeId ?? '']);
+    // - a rider is pinned, so no bump moves it on its own; it moves when its SOURCE does, which is
+    //   what keeps it on that source's row. A sideways step leaves every y alone, so the riders stay
+    //   where they are; a downward one takes them, and their outputs, with the source.
     if (sideways) for (const n of column) { n.x += dx; active.add(n.id); }
-    else if (yields) for (const n of bumpGroup(mover, nodes, owners, map, true)) { n.y += drop; active.add(n.id); }
-    else for (const n of bumpGroup(other, nodes, owners, map, true)) { if (!pinned.has(n.id) && !held.has(n.id)) { n.y += dy; active.add(n.id); } }
+    else if (yields) for (const n of withRiders(bumpGroup(mover, nodes, owners, map, true), riders, map)) { n.y += drop; active.add(n.id); }
+    else {
+      const group = bumpGroup(other, nodes, owners, map, true).filter(n => !pinned.has(n.id) && !held.has(n.id));
+      for (const n of withRiders(group, riders, map).filter(n => !held.has(n.id))) { n.y += dy; active.add(n.id); }
+    }
   }
   // - the last allowed step may be the one that cleared the section: out of steps is not out of
   //   overlaps, so ask once more before undoing anything
@@ -315,6 +384,7 @@ export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patch
   const map = byId(nodes);
   const movers = new Set(opts.moverIds ?? []);
   const owners = outputOwners(nodes);
+  const riders = opts.riders ?? new Map<string, string>();
   const pairs = derivePairs(nodes, deriveColumns(nodes, movers));
   const packed: Patches = {};
 
@@ -335,21 +405,38 @@ export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patch
   // - the nodes the operation itself placed, before the pack adds its column: the only ones that
   //   yield downward to a node above them
   const placed = new Set(pinned);
+  // - a rider sits on its source's row, so the column of every rider of a cell in a touched column is
+  //   touched too, and its riders in turn. The pairs run left → right below, and a source is always
+  //   in a column left of its rider, so a source is packed before the rider that reads its y.
+  for (let more = true; more;) {
+    more = false;
+    for (const [target, source] of riders) {
+      const r = map.get(target), s = map.get(source);
+      if (!r || !s || touched.has(snapGrid(r.x)) || !touched.has(snapGrid(s.x))) continue;
+      touched.add(snapGrid(r.x)); more = true;
+    }
+  }
+  // - no bump moves a rider on its own: it goes where its source goes (§3.5), so anything it is in
+  //   the way of is what moves
+  for (const target of riders.keys()) if (map.has(target)) pinned.add(target);
 
   for (const pair of pairs) if (touched.has(pair.column.x)) {
     // - an output goes back on the slot when the operation moved its code cell AND left it off that
     //   cell's row: the pair is broken, and a cell the user dragged takes its output with it
-    packColumn(pair, nodes, map, packed, (id, o, wasY) => movers.has(id) && o.y !== wasY);
+    packColumn(pair, nodes, map, riders, packed, (id, o, wasY) => movers.has(id) && o.y !== wasY);
     // - the pack owns the column it just laid out: a bump moves what is in its way, never it, so the
     //   two never fight over the same cell and the next call packs it to the same place
     for (const id of pair.column.cellIds) { pinned.add(id); const outId = map.get(id)!.outputNodeId; if (outId) pinned.add(outId); }
   }
-  resolveBumps(nodes, owners, pinned, placed, new Set([...movers, ...Object.keys(packed)]), { report: opts.report, maxSteps: opts.maxSteps });
+  resolveBumps(nodes, owners, riders, pinned, placed, new Set([...movers, ...Object.keys(packed)]), { report: opts.report, maxSteps: opts.maxSteps });
   return diff(input, nodes);
 }
 
-/** Whole-section pack: every code cell snapped to its column, every column and every pair tight. */
-export function reflowSection(input: EngineNode[]): Patches {
+/**
+ * Whole-section pack: every code cell snapped to its column, every column and every pair tight.
+ * `riders` anchors the cells a sequence edge holds on another cell's row (§3.5), as in `layoutSection`.
+ */
+export function reflowSection(input: EngineNode[], opts: { riders?: Map<string, string> } = {}): Patches {
   const nodes = clone(input);
   const map = byId(nodes);
   // - snap x onto columns, left → right: a node joins the nearest column found so far when it sits
@@ -372,7 +459,8 @@ export function reflowSection(input: EngineNode[]): Patches {
   //   reach — a list the later notes can join in turn. An output is no member: it keeps its x here
   //   and `packColumn` below puts it back on its pair's slot. A kernel badge is parked by hand.
   for (const n of nodes.filter(n => isMember(n, owners) && n.type !== 'code').sort(sweep)) adopt(n);
-  const packAll = () => { for (const pair of derivePairs(nodes, deriveColumns(nodes))) packColumn(pair, nodes, map); };
+  const riders = opts.riders ?? new Map<string, string>();
+  const packAll = () => { for (const pair of derivePairs(nodes, deriveColumns(nodes))) packColumn(pair, nodes, map, riders); };
   packAll();
   // - pairs tight left → right, the first keeping its x; outputs re-measured after the packs. Run
   //   again while it still moves something: a column's width is read off the members that stay clear
