@@ -41,6 +41,9 @@ const extensionConfig = {
   platform: 'node',
   format:   'cjs',
   target:   'node20',
+  // - jsonc-parser's `main` is a UMD build whose inner require("./impl/format") esbuild leaves
+  //   dynamic, so the extension host cannot resolve it at runtime; bundle its ESM build instead
+  alias: { 'jsonc-parser': 'jsonc-parser/lib/esm/main.js' },
   external: [
     // - VS Code API is provided by the host at runtime — never bundle it
     'vscode',
