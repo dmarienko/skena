@@ -49,12 +49,13 @@ interface KnowledgeText { uri: string; title: string; text: string; fetchedAt: s
 interface KnowledgeProvider {
   readonly name: string;                                   // - from config
   readonly kind: string;                                   // - adapter id: "crtx", "notion", …
-  readonly capabilities: { scopes: boolean; tags: boolean; recency: boolean; facets: boolean; write: boolean };
+  readonly capabilities: { scopes: boolean; tags: boolean; recency: boolean; facets: boolean; write: boolean; assets: boolean };
   search(q: KnowledgeQuery): Promise<KnowledgeHit[]>;
   fetch(uri: string, signal?: AbortSignal): Promise<KnowledgeText>;  // - the text a node caches; used by add and refresh; signal = the refresh run's cancel
   scopes(): Promise<string[]>;                             // - vaults / workspaces / databases; [] when unsupported
   facets(scope?: string): Promise<{ tags: [string, number][] }>;  // - {tags: []} when unsupported
   openUrl(uri: string): string | undefined;                // - a browser URL for the header's open button
+  asset(uri: string): Promise<{ mime: string; bytes: Uint8Array }>;  // - an image the text refers to; rejects when !capabilities.assets
   // - write direction (designed now, no UI in v1): push canvas content into the server
   write(item: KnowledgeWrite): Promise<{ uri: string }>;    // - a new note / page; rejects when !capabilities.write
   append(uri: string, item: KnowledgeWrite): Promise<void>; // - add to an existing one
@@ -174,6 +175,22 @@ Rendering (`src/webview/canvas/nodes/KnowledgeNode.tsx`):
 - focus clears `changed`.
 - a column member for the layout engine like a text node. Delete, move, resize, copy/paste,
   sections, spatial nav, `g` labels: nothing special.
+
+### 6.1 Images in a section (decided 2026-09-23)
+
+Notes reference images relatively (`../assets/x.svg`, `./images/y.jpg`). The adapter rewrites every
+image reference in a fetched section to an absolute `uri` of its own scheme (`crtx://<vault>/<path>`
+for crtx), so the cached text is stable in the file and the node can ask for the image by that uri.
+
+`KnowledgeProvider.asset(uri): Promise<{ mime: string; bytes: Uint8Array }>` behind
+`capabilities.assets`. crtx: `GET http://<host>:8787/api/asset?vault=…&file=…` with the same bearer
+token (measured: 401 without, 200 with; only files under `assets/` are served).
+
+Rendering: the node and the dialog preview render the markdown as before; every `<img>` whose `src`
+is a knowledge uri is sent to the host as `knowledgeAsset {server, uri}`; the host answers
+`knowledgeAssetResult {uri, dataUrl | error}`; the webview swaps the `src`. Cache: in memory in the
+host (per session, bounded to ~50 MB, oldest out) and in the webview (per uri); nothing is written
+into the canvas. A failed image stays a broken image with the error in its `title`.
 
 ## 7. The dialog
 
