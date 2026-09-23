@@ -286,6 +286,11 @@ export function foldLane(lanes: SectionLane[], nodes: LaneNodeGeom[], id: string
   return lanes.map(l => (l.id === id ? { ...l, folded: target.memberIds } : l));
 }
 
+/** True when there is at least one lane and every lane is folded (an empty `folded` list still counts). */
+export function allFolded(lanes: { folded?: string[] }[]): boolean {
+  return lanes.length > 0 && lanes.every(l => !!l.folded);
+}
+
 /** A run's output cell for a pinned (folded) code cell is pinned to the same lane. Same reference otherwise. */
 export function pinOutputToLane(lanes: SectionLane[], codeId: string, outId: string): SectionLane[] {
   const i = lanes.findIndex(l => l.folded?.includes(codeId));

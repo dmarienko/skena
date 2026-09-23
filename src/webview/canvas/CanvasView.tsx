@@ -60,7 +60,7 @@ import { SectionSeparators } from './SectionSeparators';
 import { EdgeFollowHints, type EdgeHint } from './EdgeFollowHints';
 import { SectionRail, type RailKernel } from '../rail/SectionRail';
 import { fmtDateTime } from '../rail/RailSegment';
-import { deriveLanes, fitLanes, groupIdsByLane, sortLanes, insertLaneAt, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
+import { allFolded, deriveLanes, fitLanes, groupIdsByLane, sortLanes, insertLaneAt, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
 import { applyPatchesToCanvas, codeCellHeight, columnsOfDeleted as columnsOfDeletedIn, forkOf, insertAfter, layoutSection, reflowSection, sectionEngineNodes, sectionMembership, type EngineNode, type LayoutOpts, type Patches } from '../../shared/layoutEngine';
 import { useLaneFit, flowGeom } from '../rail/useLaneFit';
 import { connectionLabels, findNearestNode, revealPan, type ConnectionLabel, type EdgeSideContext, type NavDir, type NavNode, type Rect } from './spatialNav';
@@ -1041,10 +1041,18 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     pushHistory();
     // - fold lists the members: they are hidden and pinned here, and the fit hook collapses the
     //   range, moving everything below up
-    commitLanes(lanes.map(l => (l.id === id ? { ...l, folded: target.memberIds } : l)));
+    const newLanes = lanes.map(l => (l.id === id ? { ...l, folded: target.memberIds } : l));
+    commitLanes(newLanes);
     // - a hidden node must not stay selected: keyboard nav would then start from a node nobody sees
     setNodes(nds => nds.map(n => (target.memberIds.includes(n.id) ? { ...n, selected: false } : n)));
-  }, [derivedLanes, lanes, nodes, commitLanes, pushHistory, shiftNodes, setNodes]);
+    // - folding the last open section leaves every lane one grid tall at the top: pan so the canvas
+    //   origin sits at the viewport's top-left, same zoom, instead of leaving the camera on empty space
+    if (allFolded(newLanes) && rfRef.current) {
+      const zoom = rfRef.current.getViewport().zoom;
+      const c = clampCam(0, 0, zoom);
+      rfRef.current.setViewport({ x: c.x, y: c.y, zoom }, { duration: 250 });
+    }
+  }, [derivedLanes, lanes, nodes, commitLanes, pushHistory, shiftNodes, setNodes, clampCam]);
   // - Shift+( / Shift+) call the rail's own fold action; the ref keeps the keydown handler stable
   const foldLaneRef = useRef(handleFoldLane);
   useEffect(() => { foldLaneRef.current = handleFoldLane; });
