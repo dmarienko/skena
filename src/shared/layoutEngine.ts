@@ -346,9 +346,10 @@ function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, riders: 
     //   exactly as it was — the same walk that never closes as a column sliding with it. It is held
     //   back, and its pair partner with it, so a code cell and its output stay on one row.
     const held = new Set([mover.id, owners.get(mover.id) ?? mover.outputNodeId ?? '']);
-    // - a rider is pinned, so no bump moves it on its own; it moves when its SOURCE does, which is
-    //   what keeps it on that source's row. A sideways step leaves every y alone, so the riders stay
-    //   where they are; a downward one takes them, and their outputs, with the source.
+    // - a node anchored by an edge moves when its SOURCE does, which is what keeps it on that source's
+    //   row. A sideways step leaves every y alone, so those nodes stay where they are; a downward one
+    //   takes them, and their outputs, with the source. In a column this call did not pack, such a
+    //   node is otherwise a plain node here: a bump can push it off the row it is anchored to.
     if (sideways) for (const n of column) { n.x += dx; active.add(n.id); }
     else if (yields) for (const n of withRiders(bumpGroup(mover, nodes, owners, map, true), riders, map)) { n.y += drop; active.add(n.id); }
     else {
@@ -418,9 +419,15 @@ export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patch
       touched.add(snapGrid(r.x)); more = true;
     }
   }
-  // - no bump moves a rider on its own: it goes where its source goes (§3.5), so anything it is in
-  //   the way of is what moves
-  for (const target of riders.keys()) if (map.has(target)) pinned.add(target);
+  // - a node anchored by an edge is protected only inside the columns this call packs (§3.5): there it
+  //   goes where its source goes, so what it is in the way of is what moves. Anywhere else it is a
+  //   normal node for the bumps and can be pushed off its source's row; the next pack of its column
+  //   puts it back on that row. Protecting it section-wide left a node dropped on one of them with
+  //   nowhere to go and nothing reported: both sides of the overlap were held.
+  for (const target of riders.keys()) {
+    const t = map.get(target);
+    if (t && touched.has(snapGrid(t.x))) pinned.add(target);
+  }
 
   for (const pair of pairs) if (touched.has(pair.column.x)) {
     // - an output goes back on the slot when the operation moved its code cell AND left it off that
