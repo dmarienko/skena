@@ -24,6 +24,10 @@ export const GRID = 100;
 //   --vscode-editor-font-size, so at 1 a canvas cell reads exactly like the editor it came from
 export const READABLE_ZOOM = 1;
 
+// - the user wants focus and viewport moves instant, not animated: every rfRef.setViewport call
+//   that used to ease in over 120-350ms now jumps straight there
+export const CAMERA_MS = 0;
+
 /**
  * Node geometry — the single source of truth for how big NEW nodes are created.
  * Every creation path (context menu, directional-add, edge-drop, vim `o`, host add-node,

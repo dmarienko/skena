@@ -267,7 +267,7 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
 
   return (
     <div
-      className="skena-knowledge-search"
+      className="skena-knowledge-search nowheel"
       style={{
         position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 1000,
         width: 'min(900px, 90%)', maxHeight: '60vh', display: 'flex', flexDirection: 'column',
@@ -278,6 +278,7 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
       // - stop clicks from propagating to ReactFlow (would deselect nodes)
       onMouseDown={e => e.stopPropagation()}
       onClick={e => e.stopPropagation()}
+      onWheel={e => e.stopPropagation()}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px' }}>
         <svg
@@ -356,7 +357,10 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
       )}
 
       <div style={{ display: 'flex', flex: 1, minHeight: 0, borderTop: '1px solid var(--vscode-editorWidget-border, #454545)' }}>
-        <div style={{ width: '55%', overflowY: 'auto', overflowX: 'hidden' }}>
+        {/* - skena-scrollable is what CanvasView's own wheel-zoom handler checks for (not
+             nowheel — see CodeNode.tsx's read-only preview), so this is what actually keeps
+             the wheel scrolling the list instead of zooming the canvas underneath */}
+        <div className="nowheel skena-scrollable" style={{ width: '55%', overflowY: 'auto', overflowX: 'hidden' }}>
           {state.hits.map((h, i) => (
             <div
               key={h.uri + i}
@@ -385,6 +389,7 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
           ))}
         </div>
         <div
+          className="nowheel skena-scrollable"
           style={{
             width: '45%', overflow: 'auto', padding: '6px 10px', fontSize: 12,
             borderLeft: '1px solid var(--vscode-editorWidget-border, #454545)',

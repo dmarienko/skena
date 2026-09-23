@@ -36,7 +36,7 @@ import type { RefreshOutcome, RefreshTarget } from '../../shared/knowledge/refre
 import { staleTargets } from '../../shared/knowledge/refresh';
 import { classifyClipboard } from './paste-classify';
 import { ContextMenu } from './ContextMenu';
-import { CANVAS_COLORS, NODE_SIZE, NEW_NODE, OUTPUT_MAX_W, OUTPUT_MAX_H, READABLE_ZOOM } from '../../shared/constants';
+import { CANVAS_COLORS, NODE_SIZE, NEW_NODE, OUTPUT_MAX_W, OUTPUT_MAX_H, READABLE_ZOOM, CAMERA_MS } from '../../shared/constants';
 import { GRID, snapGrid } from '../../shared/grid';
 import { ORIGIN_GUTTER, clampToOrigin, clampCameraToOrigin } from '../../shared/bounds';
 import { ensureLabels, assignLabel } from './nodeLabels';
@@ -1108,7 +1108,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     if (allFolded(newLanes) && rfRef.current) {
       const zoom = rfRef.current.getViewport().zoom;
       const c = clampCam(0, 0, zoom);
-      rfRef.current.setViewport({ x: c.x, y: c.y, zoom }, { duration: 250 });
+      rfRef.current.setViewport({ x: c.x, y: c.y, zoom }, { duration: CAMERA_MS });
     }
   }, [derivedLanes, lanes, nodes, commitLanes, pushHistory, shiftNodes, setNodes, clampCam]);
   // - Shift+( / Shift+) call the rail's own fold action; the ref keeps the keydown handler stable
@@ -1134,7 +1134,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       commitLanes(next);
       const { x, zoom } = rfRef.current.getViewport();
       const c = clampCam(x, -flowY * zoom, zoom);
-      rfRef.current.setViewport({ x: c.x, y: c.y, zoom }, { duration: 250 });
+      rfRef.current.setViewport({ x: c.x, y: c.y, zoom }, { duration: CAMERA_MS });
     };
     window.addEventListener('skena:newSection', handler);
     return () => window.removeEventListener('skena:newSection', handler);
@@ -1721,14 +1721,14 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         (area.top + area.bottom) / 2 - ((b.y1 + b.y2) / 2) * fit,
         fit,
       );
-      rfRef.current.setViewport({ x: cForce.x, y: cForce.y, zoom: fit }, { duration: 250 });
+      rfRef.current.setViewport({ x: cForce.x, y: cForce.y, zoom: fit }, { duration: CAMERA_MS });
       return;
     }
 
     const p = revealPan(nodeBox, pairBox, area, { x: vx, y: vy, zoom });
     if (!p) return;
     const cMin = clampCam(p.x, p.y, zoom);
-    rfRef.current.setViewport({ x: cMin.x, y: cMin.y, zoom }, { duration: 250 });
+    rfRef.current.setViewport({ x: cMin.x, y: cMin.y, zoom }, { duration: CAMERA_MS });
   }, [clampCam]); // - nodesRef / rfRef / wrapperRef are always current
 
   /**
@@ -1793,7 +1793,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     // - abort if the marked node was deleted since
     if (target.nodeId !== null && !nodesRef.current.some(n => n.id === target.nodeId)) return;
     const cMark = clampCam(target.viewport.x, target.viewport.y, target.viewport.zoom);
-    rfRef.current.setViewport({ x: cMark.x, y: cMark.y, zoom: target.viewport.zoom }, { duration: 300 });
+    rfRef.current.setViewport({ x: cMark.x, y: cMark.y, zoom: target.viewport.zoom }, { duration: CAMERA_MS });
     if (target.nodeId) {
       const id = target.nodeId;
       setTimeout(() => focusNodeById(id), 320);
@@ -1853,7 +1853,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     if (!rfRef.current) return;
     const { x, zoom } = rfRef.current.getViewport();
     const c = clampCam(x, -lane.top * zoom, zoom);
-    rfRef.current.setViewport({ x: c.x, y: c.y, zoom }, { duration: 250 });
+    rfRef.current.setViewport({ x: c.x, y: c.y, zoom }, { duration: CAMERA_MS });
   }, [derivedLanes, nodes, focusNodeById, clampCam]);
 
   // ─── add text node in direction (shared by keyboard and VS Code command paths) ─
@@ -2576,7 +2576,10 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           e.preventDefault();
           window.dispatchEvent(new CustomEvent('skena:knowledgeFocus'));
         }
-        if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'j' || e.key === 'k')) {
+        // - when the input has focus, its own onKeyDown already moved the highlight and called
+        // - preventDefault; only dispatch here for the case where focus sits elsewhere in the
+        // - dialog (a result row, the preview), or this doubles the move
+        if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'j' || e.key === 'k') && !e.defaultPrevented) {
           e.preventDefault();
           window.dispatchEvent(new CustomEvent('skena:knowledgeMove', { detail: { by: e.key === 'j' ? 1 : -1 } }));
         }
@@ -2769,7 +2772,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         const minX = Math.min(...framed.map(n => n.position.x));
         const minY = Math.min(...framed.map(n => n.position.y));
         const c = clampCam((ORIGIN_GUTTER - minX) * zoom, (ORIGIN_GUTTER - minY) * zoom, zoom);
-        rfRef.current.setViewport({ x: c.x, y: c.y, zoom }, { duration: 300 });
+        rfRef.current.setViewport({ x: c.x, y: c.y, zoom }, { duration: CAMERA_MS });
         return;
       }
 
@@ -2789,7 +2792,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
             rect.height / 2 - (focused.position.y + nh / 2) * zoom,
             zoom,
           );
-          rfRef.current.setViewport({ x: cAltShiftC.x, y: cAltShiftC.y, zoom }, { duration: 350 });
+          rfRef.current.setViewport({ x: cAltShiftC.x, y: cAltShiftC.y, zoom }, { duration: CAMERA_MS });
         }
         return;
       }
@@ -2809,7 +2812,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
             rect.height / 2 - (focused.position.y + nh / 2) * zoom,
             zoom,
           );
-          rfRef.current.setViewport({ x: cShiftC.x, y: cShiftC.y, zoom }, { duration: 250 });
+          rfRef.current.setViewport({ x: cShiftC.x, y: cShiftC.y, zoom }, { duration: CAMERA_MS });
         }
         return;
       }
@@ -3213,7 +3216,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       };
       const { dx, dy } = d[k];
       const c = clampCam(x + dx, y + dy, zoom);
-      rfRef.current.setViewport({ x: c.x, y: c.y, zoom }, { duration: 120 });
+      rfRef.current.setViewport({ x: c.x, y: c.y, zoom }, { duration: CAMERA_MS });
     };
 
     window.addEventListener('keydown', handler);
