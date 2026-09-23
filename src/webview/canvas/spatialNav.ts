@@ -1,6 +1,7 @@
 /**
  * Spatial navigation and the reveal pan. Pure: CanvasView maps its refs into these, so both are
  * testable without React Flow. `findNearestNode` picks the node a direction key lands on;
+ * `focusAfterDelete` picks the one that takes the focus when the focused node goes away;
  * `revealPan` returns the smallest viewport move that shows a node (with its output when the pair
  * fits); `edgesOnSide` orders the edges of one border and `connectionLabels` gives every connection
  * of a node the key that follows it.
@@ -93,6 +94,49 @@ export function findNearestNode(from: NavNode, dir: NavDir, ctx: NavContext): st
     if (s < bestScore || (s === bestScore && overlap > bestOverlap)) { bestScore = s; bestOverlap = overlap; best = n.id; }
   }
   return best;
+}
+
+/** The box a delete leaves behind, with the section it sat in — both read before the removal. */
+export interface DeletedBox { x: number; y: number; w: number; h: number; sectionId?: string }
+/** A node the focus may land on. `hidden` is true while a fold keeps it off screen. */
+export interface FocusCandidate extends DeletedBox { id: string; hidden: boolean }
+
+// - the clearance between two spans on one axis, 0 while they overlap
+function spanGap(aNear: number, aLen: number, bNear: number, bLen: number): number {
+  return Math.max(0, aNear - (bNear + bLen), bNear - (aNear + aLen));
+}
+
+/**
+ * How far two boxes sit apart, edge to edge — the same measure the direction keys use, without a
+ * direction: the horizontal and vertical clearances combined, each 0 where the two spans overlap.
+ * Two boxes that overlap on both axes are 0 apart.
+ */
+function boxGap(a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }): number {
+  return Math.hypot(spanGap(a.x, a.w, b.x, b.w), spanGap(a.y, a.h, b.y, b.h));
+}
+
+function nearestBox(from: DeletedBox, candidates: FocusCandidate[]): string | null {
+  let best: string | null = null;
+  let bestGap = Infinity;
+  for (const c of candidates) {
+    const d = boxGap(from, c);
+    // - a tie keeps the first candidate, so the canvas order decides
+    if (d < bestGap) { bestGap = d; best = c.id; }
+  }
+  return best;
+}
+
+/**
+ * The node to focus once `deleted` is gone: the nearest one still on screen in the section the
+ * deleted node sat in, else the nearest on screen anywhere, else null. Staying in the section comes
+ * first whatever the distance, so a delete never throws the focus into a neighbouring section while
+ * the current one still has content. Folded nodes are never chosen; the caller leaves band nodes
+ * and kernel badges out of `candidates` altogether.
+ */
+export function focusAfterDelete(deleted: DeletedBox, candidates: FocusCandidate[]): string | null {
+  const onScreen = candidates.filter(c => !c.hidden);
+  const sameSection = onScreen.filter(c => c.sectionId === deleted.sectionId);
+  return nearestBox(deleted, sameSection.length ? sameSection : onScreen);
 }
 
 export interface Box { x1: number; y1: number; x2: number; y2: number }

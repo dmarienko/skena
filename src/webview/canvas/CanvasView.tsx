@@ -63,7 +63,7 @@ import { fmtDateTime } from '../rail/RailSegment';
 import { allFolded, deriveLanes, fitLanes, groupIdsByLane, sortLanes, insertLaneAt, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
 import { applyPatchesToCanvas, codeCellHeight, columnsOfDeleted as columnsOfDeletedIn, forkOf, insertAfter, layoutSection, reflowSection, sectionEngineNodes, sectionMembership, type EngineNode, type LayoutOpts, type Patches } from '../../shared/layoutEngine';
 import { useLaneFit, flowGeom } from '../rail/useLaneFit';
-import { connectionLabels, findNearestNode, revealPan, type ConnectionLabel, type EdgeSideContext, type NavDir, type NavNode, type Rect } from './spatialNav';
+import { connectionLabels, findNearestNode, focusAfterDelete, revealPan, type ConnectionLabel, type EdgeSideContext, type NavDir, type NavNode, type Rect } from './spatialNav';
 import { CanvasSearch } from './CanvasSearch';
 import { KnowledgeSearch } from './KnowledgeSearch';
 import { MarksPanel, type SectionEntry } from './MarksPanel';
@@ -1020,6 +1020,40 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     columnsOfDeletedIn(canvasRef.current.nodes, canvasRef.current.metadata?.sections ?? [], deletedIds),
   []); // - canvasRef is a ref, always current
 
+  // - node id → the section it sits in, read BEFORE the removal: afterwards the deleted node has no
+  //   section of its own left to compare the survivors against
+  const sectionOfNodes = useCallback((): Map<string, string> => {
+    const byId = new Map<string, string>();
+    for (const l of deriveLanes(canvasRef.current.nodes, canvasRef.current.metadata?.sections ?? [])) {
+      for (const id of l.memberIds) byId.set(id, l.id);
+    }
+    return byId;
+  }, []);
+
+  // - who takes the focus once `deleted` is gone. Bands and kernel badges are not candidates, and
+  //   a folded node is passed over: the focus must stay somewhere the user can see it.
+  const nextFocusAfterDelete = useCallback((deleted: Node[], sectionOf: Map<string, string>): string | null => {
+    const gone = deleted.filter(n => !isBandType(n.type));
+    if (gone.length === 0) return null;
+    const geom = (n: Node) => ({
+      x: n.position.x, y: n.position.y,
+      w: Number(n.style?.width ?? 200), h: Number(n.style?.height ?? 150),
+    });
+    // - a multi-select delete leaves one hole: the box around everything that went
+    const boxes = gone.map(geom);
+    const x1 = Math.min(...boxes.map(b => b.x));
+    const y1 = Math.min(...boxes.map(b => b.y));
+    const x2 = Math.max(...boxes.map(b => b.x + b.w));
+    const y2 = Math.max(...boxes.map(b => b.y + b.h));
+    const deletedIds = new Set(deleted.map(n => n.id));
+    return focusAfterDelete(
+      { x: x1, y: y1, w: x2 - x1, h: y2 - y1, sectionId: sectionOf.get(gone[0].id) },
+      nodesRef.current
+        .filter(n => !deletedIds.has(n.id) && !isBandType(n.type) && n.type !== 'kernel')
+        .map(n => ({ id: n.id, ...geom(n), hidden: hiddenByFoldRef.current.has(n.id), sectionId: sectionOf.get(n.id) })),
+    );
+  }, []); // - nodesRef / hiddenByFoldRef are refs, always current
+
   // - a deleted node must not stay in a fold list: it would pin a lane to an id that no longer exists
   const pruneFolded = useCallback((ids: Set<string>) => {
     const next = pruneFoldedIds(lanesRef.current, ids);
@@ -1440,6 +1474,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     // - purge deleted nodes from the space-pinned set
     for (const id of deletedIds) spaceSelectedRef.current.delete(id);
     const holes = columnsOfDeleted(deletedIds);
+    const sectionOf = sectionOfNodes();
     const updated: CanvasData = {
       ...canvasRef.current,                                                                       // - preserve viewport, metadata, etc.
       nodes: canvasRef.current.nodes.filter(n => !deletedIds.has(n.id)),
@@ -1469,24 +1504,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     // - the column closes the hole the delete left; nothing else moves
     for (const h of holes) runEngine({ sectionId: h.sectionId }, { columnX: h.columnX });
 
-    // - auto-focus nearest surviving node so spatial navigation resumes immediately
-    const nonGroupDeleted = deleted.filter(n => !isBandType(n.type));
-    if (nonGroupDeleted.length === 0) return;
-
-    // - centroid of deleted nodes used as reference point
-    const cx = nonGroupDeleted.reduce((s, n) => s + n.position.x + Number(n.style?.width  ?? 200) / 2, 0) / nonGroupDeleted.length;
-    const cy = nonGroupDeleted.reduce((s, n) => s + n.position.y + Number(n.style?.height ?? 150) / 2, 0) / nonGroupDeleted.length;
-
-    // - nearest non-deleted, non-group node to that centroid
-    let bestId:   string | null = null;
-    let bestDist  = Infinity;
-    for (const n of nodesRef.current) {
-      if (deletedIds.has(n.id) || isBandType(n.type)) continue;
-      const nx = n.position.x + Number(n.style?.width  ?? 200) / 2;
-      const ny = n.position.y + Number(n.style?.height ?? 150) / 2;
-      const d  = Math.hypot(nx - cx, ny - cy);
-      if (d < bestDist) { bestDist = d; bestId = n.id; }
-    }
+    // - auto-focus the nearest surviving node so spatial navigation resumes immediately
+    const bestId = nextFocusAfterDelete(deleted, sectionOf);
 
     // - defer one frame so React Flow finishes removing the deleted nodes first
     if (bestId) {
@@ -1495,7 +1514,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     }
   // - focusNodeById is a stable useCallback declared below; nodesRef always current
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scheduleSave, pushHistory, pruneFolded, runEngine, columnsOfDeleted]);
+  }, [scheduleSave, pushHistory, pruneFolded, runEngine, columnsOfDeleted, sectionOfNodes, nextFocusAfterDelete]);
 
   const onEdgesDelete = useCallback((deleted: Edge[]) => {
     pushHistory();
@@ -2232,6 +2251,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     const deletedIds = new Set(toDelete.map(n => n.id));
     for (const id of deletedIds) spaceSelectedRef.current.delete(id);
     const holes = columnsOfDeleted(deletedIds);
+    const sectionOf = sectionOfNodes();
 
     const updated: CanvasData = {
       ...canvasRef.current,                                                                       // - preserve viewport, metadata, etc.
@@ -2265,20 +2285,10 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     // - the column closes the hole the delete left; nothing else moves
     for (const h of holes) runEngine({ sectionId: h.sectionId }, { columnX: h.columnX });
 
-    // - focus nearest surviving node (same logic as onNodesDelete)
-    const cx = toDelete.reduce((s, n) => s + n.position.x + Number(n.style?.width  ?? 200) / 2, 0) / toDelete.length;
-    const cy = toDelete.reduce((s, n) => s + n.position.y + Number(n.style?.height ?? 150) / 2, 0) / toDelete.length;
-    let bestId: string | null = null;
-    let bestDist = Infinity;
-    for (const n of nodesRef.current) {
-      if (deletedIds.has(n.id) || isBandType(n.type)) continue;
-      const nx = n.position.x + Number(n.style?.width  ?? 200) / 2;
-      const ny = n.position.y + Number(n.style?.height ?? 150) / 2;
-      const d  = Math.hypot(nx - cx, ny - cy);
-      if (d < bestDist) { bestDist = d; bestId = n.id; }
-    }
+    // - focus the nearest surviving node (same logic as onNodesDelete)
+    const bestId = nextFocusAfterDelete(toDelete, sectionOf);
     if (bestId) { const id = bestId; requestAnimationFrame(() => focusNodeById(id)); }
-  }, [setNodes, setEdges, pushHistory, scheduleSave, focusNodeById, pruneFolded, runEngine, columnsOfDeleted]);
+  }, [setNodes, setEdges, pushHistory, scheduleSave, focusNodeById, pruneFolded, runEngine, columnsOfDeleted, sectionOfNodes, nextFocusAfterDelete]);
 
   // - confirm a destructive delete via a host modal; resolves when doDelete arrives
   const confirmResolveRef = useRef<((v: boolean) => void) | null>(null);
