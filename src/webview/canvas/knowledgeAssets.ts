@@ -72,9 +72,8 @@ function flush(): void {
 }
 
 // - a subscriber that has looked up at least one uri is registered for receiveAsset's bump loop
-//   right here, not in useKnowledgeAssets's effect: the first render's lookups happen before that
-//   effect has run, and an asset can only arrive after a round trip to the host, so this is always
-//   in time regardless
+//   right here as well as in useKnowledgeAssets's effect: the first render's lookups happen before
+//   that effect has run
 function noteInterest(sub: Subscriber | undefined, key: string): void {
   if (!sub) return;
   sub.uris.add(key);
@@ -208,9 +207,13 @@ export function useKnowledgeAssets(server: string): { swapHtml: (html: string) =
   //   uris found there must land in this set before the effect has had a chance to run
   subRef.current ??= { bump: () => setTick(t => t + 1), uris: new Set() };
 
+  // - the effect adds the subscriber too, not only noteInterest at render: StrictMode in a
+  //   development build runs set-up, clean-up, set-up on mount, the clean-up removes what the render
+  //   added, and with no render after it an image that arrives later redraws nothing
   useEffect(() => {
     ensureListener();
     const sub = subRef.current!;
+    subscribers.add(sub);
     return () => { subscribers.delete(sub); };
   }, []);
 
