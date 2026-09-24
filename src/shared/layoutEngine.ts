@@ -190,12 +190,14 @@ function obstaclesOf(pair: Pair, nodes: EngineNode[], owners: Map<string, string
  * not an obstacle: the bumps move it right rather than sending the column under it (§3.2).
  * On y the row has to clear the obstacle by a full grid gap, the distance the bumps ask for
  * everywhere else, so the pack never leaves behind an overlap of its own making.
+ * `near` = obstacles no bump can move (the riders of other packed columns): these count within a gap
+ * on the right too, since the bumps would leave the two where they are.
  */
-function rowStart(start: number, x: number, member: EngineNode, obstacles: EngineNode[]): number {
+function rowStart(start: number, x: number, member: EngineNode, obstacles: EngineNode[], near?: Set<string>): number {
   let y = start;
   for (const o of obstacles) {
-    const gap = o.x < x ? GRID : 0;
-    if (o.x + o.w + gap <= x || x + member.w <= o.x) continue;
+    const both = near?.has(o.id) ?? false;
+    if (o.x + o.w + (o.x < x || both ? GRID : 0) <= x || x + member.w + (both ? GRID : 0) <= o.x) continue;
     if (o.y + o.h + GRID <= y || y + member.h + GRID <= o.y) continue;
     y = o.y + o.h + GRID;
   }
@@ -208,7 +210,8 @@ function rowStart(start: number, x: number, member: EngineNode, obstacles: Engin
 //   goes back to the pair's x slot: Reflow (the explicit tidy) takes every one of them, a regular
 //   call only the ones whose pair the operation itself broke. An output the user parked overlaps
 //   nothing where it is, so pulling it left starts a bump the section never needed.
-//   `held` = the nodes no bump will move this call; a rider does not take a row one of them is on.
+//   `held` = the movers, their pair partners and the riders of the packed columns: no bump moves
+//   them and no pack moves them off their rows. A plain member of a packed column is not in it.
 function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode>, riders: Map<string, string>, owners: Map<string, string>, out?: Patches, toSlot: (cellId: string, output: EngineNode, wasY: number) => boolean = () => true, held: Set<string> = new Set()): void {
   const x = pair.column.x;
   const place = (cell: EngineNode, y: number) => {
@@ -221,24 +224,29 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
   const members = pair.column.cellIds.map(id => map.get(id)!);
   const own = new Set(pair.column.cellIds);
   // - the riders first, each on the row of the node its edge comes from (§3.5), two on one row
-  //   stacking in id order. A rider whose source is not in this section is no rider: it packs. Nor
-  //   is one whose source is a member of THIS column: Reflow snaps columns before it packs and can
-  //   put the two in one, and reading a column-mate's y as a fixed row walks the column down.
+  //   stacking in the column's order: the one higher now stays on top. A rider whose source is not in
+  //   this section is no rider: it packs. Nor is one whose source is a member of THIS column: Reflow
+  //   snaps columns before it packs and can put the two in one, and reading a column-mate's y as a
+  //   fixed row walks the column down.
   const anchored = members
-    .map(cell => { const s = riders.get(cell.id); return { cell, at: s !== undefined && !own.has(s) ? map.get(s)?.y : undefined }; })
-    .filter((a): a is { cell: EngineNode; at: number } => a.at !== undefined)
-    .sort((a, b) => a.at - b.at || a.cell.id.localeCompare(b.cell.id));
+    .map((cell, order) => { const s = riders.get(cell.id); return { cell, order, at: s !== undefined && !own.has(s) ? map.get(s)?.y : undefined }; })
+    .filter((a): a is { cell: EngineNode; order: number; at: number } => a.at !== undefined)
+    .sort((a, b) => a.at - b.at || a.order - b.order);
   const byRow = (a: EngineNode, b: EngineNode) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id);
   const around = obstaclesOf(pair, nodes, owners);
-  // - a node crossing this column on the source's row that no bump will move holds that row: an
-  //   output cell of another pair (it has its code cell's row; a node in the output column of its
-  //   own source is the usual case), or a `held` node — a member of a column this call packed, a
-  //   mover. The rider takes the first row under it, since neither of the two would give way to a
-  //   bump. A node the bumps can move is left to them, and the rider keeps its source's row.
+  // - a node crossing this column on the source's row that no bump will move and no pack will move
+  //   off its row holds that row: an output cell of another pair (it has its code cell's row; a node
+  //   in the output column of its own source is the usual case), or a `held` node — a mover, its pair
+  //   partner, a rider of another packed column. The rider takes the first row under it. A plain
+  //   member of a packed column does not hold the row: its own column packs it around the rider.
+  //   The one plain member that does is the rider's own source: packed around its rider, it would
+  //   move the row the rider follows, and the two would walk down together.
   const blocking = around.filter(n => owners.has(n.id) || held.has(n.id)).sort(byRow);
   let prevRider: number | null = null;
   for (const a of anchored) {
-    place(a.cell, rowStart(prevRider === null ? a.at : Math.max(a.at, prevRider + GRID), x, a.cell, blocking));
+    const source = map.get(riders.get(a.cell.id)!)!;
+    const inWay = blocking.includes(source) ? blocking : [...blocking, source].sort(byRow);
+    place(a.cell, rowStart(prevRider === null ? a.at : Math.max(a.at, prevRider + GRID), x, a.cell, inWay));
     prevRider = rowBottom(a.cell, map);
   }
   // - in y order, and nothing else this pack moves is in the list, so one ordering serves every
@@ -246,15 +254,24 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
   const fixed = anchored.map(a => a.cell);
   const obstacles = [...around, ...fixed].sort(byRow);
   const taken = new Set(fixed.map(c => c.id));
+  // - the riders of the other packed columns: a plain member packs around them, and clears them by a
+  //   full gap on x as well, since neither side moves for a bump. A member never packs around its
+  //   own rider, which goes under it instead (above).
+  const otherRiders = around.filter(n => riders.has(n.id) && held.has(n.id));
+  const near = new Set(otherRiders.map(n => n.id));
+  const riderRows = [...fixed, ...otherRiders].sort(byRow);
   let prevBottom: number | null = null;
   for (const cell of members) {
     if (taken.has(cell.id)) continue;
+    const notOwn = (o: EngineNode) => riders.get(o.id) !== cell.id;
     // - the head of the column keeps its own y, obstacles or not: it is where the user left it (or
     //   where they just dropped it), and a node it lands on is the bumps' business (§3.2). Only a
     //   stacked row skips, which is what puts a cell packed into the column under the wide cell
-    //   crossing it rather than inside it. A rider's row is the exception the head does clear: this
-    //   same pack has just put it there, and neither of the two would give way to a bump.
-    place(cell, prevBottom === null ? rowStart(snapGrid(cell.y), x, cell, fixed) : rowStart(prevBottom + GRID, x, cell, obstacles));
+    //   crossing it rather than inside it. A rider's row is the exception the head does clear: the
+    //   rider keeps it, and no bump parts two packed nodes. A held head (a mover) clears only its own
+    //   column's riders; the other riders go under it.
+    const head = () => rowStart(snapGrid(cell.y), x, cell, held.has(cell.id) ? fixed : riderRows.filter(notOwn), near);
+    place(cell, prevBottom === null ? head() : rowStart(prevBottom + GRID, x, cell, obstacles.filter(notOwn), near));
     prevBottom = rowBottom(cell, map);
   }
 }
@@ -443,6 +460,9 @@ export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patch
     const t = map.get(target);
     if (t && touched.has(snapGrid(t.x))) pinned.add(target);
   }
+  // - taken before the packs add their columns to `pinned`: a plain member of a packed column does
+  //   not hold a row against a rider (§3.5), its column packs around the rider instead
+  const held = new Set(pinned);
 
   // - the packs run again until a round moves nothing: a column packed early in a round read the y
   //   of nodes that a later pack then moved (a rider, a node a wide member here packed around), so
@@ -453,7 +473,7 @@ export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patch
     for (const pair of pairs) if (touched.has(pair.column.x)) {
       // - an output goes back on the slot when the operation moved its code cell AND left it off that
       //   cell's row: the pair is broken, and a cell the user dragged takes its output with it
-      packColumn(pair, nodes, map, riders, owners, moved, (id, o, wasY) => movers.has(id) && o.y !== wasY, pinned);
+      packColumn(pair, nodes, map, riders, owners, moved, (id, o, wasY) => movers.has(id) && o.y !== wasY, held);
       // - the pack owns the column it just laid out: a bump moves what is in its way, never it, so the
       //   two never fight over the same cell and the next call packs it to the same place
       for (const id of pair.column.cellIds) { pinned.add(id); const outId = map.get(id)!.outputNodeId; if (outId) pinned.add(outId); }
