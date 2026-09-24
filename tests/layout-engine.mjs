@@ -1337,7 +1337,7 @@ const tooClosePairs = ns => {
   return out;
 };
 
-test('a new output on the row of a held node sends it one gap under the output, and the wide node packed across its column goes under it', () => {
+test('a new output on the row of a node held to another cell takes its code cell under that node, and the column below follows', () => {
   const before = h3Case();
   assert.deepEqual([...ridersOf(before, h3Edges)].sort(), [['N1', 'M1'], ['N2', 'M1'], ['N8', 'E7']]);
   // - the two pairs the user left closer than a gap, in columns this call does not pack
@@ -1347,11 +1347,11 @@ test('a new output on the row of a held node sends it one gap under the output, 
   const nodes = [...before.map(n => (n.id === 'E4' ? { ...n, outputNodeId: 'OUT' } : n)), cell('OUT', slot.x, slot.y, slot.width, slot.height)];
   const report = {};
   const patches = layoutSection(nodes, { moverIds: ['OUT'], riders: ridersOf(nodes, h3Edges), report });
-  // - N8 goes one gap under OUT, 400 + 300 + 100, and keeps that row: N10 is a plain member of
-  //   column 1600, so it does not push N8 down. Column 1600 packs around N8 instead: N10, 1400 wide,
-  //   crosses column 2400 and goes under N8, 800 + 700 + 100; N11 and M6 follow one gap apart.
+  // - N8 is held to E7, not to E4, so it keeps its row (400, one gap under E7's output C1) and E4 goes
+  //   one gap under N8 with OUT, 400 + 700 + 100 (decided by the user 2026-09-24). Column 1600 packs
+  //   under E4: N10 at 1200 + 300 + 100, then N11 and M6 one gap apart.
   assert.deepEqual(patches, {
-    N8: { x: 2400, y: 800 },
+    E4: { x: 1600, y: 1200 }, OUT: { x: 2400, y: 1200 },
     N10: { x: 1600, y: 1600 }, N11: { x: 1600, y: 1800 }, M6: { x: 1600, y: 2000 },
   });
   assert.equal(!!report.capped, false);
@@ -1754,4 +1754,87 @@ test('a held node outside the packed columns follows its source down a bump, unl
   //   to 600, its output with it. Left behind, E5 started a walk that never settled.
   const nodes = [note('N1', 0, 400, 1400, 100), note('N2', 2500, 200, 1400, 300), note('N3', 900, 0, 1500, 500), { ...code('E5', 2400, 400, 500, 'OE5'), w: 600 }, cell('OE5', 3100, 600, 600, 500)];
   settles(nodes, [edgeTo('N1', 'E5')], ['N3'], { N1: { x: 0, y: 600 }, E5: { x: 2400, y: 600 }, OE5: { x: 3100, y: 800 } });
+});
+
+// 103
+// - tests/fixtures/H3.json S1 with the ids replaced by the labels the user sees. E4 runs and its new
+//   output C6 lands on N8, which is held to E7's row.
+const h3Fixture = () => {
+  const data = JSON.parse(fs.readFileSync(path.join(here, 'fixtures', 'H3.json'), 'utf8'));
+  const label = new Map(data.nodes.map(n => [n.id, n.nodeLabel]));
+  const nodes = toEngineNodes(data.nodes.map(n => ({ ...n, id: label.get(n.id), ...(n.outputNodeId ? { outputNodeId: label.get(n.outputNodeId) } : {}) })));
+  const edges = data.edges.map(e => ({ ...e, fromNode: label.get(e.fromNode), toNode: label.get(e.toNode) }));
+  return { nodes, edges };
+};
+
+test('a new output that lands on a node held to another cell row takes its code cell down under that node', () => {
+  const { nodes: before, edges } = h3Fixture();
+  assert.equal(ridersOf(before, edges).get('N8'), 'E7');
+  assert.equal(ridersOf(before, edges).has('N3'), false);
+  const slot = placeOutput(before, 'E4');
+  assert.deepEqual(slot, { x: 2600, y: 400, width: 600, height: 300 });   // - on N8, (2600, 0) 600×700
+  const nodes = [...before.map(n => (n.id === 'E4' ? { ...n, outputNodeId: 'C6' } : n)), cell('C6', slot.x, slot.y, slot.width, slot.height)];
+  assert.deepEqual(tooClosePairs(nodes), ['N8×C6']);
+  const report = {};
+  const patches = layoutSection(nodes, { moverIds: ['C6'], riders: ridersOf(nodes, edges), report });
+  assert.equal(!!report.capped, false);
+  // - N8 and C3 (held to N8) stay; E4 and C6 go one gap under N8, 0 + 700 + 100. N10, 2200 wide,
+  //   starts under E4 at 1200 and goes under N4 (3300, 1000, 300 tall), to 1400; the rest of column
+  //   1800 follows one gap apart, the outputs C4 and C2 on their cells' rows, N16 on E11's row.
+  //   N3, a plain member of column 2600, goes under C6 and then under N10, to 1600; C5 under N16.
+  assert.deepEqual(patches, {
+    E4: { x: 1800, y: 800 }, C6: { x: 2600, y: 800 },
+    N10: { x: 1800, y: 1400 }, N11: { x: 1800, y: 1600 },
+    E9: { x: 1800, y: 2000 }, C4: { x: 2600, y: 2000 },
+    E10: { x: 1800, y: 2400 }, C2: { x: 2600, y: 2400 },
+    E11: { x: 1800, y: 2800 }, N16: { x: 2600, y: 2800 },
+    M6: { x: 1800, y: 3200 },
+    N3: { x: 2600, y: 1600 }, C5: { x: 2600, y: 3200 },
+  });
+  const after = apply(nodes, patches);
+  assert.deepEqual(tooClosePairs(after), []);
+  assert.deepEqual(layoutSection(after, { moverIds: ['C6'], riders: ridersOf(after, edges) }), {});
+});
+
+// 104
+test('a new output on a node held to its own code cell still sends that node one gap under the output', () => {
+  // - T is held to S and sits in S's output column (the user's answer 2a): S runs, O lands on T, T goes
+  //   under O and S keeps its row
+  const nodes = [code('S', 0, 300, 300, 'O'), note('T', 800, 300, 700, 300), cell('O', 800, 300)];
+  settles(nodes, [edgeTo('S', 'T')], ['O'], { T: { x: 800, y: 700 } });
+});
+
+// 105
+test('a new output on a plain note moves the note, not the code cell', () => {
+  // - P is held by nothing: the bump moves it by the overlap, 400 down against 700 right
+  const nodes = [code('E', 0, 0, 300, 'O'), note('P', 800, 0, 700, 300), cell('O', 800, 0)];
+  settles(nodes, [], ['O'], { P: { x: 800, y: 400 } });
+});
+
+// 106
+test('a held node carried onto another cell output by its moved source goes under that output', () => {
+  // - S is dragged from 0 to 800; R, held to S, follows it onto O, A's output, and goes one gap under O.
+  //   A and O stay.
+  const nodes = [note('S', 0, 800, 700, 300), code('A', 800, 800, 300, 'O'), cell('O', 1600, 800), note('R', 1600, 0, 600, 300)];
+  settles(nodes, [edgeTo('S', 'R')], ['S'], { R: { x: 1600, y: 1200 } });
+});
+
+// 107
+test('a new output on a node held to a node held to its own code cell sends that node under the output', () => {
+  // - R is held to X and X to E, so R keeps E's row and moves whenever E does: E cannot go under R.
+  //   O, E's output parked right of the slot and moved, stays; R goes one gap under it. Read as a node
+  //   held to another cell (X), E goes under R, X and R follow E, all four end 3200 lower with O still
+  //   on R, and a second call moves them 3200 more.
+  const nodes = [code('E', 0, 0, 300, 'O'), cell('O', 3000, 0), note('X', 1600, 0, 600, 300), note('R', 3000, 0, 600, 300)];
+  settles(nodes, [edgeTo('E', 'X'), edgeTo('X', 'R')], ['O'], { R: { x: 3000, y: 400 } });
+});
+
+// 108
+test('a new output on a node held to a source in a column the call does not pack moves that node, as before', () => {
+  // - E0 is held to N2 in column 0, which this call does not pack, so the bumps move E0: under OE1, to
+  //   400. Taking E1 under E0 instead (to 700) put E1 on N2; the bump then pushed N2 down, E0 followed
+  //   N2 onto OE1, E1 went under E0 again, 400 lower each time, until the walk was capped (random
+  //   section, seed 2613 of the reviewer's generator).
+  const nodes = [code('E0', 800, 100, 500), { ...code('E1', 100, 0, 500, 'OE1'), w: 600 }, cell('OE1', 800, 0), note('N2', 0, 900, 600, 700)];
+  settles(nodes, [edgeTo('N2', 'E0')], ['OE1'], { E0: { x: 800, y: 400 } });
 });

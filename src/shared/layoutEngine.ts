@@ -28,8 +28,10 @@ export interface LayoutOpts { moverIds?: Iterable<string>; columnX?: number; rid
 //   and the riders of the packed columns (a rider goes under these); `noBump` = the nodes no bump
 //   will move in this call; `placed` = the riders this call has already put on their rows;
 //   `headY` = where a column head starts each round, the y it had when these rounds began (none: its
-//   current y); `reflow` = the pack is Reflow's, where no bump runs after it (§3.4).
-interface PackSets { held: Set<string>; noBump: Set<string>; placed: Set<string>; headY?: Map<string, number>; reflow?: boolean }
+//   current y); `reflow` = the pack is Reflow's, where no bump runs after it (§3.4); `movedOutputs` =
+//   the output cells among the movers (a new output is one): each goes under a node held to another
+//   cell's row in a packed column, with its code cell.
+interface PackSets { held: Set<string>; noBump: Set<string>; placed: Set<string>; headY?: Map<string, number>; reflow?: boolean; movedOutputs?: Set<string> }
 
 const byId = (nodes: EngineNode[]) => new Map(nodes.map(n => [n.id, n] as const));
 
@@ -214,6 +216,14 @@ function rowStart(start: number, x: number, member: EngineNode, obstacles: Engin
   return y;
 }
 
+// - whether `node` keeps its row against the output of `cellId` when that output is a mover (§3.5):
+//   it is held to a source in another column, and `cellId` is not that source, directly or up the
+//   chain — a node held to the cell itself moves with the cell, so the cell cannot go under it
+function keepsRowAgainst(node: EngineNode, cellId: string, riders: Map<string, string>, map: Map<string, EngineNode>): boolean {
+  const source = map.get(riders.get(node.id) ?? '');
+  return source !== undefined && snapGrid(source.x) !== snapGrid(node.x) && !sourceOf(cellId, node.id, riders);
+}
+
 // - pack one column tight top → bottom, whatever the node types in it, around whatever crosses it;
 //   outputs take their code cell's y and are placed here rather than as members, and a rider takes
 //   its source's row (§3.5) rather than a slot in the stack. `toSlot` decides whether an output also
@@ -247,11 +257,31 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
   //   member of a packed column packs around the rider instead; the source cannot, since the rider
   //   follows its row.
   const blocking = around.filter(n => owners.has(n.id) || held.has(n.id)).sort(byRow);
+  // - an output that is a mover does not send a node held to another cell down: its code cell goes
+  //   under that node instead, and takes the output along (decided by the user 2026-09-24 on H3)
+  const movedOuts = sets.movedOutputs ?? new Set<string>();
+  const blocks = (node: EngineNode) => (o: EngineNode) => !(movedOuts.has(o.id) && keepsRowAgainst(node, owners.get(o.id) ?? '', riders, map));
+  const belowHeld = (cell: EngineNode, y: number, list: EngineNode[]): number => {
+    const o = map.get(cell.outputNodeId ?? '');
+    if (!o || !movedOuts.has(o.id)) return y;
+    const ox = toSlot(cell.id, o, cell.y) ? pair.outputX : Math.max(o.x, pair.outputX);
+    // - only a node held in this call, one in a packed column. Elsewhere a bump can move it back onto
+    //   the output after the cell went under it, and the cell goes under it again (test 108).
+    const keep = around.filter(n => held.has(n.id) && keepsRowAgainst(n, cell.id, riders, map)).sort(byRow);
+    // - the held node stays, so it counts within a gap on either side, as a node no bump moves does
+    const near = new Set([...noBump, ...keep.map(n => n.id)]);
+    for (let guard = 0; guard < 16; guard++) {
+      const my = rowStart(rowStart(y, ox, o, keep, near), x, cell, list, noBump);
+      if (my === y) break;
+      y = my;
+    }
+    return y;
+  };
   let prevRider: number | null = null;
   for (const a of anchored) {
     const source = map.get(riders.get(a.cell.id)!)!;
-    const inWay = blocking.includes(source) ? blocking : [...blocking, source].sort(byRow);
-    place(a.cell, rowStart(prevRider === null ? a.at : Math.max(a.at, prevRider + GRID), x, a.cell, inWay, noBump));
+    const inWay = (blocking.includes(source) ? blocking : [...blocking, source].sort(byRow)).filter(blocks(a.cell));
+    place(a.cell, belowHeld(a.cell, rowStart(prevRider === null ? a.at : Math.max(a.at, prevRider + GRID), x, a.cell, inWay, noBump), inWay));
     placed.add(a.cell.id);
     prevRider = rowBottom(a.cell, map);
   }
@@ -291,7 +321,7 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
       if (my === y) break;
       y = my;
     }
-    place(cell, y);
+    place(cell, belowHeld(cell, y, list));
     prevBottom = rowBottom(cell, map);
   }
 }
@@ -504,7 +534,7 @@ function layoutCall(input: EngineNode[], opts: LayoutOpts, recheck: boolean): Pa
     noBump.add(id);
     const outId = map.get(id)!.outputNodeId; if (outId) noBump.add(outId);
   }
-  const sets: PackSets = { held, noBump, placed: new Set() };
+  const sets: PackSets = { held, noBump, placed: new Set(), movedOutputs: new Set([...movers].filter(id => owners.has(id))) };
 
   // - the packs run again until a round moves nothing: a column packed early in a round read the y
   //   of nodes that a later pack then moved (a rider, a node a wide member here packed around), so
