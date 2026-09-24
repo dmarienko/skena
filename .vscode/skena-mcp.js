@@ -4284,25 +4284,27 @@ function outputOwners(nodes) {
       owners.set(n.outputNodeId, n.id);
   return owners;
 }
+var isMember = (n, owners) => !owners.has(n.id) && n.type !== "kernel";
 function ridersOf(nodes, edges) {
   const map = byId(nodes);
+  const owners = outputOwners(nodes);
   const best = /* @__PURE__ */ new Map();
   for (const e of edges) {
     if ((e.fromSide ?? "right") !== "right" || (e.toSide ?? "left") !== "left")
       continue;
     const from = map.get(e.fromNode);
     const to = map.get(e.toNode);
-    if (!from || !to || from.type !== "code" || to.type !== "code")
+    if (!from || !to || !isMember(to, owners) || to.type === "group" || from.type === "kernel" || from.type === "group")
       continue;
-    if (snapGrid(from.x) >= snapGrid(to.x))
+    const source = map.get(owners.get(from.id) ?? "") ?? from;
+    if (snapGrid(from.x) >= snapGrid(to.x) || snapGrid(source.x) >= snapGrid(to.x))
       continue;
     const held = best.get(to.id);
-    if (!held || snapGrid(from.x) < snapGrid(held.x) || snapGrid(from.x) === snapGrid(held.x) && from.id < held.id)
-      best.set(to.id, from);
+    if (!held || snapGrid(source.x) < snapGrid(held.x) || snapGrid(source.x) === snapGrid(held.x) && source.id < held.id)
+      best.set(to.id, source);
   }
   return new Map([...best].map(([target, source]) => [target, source.id]));
 }
-var isMember = (n, owners) => !owners.has(n.id) && n.type !== "kernel";
 function deriveColumns(nodes, movers = /* @__PURE__ */ new Set()) {
   const owners = outputOwners(nodes);
   const groups = /* @__PURE__ */ new Map();
@@ -4398,13 +4400,16 @@ function packColumn(pair, nodes, map, riders, owners, out, toSlot = () => true) 
     const s = riders.get(cell.id);
     return { cell, at: s !== void 0 && !own.has(s) ? map.get(s)?.y : void 0 };
   }).filter((a) => a.at !== void 0).sort((a, b) => a.at - b.at || a.cell.id.localeCompare(b.cell.id));
+  const byRow = (a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id);
+  const around = obstaclesOf(pair, nodes, owners);
+  const outputs = around.filter((n) => owners.has(n.id)).sort(byRow);
   let prevRider = null;
   for (const a of anchored) {
-    place(a.cell, prevRider === null ? a.at : Math.max(a.at, prevRider + GRID));
+    place(a.cell, rowStart(prevRider === null ? a.at : Math.max(a.at, prevRider + GRID), x, a.cell, outputs));
     prevRider = rowBottom(a.cell, map);
   }
   const fixed = anchored.map((a) => a.cell);
-  const obstacles = [...obstaclesOf(pair, nodes, owners), ...fixed].sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));
+  const obstacles = [...around, ...fixed].sort(byRow);
   const taken = new Set(fixed.map((c) => c.id));
   let prevBottom = null;
   for (const cell of members) {
