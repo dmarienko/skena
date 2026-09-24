@@ -167,8 +167,11 @@ bump rule (§3.2) instead of the column stepping under it.
 **The column head.** Only a stacked row skips obstacles. The head keeps its own snapped y whatever
 crosses it — it is where the user left it; a node it lands on is the bump rule's business. The one
 exception is the row of a node anchored by an edge (§3.5), in its own column or in another packed
-column: the head clears that row and drops below such a node it used to sit above. A head that is
-itself a mover clears only the anchored nodes of its own column; the others go under it.
+column: the head clears that row, and the output of an anchored node of its own column, and drops
+below them. It clears an anchored node of another column only once this call has put that node on
+its row: a head never moves back up, so clearing a row the node is about to leave would leave the
+head lower for nothing. A head that is a mover, or the other half of a mover's pair, clears only
+its own column's anchored nodes; the others go under it.
 
 **Reflow.** Reflow's tight pass runs again while it still moves a column, at most 8 rounds, then
 packs every column once more: a column's width is read off the members that stay clear of the next
@@ -250,15 +253,21 @@ moves N17 out of the output column, and the second then anchors it to E2's row. 
 crosses the anchored node's column on the source's row, the anchored node goes one gap under it only
 when that node keeps its row in this call anyway: an output cell of another pair, a mover and the
 other half of its pair, another anchored node of a packed column, or the anchored node's own source.
-A plain member of a packed column (not a mover, not anchored, not an output) does not push the
-anchored node down. The anchored node keeps its row, and the member's column packs around it, as
-§3.4 packs a column around any node crossing it. Three details keep the two from being left on top
-of each other, since no bump parts two packed nodes:
-- the head of the member's column clears the anchored node too, unless the head is a mover
-  (test 76);
-- the member's column counts the anchored node when it is within a gap on either side on x, not
-  only when the two cross (test 80);
-- a member never packs around a node anchored to it; that node goes under it instead.
+A plain member of a packed column (not a mover, not the other half of a mover's pair, not
+anchored, not an output) does not push the anchored node down. The anchored node keeps its row, and
+the member's column packs around it, as §3.4 packs a column around any node crossing it. No bump
+parts two packed nodes, so the pack itself has to leave the full gap:
+- a plain member counts every node no bump will move in this call (the members and outputs of the
+  packed columns, the movers, the anchored nodes) when it is within a gap of it on either side on
+  x, not only when the two cross (tests 80, 82). Reflow runs no bumps, so there this is every node;
+- the head of the member's column clears the anchored node too (test 76), within that same gap
+  (test 88), once this call has put the anchored node on its row (test 84);
+- a column packs around the outputs of its own anchored nodes, not only the nodes (test 90);
+- a member never packs around a node anchored to it; that node goes under it instead (tests 86, 87).
+
+A mover, or the other half of a mover's pair, does none of this against the anchored nodes of other
+columns: they go one gap under it (tests 83, 85). The anchored node clears what holds its row by the
+same gap on either side, so it goes under an output it would otherwise end 50 px short of (test 89).
 
 The packed columns are packed again, in the same left-to-right order, until a round moves nothing,
 at most 8 rounds. One round is not enough: a column packed early in the round reads the y of nodes
@@ -283,21 +292,35 @@ which only outputs, movers and their pair partners hold the row: R takes S's row
 Both are anchored nodes of packed columns, so no bump parts them. This variant reproduces an
 overlap in test 75 like the one the first try at this choice left.
 
-Measured with the random-section check (`ridercmp.mjs` in the session scratchpad: 1500 calls with
-anchored nodes; its random generator repeats, so they hold 394 distinct draws), before this decision
-and after: non-idempotent calls 115 and 62, capped calls 1 and 1, calls that grow the overlap count 0
-and 0. The first version of this change had no source on the list and neither of the last two
-details above: the overlap count then grew on 12 calls (3 distinct draws), and 122 calls were not
-idempotent. On copies of H1, H4 and H5 (the fixtures in `test/` on 2026-09-24), every node as the only
-mover: capped 0, overlap growth 0, non-idempotent 0, and Reflow twice changes nothing on the second
-call, before and after.
+Measured with a random-section check: sections of 4 to 10 nodes at random rows on columns 0, 800,
+1600 and 2400, random sizes, two random right-to-left edges, one random node as the mover. Its random
+generator repeats, so 1500 draws hold 394 distinct sections; each counted once, before this decision
+(commit 76e4ec4) and after: not idempotent 28 and 14, capped 1 and 1, the overlap count grows 0 and
+0. The first version of this change, with no source on the list and no gap on either side, grew the
+overlap count on 3 of the 394.
+
+A review of that first version found three more shapes: a member packed next to a packed node it
+only came within a gap of, a mover below its column's head pushed off its row by an anchored node,
+and a head moved down for a row an anchored node was about to leave. The list above covers them.
+Measured on a second generator (3000 distinct sections of 3 to 8 nodes and up to 3 edges; on those
+with an anchored node, every node as the mover, 7703 calls), before this decision and after: capped 99 and 78, the overlap count grows
+12 and 2, a call leaves a new overlap 204 and 100, not idempotent 1229 and 775. Three calls leave a
+new overlap that did not before; in each, the packs end clean, then a bump moves a source down and
+its anchored node follows it into a member of its own packed column (**Bumps** below). On copies of
+H1, H4 and H5 (the fixtures in `test/` on 2026-09-24), every node as the only mover: capped 0,
+overlap growth 0, non-idempotent 0, and Reflow twice changes nothing on the second call, before and
+after.
 
 **On Reflow.** Reflow packs every column, so every anchored node keeps its row against a plain
 member there too, by the same rules, and the packs repeat until a round moves nothing, at most 8
-rounds. Before 2026-09-24 Reflow gave its packs no anchored nodes to keep, so a wide column head, or
-a member ending inside the gap before an anchored node's column, was left on top of the anchored
-node (test 81). Measured, test 15's check: a second Reflow on H3's S1 moved 11 nodes before and moves
-none now; on H2's S1 it moves 19 before and after (the snapping distance, §3.4).
+rounds. A node the snap has put in its source's own column is not anchored (see above), so it does
+not keep a row either (test 91). Before 2026-09-24 Reflow gave its packs no anchored nodes to keep,
+so a wide column head, or a member ending inside the gap before an anchored node's column, was left
+on top of the anchored node (test 81). Measured, test 15's check: a second Reflow on H3's S1 moved 11
+nodes before and moves none now; on H2's S1 it moves 19 before and after (the snapping distance,
+§3.4). On the second generator's sections with an anchored node, a second Reflow changes something
+on 192 before and 290 after; without the output-slot rule of §3.4 it would be 189, with no section
+worse than before.
 
 Removing the edge releases the cell: the webview runs the engine for the target's column at once
 and the cell packs up to the first row it clears (E14 lifts to y 1100, under E15). Adding such an
