@@ -516,7 +516,17 @@ export function reflowSection(input: EngineNode[], opts: { riders?: Map<string, 
   //   and `packColumn` below puts it back on its pair's slot. A kernel badge is parked by hand.
   for (const n of nodes.filter(n => isMember(n, owners) && n.type !== 'code').sort(sweep)) adopt(n);
   const riders = opts.riders ?? new Map<string, string>();
-  const packAll = () => { for (const pair of derivePairs(nodes, deriveColumns(nodes))) packColumn(pair, nodes, map, riders, owners); };
+  // - every column is packed here, so every rider keeps its row against a plain member, as in a
+  //   regular call (§3.5). The packs repeat until a round moves nothing, for the same reason as there:
+  //   a column packed early in a round read the row of a rider a later pack then moved.
+  const held = new Set(riders.keys());
+  const packAll = () => {
+    for (let round = 0; round < 8; round++) {
+      const moved: Patches = {};
+      for (const pair of derivePairs(nodes, deriveColumns(nodes))) packColumn(pair, nodes, map, riders, owners, moved, () => true, held);
+      if (Object.keys(moved).length === 0) break;
+    }
+  };
   packAll();
   // - pairs tight left → right, the first keeping its x; outputs re-measured after the packs. Run
   //   again while it still moves something: a column's width is read off the members that stay clear
