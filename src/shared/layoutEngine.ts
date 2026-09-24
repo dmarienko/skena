@@ -16,7 +16,7 @@ export interface EngineNode { id: string; type: string; x: number; y: number; w:
 export interface Patch { x: number; y: number; w?: number; h?: number }
 export type Patches = Record<string, Patch>;
 export interface Column { x: number; width: number; cellIds: string[] }
-export interface Pair { column: Column; outputX: number; outputW: number; right: number }
+export interface Pair { column: Column; outputX: number; outputW: number; right: number; hasOutput: boolean }
 // - `report` is filled in by the call: `capped` says the bump walk stopped with overlaps still
 //   there (a dense section), so the caller can tell the user to reflow. `maxSteps` overrides how
 //   many steps that walk gets (default `nodes.length * 4 + 32`), which is how the cap is tested.
@@ -139,6 +139,8 @@ export function deriveColumns(nodes: EngineNode[], movers = new Set<string>()): 
  * `right` is the far edge of the pair as it really sits: the modelled slot (kept for a code column
  * whose cells have not run yet, so a fork clears the outputs to come), or an output the user has
  * parked further right than it. A column with no code cell ends at its own right edge.
+ * `hasOutput` says whether any cell of the column has an output node in the section: Reflow keeps
+ * the output slot only for such a column (§3.4).
  */
 export function derivePairs(nodes: EngineNode[], columns: Column[]): Pair[] {
   const map = byId(nodes);
@@ -146,15 +148,16 @@ export function derivePairs(nodes: EngineNode[], columns: Column[]): Pair[] {
     let outputW = OUTPUT_MIN_W;
     let parked = 0;
     let hasCode = false;
+    let hasOutput = false;
     for (const id of column.cellIds) {
       const cell = map.get(id);
       if (cell?.type === 'code') hasCode = true;
       const out = map.get(cell?.outputNodeId ?? '');
-      if (out) { outputW = Math.max(outputW, out.w); parked = Math.max(parked, out.x + out.w); }
+      if (out) { hasOutput = true; outputW = Math.max(outputW, out.w); parked = Math.max(parked, out.x + out.w); }
     }
     const outputX = column.x + column.width + GRID;
     const right = hasCode ? Math.max(outputX + outputW, parked) : column.x + column.width;
-    return { column, outputX, outputW, right };
+    return { column, outputX, outputW, right, hasOutput };
   });
 }
 
@@ -520,11 +523,14 @@ export function reflowSection(input: EngineNode[], opts: { riders?: Map<string, 
   //   of the NEXT column (§3.4), so moving that column changes the width, and the width decides where
   //   the column goes. Two or three rounds settle it; the cap is there so a shape that keeps changing
   //   stops rather than spins, and the next Reflow finishes it.
+  //   The output slot is kept only right of a column that has an output (§3.4): a column of code cells
+  //   that have not run yet ends at its own right edge here. `forkOf` still reads the full slot.
+  const end = (p: Pair) => (p.hasOutput ? p.right : p.column.x + p.column.width);
   for (let round = 0; round < 8; round++) {
     const tight = derivePairs(nodes, deriveColumns(nodes));
     let moved = false;
     for (let i = 1; i < tight.length; i++) {
-      const want = gridUp(tight[i - 1].right + GRID);
+      const want = gridUp(end(tight[i - 1]) + GRID);
       const dx = want - tight[i].column.x;
       if (dx === 0) continue;
       for (const id of tight[i].column.cellIds) {
