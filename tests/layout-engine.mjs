@@ -1878,3 +1878,21 @@ test('a dragged output that goes under a held node also goes under a node above 
   const nodes = [note('S', 0, 0, 700, 300), code('E', 0, 400, 300, 'O'), cell('O', 1800, 400, 700, 300), note('P', 1600, 800, 700, 500), note('R', 2400, 0, 700, 1000), note('Q', 2400, 1100, 700, 100)];
   settles(nodes, [edgeTo('S', 'R')], ['O'], { E: { x: 0, y: 1400 }, O: { x: 1800, y: 1400 } });
 });
+
+// 113
+test('a code cell moved under a held node does not also go under a node that starts below its new row', () => {
+  // - O lands on R, held to S, and E and O go under R, to 800. Q (column 1200, not packed) starts at
+  //   900, below that row, so it is not cleared: the bump moves Q 300 right, to 1500 (300 down ties,
+  //   and a tie goes right).
+  const nodes = [note('S', 0, 0, 700, 300), code('E', 0, 400, 300, 'O'), cell('O', 800, 400), note('R', 800, 0, 600, 700), note('Q', 1200, 900, 700, 400)];
+  settles(nodes, [edgeTo('S', 'R')], ['O'], { E: { x: 0, y: 800 }, O: { x: 800, y: 800 }, Q: { x: 1500, y: 900 } });
+});
+
+// 114
+test('a code cell moved under a held node also goes under a node above its new row that its output ends inside the gap before', () => {
+  // - O, 650 wide, lands on R, held to S, and E and O go under R, to 800. There O ends at 1450, 50 px
+  //   before P (column 1500, not packed, from 600 to 900). P counts within a gap, so E and O go under
+  //   it too, 600 + 300 + 100.
+  const nodes = [note('S', 0, 0, 700, 300), code('E', 0, 400, 300, 'O'), cell('O', 800, 400, 650, 300), note('R', 800, 0, 600, 700), note('P', 1500, 600, 700, 300)];
+  settles(nodes, [edgeTo('S', 'R')], ['O'], { E: { x: 0, y: 1000 }, O: { x: 800, y: 1000 } });
+});
