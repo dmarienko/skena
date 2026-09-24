@@ -58,7 +58,8 @@ export function useSelectedStyle(selected: boolean): React.CSSProperties {
   return {
     outline:       `${lineW.toFixed(1)}px solid ${SELECTION_RING_COLOR}`,
     outlineOffset: `${offset.toFixed(1)}px`,
-    // - spread shadow as wide as the outline offset fills the band between the border and the outline
-    boxShadow:     `0 0 0 ${offset.toFixed(1)}px var(--skena-focus-fill)`,
+    // - spread shadow as wide as the outline offset fills the band between the border and the outline;
+    //   an inline box-shadow replaces the stylesheet's, so .skena-node's depth shadow is repeated here
+    boxShadow:     `0 0 0 ${offset.toFixed(1)}px var(--skena-focus-fill), 0 2px 8px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.06)`,
   };
 }
