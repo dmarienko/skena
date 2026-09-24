@@ -316,6 +316,7 @@ moves N17 out of the output column, and the second then anchors it to E2's row. 
 crosses the anchored node's column on the source's row, the anchored node goes one gap under it only
 when that node keeps its row in this call anyway: an output cell of another pair, a mover and the
 other half of its pair, another anchored node of a packed column, or the anchored node's own source.
+An output that is itself the mover is the exception: see "A new output on an anchored node" below.
 A plain member of a packed column (not a mover, not the other half of a mover's pair, not
 anchored, not an output) does not push the anchored node down. The anchored node keeps its row, and
 the member's column packs around it, as §3.4 packs a column around any node crossing it. No bump
@@ -346,12 +347,73 @@ without it: a source 1100 wide crossing the column, and a source 800 wide ending
 before it, each ended on top of the node anchored to it (test 79 holds the two shapes).
 
 Measured on H3 (one section, test 74): E4 runs and its output lands at (2400, 400), on N8, which is
-anchored to E7's row. N8 goes one gap under the output, to (2400, 800), and stays there. Column 1600
-packs around N8: N10, 1400 wide and crossing column 2400, goes to (1600, 1600), which is
-800 + 700 + 100; N11 goes to (1600, 1800) and M6 to (1600, 2000). No two nodes are closer than one
-grid gap except M1/M2 and N7/M3, the two pairs the user left that way in columns this call does not
-pack. A second call returns `{}`. The rule built before this decision (commit e78de64) sent N8 to
-(2400, 1000), under N10 at (1600, 800).
+anchored to E7's row. Under this decision N8 went one gap under the output, to (2400, 800), and column
+1600 packed around it: N10, 1400 wide and crossing column 2400, went to (1600, 1600), which is
+800 + 700 + 100; N11 to (1600, 1800) and M6 to (1600, 2000). The rule built before this decision
+(commit e78de64) sent N8 to (2400, 1000), under N10 at (1600, 800). Since the next decision (a new
+output on an anchored node, below) N8 keeps (2400, 400), E4 and its output go to 1200
+(400 + 700 + 100), N10 to 1600, N11 to 1800 and M6 to 2000. No two nodes are closer than one grid gap
+except M1/M2 and N7/M3, the two pairs the user left that way in columns this call does not pack. A
+second call returns `{}`.
+
+**A new output on an anchored node (decided by the user 2026-09-24 on H3).** When a code cell's
+output is the mover and it would land on a node anchored to another node's row, the anchored node
+stays. The code cell and its output go down together to one gap under the anchored node; the output
+stays on its code cell's row, and everything below the code cell in its column moves down to make
+room. This is the mover yielding downward (§3.2), with the output as the mover, as it is for a run.
+
+Scope:
+- the anchored node is in a column this call packs, where no bump moves it. An anchored node in a
+  column the call does not pack is moved by the bumps, as before (test 108). Measured with those
+  nodes in scope too, against 56158b8: 8 of the 7703 calls of the reviewer's generator and 1 of the
+  36528 tidy trials got worse (capped, a new pair closer than a gap, or not idempotent), and all 9
+  had the anchored node in a column the call does not pack. In the one traced (seed 2613), the code
+  cell went under E0 and landed on E0's source N2; the bump pushed N2 down, E0 followed N2 onto the
+  output, and the code cell went under E0 again, 400 px lower each time, until the walk was capped;
+- the output's code cell is not the anchored node's source, directly or through a chain. A node
+  anchored to the code cell still goes one gap under the output (the user's answer 2a, test 104). A
+  node anchored to a node anchored to the code cell moves with the code cell, so the code cell cannot
+  go under it: it goes under the output too (test 107). Without this, the code cell, the two anchored
+  nodes and the output went 3200 px down with the output still on the node, and a second call moved
+  them 3200 px more;
+- an output landing on a node anchored to nothing moves that node by the bumps, as before (test 105);
+- an anchored node carried onto another cell's output because its source moved goes one gap under
+  that output, as before: that output is not the mover (test 106).
+
+The rule acts only while the output is the mover. A later call that packs the code cell's column
+without that output as the mover packs the cell back up to one gap under the cell above it; the
+output then lands on the anchored node again, and the node goes under it. Measured on H3 after the
+run: of the 33 calls with one node as the mover, 11 put E4 back at 400 and push N8 down (to 2200 in
+9 of them, to 1800 when C2 moves, to 800 when C4 moves): each of E7, E4, N10, N11, E9, M6, E10, E11
+and the outputs C1, C2 and C4. The user chose this over applying the rule in every call to every
+output of a packed column. That variant kept the result in all 33 calls, but it failed tests 89 and
+95 and left 6 calls of the reviewer's generator not idempotent that were idempotent at 56158b8.
+
+The engine cannot tell a new output from one the user dragged: both are movers. A dragged output
+that lands on an anchored node takes its code cell down the same way.
+
+Measured on H3 (`tests/fixtures/H3.json` S1, test 103): E4 runs, and its output C6 gets the slot
+(2600, 400), on N8 (2600, 0, 600×700), which is anchored to E7's row. N8 stays at (2600, 0), and C3,
+anchored to N8, at (4000, 0). E4 and C6 go to 800 (0 + 700 + 100). Column 1800 moves down under E4:
+N10, 2200 wide, would start at 1200, but N4 at (3300, 1000), 300 tall, lies across that row, so N10
+goes one gap under N4, to 1400; N11 goes to 1600, E9 to 2000, E10 to 2400, E11 to 2800 and M6 to
+3200. The outputs C4 and C2 take their cells' rows, and N16 takes E11's row, 2800. In column 2600,
+N3 is a plain member (the edge from N10 to N3 leaves N10's bottom and anchors nothing): it goes under
+C6 and then under N10, to 1600, and C5 goes under N16, to 3200. Before the call the only pair closer
+than a gap is N8 and C6; after it, none. The call is not capped and a second call returns `{}`. At
+56158b8 N8 went to (2600, 2200), under C6, N10, N3, C4 and C2, and C3 followed it to (4000, 2200).
+
+Measured against 56158b8, the calls that differ and the calls that got worse:
+- H1 to H6, every node of every section as the only mover (170 calls): none differ; on H1, H4 and H5
+  capped 0, overlap growth 0, not idempotent 0, and a second Reflow moves nothing, before and after;
+- the 394 distinct random sections (they hold no output cells): not idempotent 1, capped 2, overlap
+  growth 0, before and after;
+- the reviewer's generator, every node as the mover (7703 calls): capped 135 and 135, overlap growth
+  2 and 2, a new pair closer than a gap 37 and 36, not idempotent 231 and 230; none worse;
+- tidy trials (1266 sections after a Reflow; each node still, dragged and deleted, and two-node
+  drags; 36528 calls): bad 240 and 237; none worse;
+- Reflow on 3000 sections: 0 leave two boxes intersecting and 0 leave a pair closer than a gap,
+  before and after.
 
 Test 75 (two nodes anchored to one row; X, 1500 wide, crosses R's column): X is anchored itself, so
 R goes one gap under it, to (1600, 800), and a second call returns `{}`. Measured with a variant in
