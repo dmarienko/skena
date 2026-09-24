@@ -26,8 +26,10 @@ export interface LayoutOpts { moverIds?: Iterable<string>; columnX?: number; rid
 
 // - what a column pack needs from the call around it (§3.5): `held` = the movers, their pair partners
 //   and the riders of the packed columns (a rider goes under these); `noBump` = the nodes no bump
-//   will move in this call; `placed` = the riders this call has already put on their rows.
-interface PackSets { held: Set<string>; noBump: Set<string>; placed: Set<string> }
+//   will move in this call; `placed` = the riders this call has already put on their rows;
+//   `headY` = where a column head starts each round, the y it had when these rounds began (none: its
+//   current y).
+interface PackSets { held: Set<string>; noBump: Set<string>; placed: Set<string>; headY?: Map<string, number> }
 
 const byId = (nodes: EngineNode[]) => new Map(nodes.map(n => [n.id, n] as const));
 
@@ -260,8 +262,7 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
   const obstacles = [...around, ...fixed].sort(byRow);
   const otherRiders = around.filter(n => riders.has(n.id) && held.has(n.id));
   const others = new Set(otherRiders.map(n => n.id));
-  // - the head clears only riders already on their rows: one still at its y from before the call
-  //   would push the head down for a row the rider does not keep, and a head never moves back up
+  // - the head clears only riders this call has put on their rows, not one still at its old y
   const riderRows = [...fixed, ...otherRiders.filter(n => placed.has(n.id))].sort(byRow);
   let prevBottom: number | null = null;
   for (const cell of members) {
@@ -271,9 +272,10 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
     //   it. No member packs around its own rider.
     const isHeld = held.has(cell.id);
     const keep = (o: EngineNode) => riders.get(o.id) !== cell.id && !(isHeld && others.has(o.id));
-    // - the head keeps its own y, obstacles or not (§3.4); only a rider's row moves it down
+    // - the head keeps its own y, obstacles or not (§3.4); only a rider's row moves it down, and it
+    //   starts from `headY` each round, so it comes back up once that row has moved on
     const y = prevBottom === null
-      ? rowStart(snapGrid(cell.y), x, cell, riderRows.filter(keep), noBump)
+      ? rowStart(snapGrid(sets.headY?.get(cell.id) ?? cell.y), x, cell, riderRows.filter(keep), noBump)
       : rowStart(prevBottom + GRID, x, cell, obstacles.filter(keep), noBump);
     place(cell, y);
     prevBottom = rowBottom(cell, map);
@@ -477,9 +479,14 @@ export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patch
   //   of nodes that a later pack then moved (a rider, a node a wide member here packed around), so
   //   one round can leave two packed nodes overlapping, or a hole the next call closes. The cap only
   //   stops a shape that keeps changing.
+  // - the heads start each round from where they were when the rounds began. A loop can keep one
+  //   going up and down (a mover packed under a head that goes under a rider that goes under the
+  //   mover): after 8 rounds the heads keep their current y and only move down, which settles.
   const packRounds = (): Patches => {
     const all: Patches = {};
-    for (let round = 0; round < 8; round++) {
+    const headY = new Map(nodes.map(n => [n.id, n.y] as const));
+    for (let round = 0; round < 16; round++) {
+      sets.headY = round < 8 ? headY : undefined;
       const moved: Patches = {};
       for (const pair of pairs) if (touched.has(pair.column.x)) {
         // - an output goes back on the slot when the operation moved its code cell AND left it off that
