@@ -570,10 +570,15 @@ export function reflowSection(input: EngineNode[], opts: { riders?: Map<string, 
   //   (§3.5) and every node counts as one no bump moves. The packs repeat until a round moves nothing.
   //   A rider the snap above put in its source's column is no rider (§3.5), so it is not held either.
   const noBump = new Set(nodes.map(n => n.id));
+  // - the heads start every round, in both packs, from their rows before the Reflow (the tight pass
+  //   changes x only), so a head the first pack moved down comes back once that row has moved on;
+  //   after 8 rounds they only move down, as in a regular call
+  const headY = new Map(nodes.map(n => [n.id, n.y] as const));
   const packAll = () => {
     const held = new Set([...riders].filter(([t, s]) => map.has(t) && map.has(s) && snapGrid(map.get(t)!.x) !== snapGrid(map.get(s)!.x)).map(([t]) => t));
     const sets: PackSets = { held, noBump, placed: new Set(), reflow: true };
-    for (let round = 0; round < 8; round++) {
+    for (let round = 0; round < 16; round++) {
+      sets.headY = round < 8 ? headY : undefined;
       const moved: Patches = {};
       for (const pair of derivePairs(nodes, deriveColumns(nodes))) packColumn(pair, nodes, map, riders, owners, moved, () => true, sets);
       if (Object.keys(moved).length === 0) break;
