@@ -526,9 +526,10 @@ export function reflowSection(input: EngineNode[], opts: { riders?: Map<string, 
   const riders = opts.riders ?? new Map<string, string>();
   // - every column is packed and no bump runs here, so every rider keeps its row as in a regular call
   //   (§3.5) and every node counts as one no bump moves. The packs repeat until a round moves nothing.
+  //   A rider the snap above put in its source's column is no rider (§3.5), so it is not held either.
   const noBump = new Set(nodes.map(n => n.id));
   const packAll = () => {
-    const held = new Set(riders.keys());
+    const held = new Set([...riders].filter(([t, s]) => map.has(t) && map.has(s) && snapGrid(map.get(t)!.x) !== snapGrid(map.get(s)!.x)).map(([t]) => t));
     const sets: PackSets = { held, noBump, placed: new Set() };
     for (let round = 0; round < 8; round++) {
       const moved: Patches = {};
