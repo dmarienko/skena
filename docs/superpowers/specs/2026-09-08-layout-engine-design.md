@@ -166,19 +166,38 @@ bump rule (§3.2) instead of the column stepping under it.
 
 **The column head.** Only a stacked row skips obstacles. The head keeps its own snapped y whatever
 crosses it — it is where the user left it; a node it lands on is the bump rule's business. The one
-exception is the row of a node anchored by an edge (§3.5): the head clears that row and drops below
-such a node it used to sit above.
+exception is the row of a node anchored by an edge (§3.5), in its own column or in another packed
+column: the head clears that row and drops below such a node it used to sit above. A head that is
+itself a mover clears only the anchored nodes of its own column; the others go under it.
 
 **Reflow.** Reflow's tight pass runs again while it still moves a column, at most 8 rounds, then
 packs every column once more: a column's width is read off the members that stay clear of the next
 column, so moving a column changes which of its neighbour's members span. Measured: 3 rounds on H1's
 section, 2 on H4's S1 and S2, at most 5 over 1500 random dense sections, the cap never reached.
+Each pack of the whole section repeats until a round moves nothing, at most 8 rounds, and keeps
+every anchored node's row as a regular call does (§3.5, 2026-09-24).
 
-**The pair rule on Reflow.** The pair rule of §1 still applies: a column holding a code cell reserves
-`OUTPUT_MIN_W` (600) plus two gaps for its output column whether or not any of its cells has an
-output. On H4's S2 that puts column 800 at 1500 on Reflow, not back at 800 — 700 px right of where
-the user left it, and 900 px left of the 2400 the widest-member rule gives. (Open with the user:
-reserve the slot only for columns that hold an output.)
+**The pair rule on Reflow (decided by the user 2026-09-24).** Reflow keeps the output slot,
+`OUTPUT_MIN_W` (600) plus two gaps, only right of a column where at least one cell has an output
+node. A column whose code cells have not run yet ends at its own right edge, like a column of notes.
+`derivePairs` gives `hasOutput` for this; its `right` still counts the slot for every column that
+holds a code cell, because `forkOf` reads it so that a fork clears the outputs to come. Before this
+decision the slot was kept for every column holding a code cell.
+
+Measured (test 78): column 0 holds two code cells without outputs, and the notes J1 and J2 sit in
+column 800. Reflow leaves them at x 800 (before: x 1500), and a second Reflow changes nothing. When
+the first cell of column 0 then runs, its output lands at (800, 0), on J1. The bump moves J1 and J2
+down by 400, to (800, 400) and (800, 800), not right: J1 sits at the output's x, so it takes the
+smaller move, 400 down against 700 right. The next Reflow moves them right, to x 1500, on the same
+rows; a second Reflow changes nothing. On the current H4 S2 column 0 has outputs, so Reflow puts the
+next column at x 1700 before and after the decision.
+
+Measured, not fixed: Reflow's snapping joins a node to a column within half a pair width (700 px).
+A column without an output that is 600 wide or less now puts the next column within 700 px of its
+own x, so a second Reflow can merge the two. On the copy of H1 taken 2026-09-24 11:39, S1 becomes
+non-idempotent this way: the second Reflow moves one note into column 7700, whose code cells are
+360 wide. On the current H1, H4 and H5 no section is affected. Narrow note columns already did the
+same before the decision: on H2 S1 the second Reflow moves 19 nodes, before and after (test 15).
 
 ### 3.5 A sequence edge anchors its target to the source's row (decided 2026-09-23)
 
@@ -200,7 +219,10 @@ cells. The exceptions:
 
 In its own column that row is fixed and the other members pack around it (§3.4 treats it as an
 obstacle of its own column). When the source moves, the anchored node moves with it and its column is
-re-packed. Two nodes anchored to one row in one column stack, the second under the first (id order).
+re-packed. Two nodes anchored to one row in one column stack in their current order: the one that
+is higher before the call stays on top, and the other goes one gap under it. On a tie of y the
+column's own tie order decides: the mover first, then the id. Decided by the user 2026-09-24
+(test 77); before, the two stacked in id order.
 An edge whose source sits in the same column, or in a column to the right, anchors nothing — those
 edges stay drawings.
 
@@ -218,30 +240,64 @@ C4, the output of its source E2, and 2 calls were not idempotent; a second `canv
 code cell put the new cell on top of the first (MCP parity test). Measured with it, on copies of H1,
 H4 and H5 with their edges, all sections, every node as the only mover: capped 0, not idempotent 0,
 Reflow twice changes nothing on the second call; the overlap count grows on 6 calls, all in H4 S2,
-the same 6 calls and the same pair (E13 and E3's output) as before this change. Open question: the
-other choice is to anchor no node that sits in its source's output column. Measured: the overlap
+the same 6 calls and the same pair (E13 and E3's output) as before this change. The other choice
+was to anchor no node that sits in its source's output column. Measured: the overlap
 count grows on the same 6 calls only, but Reflow is then not idempotent on H4 S1 — the first Reflow
-moves N17 out of the output column, and the second then anchors it to E2's row.
+moves N17 out of the output column, and the second then anchors it to E2's row. Decided by the user
+2026-09-24: kept as built, one gap under the output.
 
-**A row held by any node no bump will move.** Changed 2026-09-24: the anchored node goes under every
-node that crosses its column on the source's row and that no bump will move in this call, not only
-under an output. Those are: an output cell of another pair, a mover and the other half of its pair,
-an anchored node in a packed column, and every member (with its output) of a column this call has
-already packed. A node the bumps can move is left to them, and the anchored node keeps its source's
-row. The packed columns are then packed again, in the same left-to-right order, until a round moves
-nothing, at most 8 rounds; the measured runs used at most 3. One round is not enough: a column packed
-early in the round reads the y of nodes that a later pack in the same round moves.
+**What holds the row against an anchored node (decided by the user 2026-09-24).** When a node
+crosses the anchored node's column on the source's row, the anchored node goes one gap under it only
+when that node keeps its row in this call anyway: an output cell of another pair, a mover and the
+other half of its pair, another anchored node of a packed column, or the anchored node's own source.
+A plain member of a packed column (not a mover, not anchored, not an output) does not push the
+anchored node down. The anchored node keeps its row, and the member's column packs around it, as
+§3.4 packs a column around any node crossing it. Three details keep the two from being left on top
+of each other, since no bump parts two packed nodes:
+- the head of the member's column clears the anchored node too, unless the head is a mover
+  (test 76);
+- the member's column counts the anchored node when it is within a gap on either side on x, not
+  only when the two cross (test 80);
+- a member never packs around a node anchored to it; that node goes under it instead.
+
+The packed columns are packed again, in the same left-to-right order, until a round moves nothing,
+at most 8 rounds. One round is not enough: a column packed early in the round reads the y of nodes
+that a later pack in the same round moves.
+
+Why the source is on the list: a source that reaches its anchored node's column and is packed
+around it moves the row the anchored node follows. Measured in the random-section check below,
+without it: a source 1100 wide crossing the column, and a source 800 wide ending inside the gap
+before it, each ended on top of the node anchored to it (test 79 holds the two shapes).
 
 Measured on H3 (one section, test 74): E4 runs and its output lands at (2400, 400), on N8, which is
-anchored to E7's row. The call moves N10 to (1600, 800), N11 to y 1000, M6 to y 1200, and N8 to
-(2400, 1000). Nothing overlaps; the two pairs the user left closer than one grid (M1/M2, N7/M3, in
-columns this call does not pack) stay as they were. A second call returns `{}`.
+anchored to E7's row. N8 goes one gap under the output, to (2400, 800), and stays there. Column 1600
+packs around N8: N10, 1400 wide and crossing column 2400, goes to (1600, 1600), which is
+800 + 700 + 100; N11 goes to (1600, 1800) and M6 to (1600, 2000). No two nodes are closer than one
+grid gap except M1/M2 and N7/M3, the two pairs the user left that way in columns this call does not
+pack. A second call returns `{}`. The rule built before this decision (commit e78de64) sent N8 to
+(2400, 1000), under N10 at (1600, 800).
 
-Open question. When an anchored node meets a wide node of a packed column, the wide node keeps its
-packed row and the anchored node goes under it (built). The other choice: the anchored node keeps the
-first row under the output, and the wide node's column is packed down. That other choice leaves an
-overlap in the case of test 75 (two nodes anchored to one row, the wide one crossing the other's
-column). Which one should hold?
+Test 75 (two nodes anchored to one row; X, 1500 wide, crosses R's column): X is anchored itself, so
+R goes one gap under it, to (1600, 800), and a second call returns `{}`. Measured with a variant in
+which only outputs, movers and their pair partners hold the row: R takes S's row, 400, on top of X.
+Both are anchored nodes of packed columns, so no bump parts them. This variant reproduces an
+overlap in test 75 like the one the first try at this choice left.
+
+Measured with the random-section check (`ridercmp.mjs` in the session scratchpad: 1500 calls with
+anchored nodes; its random generator repeats, so they hold 394 distinct draws), before this decision
+and after: non-idempotent calls 115 and 62, capped calls 1 and 1, calls that grow the overlap count 0
+and 0. The first version of this change had no source on the list and neither of the last two
+details above: the overlap count then grew on 12 calls (3 distinct draws), and 122 calls were not
+idempotent. On copies of H1, H4 and H5 (the fixtures in `test/` on 2026-09-24), every node as the only
+mover: capped 0, overlap growth 0, non-idempotent 0, and Reflow twice changes nothing on the second
+call, before and after.
+
+**On Reflow.** Reflow packs every column, so every anchored node keeps its row against a plain
+member there too, by the same rules, and the packs repeat until a round moves nothing, at most 8
+rounds. Before 2026-09-24 Reflow gave its packs no anchored nodes to keep, so a wide column head, or
+a member ending inside the gap before an anchored node's column, was left on top of the anchored
+node (test 81). Measured, test 15's check: a second Reflow on H3's S1 moved 11 nodes before and moves
+none now; on H2's S1 it moves 19 before and after (the snapping distance, §3.4).
 
 Removing the edge releases the cell: the webview runs the engine for the target's column at once
 and the cell packs up to the first row it clears (E14 lifts to y 1100, under E15). Adding such an
