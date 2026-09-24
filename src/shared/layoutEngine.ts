@@ -208,7 +208,8 @@ function rowStart(start: number, x: number, member: EngineNode, obstacles: Engin
 //   goes back to the pair's x slot: Reflow (the explicit tidy) takes every one of them, a regular
 //   call only the ones whose pair the operation itself broke. An output the user parked overlaps
 //   nothing where it is, so pulling it left starts a bump the section never needed.
-function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode>, riders: Map<string, string>, owners: Map<string, string>, out?: Patches, toSlot: (cellId: string, output: EngineNode, wasY: number) => boolean = () => true): void {
+//   `held` = the nodes no bump will move this call; a rider does not take a row one of them is on.
+function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode>, riders: Map<string, string>, owners: Map<string, string>, out?: Patches, toSlot: (cellId: string, output: EngineNode, wasY: number) => boolean = () => true, held: Set<string> = new Set()): void {
   const x = pair.column.x;
   const place = (cell: EngineNode, y: number) => {
     const wasY = cell.y;
@@ -229,13 +230,15 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
     .sort((a, b) => a.at - b.at || a.cell.id.localeCompare(b.cell.id));
   const byRow = (a: EngineNode, b: EngineNode) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id);
   const around = obstaclesOf(pair, nodes, owners);
-  // - an output cell of another pair that crosses this column already holds its code cell's row
-  //   there — a node in the output column of its own source is the usual case. The rider takes the
-  //   first row under that output: both are pinned once packed, so no bump would part them.
-  const outputs = around.filter(n => owners.has(n.id)).sort(byRow);
+  // - a node crossing this column on the source's row that no bump will move holds that row: an
+  //   output cell of another pair (it has its code cell's row; a node in the output column of its
+  //   own source is the usual case), or a `held` node — a member of a column this call packed, a
+  //   mover. The rider takes the first row under it, since neither of the two would give way to a
+  //   bump. A node the bumps can move is left to them, and the rider keeps its source's row.
+  const blocking = around.filter(n => owners.has(n.id) || held.has(n.id)).sort(byRow);
   let prevRider: number | null = null;
   for (const a of anchored) {
-    place(a.cell, rowStart(prevRider === null ? a.at : Math.max(a.at, prevRider + GRID), x, a.cell, outputs));
+    place(a.cell, rowStart(prevRider === null ? a.at : Math.max(a.at, prevRider + GRID), x, a.cell, blocking));
     prevRider = rowBottom(a.cell, map);
   }
   // - in y order, and nothing else this pack moves is in the list, so one ordering serves every
@@ -441,13 +444,22 @@ export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patch
     if (t && touched.has(snapGrid(t.x))) pinned.add(target);
   }
 
-  for (const pair of pairs) if (touched.has(pair.column.x)) {
-    // - an output goes back on the slot when the operation moved its code cell AND left it off that
-    //   cell's row: the pair is broken, and a cell the user dragged takes its output with it
-    packColumn(pair, nodes, map, riders, owners, packed, (id, o, wasY) => movers.has(id) && o.y !== wasY);
-    // - the pack owns the column it just laid out: a bump moves what is in its way, never it, so the
-    //   two never fight over the same cell and the next call packs it to the same place
-    for (const id of pair.column.cellIds) { pinned.add(id); const outId = map.get(id)!.outputNodeId; if (outId) pinned.add(outId); }
+  // - the packs run again until a round moves nothing: a column packed early in a round read the y
+  //   of nodes that a later pack then moved (a rider, a node a wide member here packed around), so
+  //   one round can leave two packed nodes overlapping, or a hole the next call closes. The cap only
+  //   stops a shape that keeps changing.
+  for (let round = 0; round < 8; round++) {
+    const moved: Patches = {};
+    for (const pair of pairs) if (touched.has(pair.column.x)) {
+      // - an output goes back on the slot when the operation moved its code cell AND left it off that
+      //   cell's row: the pair is broken, and a cell the user dragged takes its output with it
+      packColumn(pair, nodes, map, riders, owners, moved, (id, o, wasY) => movers.has(id) && o.y !== wasY, pinned);
+      // - the pack owns the column it just laid out: a bump moves what is in its way, never it, so the
+      //   two never fight over the same cell and the next call packs it to the same place
+      for (const id of pair.column.cellIds) { pinned.add(id); const outId = map.get(id)!.outputNodeId; if (outId) pinned.add(outId); }
+    }
+    if (Object.keys(moved).length === 0) break;
+    Object.assign(packed, moved);
   }
   resolveBumps(nodes, owners, riders, pinned, placed, new Set([...movers, ...Object.keys(packed)]), { report: opts.report, maxSteps: opts.maxSteps });
   return diff(input, nodes);
