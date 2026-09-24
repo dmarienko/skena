@@ -441,6 +441,10 @@ function diff(before: EngineNode[], after: EngineNode[]): Patches {
  * (§3.2). Same input → same output; a second call changes nothing.
  */
 export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patches {
+  return layoutCall(input, opts, true);
+}
+
+function layoutCall(input: EngineNode[], opts: LayoutOpts, recheck: boolean): Patches {
   const nodes = clone(input);
   const map = byId(nodes);
   const movers = new Set(opts.moverIds ?? []);
@@ -522,9 +526,9 @@ export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patch
     return all;
   };
   // - packs and bumps take turns until a turn moves nothing: a bump can move a node a pack read (a
-  //   mover yielding, a node a column packed around), and the packs then read the new rows. Turns that
-  //   have not settled after 4 go round for good (measured up to 40): the call then keeps what the
-  //   first turn gave and reports it capped, as a capped bump walk does (§3.2)
+  //   mover yielding, a node a column packed around), and the packs then read the new rows. When the
+  //   turns have not settled after 4, the result is checked with a second call: if that moves nothing
+  //   the result stands, else the call keeps what the first turn gave and reports it capped (§3.2)
   const positions = () => nodes.map(n => `${n.x},${n.y}`).join(';');
   let first: { node: EngineNode; x: number; y: number }[] | null = null;
   let settled = false;
@@ -539,8 +543,12 @@ export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patch
     if (positions() === was) settled = true;
   }
   if (!settled && first) {
-    for (const f of first) { f.node.x = f.x; f.node.y = f.y; }
-    if (opts.report) opts.report.capped = true;
+    // - the second call does not check again: an unsettled second call counts as moving something
+    const again = recheck ? layoutCall(nodes.map(n => ({ ...n })), { ...opts, report: undefined }, false) : { unsettled: { x: 0, y: 0 } };
+    if (Object.keys(again).length > 0) {
+      for (const f of first) { f.node.x = f.x; f.node.y = f.y; }
+      if (opts.report) opts.report.capped = true;
+    }
   }
   return diff(input, nodes);
 }
