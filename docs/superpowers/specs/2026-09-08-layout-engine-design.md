@@ -223,6 +223,26 @@ other choice is to anchor no node that sits in its source's output column. Measu
 count grows on the same 6 calls only, but Reflow is then not idempotent on H4 S1 — the first Reflow
 moves N17 out of the output column, and the second then anchors it to E2's row.
 
+**A row held by any node no bump will move.** Changed 2026-09-24: the anchored node goes under every
+node that crosses its column on the source's row and that no bump will move in this call, not only
+under an output. Those are: an output cell of another pair, a mover and the other half of its pair,
+an anchored node in a packed column, and every member (with its output) of a column this call has
+already packed. A node the bumps can move is left to them, and the anchored node keeps its source's
+row. The packed columns are then packed again, in the same left-to-right order, until a round moves
+nothing, at most 8 rounds; the measured runs used at most 3. One round is not enough: a column packed
+early in the round reads the y of nodes that a later pack in the same round moves.
+
+Measured on H3 (one section, test 74): E4 runs and its output lands at (2400, 400), on N8, which is
+anchored to E7's row. The call moves N10 to (1600, 800), N11 to y 1000, M6 to y 1200, and N8 to
+(2400, 1000). Nothing overlaps; the two pairs the user left closer than one grid (M1/M2, N7/M3, in
+columns this call does not pack) stay as they were. A second call returns `{}`.
+
+Open question. When an anchored node meets a wide node of a packed column, the wide node keeps its
+packed row and the anchored node goes under it (built). The other choice: the anchored node keeps the
+first row under the output, and the wide node's column is packed down. That other choice leaves an
+overlap in the case of test 75 (two nodes anchored to one row, the wide one crossing the other's
+column). Which one should hold?
+
 Removing the edge releases the cell: the webview runs the engine for the target's column at once
 and the cell packs up to the first row it clears (E14 lifts to y 1100, under E15). Adding such an
 edge anchors the target at once (it moves onto the source's row; its old column re-packs).
