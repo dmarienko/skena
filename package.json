@@ -436,7 +436,7 @@
   "scripts": {
     "dev": "node esbuild.config.mjs --watch",
     "build": "node esbuild.config.mjs",
-    "package": "node esbuild.config.mjs && vsce package",
+    "package": "node esbuild.config.mjs --production && vsce package",
     "lint": "eslint src --ext ts,tsx",
     "typecheck": "tsc --noEmit"
   },
