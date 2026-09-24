@@ -503,16 +503,22 @@ export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patch
 export function reflowSection(input: EngineNode[], opts: { riders?: Map<string, string> } = {}): Patches {
   const nodes = clone(input);
   const map = byId(nodes);
-  // - snap x onto columns, left → right: a node joins the nearest column found so far when it sits
-  //   within half a pair width, else it starts one at its own snapped x. A node is never a candidate
-  //   column for itself — that is what leaves an off-column node in its own column.
+  // - snap x onto columns, left → right: a node joins the nearest column found so far that reaches it,
+  //   else it starts one at its own snapped x (§3.4). A column on its left reaches it while no member
+  //   of that column ends a full gap before it: the tight pass below reads a column's width off the
+  //   members that stay a gap clear of the next column, so a second Reflow never merges a column the
+  //   first one placed. A column on its right reaches it only one grid step away.
   const owners = outputOwners(nodes);
   const sweep = (a: EngineNode, b: EngineNode) => snapGrid(a.x) - snapGrid(b.x) || a.y - b.y || a.id.localeCompare(b.id);
-  const half = (NODE_SIZE.code.w + GRID + OUTPUT_MIN_W) / 2;
   const xs: number[] = [];
+  const reaches = (cx: number, sx: number) => {
+    if (sx < cx) return cx - sx <= GRID;
+    const ms = nodes.filter(m => isMember(m, owners) && snapGrid(m.x) === cx);
+    return ms.length > 0 && ms.every(m => cx + m.w + GRID > sx);
+  };
   const adopt = (n: EngineNode) => {
     const sx = snapGrid(n.x);
-    const near = xs.filter(x => Math.abs(x - sx) <= half).sort((a, b) => Math.abs(a - sx) - Math.abs(b - sx))[0];
+    const near = xs.filter(x => reaches(x, sx)).sort((a, b) => Math.abs(a - sx) - Math.abs(b - sx))[0];
     if (near === undefined) xs.push(sx);
     n.x = near ?? sx;
   };
