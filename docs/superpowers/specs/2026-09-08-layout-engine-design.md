@@ -182,11 +182,24 @@ reserve the slot only for columns that hold an output.)
 
 ### 3.5 A sequence edge anchors its target to the source's row (decided 2026-09-23)
 
-A code cell that is the target of a sequence edge (code → code) leaving the source's right border
-and entering the target's left border, with the source in a column strictly left of the target's, is
-anchored to the source's row: its y is the source's y, the way an output takes its code cell's y. In
-its own column that row is fixed and the other members pack around it (§3.4 treats it as an obstacle
-of its own column). When the source moves, the anchored node moves with it and its column is
+A node that is the target of an edge leaving the source's right border and entering the target's
+left border (a side the file leaves out counts as that border), with the source in a column strictly
+left of the target's, is anchored to the source's row: its y is the source's y, the way an output
+takes its code cell's y. The node types do not matter: a note, a file, a knowledge node, a code cell,
+as the source or as the target. Decided 2026-09-24 on H4, where the text note N27, connected from the
+code cell E18, was packed under E14 instead of taking E18's row; until then both ends had to be code
+cells. The exceptions:
+
+- the output cell of a code cell is no target: it already takes its code cell's row. A pinned cell
+  that is no code cell's output is a column member like a note, and can be a target;
+- a kernel badge is neither source nor target: it is in no column;
+- a band (a `group` node) is neither source nor target;
+- an output cell can be the source. Its row is its code cell's row, so the anchor is read from the
+  code cell (`ridersOf` names the code cell), and the code cell's column has to be strictly left of
+  the target's too.
+
+In its own column that row is fixed and the other members pack around it (§3.4 treats it as an
+obstacle of its own column). When the source moves, the anchored node moves with it and its column is
 re-packed. Two nodes anchored to one row in one column stack, the second under the first (id order).
 An edge whose source sits in the same column, or in a column to the right, anchors nothing — those
 edges stay drawings.
@@ -195,6 +208,20 @@ edges stay drawings.
 not anchored for that pack, whatever the `riders` map says: Reflow snaps columns before it packs and
 can put the two in one column, and anchoring a cell on its own column-mate walked the column down
 800 px per call before this rule.
+
+**A row held by an output.** When an output cell crosses the anchored node's column on the source's
+row, the node takes the first row under that output instead. The usual case
+is a node in the output column of its own source. Both are pinned once their columns are packed, so
+no bump would part them. Added 2026-09-24 with the rule above, without a decision of its own.
+Measured without it: on a copy of H4, 32 of the 56 single-mover calls left the note N17 on top of
+C4, the output of its source E2, and 2 calls were not idempotent; a second `canvas_pin_output` on one
+code cell put the new cell on top of the first (MCP parity test). Measured with it, on copies of H1,
+H4 and H5 with their edges, all sections, every node as the only mover: capped 0, not idempotent 0,
+Reflow twice changes nothing on the second call; the overlap count grows on 6 calls, all in H4 S2,
+the same 6 calls and the same pair (E13 and E3's output) as before this change. Open question: the
+other choice is to anchor no node that sits in its source's output column. Measured: the overlap
+count grows on the same 6 calls only, but Reflow is then not idempotent on H4 S1 — the first Reflow
+moves N17 out of the output column, and the second then anchors it to E2's row.
 
 Removing the edge releases the cell: the webview runs the engine for the target's column at once
 and the cell packs up to the first row it clears (E14 lifts to y 1100, under E15). Adding such an
