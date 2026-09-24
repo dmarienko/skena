@@ -266,16 +266,15 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
   let prevBottom: number | null = null;
   for (const cell of members) {
     if (taken.has(cell.id)) continue;
-    // - a plain member packs around the riders of other packed columns and clears what no bump will
-    //   move by a gap on either side. A held member does neither: those riders go under it. No member
-    //   packs around its own rider.
+    // - a member clears what no bump will move by a gap on either side, and a plain member packs
+    //   around the riders of other packed columns too. A held member does not: those riders go under
+    //   it. No member packs around its own rider.
     const isHeld = held.has(cell.id);
     const keep = (o: EngineNode) => riders.get(o.id) !== cell.id && !(isHeld && others.has(o.id));
-    const near = isHeld ? undefined : noBump;
     // - the head keeps its own y, obstacles or not (§3.4); only a rider's row moves it down
     const y = prevBottom === null
-      ? rowStart(snapGrid(cell.y), x, cell, riderRows.filter(keep), near)
-      : rowStart(prevBottom + GRID, x, cell, obstacles.filter(keep), near);
+      ? rowStart(snapGrid(cell.y), x, cell, riderRows.filter(keep), noBump)
+      : rowStart(prevBottom + GRID, x, cell, obstacles.filter(keep), noBump);
     place(cell, y);
     prevBottom = rowBottom(cell, map);
   }
