@@ -367,10 +367,13 @@ takes the first row where the output, at the x it has in this call, clears the a
 gap. The anchored node's own pack leaves that output out of the nodes it goes under, so the result
 does not depend on which of the two columns packs first (test 109). A code cell that is anchored
 itself leaves its own row the same way (test 110). Once the code cell has moved down, the cell and
-its output also clear every node above their new row in a column this call does not pack (test
-112). Without that, on the shape of test 112, the bumps sent the output under such a node and onto a
-node below it, the next pack put the cell back under the anchored node, the turns did not settle,
-and the call returned the output on top of that node, not reported as capped.
+its output also clear the nodes of columns this call does not pack whose top is above their new
+row: such a node counts when it reaches into that row or ends less than a gap above it, and when it
+is within a gap of the cell or the output on x, on either side (tests 112, 114). A node whose top is
+at or below the new row is left to the bumps (test 113). Without this step, on the shape of test
+112, the bumps sent the output under such a node and onto a node below it, the next pack put the
+cell back under the anchored node, the turns did not settle, and the call returned the output on
+top of that node, not reported as capped.
 
 Scope:
 - the anchored node is in a column this call packs, where no bump moves it. An anchored node in a
@@ -417,44 +420,61 @@ C6 and then under N10, to 1600, and C5 goes under N16, to 3200. Before the call 
 than a gap is N8 and C6; after it, none. The call is not capped and a second call returns `{}`. At
 56158b8 N8 went to (2600, 2200), under C6, N10, N3, C4 and C2, and C3 followed it to (4000, 2200).
 
-Measured against 56158b8. The scripts are in the session scratchpad, `c6/w`, with `le.mjs` this
-engine and `le_old.mjs` 56158b8. The generators seed from 1 to N; "bad" is a call that is capped,
-leaves a new pair closer than a gap, or is changed by a second identical call.
+Measured against 56158b8, both engines given the same calls. "Bad" is a call that is capped, leaves
+a new pair closer than a gap, or is changed by a second identical call. The random generators are
+the reviewer's; their settings are given here.
 - H1 to H6, every node of every section as the only mover (170 calls): none differ. On H1, H4 and H5:
   capped 0, overlap growth 0, not idempotent 0, and a second Reflow moves nothing, before and after.
 - The 394 distinct random sections: not idempotent 1, capped 2, overlap growth 0, before and after.
   They hold no output cells.
-- The reviewer's generator (`run/fuzz.mjs 3000 raw`: 3 to 8 nodes plus outputs, up to 3 edges; the
-  sections with an anchored node; every node as the mover; 7703 calls): capped 135 and 135, overlap
-  growth 2 and 2, a new pair closer than a gap 37 and 36, not idempotent 231 and 230. None worse.
-- One code cell whose output is the only mover, nodes anchored to its column-mates (`fz.mjs 150000`,
-  34834 calls kept): with the output new at its slot, bad 123 and 72, and 2 worse (below); with the
-  output dragged (`fz.mjs 150000 drag`), bad 131 and 72, and none worse.
-- Tidy trials (`run/tidy.mjs`): sections of the reviewer's generator after a 56158b8 Reflow that is
-  clean and stable; each node as the mover without moving, each node dragged, four two-node drags,
-  each node deleted with its column closed. `NMAX` and `EMAX` set the generator: 3 to NMAX + 2 nodes
-  plus outputs, 0 to EMAX − 1 edges.
-  - `node tidy.mjs` (2500 seeds, NMAX 6, EMAX 4, the defaults): 840 sections, 18589 calls, bad 88
-    and 88, none worse;
-  - `NMAX=6 EMAX=6 node tidy.mjs`: 1153 sections, 25295 calls, bad 118 and 119, 1 worse (below);
-  - `NMAX=6 EMAX=8 node tidy.mjs`: 1341 sections, 29416 calls, bad 149 and 150, 1 worse, the same
-    call;
-  - `NMAX=10 EMAX=7 node tidy.mjs 2500`: 1266 sections, 36528 calls, bad 240 and 237, none worse.
-- Reflow on 3000 sections of the reviewer's generator (`run/rf.mjs 3000`): 0 leave two boxes
-  intersecting and 0 leave a pair closer than a gap, before and after. A second Reflow still changes
-  66 of the 3000, before and after.
+- The reviewer's section generator, seeds 1 to 3000: 3 to NMAX + 2 nodes (NMAX 6 unless given) on
+  columns 0, 800, 1600 and 2400, some 100 px off, at rows 0 to 1100; about a third code cells, half
+  of them with an output; 0 to EMAX − 1 right-to-left edges (EMAX 4 unless given). Sections with an
+  anchored node, every node as the mover (7703 calls): capped 135 and 135, overlap growth 2 and 2, a
+  new pair closer than a gap 37 and 36, not idempotent 231 and 230. None worse.
+- One code cell whose output is the only mover, seeds 1 to 150000: the cell in a column of 1 to 4
+  nodes, 2 to 6 notes in the columns right of it, 1 to 4 right-to-left edges from its column-mates
+  or the notes to the notes; the output at its slot, or dragged up to 1500 px right and 600 px up or
+  down; sections that start with a pair closer than a gap, the output aside, left out (34834 calls):
+  with the output at its slot, bad 123 and 72, 2 worse (below); dragged, bad 131 and 72, none worse.
+- A denser variant of it, seeds 1 to 250000 (29632 calls in each mode): with the output at its slot,
+  dragged, and dragged with its code cell, 2, 3 and 1 calls worse (below), and none worse than
+  bbf7978.
+- Tidy trials: the section generator's sections after a 56158b8 Reflow, kept when that Reflow leaves
+  no pair closer than a gap and a second Reflow moves nothing; each node as the mover without moving,
+  each node dragged by a random step, four two-node drags, and each node deleted with its column
+  closed. Seeds 1 to 2500.
+  - NMAX 6, EMAX 4: 840 sections, 18589 calls, bad 88 and 88, none worse;
+  - NMAX 6, EMAX 6: 1153 sections, 25295 calls, bad 118 and 119, 1 worse (below);
+  - NMAX 6, EMAX 8: 1341 sections, 29416 calls, bad 149 and 150, 1 worse, the same call;
+  - NMAX 10, EMAX 7: 1266 sections, 36528 calls, bad 240 and 237, none worse.
+- Reflow on the section generator's 3000 sections: 0 leave two boxes intersecting and 0 leave a pair
+  closer than a gap, before and after. A second Reflow still changes 66 of the 3000, before and
+  after.
 
 Open (2026-09-24), the calls that got worse:
-- Not idempotent, `fz.mjs` seeds 80109 and 119447 (new output). A bump pushes a node right, and the
+- Not idempotent, seeds 80109 and 119447 (output at its slot). A bump pushes a node right, and the
   anchoring map the next call computes from the canvas is no longer the one this call had. On 80109,
   N0 now takes its source's row, lands on N2 and pushes it down; N2 then goes from x 900 to 1500 for
   the output, so N1's leftmost source is N0, not N2. On 119447, the output under N1 pushes N0 from
   x 800 to 1500, and the edge from N1 to N0 now anchors N0. Given the first call's map, a second call
   moves nothing on both. The engine takes the map as an input and cannot see the change.
 - A new pair closer than a gap, tidy seed 837 (NMAX 6, EMAX 6 or 8): OE3 and E1 dragged 300 right and
-  300 down. OE3 lands on E7, anchored to E6 in a packed column, so E7 stays and E3 goes under it. E1's
-  output OE1 then ends within a gap of E7's output OE7. No bump moves either of the two in this call,
-  so they stay. At 56158b8, E7 went one gap under OE3, to 1200, which took OE7 clear of OE1.
+  300 down. OE3 lands on E7, which is anchored to E6 and sits in a column this call packs, so E7 stays
+  and E3 goes under it. E1's output OE1 then ends within a gap of E7's output OE7. No bump moves
+  either of the two in this call, so they stay. At 56158b8, E7 went one gap under OE3, to 1200, which
+  took OE7 clear of OE1.
+- A second call can change a result while the anchoring map stays the same. In the one looked at
+  (denser variant, seed 125350, output at its slot), a bump slides a node into a column this call
+  packs, and the next call packs the node anchored to it: R0 comes back to A0's row, 0, and pushes
+  the plain note P0 from (900, 0) to (1600, 0), into column 1600, which this call packs for R1. P1 is
+  anchored to P0. The first call does not pack P1's column; the second does, and moves P1 from
+  (3000, 400) to (3000, 0). On the denser variant, a second call changes the result with the map
+  unchanged in all 2 worse calls with the output at its slot (seeds 117403, 125350), in 2 of the 3
+  dragged (112349, 125350) and in the 1 dragged with its code cell (125350). The third dragged call
+  (39017) is capped, and the first turn it keeps leaves the output on P1, a plain note below the new
+  row in a column this call does not pack. All of them are as bad at bbf7978, so the rule for a new
+  output sets them off, not the step that clears the nodes above.
 
 Test 75 (two nodes anchored to one row; X, 1500 wide, crosses R's column): X is anchored itself, so
 R goes one gap under it, to (1600, 800), and a second call returns `{}`. Measured with a variant in
