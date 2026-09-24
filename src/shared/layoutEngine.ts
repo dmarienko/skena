@@ -258,7 +258,7 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
   //   follows its row.
   const blocking = around.filter(n => owners.has(n.id) || held.has(n.id)).sort(byRow);
   // - an output that is a mover does not send a node held to another cell down: its code cell goes
-  //   under that node instead, and takes the output along (decided by the user 2026-09-24 on H3)
+  //   under that node instead, and takes the output along
   const movedOuts = sets.movedOutputs ?? new Set<string>();
   const blocks = (node: EngineNode) => (o: EngineNode) => !(movedOuts.has(o.id) && keepsRowAgainst(node, owners.get(o.id) ?? '', riders, map));
   const belowHeld = (cell: EngineNode, y: number, list: EngineNode[]): number => {
@@ -268,10 +268,16 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
     // - only a node held in this call, one in a packed column. Elsewhere a bump can move it back onto
     //   the output after the cell went under it, and the cell goes under it again (test 108).
     const keep = around.filter(n => held.has(n.id) && keepsRowAgainst(n, cell.id, riders, map)).sort(byRow);
-    // - the held node stays, so it counts within a gap on either side, as a node no bump moves does
-    const near = new Set([...noBump, ...keep.map(n => n.id)]);
+    const start = y;
     for (let guard = 0; guard < 16; guard++) {
-      const my = rowStart(rowStart(y, ox, o, keep, near), x, cell, list, noBump);
+      // - once moved down, the cell and its output also clear what sits above their new row in a column
+      //   no pack of this call moves: the bumps would make them go under it anyway, onto what lies there
+      const above = y > start ? around.filter(n => !noBump.has(n.id) && n.y < y) : [];
+      // - the held node stays, and so does what the cell went under: they count within a gap on either
+      //   side, as a node no bump moves does
+      const near = new Set([...noBump, ...keep.map(n => n.id), ...above.map(n => n.id)]);
+      const oy = rowStart(y, ox, o, [...keep, ...above].sort(byRow), near);
+      const my = rowStart(oy, x, cell, [...list, ...above].sort(byRow), near);
       if (my === y) break;
       y = my;
     }

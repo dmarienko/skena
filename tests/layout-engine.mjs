@@ -1831,10 +1831,50 @@ test('a new output on a node held to a node held to its own code cell sends that
 
 // 108
 test('a new output on a node held to a source in a column the call does not pack moves that node, as before', () => {
-  // - E0 is held to N2 in column 0, which this call does not pack, so the bumps move E0: under OE1, to
-  //   400. Taking E1 under E0 instead (to 700) put E1 on N2; the bump then pushed N2 down, E0 followed
-  //   N2 onto OE1, E1 went under E0 again, 400 lower each time, until the walk was capped (random
-  //   section, seed 2613 of the reviewer's generator).
+  // - E1 heads column 100 and its new output OE1 lands on E0, held to N2 in column 0, which this call
+  //   does not pack; N2 sits under E1, 900 down. The bumps move E0: under OE1, to 400. Taking E1 under
+  //   E0 instead (to 700) put E1 on N2; the bump then pushed N2 down, E0 followed N2 onto OE1, and E1
+  //   went under E0 again, 400 lower each time, until the walk was capped.
   const nodes = [code('E0', 800, 100, 500), { ...code('E1', 100, 0, 500, 'OE1'), w: 600 }, cell('OE1', 800, 0), note('N2', 0, 900, 600, 700)];
   settles(nodes, [edgeTo('N2', 'E0')], ['OE1'], { E0: { x: 800, y: 400 } });
+});
+
+// 109
+test('a held node that comes back to its row in this call keeps it against a new output, whichever column packs first', () => {
+  // - R is held to S but sits off S's row, at 1200. Column 0 packs first and reads R there, clear of O;
+  //   R's own pack then puts it on S's row, 0, which O's row 400 crosses. R keeps that row and the next
+  //   round takes E and O under R, 0 + 600 + 100.
+  const nodes = [note('S', 0, 0, 700, 300), code('E', 0, 400, 300, 'O'), cell('O', 800, 400), note('R', 800, 1200, 700, 600)];
+  settles(nodes, [edgeTo('S', 'R')], ['O'], { R: { x: 800, y: 0 }, E: { x: 0, y: 700 }, O: { x: 800, y: 700 } });
+});
+
+// 110
+test('a code cell held to another row still goes under the held node its new output lands on', () => {
+  // - E is held to T's row, 0; its new output O, 700 tall, lands on R, held to S at 400. E leaves T's
+  //   row and goes under R with O, 400 + 300 + 100.
+  const nodes = [note('T', 0, 0, 700, 300), code('E', 800, 0, 300, 'O'), note('S', 800, 400, 700, 300), cell('O', 1600, 0, 600, 700), note('R', 1600, 400, 600, 300)];
+  settles(nodes, [edgeTo('T', 'E'), edgeTo('S', 'R')], ['O'], { E: { x: 800, y: 800 }, O: { x: 1600, y: 800 } });
+});
+
+// 111
+test('a new output on a node whose source is in its own column moves that node, since it is held to nothing there', () => {
+  // - the map holds N to S, but S is a member of N's column, so N packs as a plain member: it goes
+  //   under O and under H (held to A, at 400), to 800, and S under N. E and O stay.
+  const nodes = [code('E', 0, 0, 300, 'O'), cell('O', 800, 0), note('A', 0, 400, 700, 300), note('N', 800, 0, 700, 300), note('S', 800, 400, 700, 300), note('H', 800, 1200, 700, 300)];
+  const riders = new Map([['N', 'S'], ['H', 'A']]);
+  const report = {};
+  const patches = layoutSection(nodes, { moverIds: ['O'], riders, report });
+  assert.deepEqual(patches, { N: { x: 800, y: 800 }, S: { x: 800, y: 1200 }, H: { x: 800, y: 400 } });
+  assert.equal(!!report.capped, false);
+  const after = apply(nodes, patches);
+  assert.equal(overlapCount(after), 0);
+  assert.deepEqual(layoutSection(after, { moverIds: ['O'], riders }), {});
+});
+
+// 112
+test('a dragged output that goes under a held node also goes under a node above its new row in a column the call does not pack', () => {
+  // - O is dragged onto R, held to S. E and O go under R, to 1100, where O would sit on P (column 1600,
+  //   not packed); they go under P too, to 1400. Q, under R, is clear of them there.
+  const nodes = [note('S', 0, 0, 700, 300), code('E', 0, 400, 300, 'O'), cell('O', 1800, 400, 700, 300), note('P', 1600, 800, 700, 500), note('R', 2400, 0, 700, 1000), note('Q', 2400, 1100, 700, 100)];
+  settles(nodes, [edgeTo('S', 'R')], ['O'], { E: { x: 0, y: 1400 }, O: { x: 1800, y: 1400 } });
 });
