@@ -1,0 +1,102 @@
+{
+ "nodes": [
+  {
+   "id": "text-mtsoka7i-gxf0",
+   "nodeLabel": "N1",
+   "type": "text",
+   "x": 0,
+   "y": 100,
+   "width": 700,
+   "height": 300,
+   "text": ""
+  },
+  {
+   "id": "text-mtu4zuy7-y7yk",
+   "nodeLabel": "N2",
+   "type": "text",
+   "x": 0,
+   "y": 500,
+   "width": 700,
+   "height": 300,
+   "text": ""
+  },
+  {
+   "id": "node-1788960677661",
+   "nodeLabel": "N3",
+   "type": "text",
+   "x": 1600,
+   "y": 100,
+   "width": 700,
+   "height": 300,
+   "text": ""
+  },
+  {
+   "id": "text-mtu54899-34q8",
+   "nodeLabel": "N5",
+   "type": "text",
+   "x": 1600,
+   "y": 500,
+   "width": 700,
+   "height": 300,
+   "text": "xxxxxxxxxxxxxxxxx\nx\nx\n"
+  },
+  {
+   "id": "knowledge-1790162595726-1",
+   "nodeLabel": "W1",
+   "type": "knowledge",
+   "x": 800,
+   "y": 500,
+   "width": 700,
+   "height": 500,
+   "text": "",
+   "server": "",
+   "uri": ""
+  }
+ ],
+ "edges": [
+  {
+   "id": "e1",
+   "fromNode": "text-mtsoka7i-gxf0",
+   "toNode": "text-mtu4zuy7-y7yk",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e2",
+   "fromNode": "text-mtsoka7i-gxf0",
+   "toNode": "node-1788960677661",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e3",
+   "fromNode": "node-1788960677661",
+   "toNode": "text-mtu54899-34q8",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e4",
+   "fromNode": "text-mtu4zuy7-y7yk",
+   "toNode": "text-mtu54899-34q8",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e5",
+   "fromNode": "text-mtu4zuy7-y7yk",
+   "toNode": "knowledge-1790162595726-1",
+   "fromSide": "right",
+   "toSide": "left"
+  }
+ ],
+ "metadata": {
+  "sections": [
+   {
+    "id": "sec-S1",
+    "y": 0,
+    "createdAt": 1788872580000
+   }
+  ]
+ }
+}

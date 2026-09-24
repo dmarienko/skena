@@ -1,0 +1,59 @@
+{
+ "nodes": [
+  {
+   "id": "text-mtu5xon6-tpgx",
+   "nodeLabel": "N3",
+   "type": "text",
+   "x": 59,
+   "y": 500,
+   "width": 700,
+   "height": 300,
+   "text": ""
+  },
+  {
+   "id": "node-1788962281906",
+   "nodeLabel": "N1",
+   "type": "text",
+   "x": 59,
+   "y": 100,
+   "width": 700,
+   "height": 300,
+   "text": ""
+  },
+  {
+   "id": "node-1788962287207",
+   "nodeLabel": "N2",
+   "type": "text",
+   "x": 859,
+   "y": 100,
+   "width": 700,
+   "height": 300,
+   "text": ""
+  }
+ ],
+ "edges": [
+  {
+   "id": "e1",
+   "fromNode": "text-mtu5xon6-tpgx",
+   "toNode": "node-1788962281906",
+   "fromSide": "top",
+   "toSide": "bottom"
+  },
+  {
+   "id": "e2",
+   "fromNode": "node-1788962281906",
+   "toNode": "node-1788962287207",
+   "fromSide": "right",
+   "toSide": "left"
+  }
+ ],
+ "metadata": {
+  "sections": [
+   {
+    "id": "sec-S1",
+    "y": 0,
+    "createdAt": 1788959340000
+   }
+  ]
+ }
+}

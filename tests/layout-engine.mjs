@@ -209,9 +209,10 @@ const FIXTURES = ['H1', 'H2', 'H3', 'H4', 'H5'];
 const TMP = '/tmp/skena-engine';
 const here = path.dirname(fileURLToPath(import.meta.url));
 
-// - the repo fixtures are read once, with readFileSync, and worked on as copies under /tmp
+// - frozen copies of the H canvases in tests/fixtures/ (geometry, sections, edges and output links, every
+//   text replaced by x's of the same shape), read once and worked on as copies under /tmp
 fs.mkdirSync(TMP, { recursive: true });
-for (const name of FIXTURES) fs.writeFileSync(path.join(TMP, `${name}.json`), fs.readFileSync(path.join(here, '..', 'test', `${name}.canvas`)));
+for (const name of FIXTURES) fs.writeFileSync(path.join(TMP, `${name}.json`), fs.readFileSync(path.join(here, 'fixtures', `${name}.json`)));
 
 test('reflowSection on copies of the H canvases: no managed overlap, every code cell on a column x', () => {
   // - every section is checked and every failure collected, so one failing section does not hide the

@@ -1,0 +1,960 @@
+{
+ "nodes": [
+  {
+   "id": "f1a2b3c4d5e60007",
+   "nodeLabel": "N20",
+   "type": "text",
+   "x": 1000,
+   "y": 1500,
+   "width": 675,
+   "height": 248,
+   "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\nxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "id": "f1a2b3c4d5e60008",
+   "nodeLabel": "N21",
+   "type": "text",
+   "x": 0,
+   "y": 1500,
+   "width": 832,
+   "height": 515,
+   "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\nxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "id": "code-ms0m1faq-1mba",
+   "nodeLabel": "X2",
+   "type": "code",
+   "x": 3600,
+   "y": 900,
+   "width": 527,
+   "height": 261,
+   "code": "xxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxx\nx\nxxxxxxx\nx\nx\nxxxxxxxxxxxxxxxxxxx\nx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nx\nx\nxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nx\nxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n",
+   "language": "python"
+  },
+  {
+   "id": "code-ms0m65a5-gb1m",
+   "nodeLabel": "X3",
+   "type": "code",
+   "x": 1800,
+   "y": 1940,
+   "width": 528,
+   "height": 200,
+   "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nx\nxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n",
+   "language": "python",
+   "outputNodeId": "ai-msg9c469"
+  },
+  {
+   "id": "code-ms0nx9t8-ud4u",
+   "nodeLabel": "X6",
+   "type": "code",
+   "x": 3600,
+   "y": 1261,
+   "width": 539,
+   "height": 385,
+   "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxx\nx\nxxxxxxxxxxxxx\nxxxxxxxxxxxxxxx\nxxxxxxx\nx\nxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxx\nxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxx",
+   "language": "python",
+   "outputNodeId": "ai-msg9c1ry"
+  },
+  {
+   "id": "kernel-ms23cyzm",
+   "nodeLabel": "X1",
+   "type": "kernel",
+   "x": 4774,
+   "y": 100,
+   "width": 140,
+   "height": 160,
+   "server": ""
+  },
+  {
+   "id": "code-ms23da4l-801m",
+   "nodeLabel": "X4",
+   "type": "code",
+   "x": 5000,
+   "y": 100,
+   "width": 360,
+   "height": 200,
+   "code": "xxxxxxx\nxxxxxxxxxxxxxxxxxx\nxxxxxxxx\nxxxxxxxxxxxxxx\nxxxxxxxx\nxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxx\nx\nxxxxxxxxxxxxxxx\nx\n",
+   "language": "python"
+  },
+  {
+   "id": "code-ms23x5dp-41y3",
+   "nodeLabel": "X5",
+   "type": "code",
+   "x": 1800,
+   "y": 2360,
+   "width": 600,
+   "height": 200,
+   "code": "xxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxx\nx\nx\nx\n",
+   "language": "python",
+   "outputNodeId": "ai-msg9cqlm"
+  },
+  {
+   "id": "code-ms245v48-qxbv",
+   "nodeLabel": "X8",
+   "type": "code",
+   "x": 1800,
+   "y": 2777,
+   "width": 581,
+   "height": 94,
+   "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n",
+   "language": "python"
+  },
+  {
+   "id": "code-ms25jxpx-i9q8",
+   "nodeLabel": "X9",
+   "type": "code",
+   "x": 1800,
+   "y": 3371,
+   "width": 581,
+   "height": 182,
+   "code": "x\nxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxx\nx\nx\nxxxxxxx\nxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxx\nxx\n",
+   "language": "python",
+   "outputNodeId": "ai-msg9en5m"
+  },
+  {
+   "id": "code-ms263s1i-75w9",
+   "nodeLabel": "X10",
+   "type": "code",
+   "x": 3600,
+   "y": 1746,
+   "width": 436,
+   "height": 200,
+   "code": "xxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxx\nx\nxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxx\n",
+   "language": "python",
+   "outputNodeId": "ai-msmz8gad"
+  },
+  {
+   "id": "code-ms28ncp0-7g40",
+   "nodeLabel": "X12",
+   "type": "code",
+   "x": 1800,
+   "y": 3791,
+   "width": 780,
+   "height": 600,
+   "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxx\n\nxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxx\n\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxx\n\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\nxxxxxxxxxxxxxxxxxxxxxx\n\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxx\n",
+   "language": "python"
+  },
+  {
+   "id": "code-ms28w2gk-o1z5",
+   "nodeLabel": "X13",
+   "type": "code",
+   "x": 1800,
+   "y": 4731,
+   "width": 680,
+   "height": 160,
+   "code": "xxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nx\n\n\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "language": "python",
+   "outputNodeId": "ai-1785232131527-624889"
+  },
+  {
+   "id": "code-ms29ut39-pi2t",
+   "nodeLabel": "X11",
+   "type": "code",
+   "x": 1800,
+   "y": 4491,
+   "width": 780,
+   "height": 140,
+   "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "language": "python"
+  },
+  {
+   "id": "node-1785099259465",
+   "nodeLabel": "N6",
+   "type": "text",
+   "x": 5000,
+   "y": 2080,
+   "width": 412,
+   "height": 275,
+   "text": "xxxxxxxxxxxxx\nx\nxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+  },
+  {
+   "id": "code-ms2a56vs-xtdh",
+   "nodeLabel": "X14",
+   "type": "code",
+   "x": 1800,
+   "y": 5368,
+   "width": 581,
+   "height": 200,
+   "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxx\nx\nx\nx\n",
+   "language": "python",
+   "outputNodeId": "ai-msn0wujv"
+  },
+  {
+   "id": "kernel-ms2zmgfe",
+   "nodeLabel": "K1",
+   "type": "kernel",
+   "x": 3469,
+   "y": 627,
+   "width": 140,
+   "height": 160,
+   "server": ""
+  },
+  {
+   "id": "code-ms3bf779-gjf9",
+   "nodeLabel": "E1",
+   "type": "code",
+   "x": 7700,
+   "y": 800,
+   "width": 360,
+   "height": 200,
+   "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nx\n",
+   "language": "python"
+  },
+  {
+   "id": "ai-1785232131527-624889",
+   "nodeLabel": "C3",
+   "type": "cell",
+   "x": 2680,
+   "y": 4731,
+   "width": 807,
+   "height": 537,
+   "format": "html",
+   "content": ""
+  },
+  {
+   "id": "code-ms5vjr5i-1hm1",
+   "nodeLabel": "E2",
+   "type": "code",
+   "x": 7700,
+   "y": 1100,
+   "width": 360,
+   "height": 200,
+   "code": "xxxx",
+   "language": "python"
+  },
+  {
+   "id": "code-ms5xzyeu-ypdk",
+   "nodeLabel": "E3",
+   "type": "code",
+   "x": 6300,
+   "y": 4540,
+   "width": 581,
+   "height": 200,
+   "code": "xxxxxxxxxxxx",
+   "language": "python",
+   "outputNodeId": "ai-ms5y089f"
+  },
+  {
+   "id": "ai-ms5y089f",
+   "nodeLabel": "C9",
+   "type": "cell",
+   "x": 6981,
+   "y": 4540,
+   "width": 480,
+   "height": 320,
+   "format": "html",
+   "content": ""
+  },
+  {
+   "id": "code-ms5y2cgc-z71q",
+   "nodeLabel": "E4",
+   "type": "code",
+   "x": 5000,
+   "y": 820,
+   "width": 360,
+   "height": 200,
+   "code": "xxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxx\nx\nx\nxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxx\nx\n",
+   "language": "python",
+   "outputNodeId": "ai-ms60rnkk"
+  },
+  {
+   "id": "code-ms5y38t0-86h6",
+   "nodeLabel": "E5",
+   "type": "code",
+   "x": 5000,
+   "y": 1240,
+   "width": 359,
+   "height": 154,
+   "code": "xxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxx",
+   "language": "python",
+   "outputNodeId": "ai-ms62ef1n"
+  },
+  {
+   "id": "code-ms60qihp-2tgv",
+   "nodeLabel": "E6",
+   "type": "code",
+   "x": 5000,
+   "y": 1660,
+   "width": 359,
+   "height": 200,
+   "code": "xxxxxxxxxxxx\nx\nxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxx\nx\nx\nx\nx\n",
+   "language": "python",
+   "outputNodeId": "ai-msmyer4y"
+  },
+  {
+   "id": "code-ms60qk4r-9ju0",
+   "nodeLabel": "E7",
+   "type": "code",
+   "x": 6300,
+   "y": 3700,
+   "width": 359,
+   "height": 200,
+   "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nx\nxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxx\nx\nx\n",
+   "language": "python",
+   "outputNodeId": "ai-ms62ftb3"
+  },
+  {
+   "id": "ai-ms60rnkk",
+   "nodeLabel": "C11",
+   "type": "cell",
+   "x": 5580,
+   "y": 820,
+   "width": 480,
+   "height": 320,
+   "format": "html",
+   "content": ""
+  },
+  {
+   "id": "ai-ms62ftb3",
+   "nodeLabel": "C12",
+   "type": "cell",
+   "x": 6981,
+   "y": 3700,
+   "width": 480,
+   "height": 320,
+   "format": "html",
+   "content": ""
+  },
+  {
+   "id": "ai-ms62ef1n",
+   "nodeLabel": "C6",
+   "type": "cell",
+   "x": 5580,
+   "y": 1240,
+   "width": 480,
+   "height": 320,
+   "format": "html",
+   "content": ""
+  },
+  {
+   "id": "cell-1785411049047",
+   "nodeLabel": "C13",
+   "type": "cell",
+   "x": 6300,
+   "y": 4120,
+   "width": 480,
+   "height": 320,
+   "format": "image",
+   "content": ""
+  },
+  {
+   "id": "node-1785414235546",
+   "nodeLabel": "N1",
+   "type": "text",
+   "x": 7700,
+   "y": 4120,
+   "width": 873,
+   "height": 341,
+   "text": "xxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "id": "node-1785414282123",
+   "nodeLabel": "N2",
+   "type": "text",
+   "x": 9400,
+   "y": 4120,
+   "width": 803,
+   "height": 277,
+   "text": "xxxxxx\nxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "id": "ai-msg9c1ry",
+   "nodeLabel": "C1",
+   "type": "cell",
+   "x": 4239,
+   "y": 1261,
+   "width": 480,
+   "height": 320,
+   "format": "plotly",
+   "content": ""
+  },
+  {
+   "id": "ai-msg9c469",
+   "nodeLabel": "C2",
+   "type": "cell",
+   "x": 2680,
+   "y": 1940,
+   "width": 480,
+   "height": 320,
+   "format": "html",
+   "content": ""
+  },
+  {
+   "id": "ai-msg9cqlm",
+   "nodeLabel": "C8",
+   "type": "cell",
+   "x": 2680,
+   "y": 2360,
+   "width": 604,
+   "height": 317,
+   "format": "html",
+   "content": ""
+  },
+  {
+   "id": "ai-msg9en5m",
+   "nodeLabel": "C4",
+   "type": "cell",
+   "x": 2680,
+   "y": 3371,
+   "width": 480,
+   "height": 320,
+   "format": "html",
+   "content": ""
+  },
+  {
+   "id": "paste-mslwwflj-l8gr",
+   "nodeLabel": "D1",
+   "type": "noderef",
+   "x": 1800,
+   "y": 1500,
+   "width": 200,
+   "height": 120
+  },
+  {
+   "id": "paste-mslwwy9t-gxp9",
+   "nodeLabel": "D2",
+   "type": "noderef",
+   "x": 1800,
+   "y": 1720,
+   "width": 200,
+   "height": 120
+  },
+  {
+   "id": "paste-mslx06b5-p6j4",
+   "nodeLabel": "D3",
+   "type": "noderef",
+   "x": 6300,
+   "y": 1940,
+   "width": 200,
+   "height": 120
+  },
+  {
+   "id": "cell-1786286894194",
+   "nodeLabel": "C10",
+   "type": "cell",
+   "x": 5000,
+   "y": 400,
+   "width": 480,
+   "height": 320,
+   "format": "image",
+   "content": ""
+  },
+  {
+   "id": "paste-mslxpilx-gwwa",
+   "nodeLabel": "D4",
+   "type": "noderef",
+   "x": 6300,
+   "y": 800,
+   "width": 200,
+   "height": 120
+  },
+  {
+   "id": "node-1786288179693",
+   "nodeLabel": "N3",
+   "type": "text",
+   "x": 6300,
+   "y": 400,
+   "width": 400,
+   "height": 300,
+   "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "id": "ai-msmyer4y",
+   "nodeLabel": "C7",
+   "type": "cell",
+   "x": 5580,
+   "y": 1660,
+   "width": 480,
+   "height": 320,
+   "format": "html",
+   "content": ""
+  },
+  {
+   "id": "code-msmyo4mg-2rbw",
+   "nodeLabel": "E8",
+   "type": "code",
+   "x": 1800,
+   "y": 5788,
+   "width": 581,
+   "height": 200,
+   "code": "xxxxxxxxxxxxxxxxxx\nx\n",
+   "language": "python",
+   "outputNodeId": "ai-msn3usf3"
+  },
+  {
+   "id": "ai-msmz8gad",
+   "nodeLabel": "C5",
+   "type": "cell",
+   "x": 4239,
+   "y": 1746,
+   "width": 480,
+   "height": 320,
+   "format": "html",
+   "content": ""
+  },
+  {
+   "id": "code-msmz9geg-dyq8",
+   "nodeLabel": "E9",
+   "type": "code",
+   "x": 1800,
+   "y": 6208,
+   "width": 581,
+   "height": 200,
+   "code": "xxxxxxxxxxxxxxxxxxxxxxxx",
+   "language": "python",
+   "outputNodeId": "ai-msn3usif"
+  },
+  {
+   "id": "ai-msn0wujv",
+   "nodeLabel": "C14",
+   "type": "cell",
+   "x": 2680,
+   "y": 5368,
+   "width": 480,
+   "height": 320,
+   "format": "html",
+   "content": ""
+  },
+  {
+   "id": "node-1786356187004",
+   "nodeLabel": "N4",
+   "type": "text",
+   "x": 1800,
+   "y": 6628,
+   "width": 720,
+   "height": 600,
+   "text": "xxxxxxxxxxxxxxxxx\nx\nxxxxx"
+  },
+  {
+   "id": "ai-msn3usf3",
+   "nodeLabel": "C15",
+   "type": "cell",
+   "x": 2680,
+   "y": 5788,
+   "width": 480,
+   "height": 320,
+   "format": "html",
+   "content": ""
+  },
+  {
+   "id": "ai-msn3usif",
+   "nodeLabel": "C16",
+   "type": "cell",
+   "x": 2680,
+   "y": 6208,
+   "width": 480,
+   "height": 320,
+   "format": "html",
+   "content": ""
+  },
+  {
+   "id": "text-mtjchypp-lf4s",
+   "nodeLabel": "N5",
+   "type": "text",
+   "x": 1000,
+   "y": 2000,
+   "width": 700,
+   "height": 300,
+   "text": ""
+  },
+  {
+   "id": "text-mtjchyzg-82ns",
+   "nodeLabel": "N7",
+   "type": "text",
+   "x": 1000,
+   "y": 2400,
+   "width": 700,
+   "height": 300,
+   "text": ""
+  },
+  {
+   "id": "text-mtu0ldtv-29iq",
+   "nodeLabel": "N8",
+   "type": "text",
+   "x": 1800,
+   "y": 7328,
+   "width": 700,
+   "height": 400,
+   "text": ""
+  },
+  {
+   "id": "code-mu8bljtj-usmk",
+   "nodeLabel": "E10",
+   "type": "code",
+   "x": 1800,
+   "y": 2971,
+   "width": 700,
+   "height": 300,
+   "code": "",
+   "language": "python"
+  }
+ ],
+ "edges": [
+  {
+   "id": "e1",
+   "fromNode": "f1a2b3c4d5e60008",
+   "toNode": "f1a2b3c4d5e60007",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e2",
+   "fromNode": "code-ms0nx9t8-ud4u",
+   "toNode": "code-ms0m65a5-gb1m",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e3",
+   "fromNode": "code-ms0m1faq-1mba",
+   "toNode": "code-ms0nx9t8-ud4u",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e4",
+   "fromNode": "kernel-ms23cyzm",
+   "toNode": "code-ms23da4l-801m",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e5",
+   "fromNode": "code-ms0m65a5-gb1m",
+   "toNode": "code-ms23x5dp-41y3",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e6",
+   "fromNode": "code-ms23x5dp-41y3",
+   "toNode": "code-ms245v48-qxbv",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e7",
+   "fromNode": "code-ms245v48-qxbv",
+   "toNode": "code-ms25jxpx-i9q8",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e8",
+   "fromNode": "code-ms263s1i-75w9",
+   "toNode": "code-ms28ncp0-7g40",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e9",
+   "fromNode": "code-ms28ncp0-7g40",
+   "toNode": "code-ms29ut39-pi2t",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e10",
+   "fromNode": "code-ms29ut39-pi2t",
+   "toNode": "code-ms28w2gk-o1z5",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e11",
+   "fromNode": "node-1785099259465",
+   "toNode": "code-ms28ncp0-7g40",
+   "fromSide": "left",
+   "toSide": "right"
+  },
+  {
+   "id": "e12",
+   "fromNode": "code-ms28w2gk-o1z5",
+   "toNode": "code-ms2a56vs-xtdh",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e13",
+   "fromNode": "code-ms23da4l-801m",
+   "toNode": "code-ms3bf779-gjf9",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e14",
+   "fromNode": "code-ms25jxpx-i9q8",
+   "toNode": "code-ms263s1i-75w9",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e15",
+   "fromNode": "code-ms28w2gk-o1z5",
+   "toNode": "ai-1785232131527-624889",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e16",
+   "fromNode": "code-ms23da4l-801m",
+   "toNode": "code-ms5vjr5i-1hm1",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e17",
+   "fromNode": "code-ms25jxpx-i9q8",
+   "toNode": "code-ms5xzyeu-ypdk",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e18",
+   "fromNode": "code-ms5xzyeu-ypdk",
+   "toNode": "ai-ms5y089f",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e19",
+   "fromNode": "code-ms5vjr5i-1hm1",
+   "toNode": "code-ms5y2cgc-z71q",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e20",
+   "fromNode": "code-ms5y2cgc-z71q",
+   "toNode": "code-ms5y38t0-86h6",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e21",
+   "fromNode": "code-ms5y38t0-86h6",
+   "toNode": "code-ms60qihp-2tgv",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e22",
+   "fromNode": "code-ms5y2cgc-z71q",
+   "toNode": "ai-ms60rnkk",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e23",
+   "fromNode": "code-ms5y38t0-86h6",
+   "toNode": "code-ms60qk4r-9ju0",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e24",
+   "fromNode": "code-ms60qk4r-9ju0",
+   "toNode": "ai-ms62ftb3",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e25",
+   "fromNode": "code-ms5y38t0-86h6",
+   "toNode": "ai-ms62ef1n",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e26",
+   "fromNode": "cell-1785411049047",
+   "toNode": "node-1785414235546",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e27",
+   "fromNode": "node-1785414235546",
+   "toNode": "node-1785414282123",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e28",
+   "fromNode": "code-ms28w2gk-o1z5",
+   "toNode": "ai-1785232131527-624889",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e29",
+   "fromNode": "kernel-ms2zmgfe",
+   "toNode": "code-ms0m1faq-1mba",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e30",
+   "fromNode": "code-ms0nx9t8-ud4u",
+   "toNode": "ai-msg9c1ry",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e31",
+   "fromNode": "code-ms0m65a5-gb1m",
+   "toNode": "ai-msg9c469",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e32",
+   "fromNode": "code-ms23x5dp-41y3",
+   "toNode": "ai-msg9cqlm",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e33",
+   "fromNode": "code-ms25jxpx-i9q8",
+   "toNode": "ai-msg9en5m",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e34",
+   "fromNode": "f1a2b3c4d5e60007",
+   "toNode": "paste-mslwwflj-l8gr",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e35",
+   "fromNode": "paste-mslwwflj-l8gr",
+   "toNode": "paste-mslwwy9t-gxp9",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e36",
+   "fromNode": "ai-msg9c469",
+   "toNode": "paste-mslx06b5-p6j4",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e37",
+   "fromNode": "cell-1786286894194",
+   "toNode": "paste-mslxpilx-gwwa",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e38",
+   "fromNode": "cell-1786286894194",
+   "toNode": "node-1786288179693",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e39",
+   "fromNode": "code-ms60qihp-2tgv",
+   "toNode": "ai-msmyer4y",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e40",
+   "fromNode": "code-ms2a56vs-xtdh",
+   "toNode": "code-msmyo4mg-2rbw",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e41",
+   "fromNode": "node-1785099259465",
+   "toNode": "ai-1785232131527-624889",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e42",
+   "fromNode": "code-ms263s1i-75w9",
+   "toNode": "ai-msmz8gad",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e43",
+   "fromNode": "code-msmyo4mg-2rbw",
+   "toNode": "code-msmz9geg-dyq8",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e44",
+   "fromNode": "code-ms2a56vs-xtdh",
+   "toNode": "ai-msn0wujv",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e45",
+   "fromNode": "code-msmz9geg-dyq8",
+   "toNode": "node-1786356187004",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e46",
+   "fromNode": "code-msmyo4mg-2rbw",
+   "toNode": "ai-msn3usf3",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e47",
+   "fromNode": "code-msmz9geg-dyq8",
+   "toNode": "ai-msn3usif",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e48",
+   "fromNode": "f1a2b3c4d5e60007",
+   "toNode": "text-mtjchypp-lf4s",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e49",
+   "fromNode": "kernel-ms2zmgfe",
+   "toNode": "text-mtjchyzg-82ns",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e50",
+   "fromNode": "node-1786356187004",
+   "toNode": "text-mtu0ldtv-29iq",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e51",
+   "fromNode": "code-ms23x5dp-41y3",
+   "toNode": "code-mu8bljtj-usmk",
+   "fromSide": "bottom",
+   "toSide": "top"
+  }
+ ],
+ "metadata": {
+  "sections": [
+   {
+    "id": "sec-S1",
+    "y": 0,
+    "createdAt": 1788872640000
+   }
+  ]
+ }
+}

@@ -1,0 +1,325 @@
+{
+ "nodes": [
+  {
+   "id": "node-1785412487864",
+   "nodeLabel": "N1",
+   "type": "text",
+   "x": 1056,
+   "y": 2427,
+   "width": 660,
+   "height": 140,
+   "text": "xxxxxx\nxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "id": "cell-1785412559843",
+   "nodeLabel": "C2",
+   "type": "cell",
+   "x": 1376,
+   "y": 3499,
+   "width": 683,
+   "height": 259,
+   "format": "image",
+   "content": ""
+  },
+  {
+   "id": "cell-1785412815286",
+   "nodeLabel": "C14",
+   "type": "cell",
+   "x": 2312,
+   "y": 2784,
+   "width": 689,
+   "height": 245,
+   "format": "image",
+   "content": ""
+  },
+  {
+   "id": "text-ms7hb69y-9h4c",
+   "nodeLabel": "N2",
+   "type": "text",
+   "x": 1655,
+   "y": 1790,
+   "width": 380,
+   "height": 300,
+   "text": ""
+  },
+  {
+   "id": "text-ms7hb7mt-7dpb",
+   "nodeLabel": "N3",
+   "type": "text",
+   "x": 2143,
+   "y": 1812,
+   "width": 440,
+   "height": 260,
+   "text": "xxxxxxxx\nxxx"
+  },
+  {
+   "id": "text-ms7hb8zo-cf4u",
+   "nodeLabel": "N4",
+   "type": "text",
+   "x": 2773,
+   "y": 1791,
+   "width": 400,
+   "height": 300,
+   "text": ""
+  },
+  {
+   "id": "kernel-ms7htd27",
+   "nodeLabel": "K1",
+   "type": "kernel",
+   "x": 3304,
+   "y": 1709,
+   "width": 140,
+   "height": 160,
+   "server": ""
+  },
+  {
+   "id": "code-ms7htfwn-8ryh",
+   "nodeLabel": "E1",
+   "type": "code",
+   "x": 3600,
+   "y": 1800,
+   "width": 360,
+   "height": 200,
+   "code": "xxxx",
+   "language": "python"
+  },
+  {
+   "id": "code-ms7htrc3-ntpx",
+   "nodeLabel": "E2",
+   "type": "code",
+   "x": 3600,
+   "y": 2493,
+   "width": 360,
+   "height": 165,
+   "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxx\nx\nxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxx",
+   "language": "python"
+  },
+  {
+   "id": "node-paste-1785419306316-0",
+   "nodeLabel": "M2",
+   "type": "file",
+   "x": 1105,
+   "y": 100,
+   "width": 700,
+   "height": 700,
+   "file": ""
+  },
+  {
+   "id": "node-paste-1785419306506-0",
+   "nodeLabel": "M3",
+   "type": "file",
+   "x": 1105,
+   "y": 840,
+   "width": 700,
+   "height": 700,
+   "file": ""
+  },
+  {
+   "id": "node-paste-1785419306654-0",
+   "nodeLabel": "M4",
+   "type": "file",
+   "x": 1885,
+   "y": 240,
+   "width": 900,
+   "height": 700,
+   "file": ""
+  },
+  {
+   "id": "node-paste-1785419306822-0",
+   "nodeLabel": "M5",
+   "type": "file",
+   "x": 2205,
+   "y": 1435,
+   "width": 400,
+   "height": 300,
+   "file": ""
+  },
+  {
+   "id": "text-msly47hk-v41d",
+   "nodeLabel": "N5",
+   "type": "text",
+   "x": 2085,
+   "y": 3820,
+   "width": 360,
+   "height": 300,
+   "text": ""
+  },
+  {
+   "id": "node-1786288627523",
+   "nodeLabel": "N6",
+   "type": "text",
+   "x": 2700,
+   "y": 3820,
+   "width": 400,
+   "height": 205,
+   "text": ""
+  },
+  {
+   "id": "node-paste-1786288641056-0",
+   "nodeLabel": "N7",
+   "type": "text",
+   "x": 100,
+   "y": 3362,
+   "width": 317,
+   "height": 157,
+   "text": "xxxxxxxxx"
+  },
+  {
+   "id": "node-1786288715415",
+   "nodeLabel": "N8",
+   "type": "text",
+   "x": 2700,
+   "y": 4125,
+   "width": 402,
+   "height": 113,
+   "text": ""
+  },
+  {
+   "id": "node-1786288748427",
+   "nodeLabel": "N9",
+   "type": "text",
+   "x": 2700,
+   "y": 4338,
+   "width": 392,
+   "height": 91,
+   "text": ""
+  },
+  {
+   "id": "text-msm0x5g1-53q2",
+   "nodeLabel": "N10",
+   "type": "text",
+   "x": 2462,
+   "y": 2328,
+   "width": 400,
+   "height": 300,
+   "text": ""
+  },
+  {
+   "id": "code-msm1zlak-sw3r",
+   "nodeLabel": "E3",
+   "type": "code",
+   "x": 3600,
+   "y": 2100,
+   "width": 360,
+   "height": 293,
+   "code": "xxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxx\n\n\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxx\n",
+   "language": "python"
+  }
+ ],
+ "edges": [
+  {
+   "id": "e1",
+   "fromNode": "node-1785412487864",
+   "toNode": "cell-1785412815286",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e2",
+   "fromNode": "kernel-ms7htd27",
+   "toNode": "code-ms7htfwn-8ryh",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e3",
+   "fromNode": "text-ms7hb7mt-7dpb",
+   "toNode": "text-ms7hb8zo-cf4u",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e4",
+   "fromNode": "text-ms7hb7mt-7dpb",
+   "toNode": "text-ms7hb69y-9h4c",
+   "fromSide": "left",
+   "toSide": "right"
+  },
+  {
+   "id": "e5",
+   "fromNode": "text-ms7hb7mt-7dpb",
+   "toNode": "cell-1785412815286",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e6",
+   "fromNode": "text-msly47hk-v41d",
+   "toNode": "node-1786288627523",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e7",
+   "fromNode": "text-msly47hk-v41d",
+   "toNode": "node-1786288715415",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e8",
+   "fromNode": "text-msly47hk-v41d",
+   "toNode": "node-1786288748427",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e9",
+   "fromNode": "text-ms7hb7mt-7dpb",
+   "toNode": "text-msm0x5g1-53q2",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e10",
+   "fromNode": "cell-1785412559843",
+   "toNode": "cell-1785412815286",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e11",
+   "fromNode": "node-paste-1785419306822-0",
+   "toNode": "node-paste-1785419306654-0",
+   "fromSide": "top",
+   "toSide": "bottom"
+  },
+  {
+   "id": "e12",
+   "fromNode": "node-paste-1785419306822-0",
+   "toNode": "node-1785412487864",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e13",
+   "fromNode": "node-paste-1786288641056-0",
+   "toNode": "cell-1785412559843",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e14",
+   "fromNode": "code-ms7htfwn-8ryh",
+   "toNode": "code-msm1zlak-sw3r",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e15",
+   "fromNode": "code-msm1zlak-sw3r",
+   "toNode": "code-ms7htrc3-ntpx",
+   "fromSide": "bottom",
+   "toSide": "top"
+  }
+ ],
+ "metadata": {
+  "sections": [
+   {
+    "id": "sec-S1",
+    "y": 0,
+    "createdAt": 1788309720000
+   }
+  ]
+ }
+}

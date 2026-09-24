@@ -1,0 +1,1038 @@
+{
+ "nodes": [
+  {
+   "id": "text-mtj265g0-24z8",
+   "nodeLabel": "N1",
+   "type": "text",
+   "x": 0,
+   "y": 900,
+   "width": 700,
+   "height": 200,
+   "text": "xxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxx\nx\nx\nxxxx\nx\nxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxx\n"
+  },
+  {
+   "id": "text-mtj266rt-j7f1",
+   "nodeLabel": "N2",
+   "type": "text",
+   "x": 0,
+   "y": 100,
+   "width": 700,
+   "height": 700,
+   "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nx\nxxxx\nxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxx\nx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxx\nx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nx\nxxxx\nx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxx\nx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nx\nxxxxxxxxxxxxxx\nx\nxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxx\nx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nx\nxxxxx\nxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxx\nx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nx\nxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxx\nx\nx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+  },
+  {
+   "id": "code-mtlicwse-v0iv",
+   "nodeLabel": "E1",
+   "type": "code",
+   "x": 1700,
+   "y": 100,
+   "width": 700,
+   "height": 200,
+   "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxx\n",
+   "language": "python",
+   "outputNodeId": "ai-mtx3w2i4"
+  },
+  {
+   "id": "node-paste-1788874480442-0",
+   "nodeLabel": "E4",
+   "type": "code",
+   "x": 0,
+   "y": 5300,
+   "width": 700,
+   "height": 100,
+   "code": "xxxxxxxxxxxxx\nxxxxxx",
+   "language": "python"
+  },
+  {
+   "id": "code-mttvjys2-sibt",
+   "nodeLabel": "E5",
+   "type": "code",
+   "x": 1700,
+   "y": 500,
+   "width": 700,
+   "height": 200,
+   "code": "xxxx\n",
+   "language": "python",
+   "outputNodeId": "ai-mtx4n33c"
+  },
+  {
+   "id": "node-1788944906173",
+   "nodeLabel": "N4",
+   "type": "text",
+   "x": 800,
+   "y": 100,
+   "width": 700,
+   "height": 100,
+   "text": "xxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxx\n"
+  },
+  {
+   "id": "text-mttvlwla-bs0o",
+   "nodeLabel": "N6",
+   "type": "text",
+   "x": 800,
+   "y": 300,
+   "width": 700,
+   "height": 200,
+   "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxx\nx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+  },
+  {
+   "id": "node-1788962741739",
+   "nodeLabel": "M1",
+   "type": "file",
+   "x": 4600,
+   "y": 500,
+   "width": 700,
+   "height": 600,
+   "file": ""
+  },
+  {
+   "id": "ai-1788965930998-8506f0",
+   "nodeLabel": "N9",
+   "type": "text",
+   "x": 800,
+   "y": 600,
+   "width": 700,
+   "height": 400,
+   "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\nxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxx\n\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\nxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "id": "code-mtwr4gde-9sx3",
+   "nodeLabel": "E6",
+   "type": "code",
+   "x": 1700,
+   "y": 1600,
+   "width": 700,
+   "height": 300,
+   "code": "xxxxxxxxxxx\nxxxxxxxxxxxxxxxxxx\nxxxxxx\n",
+   "language": "python",
+   "outputNodeId": "ai-mtx4nuit"
+  },
+  {
+   "id": "code-mtwru5d9-ygor",
+   "nodeLabel": "E2",
+   "type": "code",
+   "x": 1700,
+   "y": 2000,
+   "width": 700,
+   "height": 300,
+   "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nx\nxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxx\nx\nx\nxxxxxxxxxxxxxxxxxxxxxxxxx\n",
+   "language": "python",
+   "outputNodeId": "ai-mu8e5lp5"
+  },
+  {
+   "id": "text-mtwrxzsr-maea",
+   "nodeLabel": "N10",
+   "type": "text",
+   "x": 0,
+   "y": 1200,
+   "width": 700,
+   "height": 300,
+   "text": ""
+  },
+  {
+   "id": "code-mtws0a7c-kqgm",
+   "nodeLabel": "E3",
+   "type": "code",
+   "x": 0,
+   "y": 5500,
+   "width": 700,
+   "height": 200,
+   "code": "xxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxx\nx\nxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nx\nxxxx",
+   "language": "python",
+   "outputNodeId": "ai-muffs7um"
+  },
+  {
+   "id": "node-1789120624444",
+   "nodeLabel": "M2",
+   "type": "file",
+   "x": 5400,
+   "y": 500,
+   "width": 700,
+   "height": 1100,
+   "file": ""
+  },
+  {
+   "id": "text-mtwtqrti-lgff",
+   "nodeLabel": "N7",
+   "type": "text",
+   "x": 1600,
+   "y": 4800,
+   "width": 700,
+   "height": 300,
+   "text": ""
+  },
+  {
+   "id": "node-1789123215761",
+   "nodeLabel": "N8",
+   "type": "text",
+   "x": 4600,
+   "y": 1200,
+   "width": 300,
+   "height": 300,
+   "text": "xxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "id": "code-mtwv7qlc-7uji",
+   "nodeLabel": "E7",
+   "type": "code",
+   "x": 1700,
+   "y": 2400,
+   "width": 700,
+   "height": 300,
+   "code": "xxxx\n",
+   "language": "python",
+   "outputNodeId": "ai-mu8f4ymv"
+  },
+  {
+   "id": "node-1789127611954",
+   "nodeLabel": "N13",
+   "type": "text",
+   "x": 5400,
+   "y": 1700,
+   "width": 700,
+   "height": 300,
+   "text": ""
+  },
+  {
+   "id": "node-1789139111179",
+   "nodeLabel": "N17",
+   "type": "text",
+   "x": 3200,
+   "y": 2000,
+   "width": 700,
+   "height": 300,
+   "text": ""
+  },
+  {
+   "id": "node-1789139114911",
+   "nodeLabel": "N18",
+   "type": "text",
+   "x": 4600,
+   "y": 2000,
+   "width": 400,
+   "height": 300,
+   "text": ""
+  },
+  {
+   "id": "node-1789139807093",
+   "nodeLabel": "N3",
+   "type": "text",
+   "x": 800,
+   "y": 2000,
+   "width": 700,
+   "height": 700,
+   "text": "xxxxxxxxxxxxxxxxxxx\nx\nxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nx\nxxxxx\nx\nxxxx"
+  },
+  {
+   "id": "text-mtx3u0x2-w03q",
+   "nodeLabel": "N12",
+   "type": "text",
+   "x": 800,
+   "y": 1100,
+   "width": 700,
+   "height": 300,
+   "text": ""
+  },
+  {
+   "id": "text-mtx3u1nb-nlfp",
+   "nodeLabel": "N14",
+   "type": "text",
+   "x": 2600,
+   "y": 1000,
+   "width": 700,
+   "height": 300,
+   "text": ""
+  },
+  {
+   "id": "text-mtx3u2kf-6duv",
+   "nodeLabel": "N15",
+   "type": "text",
+   "x": 800,
+   "y": 2800,
+   "width": 700,
+   "height": 300,
+   "text": ""
+  },
+  {
+   "id": "ai-mtx3w2i4",
+   "nodeLabel": "C1",
+   "type": "cell",
+   "x": 2500,
+   "y": 100,
+   "width": 600,
+   "height": 300,
+   "format": "html",
+   "content": ""
+  },
+  {
+   "id": "code-mtx42lb7-6l0m",
+   "nodeLabel": "E8",
+   "type": "code",
+   "x": 1700,
+   "y": 3200,
+   "width": 700,
+   "height": 300,
+   "code": "",
+   "language": "python"
+  },
+  {
+   "id": "ai-mtx4n33c",
+   "nodeLabel": "C2",
+   "type": "cell",
+   "x": 2500,
+   "y": 500,
+   "width": 600,
+   "height": 300,
+   "format": "html",
+   "content": ""
+  },
+  {
+   "id": "ai-mtx4nuit",
+   "nodeLabel": "C5",
+   "type": "cell",
+   "x": 2500,
+   "y": 1600,
+   "width": 600,
+   "height": 300,
+   "format": "html",
+   "content": ""
+  },
+  {
+   "id": "code-mtx4tq88-6x3d",
+   "nodeLabel": "E9",
+   "type": "code",
+   "x": 1700,
+   "y": 3600,
+   "width": 700,
+   "height": 300,
+   "code": "",
+   "language": "python"
+  },
+  {
+   "id": "text-mtx4z2ud-vl9s",
+   "nodeLabel": "N19",
+   "type": "text",
+   "x": 800,
+   "y": 1500,
+   "width": 700,
+   "height": 300,
+   "text": "xxx\nx"
+  },
+  {
+   "id": "text-mtx50ybf-0ob1",
+   "nodeLabel": "N5",
+   "type": "text",
+   "x": 0,
+   "y": 2400,
+   "width": 700,
+   "height": 300,
+   "text": "xxxx\nxxxxxx\nxxxxxx\nxxxxxx\nxxxxxx\nx\nxxxxxx\nxxxxxx\nxxxxxxxxxxx\nx\nxxxxxxxxxx\nx\nx\n"
+  },
+  {
+   "id": "text-mtx513cd-32ib",
+   "nodeLabel": "N16",
+   "type": "text",
+   "x": 0,
+   "y": 2800,
+   "width": 700,
+   "height": 300,
+   "text": "xxxx"
+  },
+  {
+   "id": "text-mtx5143m-v644",
+   "nodeLabel": "N20",
+   "type": "text",
+   "x": 0,
+   "y": 3200,
+   "width": 700,
+   "height": 300,
+   "text": ""
+  },
+  {
+   "id": "text-mtx514mx-41rv",
+   "nodeLabel": "N21",
+   "type": "text",
+   "x": 0,
+   "y": 3600,
+   "width": 700,
+   "height": 300,
+   "text": ""
+  },
+  {
+   "id": "node-1789142861087",
+   "nodeLabel": "N22",
+   "type": "text",
+   "x": 4600,
+   "y": 1600,
+   "width": 300,
+   "height": 300,
+   "text": ""
+  },
+  {
+   "id": "code-mtx5irr6-02zv",
+   "nodeLabel": "E10",
+   "type": "code",
+   "x": 3200,
+   "y": 3200,
+   "width": 700,
+   "height": 300,
+   "code": "",
+   "language": "python"
+  },
+  {
+   "id": "ai-mu8e5lp5",
+   "nodeLabel": "C4",
+   "type": "cell",
+   "x": 2500,
+   "y": 2000,
+   "width": 600,
+   "height": 300,
+   "format": "html",
+   "content": ""
+  },
+  {
+   "id": "code-mu8ebeui-8ggl",
+   "nodeLabel": "E11",
+   "type": "code",
+   "x": 1700,
+   "y": 2800,
+   "width": 700,
+   "height": 300,
+   "code": "",
+   "language": "python"
+  },
+  {
+   "id": "ai-mu8f4ymv",
+   "nodeLabel": "C8",
+   "type": "cell",
+   "x": 2500,
+   "y": 2400,
+   "width": 600,
+   "height": 300,
+   "format": "html",
+   "content": ""
+  },
+  {
+   "id": "node-paste-1789830289357-0",
+   "nodeLabel": "N24",
+   "type": "text",
+   "x": 0,
+   "y": 2000,
+   "width": 700,
+   "height": 300,
+   "text": ""
+  },
+  {
+   "id": "cell-1789843446538",
+   "nodeLabel": "C9",
+   "type": "cell",
+   "x": 800,
+   "y": 3600,
+   "width": 480,
+   "height": 320,
+   "format": "image",
+   "content": ""
+  },
+  {
+   "id": "text-mudwrs61-5yzu",
+   "nodeLabel": "N26",
+   "type": "text",
+   "x": 0,
+   "y": 5400,
+   "width": 300,
+   "height": 200,
+   "text": ""
+  },
+  {
+   "id": "ai-1790158782084-741dac",
+   "nodeLabel": "N29",
+   "type": "text",
+   "x": 1700,
+   "y": 900,
+   "width": 700,
+   "height": 600,
+   "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\nxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxx\n\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\nxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\nxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxx\n\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\nxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "id": "node-1790159023300",
+   "nodeLabel": "R1",
+   "type": "portal",
+   "x": 4600,
+   "y": 2400,
+   "width": 200,
+   "height": 200,
+   "canvas": ""
+  },
+  {
+   "id": "code-mudznxud-tbxo",
+   "nodeLabel": "E13",
+   "type": "code",
+   "x": 2400,
+   "y": 5300,
+   "width": 600,
+   "height": 300,
+   "code": "",
+   "language": "python"
+  },
+  {
+   "id": "code-mudzoizo-pq2m",
+   "nodeLabel": "E14",
+   "type": "code",
+   "x": 2400,
+   "y": 6100,
+   "width": 600,
+   "height": 300,
+   "code": "xxxxxxxxxxxxxx",
+   "language": "python",
+   "outputNodeId": "ai-mufjlvwz"
+  },
+  {
+   "id": "code-mudzpew3-fyoq",
+   "nodeLabel": "E15",
+   "type": "code",
+   "x": 0,
+   "y": 6100,
+   "width": 700,
+   "height": 300,
+   "code": "",
+   "language": "python"
+  },
+  {
+   "id": "code-mudzpgoq-7xyw",
+   "nodeLabel": "E17",
+   "type": "code",
+   "x": 0,
+   "y": 6500,
+   "width": 700,
+   "height": 300,
+   "code": "",
+   "language": "python"
+  },
+  {
+   "id": "code-mudzpn1t-e5yh",
+   "nodeLabel": "E18",
+   "type": "code",
+   "x": 0,
+   "y": 6900,
+   "width": 700,
+   "height": 300,
+   "code": "",
+   "language": "python"
+  },
+  {
+   "id": "node-1790164031546",
+   "nodeLabel": "N11",
+   "type": "text",
+   "x": 400,
+   "y": 5900,
+   "width": 700,
+   "height": 300,
+   "text": "xxxxxxx\nxxxxxxxxxxxxx\nxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "id": "node-1790166845703",
+   "nodeLabel": "N27",
+   "type": "text",
+   "x": 1800,
+   "y": 6900,
+   "width": 600,
+   "height": 300,
+   "text": "xxxxxxx\nx\nx\nx\n"
+  },
+  {
+   "id": "code-mufh5fw8-ceo4",
+   "nodeLabel": "E12",
+   "type": "code",
+   "x": 0,
+   "y": 7300,
+   "width": 700,
+   "height": 300,
+   "code": "",
+   "language": "python"
+  },
+  {
+   "id": "ai-muffs7um",
+   "nodeLabel": "C6",
+   "type": "cell",
+   "x": 800,
+   "y": 5500,
+   "width": 800,
+   "height": 500,
+   "format": "html",
+   "content": ""
+  },
+  {
+   "id": "knowledge-1790251639060-0",
+   "nodeLabel": "W1",
+   "type": "knowledge",
+   "x": 2400,
+   "y": 5700,
+   "width": 700,
+   "height": 300,
+   "text": "",
+   "server": "",
+   "uri": ""
+  },
+  {
+   "id": "code-mufjjfw2-g760",
+   "nodeLabel": "E16",
+   "type": "code",
+   "x": 2400,
+   "y": 6500,
+   "width": 600,
+   "height": 300,
+   "code": "",
+   "language": "python"
+  },
+  {
+   "id": "ai-mufjlvwz",
+   "nodeLabel": "C3",
+   "type": "cell",
+   "x": 3200,
+   "y": 6100,
+   "width": 600,
+   "height": 300,
+   "format": "html",
+   "content": ""
+  }
+ ],
+ "edges": [
+  {
+   "id": "e1",
+   "fromNode": "text-mtj266rt-j7f1",
+   "toNode": "text-mtj265g0-24z8",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e2",
+   "fromNode": "code-mtlicwse-v0iv",
+   "toNode": "code-mttvjys2-sibt",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e3",
+   "fromNode": "text-mtj266rt-j7f1",
+   "toNode": "node-1788944906173",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e4",
+   "fromNode": "node-1788944906173",
+   "toNode": "text-mttvlwla-bs0o",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e5",
+   "fromNode": "code-mttvjys2-sibt",
+   "toNode": "node-1788962741739",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e6",
+   "fromNode": "node-1788944906173",
+   "toNode": "code-mtlicwse-v0iv",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e7",
+   "fromNode": "text-mttvlwla-bs0o",
+   "toNode": "code-mttvjys2-sibt",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e8",
+   "fromNode": "text-mttvlwla-bs0o",
+   "toNode": "ai-1788965930998-8506f0",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e9",
+   "fromNode": "code-mtlicwse-v0iv",
+   "toNode": "code-mtwr4gde-9sx3",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e10",
+   "fromNode": "code-mtwr4gde-9sx3",
+   "toNode": "code-mtwru5d9-ygor",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e11",
+   "fromNode": "node-paste-1788874480442-0",
+   "toNode": "code-mtws0a7c-kqgm",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e12",
+   "fromNode": "node-1788962741739",
+   "toNode": "node-1789120624444",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e13",
+   "fromNode": "code-mtwru5d9-ygor",
+   "toNode": "code-mtwv7qlc-7uji",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e14",
+   "fromNode": "node-1789123215761",
+   "toNode": "node-1789127611954",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e15",
+   "fromNode": "ai-1788965930998-8506f0",
+   "toNode": "text-mtwtqrti-lgff",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e16",
+   "fromNode": "code-mtwru5d9-ygor",
+   "toNode": "node-1789139111179",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e17",
+   "fromNode": "code-mtwru5d9-ygor",
+   "toNode": "node-1789139114911",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e18",
+   "fromNode": "text-mtwtqrti-lgff",
+   "toNode": "node-1789139807093",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e19",
+   "fromNode": "node-1789139807093",
+   "toNode": "text-mtx3u0x2-w03q",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e20",
+   "fromNode": "node-1789139807093",
+   "toNode": "text-mtx3u1nb-nlfp",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e21",
+   "fromNode": "node-1789139807093",
+   "toNode": "text-mtx3u2kf-6duv",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e22",
+   "fromNode": "code-mtlicwse-v0iv",
+   "toNode": "ai-mtx3w2i4",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e23",
+   "fromNode": "code-mtwv7qlc-7uji",
+   "toNode": "code-mtx42lb7-6l0m",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e24",
+   "fromNode": "code-mttvjys2-sibt",
+   "toNode": "ai-mtx4n33c",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e25",
+   "fromNode": "code-mtwr4gde-9sx3",
+   "toNode": "ai-mtx4nuit",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e26",
+   "fromNode": "node-1789127611954",
+   "toNode": "node-1789139114911",
+   "fromSide": "left",
+   "toSide": "right"
+  },
+  {
+   "id": "e27",
+   "fromNode": "code-mtx42lb7-6l0m",
+   "toNode": "code-mtx4tq88-6x3d",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e28",
+   "fromNode": "text-mtx3u0x2-w03q",
+   "toNode": "text-mtx4z2ud-vl9s",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e29",
+   "fromNode": "text-mtj265g0-24z8",
+   "toNode": "text-mtwrxzsr-maea",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e30",
+   "fromNode": "text-mtwrxzsr-maea",
+   "toNode": "text-mtx50ybf-0ob1",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e31",
+   "fromNode": "text-mtx50ybf-0ob1",
+   "toNode": "text-mtx513cd-32ib",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e32",
+   "fromNode": "text-mtx513cd-32ib",
+   "toNode": "text-mtx5143m-v644",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e33",
+   "fromNode": "text-mtx5143m-v644",
+   "toNode": "text-mtx514mx-41rv",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e34",
+   "fromNode": "node-1789123215761",
+   "toNode": "node-1789142861087",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e35",
+   "fromNode": "node-1789123215761",
+   "toNode": "node-1789139114911",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e36",
+   "fromNode": "code-mtwv7qlc-7uji",
+   "toNode": "code-mtx5irr6-02zv",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e37",
+   "fromNode": "code-mtwru5d9-ygor",
+   "toNode": "ai-mu8e5lp5",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e38",
+   "fromNode": "code-mtwv7qlc-7uji",
+   "toNode": "code-mu8ebeui-8ggl",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e39",
+   "fromNode": "code-mtwv7qlc-7uji",
+   "toNode": "ai-mu8f4ymv",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e40",
+   "fromNode": "node-paste-1789830289357-0",
+   "toNode": "node-1789139807093",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e41",
+   "fromNode": "node-paste-1789830289357-0",
+   "toNode": "text-mtwtqrti-lgff",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e42",
+   "fromNode": "node-paste-1789830289357-0",
+   "toNode": "text-mtx3u2kf-6duv",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e43",
+   "fromNode": "text-mtx514mx-41rv",
+   "toNode": "cell-1789843446538",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e44",
+   "fromNode": "ai-1788965930998-8506f0",
+   "toNode": "ai-1790158782084-741dac",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e45",
+   "fromNode": "text-mtj266rt-j7f1",
+   "toNode": "ai-1788965930998-8506f0",
+   "fromSide": "right",
+   "toSide": "top"
+  },
+  {
+   "id": "e46",
+   "fromNode": "text-mtj266rt-j7f1",
+   "toNode": "ai-1790158782084-741dac",
+   "fromSide": "right",
+   "toSide": "top"
+  },
+  {
+   "id": "e47",
+   "fromNode": "code-mtws0a7c-kqgm",
+   "toNode": "code-mudzpew3-fyoq",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e48",
+   "fromNode": "code-mudzpgoq-7xyw",
+   "toNode": "code-mudzpn1t-e5yh",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e49",
+   "fromNode": "code-mudzpew3-fyoq",
+   "toNode": "code-mudzpgoq-7xyw",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e50",
+   "fromNode": "code-mtwv7qlc-7uji",
+   "toNode": "code-mtx4tq88-6x3d",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e51",
+   "fromNode": "text-mudwrs61-5yzu",
+   "toNode": "node-1790164031546",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e52",
+   "fromNode": "code-mudzpn1t-e5yh",
+   "toNode": "node-1790166845703",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e53",
+   "fromNode": "code-mudzpn1t-e5yh",
+   "toNode": "code-mufh5fw8-ceo4",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e54",
+   "fromNode": "code-mtws0a7c-kqgm",
+   "toNode": "ai-muffs7um",
+   "fromSide": "right",
+   "toSide": "left"
+  },
+  {
+   "id": "e55",
+   "fromNode": "ai-mu8f4ymv",
+   "toNode": "ai-mu8e5lp5",
+   "fromSide": "top",
+   "toSide": "bottom"
+  },
+  {
+   "id": "e56",
+   "fromNode": "code-mudzoizo-pq2m",
+   "toNode": "code-mufjjfw2-g760",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "e57",
+   "fromNode": "code-mudzoizo-pq2m",
+   "toNode": "ai-mufjlvwz",
+   "fromSide": "right",
+   "toSide": "left"
+  }
+ ],
+ "metadata": {
+  "sections": [
+   {
+    "id": "sec-S1",
+    "y": 0,
+    "createdAt": 0
+   },
+   {
+    "id": "sec-S2",
+    "y": 5200,
+    "createdAt": 1788438780000,
+    "folded": [
+     "node-paste-1788874480442-0",
+     "code-mtws0a7c-kqgm",
+     "code-mudznxud-tbxo",
+     "code-mudzoizo-pq2m",
+     "code-mudzpew3-fyoq",
+     "code-mudzpgoq-7xyw",
+     "code-mudzpn1t-e5yh",
+     "node-1790166845703",
+     "code-mufh5fw8-ceo4",
+     "ai-muffs7um",
+     "knowledge-1790251639060-0",
+     "code-mufjjfw2-g760",
+     "ai-mufjlvwz"
+    ]
+   },
+   {
+    "id": "sec-S3",
+    "y": 5300,
+    "createdAt": 1790156160000,
+    "folded": [
+     "text-mudwrs61-5yzu",
+     "node-1790164031546"
+    ]
+   }
+  ]
+ }
+}
