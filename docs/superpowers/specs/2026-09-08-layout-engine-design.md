@@ -130,6 +130,12 @@ One algorithm behind every row of §2, run per section:
    it they move 100 and 400 again. Capped calls: 135 of 7703 now, against 78 at 26cf0ab; of the 57
    that are capped now and were not there, 56 were not idempotent at 26cf0ab either.
 
+   Open (2026-09-24), measured on the same 7703 calls:
+   - a call that falls back to its first turn is reported capped, and the next call moves it again:
+     all 56 such calls do;
+   - a call whose turns do not settle, but whose result a second call leaves alone, is kept and not
+     reported: 311 calls, and 6 of them leave a new pair of nodes closer than a gap.
+
    Three details the rule needs for a second call to change nothing:
    - a **sideways step is the overlap rounded UP to the grid**, so a column moves by one grid
      multiple and its nodes still share one snapped x — the next call reads the same column;
@@ -400,7 +406,14 @@ even at 10 000 steps (test 96). A first version stopped every anchored node outs
 columns from following; that made five calls of the reviewer's generator worse than 26cf0ab (seed
 1600 became a walk that moves 800 px lower each cycle) and seed 1600 is test 102 now. The narrower
 rule gives those five 26cf0ab's result or better; seed 3892, which the first version settled, is
-capped again, as at 26cf0ab. The columns a call packs are the movers' columns plus,
+capped again, as at 26cf0ab.
+
+Open (2026-09-24): the rule does not catch a loop that runs through a third node. Example: N5, 1500
+wide, is moved; N0 is anchored to N3, and N1 sits between them. N1 pushes N3 down, N0 follows N3 and
+lands on N1, N0 pushes N1 down, and N1 pushes N3 again, 600 px lower each round, until the walk is
+capped. 610b737 settled the same call with N0 at (3200, 100), N1 at (2400, 900) and N3 at (1700,
+1300). Measured on the reviewer's generator: 30 calls are capped now that 610b737 settled with no new
+close pair and a stable second call; 29 of them were capped at 26cf0ab too. The columns a call packs are the movers' columns plus,
 transitively, the columns of the nodes anchored to anything in a packed column; the pack runs left to
 right, so a source is placed before the node that reads its y.
 
@@ -459,13 +472,13 @@ Every edge path that creates or drops an anchor runs the engine for the target: 
 | `src/webview/rail/SegmentMenu.tsx`, `SectionRail.tsx` | "Reflow section" entry |
 | `src/extension/editor-provider.ts` | run-output placement through the engine (replaces `outputCellGeom`'s free-slot search) |
 | `src/extension/mcp/server.ts` | `after` / `forkOf`, `canvas_reflow_section`, engine on add/update/layout/run |
-| `test/layout-engine.mjs`, `test/mcp-parity.mjs` | §6 |
+| `tests/layout-engine.mjs`, `tests/mcp-parity.mjs` | §6 |
 
 ## 6. Tests
 
-`test/layout-engine.mjs` on the esbuild bundle: insert pushes the column only; delete pulls up to
+`tests/layout-engine.mjs` on the esbuild bundle: insert pushes the column only; delete pulls up to
 one gap; output growth shifts the pairs to the right and shrink pulls them back; a note column packs
 like a code column and a note in a code column packs with it; a push never crosses a section
 boundary; idempotence; `codeCellHeight` at the grid steps and the cap; Reflow on copies of `test/H1–H5.canvas` under `/tmp` (never the real
-files): no overlap, one-gap columns, every code cell on a column x. `test/mcp-parity.mjs` gains
+files): no overlap, one-gap columns, every code cell on a column x. `tests/mcp-parity.mjs` gains
 `after`, `forkOf`, `canvas_reflow_section` and the engine on `canvas_add_node` with x/y.
