@@ -17,7 +17,8 @@ export interface NavEdge { id?: string; source: string; target: string; sourceHa
 export interface NavContext { nodes: NavNode[]; edges: NavEdge[]; lanes: SectionLane[] }
 
 // - the off-axis miss may be CONE × the gap, or one grid when the gap is smaller: a node right
-//   beside the source qualifies on any overlap, a distant one only while it stays roughly aligned
+//   beside the source qualifies on any overlap, a distant one only while it stays roughly aligned.
+//   It only matters for left / right: up / down take no node that misses the column at all
 const CONE = 0.6;
 // - ranking: aligned beats near
 const CROSS_WEIGHT = 2.5;
@@ -60,8 +61,9 @@ export function navScore(from: NavNode, to: NavNode, dir: NavDir): number {
 /**
  * The node to focus when `dir` is pressed on `from`, or null when nothing qualifies.
  * Candidates are visible nodes (in no fold list). `left`/`right` stay in `from`'s section;
- * `up`/`down` may cross into any open section. A node wired to `from` on the pressed side is one
- * more candidate under those same exclusions, scored like the rest but without the cone test.
+ * `up`/`down` may cross into any open section, but only to a node that shares part of `from`'s
+ * x-span — with nothing in that column there is no move. A node wired to `from` on the pressed side
+ * is one more candidate under those same exclusions, scored like the rest but without the cone test.
  */
 export function findNearestNode(from: NavNode, dir: NavDir, ctx: NavContext): string | null {
   const horiz = dir === 'left' || dir === 'right';
@@ -87,6 +89,8 @@ export function findNearestNode(from: NavNode, dir: NavDir, ctx: NavContext): st
   for (const n of ctx.nodes) {
     if (n.id === from.id || !reachable(n)) continue;
     const { gap, off, overlap } = boxDelta(from, n, dir);
+    // - j / k stay in the column, wired or not: an edge elsewhere is followed with `g`
+    if (!horiz && overlap <= 0) continue;
     // - a wired node qualifies wherever it sits; every other candidate has to be in the cone
     if (!wired.has(n.id) && (!inDir(gap) || !inCone(gap, off))) continue;
     const s = navScore(from, n, dir);
