@@ -28,8 +28,8 @@ export interface LayoutOpts { moverIds?: Iterable<string>; columnX?: number; rid
 //   and the riders of the packed columns (a rider goes under these); `noBump` = the nodes no bump
 //   will move in this call; `placed` = the riders this call has already put on their rows;
 //   `headY` = where a column head starts each round, the y it had when these rounds began (none: its
-//   current y).
-interface PackSets { held: Set<string>; noBump: Set<string>; placed: Set<string>; headY?: Map<string, number> }
+//   current y); `reflow` = the pack is Reflow's, where no bump runs after it (§3.4).
+interface PackSets { held: Set<string>; noBump: Set<string>; placed: Set<string>; headY?: Map<string, number>; reflow?: boolean }
 
 const byId = (nodes: EngineNode[]) => new Map(nodes.map(n => [n.id, n] as const));
 
@@ -201,13 +201,14 @@ function obstaclesOf(pair: Pair, nodes: EngineNode[], owners: Map<string, string
  * On y the row has to clear the obstacle by a full grid gap, the distance the bumps ask for
  * everywhere else, so the pack never leaves behind an overlap of its own making.
  * `near` = the nodes no bump will move in this call: these count within a gap on the right too,
- * since the bumps would leave the two where they are.
+ * since the bumps would leave the two where they are. `reach` = how far right of the column the
+ * member counts an obstacle on its right, its own width unless the caller says otherwise.
  */
-function rowStart(start: number, x: number, member: EngineNode, obstacles: EngineNode[], near?: Set<string>): number {
+function rowStart(start: number, x: number, member: EngineNode, obstacles: EngineNode[], near?: Set<string>, reach: (o: EngineNode) => number = () => member.w): number {
   let y = start;
   for (const o of obstacles) {
     const both = near?.has(o.id) ?? false;
-    if (o.x + o.w + (o.x < x || both ? GRID : 0) <= x || x + member.w + (both ? GRID : 0) <= o.x) continue;
+    if (o.x + o.w + (o.x < x || both ? GRID : 0) <= x || x + reach(o) + (both ? GRID : 0) <= o.x) continue;
     if (o.y + o.h + GRID <= y || y + member.h + GRID <= o.y) continue;
     y = o.y + o.h + GRID;
   }
@@ -264,6 +265,10 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
   const others = new Set(otherRiders.map(n => n.id));
   // - the head clears only riders this call has put on their rows, not one still at its old y
   const riderRows = [...fixed, ...otherRiders.filter(n => placed.has(n.id))].sort(byRow);
+  // - on Reflow a member wider than its column is the obstacle for a plain member of the column it
+  //   reaches into (§3.4), which packs around it; it clears a held node or an output there itself,
+  //   since those keep their rows
+  const reach = (m: EngineNode) => (o: EngineNode) => (sets.reflow && !owners.has(o.id) && !held.has(o.id) ? Math.min(m.w, pair.column.width) : m.w);
   let prevBottom: number | null = null;
   for (const cell of members) {
     if (taken.has(cell.id)) continue;
@@ -274,9 +279,19 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
     const keep = (o: EngineNode) => riders.get(o.id) !== cell.id && !(isHeld && others.has(o.id));
     // - the head keeps its own y, obstacles or not (§3.4); only a rider's row moves it down, and it
     //   starts from `headY` each round, so it comes back up once that row has moved on
-    const y = prevBottom === null
-      ? rowStart(snapGrid(sets.headY?.get(cell.id) ?? cell.y), x, cell, riderRows.filter(keep), noBump)
-      : rowStart(prevBottom + GRID, x, cell, obstacles.filter(keep), noBump);
+    // - on Reflow the head clears obstacles like a stacked member: no bump runs after this pack
+    const list = (prevBottom === null && !sets.reflow ? riderRows : obstacles).filter(keep);
+    let y = prevBottom === null
+      ? rowStart(snapGrid(sets.headY?.get(cell.id) ?? cell.y), x, cell, list, noBump, reach(cell))
+      : rowStart(prevBottom + GRID, x, cell, list, noBump, reach(cell));
+    // - and on Reflow a member's output clears them too, on its slot at the member's row
+    const out = map.get(cell.outputNodeId ?? '');
+    if (sets.reflow && out) for (let guard = 0; guard < 16; guard++) {
+      const oy = rowStart(y, pair.outputX, out, list, noBump);
+      const my = rowStart(oy, x, cell, list, noBump, reach(cell));
+      if (my === y) break;
+      y = my;
+    }
     place(cell, y);
     prevBottom = rowBottom(cell, map);
   }
@@ -557,7 +572,7 @@ export function reflowSection(input: EngineNode[], opts: { riders?: Map<string, 
   const noBump = new Set(nodes.map(n => n.id));
   const packAll = () => {
     const held = new Set([...riders].filter(([t, s]) => map.has(t) && map.has(s) && snapGrid(map.get(t)!.x) !== snapGrid(map.get(s)!.x)).map(([t]) => t));
-    const sets: PackSets = { held, noBump, placed: new Set() };
+    const sets: PackSets = { held, noBump, placed: new Set(), reflow: true };
     for (let round = 0; round < 8; round++) {
       const moved: Patches = {};
       for (const pair of derivePairs(nodes, deriveColumns(nodes))) packColumn(pair, nodes, map, riders, owners, moved, () => true, sets);
