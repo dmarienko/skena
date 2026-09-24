@@ -133,10 +133,10 @@ body.vscode-dark, body.vscode-high-contrast {
 .react-flow__resize-control.handle {
   width:  14px;
   height: 14px;
-  background: var(--vscode-focusBorder, #007acc);
-  border: 2px solid var(--vscode-editorWidget-background, var(--vscode-sideBar-background, #2a2a2a));
-  border-radius: 3px;
-  /* - the two lines meeting at a corner overlap the handle; the corner takes the drag */
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: 0;
+  /* - invisible, but still the pointer target: keeps the diagonal cursor and drag at a corner */
   z-index: 1;
 }
 
