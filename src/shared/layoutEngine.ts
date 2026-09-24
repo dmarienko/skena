@@ -20,8 +20,8 @@ export interface Pair { column: Column; outputX: number; outputW: number; right:
 // - `report` is filled in by the call: `capped` says the bump walk stopped with overlaps still
 //   there (a dense section), so the caller can tell the user to reflow. `maxSteps` overrides how
 //   many steps that walk gets (default `nodes.length * 4 + 32`), which is how the cap is tested.
-// - `riders` is the anchoring of §3.5: target id → source id, one entry per cell that rides on
-//   another cell's row. Every caller builds it from the canvas edges with `ridersOf` below.
+// - `riders` is the anchoring of §3.5: target id → source id, one entry per node that keeps
+//   another node's row. Every caller builds it from the canvas edges with `ridersOf` below.
 export interface LayoutOpts { moverIds?: Iterable<string>; columnX?: number; riders?: Map<string, string>; report?: { capped?: boolean }; maxSteps?: number }
 
 const byId = (nodes: EngineNode[]) => new Map(nodes.map(n => [n.id, n] as const));
@@ -63,33 +63,39 @@ export function outputOwners(nodes: EngineNode[]): Map<string, string> {
   return owners;
 }
 
+// - a kernel badge is a 140×160 marker the user parks where they like, so it is no column member:
+//   as the head of a column it would drag the first code cell up to its own y. It is still a plain
+//   box, so the bumps still move it, on its own, to keep it clear of what lands on it.
+const isMember = (n: EngineNode, owners: Map<string, string>) => !owners.has(n.id) && n.type !== 'kernel';
+
 /**
- * Which cells ride on another cell's row (§3.5): target id → source id. A sequence edge counts when
- * both ends are code cells of this section, it leaves the source's right border and enters the
- * target's left one (a side the file leaves out is that border), and the source's column is strictly
- * left of the target's. Everything else — a bottom-to-top edge down one column, an edge drawn back
- * to the left — stays a drawing and moves nothing. A target several edges point at takes the leftmost
- * source, ties going to the lower id, so the result does not depend on the edge order in the file.
+ * Which nodes keep another node's row (§3.5): target id → source id. An edge counts when it leaves
+ * the source's right border and enters the target's left one (a side the file leaves out is that
+ * border), and the source's column is strictly left of the target's. Any two node types count, with
+ * these exceptions: the target is a column member and not a band (a `group` node) — an output cell
+ * already takes its code cell's row, a kernel badge is in no column — and the source is not a kernel
+ * badge or a band. An output cell as the source stands for its code cell: its row is that cell's
+ * row, so the map names the code cell, and that cell's column too has to be left of the target's.
+ * Everything else — a bottom-to-top edge down one column, an edge drawn back to the left — stays a
+ * drawing and moves nothing. A target several edges point at takes the leftmost source, ties going
+ * to the lower id, so the result does not depend on the edge order in the file.
  */
 export function ridersOf(nodes: EngineNode[], edges: { fromNode: string; toNode: string; fromSide?: string; toSide?: string }[]): Map<string, string> {
   const map = byId(nodes);
+  const owners = outputOwners(nodes);
   const best = new Map<string, EngineNode>();
   for (const e of edges) {
     if ((e.fromSide ?? 'right') !== 'right' || (e.toSide ?? 'left') !== 'left') continue;
     const from = map.get(e.fromNode);
     const to   = map.get(e.toNode);
-    if (!from || !to || from.type !== 'code' || to.type !== 'code') continue;
-    if (snapGrid(from.x) >= snapGrid(to.x)) continue;
+    if (!from || !to || !isMember(to, owners) || to.type === 'group' || from.type === 'kernel' || from.type === 'group') continue;
+    const source = map.get(owners.get(from.id) ?? '') ?? from;
+    if (snapGrid(from.x) >= snapGrid(to.x) || snapGrid(source.x) >= snapGrid(to.x)) continue;
     const held = best.get(to.id);
-    if (!held || snapGrid(from.x) < snapGrid(held.x) || (snapGrid(from.x) === snapGrid(held.x) && from.id < held.id)) best.set(to.id, from);
+    if (!held || snapGrid(source.x) < snapGrid(held.x) || (snapGrid(source.x) === snapGrid(held.x) && source.id < held.id)) best.set(to.id, source);
   }
   return new Map([...best].map(([target, source]) => [target, source.id] as const));
 }
-
-// - a kernel badge is a 140×160 marker the user parks where they like, so it is no column member:
-//   as the head of a column it would drag the first code cell up to its own y. It is still a plain
-//   box, so the bumps still move it, on its own, to keep it clear of what lands on it.
-const isMember = (n: EngineNode, owners: Map<string, string>) => !owners.has(n.id) && n.type !== 'kernel';
 
 /**
  * Columns of a section, left to right; cells top to bottom, a mover first on a tie. Every node type
@@ -213,7 +219,7 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
   };
   const members = pair.column.cellIds.map(id => map.get(id)!);
   const own = new Set(pair.column.cellIds);
-  // - the riders first, each on the row of the cell its edge comes from (§3.5), two on one row
+  // - the riders first, each on the row of the node its edge comes from (§3.5), two on one row
   //   stacking in id order. A rider whose source is not in this section is no rider: it packs. Nor
   //   is one whose source is a member of THIS column: Reflow snaps columns before it packs and can
   //   put the two in one, and reading a column-mate's y as a fixed row walks the column down.
@@ -221,15 +227,21 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
     .map(cell => { const s = riders.get(cell.id); return { cell, at: s !== undefined && !own.has(s) ? map.get(s)?.y : undefined }; })
     .filter((a): a is { cell: EngineNode; at: number } => a.at !== undefined)
     .sort((a, b) => a.at - b.at || a.cell.id.localeCompare(b.cell.id));
+  const byRow = (a: EngineNode, b: EngineNode) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id);
+  const around = obstaclesOf(pair, nodes, owners);
+  // - an output cell of another pair that crosses this column already holds its code cell's row
+  //   there — a node in the output column of its own source is the usual case. The rider takes the
+  //   first row under that output: both are pinned once packed, so no bump would part them.
+  const outputs = around.filter(n => owners.has(n.id)).sort(byRow);
   let prevRider: number | null = null;
   for (const a of anchored) {
-    place(a.cell, prevRider === null ? a.at : Math.max(a.at, prevRider + GRID));
+    place(a.cell, rowStart(prevRider === null ? a.at : Math.max(a.at, prevRider + GRID), x, a.cell, outputs));
     prevRider = rowBottom(a.cell, map);
   }
   // - in y order, and nothing else this pack moves is in the list, so one ordering serves every
   //   member. The riders join it: they are fixed rows the rest of the column packs around.
   const fixed = anchored.map(a => a.cell);
-  const obstacles = [...obstaclesOf(pair, nodes, owners), ...fixed].sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));
+  const obstacles = [...around, ...fixed].sort(byRow);
   const taken = new Set(fixed.map(c => c.id));
   let prevBottom: number | null = null;
   for (const cell of members) {
@@ -408,7 +420,7 @@ export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patch
   // - the nodes the operation itself placed, before the pack adds its column: the only ones that
   //   yield downward to a node above them
   const placed = new Set(pinned);
-  // - a rider sits on its source's row, so the column of every rider of a cell in a touched column is
+  // - a rider sits on its source's row, so the column of every rider of a node in a touched column is
   //   touched too, and its riders in turn. The pairs run left → right below, and a source is always
   //   in a column left of its rider, so a source is packed before the rider that reads its y.
   for (let more = true; more;) {
@@ -443,7 +455,7 @@ export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patch
 
 /**
  * Whole-section pack: every code cell snapped to its column, every column and every pair tight.
- * `riders` anchors the cells a sequence edge holds on another cell's row (§3.5), as in `layoutSection`.
+ * `riders` anchors the nodes an edge holds on another node's row (§3.5), as in `layoutSection`.
  */
 export function reflowSection(input: EngineNode[], opts: { riders?: Map<string, string> } = {}): Patches {
   const nodes = clone(input);
