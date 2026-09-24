@@ -360,22 +360,35 @@ second call returns `{}`.
 output is the mover and it would land on a node anchored to another node's row, the anchored node
 stays. The code cell and its output go down together to one gap under the anchored node; the output
 stays on its code cell's row, and everything below the code cell in its column moves down to make
-room. This is the mover yielding downward (§3.2), with the output as the mover, as it is for a run.
+room.
+
+The pack makes the move, not the bumps (`belowHeld` in `packColumn`). When it places the code cell, it
+takes the first row where the output, at the x it has in this call, clears the anchored node by a
+gap. The anchored node's own pack leaves that output out of the nodes it goes under, so the result
+does not depend on which of the two columns packs first (test 109). A code cell that is anchored
+itself leaves its own row the same way (test 110). Once the code cell has moved down, the cell and
+its output also clear every node above their new row in a column this call does not pack (test
+112). Without that, on the shape of test 112, the bumps sent the output under such a node and onto a
+node below it, the next pack put the cell back under the anchored node, the turns did not settle,
+and the call returned the output on top of that node, not reported as capped.
 
 Scope:
 - the anchored node is in a column this call packs, where no bump moves it. An anchored node in a
   column the call does not pack is moved by the bumps, as before (test 108). Measured with those
   nodes in scope too, against 56158b8: 8 of the 7703 calls of the reviewer's generator and 1 of the
-  36528 tidy trials got worse (capped, a new pair closer than a gap, or not idempotent), and all 9
-  had the anchored node in a column the call does not pack. In the one traced (seed 2613), the code
-  cell went under E0 and landed on E0's source N2; the bump pushed N2 down, E0 followed N2 onto the
-  output, and the code cell went under E0 again, 400 px lower each time, until the walk was capped;
+  36528 tidy trials (NMAX=10 EMAX=7, below) got worse (capped, a new pair closer than a gap, or not
+  idempotent), and all 9 had the anchored node in a column the call does not pack. In the one traced
+  (seed 2613), the code cell went under E0 and landed on E0's source N2; the bump pushed N2 down, E0
+  followed N2 onto the output, and the code cell went under E0 again, 400 px lower each time, until
+  the walk was capped;
 - the output's code cell is not the anchored node's source, directly or through a chain. A node
   anchored to the code cell still goes one gap under the output (the user's answer 2a, test 104). A
   node anchored to a node anchored to the code cell moves with the code cell, so the code cell cannot
   go under it: it goes under the output too (test 107). Without this, the code cell, the two anchored
   nodes and the output went 3200 px down with the output still on the node, and a second call moved
   them 3200 px more;
+- a node the `riders` map anchors to a member of its own column is anchored to nothing there (see
+  "A source in the same column is no source" above): it packs under the output (test 111);
 - an output landing on a node anchored to nothing moves that node by the bumps, as before (test 105);
 - an anchored node carried onto another cell's output because its source moved goes one gap under
   that output, as before: that output is not the mover (test 106).
@@ -390,7 +403,8 @@ output of a packed column. That variant kept the result in all 33 calls, but it 
 95 and left 6 calls of the reviewer's generator not idempotent that were idempotent at 56158b8.
 
 The engine cannot tell a new output from one the user dragged: both are movers. A dragged output
-that lands on an anchored node takes its code cell down the same way.
+that lands on an anchored node takes its code cell down the same way. This was shown to the user
+with option A (the scope above), and the user chose A.
 
 Measured on H3 (`tests/fixtures/H3.json` S1, test 103): E4 runs, and its output C6 gets the slot
 (2600, 400), on N8 (2600, 0, 600×700), which is anchored to E7's row. N8 stays at (2600, 0), and C3,
@@ -403,17 +417,44 @@ C6 and then under N10, to 1600, and C5 goes under N16, to 3200. Before the call 
 than a gap is N8 and C6; after it, none. The call is not capped and a second call returns `{}`. At
 56158b8 N8 went to (2600, 2200), under C6, N10, N3, C4 and C2, and C3 followed it to (4000, 2200).
 
-Measured against 56158b8, the calls that differ and the calls that got worse:
-- H1 to H6, every node of every section as the only mover (170 calls): none differ; on H1, H4 and H5
-  capped 0, overlap growth 0, not idempotent 0, and a second Reflow moves nothing, before and after;
-- the 394 distinct random sections (they hold no output cells): not idempotent 1, capped 2, overlap
-  growth 0, before and after;
-- the reviewer's generator, every node as the mover (7703 calls): capped 135 and 135, overlap growth
-  2 and 2, a new pair closer than a gap 37 and 36, not idempotent 231 and 230; none worse;
-- tidy trials (1266 sections after a Reflow; each node still, dragged and deleted, and two-node
-  drags; 36528 calls): bad 240 and 237; none worse;
-- Reflow on 3000 sections: 0 leave two boxes intersecting and 0 leave a pair closer than a gap,
-  before and after.
+Measured against 56158b8. The scripts are in the session scratchpad, `c6/w`, with `le.mjs` this
+engine and `le_old.mjs` 56158b8. The generators seed from 1 to N; "bad" is a call that is capped,
+leaves a new pair closer than a gap, or is changed by a second identical call.
+- H1 to H6, every node of every section as the only mover (170 calls): none differ. On H1, H4 and H5:
+  capped 0, overlap growth 0, not idempotent 0, and a second Reflow moves nothing, before and after.
+- The 394 distinct random sections: not idempotent 1, capped 2, overlap growth 0, before and after.
+  They hold no output cells.
+- The reviewer's generator (`run/fuzz.mjs 3000 raw`: 3 to 8 nodes plus outputs, up to 3 edges; the
+  sections with an anchored node; every node as the mover; 7703 calls): capped 135 and 135, overlap
+  growth 2 and 2, a new pair closer than a gap 37 and 36, not idempotent 231 and 230. None worse.
+- One code cell whose output is the only mover, nodes anchored to its column-mates (`fz.mjs 150000`,
+  34834 calls kept): with the output new at its slot, bad 123 and 72, and 2 worse (below); with the
+  output dragged (`fz.mjs 150000 drag`), bad 131 and 72, and none worse.
+- Tidy trials (`run/tidy.mjs`): sections of the reviewer's generator after a 56158b8 Reflow that is
+  clean and stable; each node as the mover without moving, each node dragged, four two-node drags,
+  each node deleted with its column closed. `NMAX` and `EMAX` set the generator: 3 to NMAX + 2 nodes
+  plus outputs, 0 to EMAX − 1 edges.
+  - `node tidy.mjs` (2500 seeds, NMAX 6, EMAX 4, the defaults): 840 sections, 18589 calls, bad 88
+    and 88, none worse;
+  - `NMAX=6 EMAX=6 node tidy.mjs`: 1153 sections, 25295 calls, bad 118 and 119, 1 worse (below);
+  - `NMAX=6 EMAX=8 node tidy.mjs`: 1341 sections, 29416 calls, bad 149 and 150, 1 worse, the same
+    call;
+  - `NMAX=10 EMAX=7 node tidy.mjs 2500`: 1266 sections, 36528 calls, bad 240 and 237, none worse.
+- Reflow on 3000 sections of the reviewer's generator (`run/rf.mjs 3000`): 0 leave two boxes
+  intersecting and 0 leave a pair closer than a gap, before and after. A second Reflow still changes
+  66 of the 3000, before and after.
+
+Open (2026-09-24), the calls that got worse:
+- Not idempotent, `fz.mjs` seeds 80109 and 119447 (new output). A bump pushes a node right, and the
+  anchoring map the next call computes from the canvas is no longer the one this call had. On 80109,
+  N0 now takes its source's row, lands on N2 and pushes it down; N2 then goes from x 900 to 1500 for
+  the output, so N1's leftmost source is N0, not N2. On 119447, the output under N1 pushes N0 from
+  x 800 to 1500, and the edge from N1 to N0 now anchors N0. Given the first call's map, a second call
+  moves nothing on both. The engine takes the map as an input and cannot see the change.
+- A new pair closer than a gap, tidy seed 837 (NMAX 6, EMAX 6 or 8): OE3 and E1 dragged 300 right and
+  300 down. OE3 lands on E7, anchored to E6 in a packed column, so E7 stays and E3 goes under it. E1's
+  output OE1 then ends within a gap of E7's output OE7. No bump moves either of the two in this call,
+  so they stay. At 56158b8, E7 went one gap under OE3, to 1200, which took OE7 clear of OE1.
 
 Test 75 (two nodes anchored to one row; X, 1500 wide, crosses R's column): X is anchored itself, so
 R goes one gap under it, to (1600, 800), and a second call returns `{}`. Measured with a variant in
