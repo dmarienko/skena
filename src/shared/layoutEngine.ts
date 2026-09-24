@@ -518,16 +518,25 @@ export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patch
     return all;
   };
   // - packs and bumps take turns until a turn moves nothing: a bump can move a node a pack read (a
-  //   mover yielding, a node a column packed around), and the packs then read the new rows
+  //   mover yielding, a node a column packed around), and the packs then read the new rows. Turns that
+  //   have not settled after 4 go round for good (measured up to 40): the call then keeps what the
+  //   first turn gave and reports it capped, as a capped bump walk does (§3.2)
   const positions = () => nodes.map(n => `${n.x},${n.y}`).join(';');
-  for (let pass = 0; pass < 4; pass++) {
+  let first: { node: EngineNode; x: number; y: number }[] | null = null;
+  let settled = false;
+  for (let pass = 0; pass < 4 && !settled; pass++) {
     const moved = packRounds();
-    if (pass > 0 && Object.keys(moved).length === 0) break;
+    if (pass > 0 && Object.keys(moved).length === 0) { settled = true; break; }
     const was = positions();
     const report: { capped?: boolean } = {};
     resolveBumps(nodes, owners, riders, pinned, placed, new Set([...movers, ...Object.keys(moved)]), { report, maxSteps: opts.maxSteps });
-    if (report.capped) { if (opts.report) opts.report.capped = true; break; }
-    if (positions() === was) break;
+    if (report.capped) { if (opts.report) opts.report.capped = true; if (pass === 0) settled = true; break; }
+    if (pass === 0) first = nodes.map(n => ({ node: n, x: n.x, y: n.y }));
+    if (positions() === was) settled = true;
+  }
+  if (!settled && first) {
+    for (const f of first) { f.node.x = f.x; f.node.y = f.y; }
+    if (opts.report) opts.report.capped = true;
   }
   return diff(input, nodes);
 }
