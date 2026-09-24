@@ -265,6 +265,10 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
   const others = new Set(otherRiders.map(n => n.id));
   // - the head clears only riders this call has put on their rows, not one still at its old y
   const riderRows = [...fixed, ...otherRiders.filter(n => placed.has(n.id))].sort(byRow);
+  // - what the head clears in a regular call: this column's riders and every node no bump will move
+  //   (§3.4), a rider of another column only once it is on its row. A node a bump can move is left to
+  //   the bumps.
+  const headRows = [...fixed, ...around.filter(n => noBump.has(n.id) && (!others.has(n.id) || placed.has(n.id)))].sort(byRow);
   // - on Reflow a member wider than its column is the obstacle for a plain member of the column it
   //   reaches into (§3.4), which packs around it; it clears a held node or an output there itself,
   //   since those keep their rows
@@ -277,10 +281,10 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
     //   it. No member packs around its own rider.
     const isHeld = held.has(cell.id);
     const keep = (o: EngineNode) => riders.get(o.id) !== cell.id && !(isHeld && others.has(o.id));
-    // - the head keeps its own y, obstacles or not (§3.4); only a rider's row moves it down, and it
-    //   starts from `headY` each round, so it comes back up once that row has moved on
+    // - the head keeps its own y against a node a bump can still move (§3.4), and starts from `headY`
+    //   each round, so it comes back up once what it cleared has moved on
     // - on Reflow the head clears obstacles like a stacked member: no bump runs after this pack
-    const list = (prevBottom === null && !sets.reflow ? riderRows : obstacles).filter(keep);
+    const list = (prevBottom === null && !sets.reflow ? headRows : obstacles).filter(keep);
     let y = prevBottom === null
       ? rowStart(snapGrid(sets.headY?.get(cell.id) ?? cell.y), x, cell, list, noBump, reach(cell))
       : rowStart(prevBottom + GRID, x, cell, list, noBump, reach(cell));
