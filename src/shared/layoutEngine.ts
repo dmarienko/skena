@@ -425,7 +425,6 @@ export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patch
   const owners = outputOwners(nodes);
   const riders = opts.riders ?? new Map<string, string>();
   const pairs = derivePairs(nodes, deriveColumns(nodes, movers));
-  const packed: Patches = {};
 
   // - which columns are touched: the movers' (a moved output counts for its code's column) + columnX
   const touched = new Set<number>();
@@ -478,20 +477,35 @@ export function layoutSection(input: EngineNode[], opts: LayoutOpts = {}): Patch
   //   of nodes that a later pack then moved (a rider, a node a wide member here packed around), so
   //   one round can leave two packed nodes overlapping, or a hole the next call closes. The cap only
   //   stops a shape that keeps changing.
-  for (let round = 0; round < 8; round++) {
-    const moved: Patches = {};
-    for (const pair of pairs) if (touched.has(pair.column.x)) {
-      // - an output goes back on the slot when the operation moved its code cell AND left it off that
-      //   cell's row: the pair is broken, and a cell the user dragged takes its output with it
-      packColumn(pair, nodes, map, riders, owners, moved, (id, o, wasY) => movers.has(id) && o.y !== wasY, sets);
-      // - the pack owns the column it just laid out: a bump moves what is in its way, never it, so the
-      //   two never fight over the same cell and the next call packs it to the same place
-      for (const id of pair.column.cellIds) { pinned.add(id); const outId = map.get(id)!.outputNodeId; if (outId) pinned.add(outId); }
+  const packRounds = (): Patches => {
+    const all: Patches = {};
+    for (let round = 0; round < 8; round++) {
+      const moved: Patches = {};
+      for (const pair of pairs) if (touched.has(pair.column.x)) {
+        // - an output goes back on the slot when the operation moved its code cell AND left it off that
+        //   cell's row: the pair is broken, and a cell the user dragged takes its output with it
+        packColumn(pair, nodes, map, riders, owners, moved, (id, o, wasY) => movers.has(id) && o.y !== wasY, sets);
+        // - the pack owns the column it just laid out: a bump moves what is in its way, never it, so the
+        //   two never fight over the same cell and the next call packs it to the same place
+        for (const id of pair.column.cellIds) { pinned.add(id); const outId = map.get(id)!.outputNodeId; if (outId) pinned.add(outId); }
+      }
+      if (Object.keys(moved).length === 0) break;
+      Object.assign(all, moved);
     }
-    if (Object.keys(moved).length === 0) break;
-    Object.assign(packed, moved);
+    return all;
+  };
+  // - packs and bumps take turns until a turn moves nothing: a bump can move a node a pack read (a
+  //   mover yielding, a node a column packed around), and the packs then read the new rows
+  const positions = () => nodes.map(n => `${n.x},${n.y}`).join(';');
+  for (let pass = 0; pass < 4; pass++) {
+    const moved = packRounds();
+    if (pass > 0 && Object.keys(moved).length === 0) break;
+    const was = positions();
+    const report: { capped?: boolean } = {};
+    resolveBumps(nodes, owners, riders, pinned, placed, new Set([...movers, ...Object.keys(moved)]), { report, maxSteps: opts.maxSteps });
+    if (report.capped) { if (opts.report) opts.report.capped = true; break; }
+    if (positions() === was) break;
   }
-  resolveBumps(nodes, owners, riders, pinned, placed, new Set([...movers, ...Object.keys(packed)]), { report: opts.report, maxSteps: opts.maxSteps });
   return diff(input, nodes);
 }
 
