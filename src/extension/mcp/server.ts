@@ -467,6 +467,20 @@ async function readFileNodeContent(uri: string, canvasPath: string): Promise<str
 
 // ─── tools ────────────────────────────────────────────────────────────────────
 
+// - which cell is a code cell's output, both ways: `outputNodeId` on the code cell, when that node
+//   exists on the canvas
+function outputLinks(d: CanvasData): { output: Map<string, CanvasNode>; outputOf: Map<string, CanvasNode> } {
+  const byId = new Map(d.nodes.map(n => [n.id, n]));
+  const output = new Map<string, CanvasNode>(), outputOf = new Map<string, CanvasNode>();
+  for (const n of d.nodes) {
+    if (n.type !== 'code' || !n.outputNodeId) continue;
+    const o = byId.get(n.outputNodeId);
+    if (!o) continue;
+    output.set(n.id, o); outputOf.set(o.id, n);
+  }
+  return { output, outputOf };
+}
+
 async function canvasList(args: Record<string, unknown>): Promise<string> {
   const p = resolvePath(args.canvasPath as string);
   const d = await readCanvas(p);
@@ -478,11 +492,14 @@ async function canvasList(args: Record<string, unknown>): Promise<string> {
     'Nodes:',
   ];
 
+  const links = outputLinks(d);
   for (const n of d.nodes) {
     const ext    = n as CanvasNodeBase & { createdBy?: string; tags?: string[] };
     const aiMark = ext.createdBy === 'ai' ? ' 🤖' : '';
     const tags   = ext.tags?.length ? `  [${ext.tags.join(', ')}]` : '';
-    lines.push(`  ${(n.nodeLabel ?? '?').padEnd(4)}  ${typeLabel(n).padEnd(10)}  ${nodeSnippet(n)}${aiMark}${tags}`);
+    const out    = links.output.get(n.id), of = links.outputOf.get(n.id);
+    const link   = out ? `  (output: ${out.nodeLabel ?? out.id})` : of ? `  (output of: ${of.nodeLabel ?? of.id})` : '';
+    lines.push(`  ${(n.nodeLabel ?? '?').padEnd(4)}  ${typeLabel(n).padEnd(10)}  ${nodeSnippet(n)}${aiMark}${tags}${link}`);
   }
 
   if (d.metadata?.sections?.length) {
@@ -540,6 +557,10 @@ async function canvasRead(args: Record<string, unknown>): Promise<string> {
   meta.push(`Position: (${n.x}, ${n.y})  Size: ${n.width}×${n.height}`);
   const lane = deriveLanes(d.nodes, d.metadata?.sections ?? []).find(l => l.memberIds.includes(n.id));
   if (lane) meta.push(`Section: ${lane.label}${lane.folded?.includes(n.id) ? ' hidden (folded)' : ''}`);
+  const links = outputLinks(d);
+  const out = links.output.get(n.id), of = links.outputOf.get(n.id);
+  if (out) meta.push(`Output: ${out.nodeLabel ?? '?'} (id: ${out.id})`);
+  if (of)  meta.push(`Output of: ${of.nodeLabel ?? '?'} (id: ${of.id})`);
   if (incoming.length || outgoing.length) {
     meta.push(`Connections: ${[...incoming, ...outgoing].join('  ')}`);
   }
@@ -1623,7 +1644,7 @@ async function canvasRemoveKernel(args: Record<string, unknown>): Promise<string
 const TOOLS = [
   {
     name: 'canvas_list',
-    description: 'List all nodes and edges on a canvas. Returns node labels (N1, J3, etc.), types, and content previews. Use these labels to reference nodes in other tools. Lists the sections (S1…, their y, kernel and title) when the canvas has any. Lists the kernel records (id, name, server, live id) when the canvas has any.',
+    description: 'List all nodes and edges on a canvas. Returns node labels (N1, J3, etc.), types, and content previews. Use these labels to reference nodes in other tools. A code cell that has an output ends its line with "(output: C5)", and that output cell with "(output of: E6)". Lists the sections (S1…, their y, kernel and title) when the canvas has any. Lists the kernel records (id, name, server, live id) when the canvas has any.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1634,7 +1655,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_read',
-    description: 'Read the full content and metadata of a canvas node by its label (e.g. N1, J3) or node ID.',
+    description: 'Read the full content and metadata of a canvas node by its label (e.g. N1, J3) or node ID. A code cell that has an output gets an "Output: C5 (id: …)" line naming that output cell; an output cell gets an "Output of: E6 (id: …)" line naming its code cell. An edge alone does not say which cell is an output.',
     inputSchema: {
       type: 'object',
       properties: {
