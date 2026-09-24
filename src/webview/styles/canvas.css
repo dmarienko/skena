@@ -11,12 +11,15 @@
      - colour unless set on its own. */
   --skena-focus-ring: rgba(247, 67, 2, 0.5);
   --skena-focus-fill: var(--skena-focus-ring);
+  /* - --skena-pinned-tint: the colour laid over a node picked with Space. */
+  --skena-pinned-tint: rgba(64, 160, 255, 0.14);
 }
 body.vscode-dark, body.vscode-high-contrast {
   --skena-rail-bg: #050505;
   --skena-rail-border: #20d0b030;
   --skena-focus-ring: rgba(247, 67, 2, 0.5);
   --skena-focus-fill: var(--skena-focus-ring);
+  --skena-pinned-tint: rgba(64, 160, 255, 0.14);
 }
 
 .react-flow__background { background: var(--vscode-editor-background); }
@@ -111,19 +114,30 @@ body.vscode-dark, body.vscode-high-contrast {
 
 /* - focus ring: handled by useSelectedStyle hook (outline on .skena-node inline style) */
 
-/* - NOTE: this orange pinned-ring color + the node drop-shadow hairline above are the
- * - only skena brand colors that live in CSS (can't import the TS palette). All other
- * - brand colors are in src/webview/canvas/palette.ts. Keep them roughly in sync. */
-/* - space-pinned: orange box-shadow ring on .skena-node.
- * - box-shadow follows border-radius automatically (rounded corners).
- * - box-shadow and outline are different CSS properties → coexist when
- * - the node is both pinned and focused simultaneously.
- * - 6px spread puts the ring at 0–6px from the node border; the focus
- * - outline starts at 7px offset → they sit adjacent, never overlap. */
+/* - space-pinned: a blue tint over the whole node (--skena-pinned-tint), not a ring, so
+   - it still reads when the node also has the focus (the focus band is an inline
+   - box-shadow on .skena-node and would replace a stylesheet box-shadow ring).
+   - Drawn as a ::after overlay, not a background: .skena-node's own background is
+   - !important (~:44), and a code cell's Monaco editor or a cell's iframe/plot paints
+   - its own background inside the node — only a layer painted ON TOP of that content
+   - covers it. .skena-node already has contain:layout (~:55), which makes it the
+   - containing block for an absolutely positioned ::after with no position of its own. */
 .react-flow__node.skena-pinned .skena-node {
-  box-shadow:
-    0 4px 20px rgba(0, 0, 0, 0.6),
-    0 0 0 12px rgba(255, 152, 48, 0.92);
+  /* - depth shadow only; the ring is gone, the tint below is the mark now */
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+}
+.react-flow__node.skena-pinned .skena-node::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--skena-pinned-tint);
+  border-radius: inherit;
+  pointer-events: none;
+  /* - above the node's own content (Monaco, iframes, images); the resize controls and
+     - connection handles sit outside .skena-node in the DOM, in their own stacking
+     - context, so this z-index never competes with them (same value, same reasoning
+     - as the running-cell border overlay further down, .skena-node--running::after) */
+  z-index: 5;
 }
 
 /* ─── Resize controls ─────────────────────────────────────────────────────── */
