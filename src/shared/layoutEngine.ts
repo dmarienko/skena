@@ -201,14 +201,13 @@ function obstaclesOf(pair: Pair, nodes: EngineNode[], owners: Map<string, string
  * On y the row has to clear the obstacle by a full grid gap, the distance the bumps ask for
  * everywhere else, so the pack never leaves behind an overlap of its own making.
  * `near` = the nodes no bump will move in this call: these count within a gap on the right too,
- * since the bumps would leave the two where they are. `reach` = how far right of the column the
- * member counts an obstacle on its right, its own width unless the caller says otherwise.
+ * since the bumps would leave the two where they are.
  */
-function rowStart(start: number, x: number, member: EngineNode, obstacles: EngineNode[], near?: Set<string>, reach: (o: EngineNode) => number = () => member.w): number {
+function rowStart(start: number, x: number, member: EngineNode, obstacles: EngineNode[], near?: Set<string>): number {
   let y = start;
   for (const o of obstacles) {
     const both = near?.has(o.id) ?? false;
-    if (o.x + o.w + (o.x < x || both ? GRID : 0) <= x || x + reach(o) + (both ? GRID : 0) <= o.x) continue;
+    if (o.x + o.w + (o.x < x || both ? GRID : 0) <= x || x + member.w + (both ? GRID : 0) <= o.x) continue;
     if (o.y + o.h + GRID <= y || y + member.h + GRID <= o.y) continue;
     y = o.y + o.h + GRID;
   }
@@ -269,10 +268,6 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
   //   (§3.4), a rider of another column only once it is on its row. A node a bump can move is left to
   //   the bumps.
   const headRows = [...fixed, ...around.filter(n => noBump.has(n.id) && (!others.has(n.id) || placed.has(n.id)))].sort(byRow);
-  // - on Reflow a member wider than its column is the obstacle for a plain member of the column it
-  //   reaches into (§3.4), which packs around it; it clears a held node or an output there itself,
-  //   since those keep their rows
-  const reach = (m: EngineNode) => (o: EngineNode) => (sets.reflow && !owners.has(o.id) && !held.has(o.id) ? Math.min(m.w, pair.column.width) : m.w);
   let prevBottom: number | null = null;
   for (const cell of members) {
     if (taken.has(cell.id)) continue;
@@ -286,13 +281,13 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
     // - on Reflow the head clears obstacles like a stacked member: no bump runs after this pack
     const list = (prevBottom === null && !sets.reflow ? headRows : obstacles).filter(keep);
     let y = prevBottom === null
-      ? rowStart(snapGrid(sets.headY?.get(cell.id) ?? cell.y), x, cell, list, noBump, reach(cell))
-      : rowStart(prevBottom + GRID, x, cell, list, noBump, reach(cell));
+      ? rowStart(snapGrid(sets.headY?.get(cell.id) ?? cell.y), x, cell, list, noBump)
+      : rowStart(prevBottom + GRID, x, cell, list, noBump);
     // - and on Reflow a member's output clears them too, on its slot at the member's row
     const out = map.get(cell.outputNodeId ?? '');
     if (sets.reflow && out) for (let guard = 0; guard < 16; guard++) {
       const oy = rowStart(y, pair.outputX, out, list, noBump);
-      const my = rowStart(oy, x, cell, list, noBump, reach(cell));
+      const my = rowStart(oy, x, cell, list, noBump);
       if (my === y) break;
       y = my;
     }
