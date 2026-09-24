@@ -3,6 +3,7 @@ src/**
 # - brainstorm mockups, server logs and pids of the visual companion — never runtime
 .superpowers/**
 test/**
+tests/**
 scripts/**
 .vscode/**
 .claude/**

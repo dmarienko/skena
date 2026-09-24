@@ -5,6 +5,7 @@ dist/
 .DS_Store
 *.js.map
 test/
+tests/.build/
 
 # - agent scratch artifacts
 .superpowers/
