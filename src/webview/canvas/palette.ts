@@ -42,9 +42,6 @@ export function nodeBorderColor(type: string | undefined, accentColor?: string):
   return accentColor ?? DEFAULT_NODE_BORDER_BY_TYPE[type as keyof typeof DEFAULT_NODE_BORDER_BY_TYPE];
 }
 
-// ─── selection / focus ring (crisp outline drawn around the focused node) ───────
-export const SELECTION_RING_COLOR = '#f7430280';
-
 // ─── connection handles (the square ports on node edges) ────────────────────────
 export const HANDLE_RGB = '0, 229, 255';   // - cyan; used as bg 0.06 / border 0.75 / glow 0.25
 

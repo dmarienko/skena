@@ -4,7 +4,7 @@
 
 import type React from 'react';
 import { useStore } from '@xyflow/react';
-import { HANDLE_RGB, SELECTION_RING_COLOR } from '../palette';
+import { HANDLE_RGB } from '../palette';
 
 // - sci-fi style for connection handles: larger squares with cyan border + glow.
 // - Applied via the `style` prop on every <Handle> component.
@@ -56,7 +56,7 @@ export function useSelectedStyle(selected: boolean): React.CSSProperties {
   const offset = Math.min(40, Math.max(3,   7    / sc));
 
   return {
-    outline:       `${lineW.toFixed(1)}px solid ${SELECTION_RING_COLOR}`,
+    outline:       `${lineW.toFixed(1)}px solid var(--skena-focus-ring)`,
     outlineOffset: `${offset.toFixed(1)}px`,
     // - spread shadow as wide as the outline offset fills the band between the border and the outline;
     //   an inline box-shadow replaces the stylesheet's, so .skena-node's depth shadow is repeated here

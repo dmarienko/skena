@@ -6,13 +6,17 @@
 :root {
   --skena-rail-bg: #f5f5f7;
   --skena-rail-border: #d1d1d6;
-  /* - colour of the band between the focus outline and the node border */
-  --skena-focus-fill: rgba(247, 67, 2, 0.15);
+  /* - --skena-focus-ring: the focus frame's colour.
+     - --skena-focus-fill: the band between the frame and the node border, the frame's
+     - colour unless set on its own. */
+  --skena-focus-ring: rgba(247, 67, 2, 0.5);
+  --skena-focus-fill: var(--skena-focus-ring);
 }
 body.vscode-dark, body.vscode-high-contrast {
   --skena-rail-bg: #050505;
   --skena-rail-border: #20d0b030;
-  --skena-focus-fill: rgba(247, 67, 2, 0.15);
+  --skena-focus-ring: rgba(247, 67, 2, 0.5);
+  --skena-focus-fill: var(--skena-focus-ring);
 }
 
 .react-flow__background { background: var(--vscode-editor-background); }
