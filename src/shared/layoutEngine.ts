@@ -316,18 +316,30 @@ function bumpGroup(node: EngineNode, nodes: EngineNode[], owners: Map<string, st
   return group;
 }
 
+// - whether `id` is the source of `of`, directly or up the chain of riders
+function sourceOf(id: string, of: string, riders: Map<string, string>): boolean {
+  const seen = new Set<string>();
+  for (let up = riders.get(of); up !== undefined && !seen.has(up); up = riders.get(up)) {
+    if (up === id) return true;
+    seen.add(up);
+  }
+  return false;
+}
+
 // - the nodes a downward bump moves, plus the riders of every one of them and those riders' outputs
-//   (§3.5): a source that drops without its riders leaves them off the row they are anchored to. Only
-//   a rider this call pins (its column is packed) follows; any other is a plain node for the bumps.
-//   The list grows as it is walked, so a rider of a rider comes too.
-function withRiders(moving: EngineNode[], riders: Map<string, string>, map: Map<string, EngineNode>, pinned: Set<string>): EngineNode[] {
+//   (§3.5): a source that drops without its riders leaves them off the row they are anchored to. A
+//   rider outside the packed columns that is a source, directly or up the chain, of the node doing
+//   the bumping stays: following, it would land on that node and push it on, for ever. The list grows
+//   as it is walked, so a rider of a rider comes too.
+function withRiders(moving: EngineNode[], riders: Map<string, string>, map: Map<string, EngineNode>, pinned: Set<string>, bumper: EngineNode): EngineNode[] {
   const out = [...moving];
   const seen = new Set(out.map(n => n.id));
   for (let i = 0; i < out.length; i++) {
     for (const [target, source] of riders) {
-      if (source !== out[i].id || seen.has(target) || !pinned.has(target)) continue;
+      if (source !== out[i].id || seen.has(target)) continue;
       const rider = map.get(target);
       if (!rider) continue;
+      if (!pinned.has(target) && sourceOf(target, bumper.id, riders)) continue;
       seen.add(target); out.push(rider);
       const o = map.get(rider.outputNodeId ?? '');
       if (o && !seen.has(o.id)) { seen.add(o.id); out.push(o); }
@@ -409,10 +421,10 @@ function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, riders: 
     //   takes them, and their outputs, with the source. In a column this call did not pack, such a
     //   node is otherwise a plain node here: a bump can push it off the row it is anchored to.
     if (sideways) for (const n of column) { n.x += dx; active.add(n.id); }
-    else if (yields) for (const n of withRiders(bumpGroup(mover, nodes, owners, map, true), riders, map, pinned)) { n.y += drop; active.add(n.id); }
+    else if (yields) for (const n of withRiders(bumpGroup(mover, nodes, owners, map, true), riders, map, pinned, other)) { n.y += drop; active.add(n.id); }
     else {
       const group = bumpGroup(other, nodes, owners, map, true).filter(n => !pinned.has(n.id) && !held.has(n.id));
-      for (const n of withRiders(group, riders, map, pinned).filter(n => !held.has(n.id))) { n.y += dy; active.add(n.id); }
+      for (const n of withRiders(group, riders, map, pinned, mover).filter(n => !held.has(n.id))) { n.y += dy; active.add(n.id); }
     }
   }
   // - the last allowed step may be the one that cleared the section: out of steps is not out of
