@@ -666,6 +666,11 @@ async function canvasFollow(args: Record<string, unknown>): Promise<string> {
     return `File path: ${abs}`;
   }
   if (n.type === 'portal') {
+    if (n.canvas.startsWith('vault://')) {
+      const resolved = await resolveVaultUri(n.canvas, p);
+      if (!resolved) return `Vault URI: ${n.canvas}\n(vault not configured in .vscode/settings.json — add it to skena.vaults)`;
+      return `Sub-canvas path: ${resolved}\nVault URI: ${n.canvas}`;
+    }
     const abs = path.isAbsolute(n.canvas) ? n.canvas : path.resolve(path.dirname(p), n.canvas);
     return `Sub-canvas path: ${abs}`;
   }

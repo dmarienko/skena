@@ -2,7 +2,7 @@
 // - stdio JSON-RPC probe over dist/mcp-server.js; fixtures are scratch .cvs.json files under /tmp,
 //   so no real .canvas file is ever touched.
 import { spawn } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { strict as assert } from 'node:assert';
@@ -754,4 +754,24 @@ test('canvas_read and canvas_list name a code cell\'s output, and the output\'s 
   assert.match(list, /^ {2}E1 .*\(output: C1\)$/m);
   assert.match(list, /^ {2}C1 .*\(output of: E1\)$/m);
   assert.doesNotMatch(list, /^ {2}C2 .*output/m);
+});
+
+test('canvas_follow resolves a vault:// portal through skena.vaults, as it does a vault:// file', async () => {
+  // - the settings sit next to the canvas, so the server's walk up from the canvas finds them first
+  const root = join(DIR, 'vault-follow');
+  const vault = join(DIR, 'vault-notes');
+  mkdirSync(join(root, '.vscode'), { recursive: true });
+  writeFileSync(join(root, '.vscode', 'settings.json'), JSON.stringify({ 'skena.vaults': [{ name: 'notes', path: vault }] }));
+  const p = join(root, 'follow.cvs.json');
+  writeFileSync(p, JSON.stringify({
+    nodes: [
+      { id: 'n-p', type: 'portal', nodeLabel: 'P1', x: 0, y: 0, width: 400, height: 200, canvas: 'vault://notes/maps/sub.canvas' },
+      { id: 'n-f', type: 'file', nodeLabel: 'F1', x: 500, y: 0, width: 400, height: 200, file: 'vault://notes/maps/a.md' },
+      { id: 'n-u', type: 'portal', nodeLabel: 'P2', x: 0, y: 300, width: 400, height: 200, canvas: 'vault://other/sub.canvas' },
+    ],
+    edges: [],
+  }, null, 2));
+  assert.equal(await call('canvas_follow', { canvasPath: p, ref: 'P1' }), `Sub-canvas path: ${join(vault, 'maps', 'sub.canvas')}\nVault URI: vault://notes/maps/sub.canvas`);
+  assert.equal(await call('canvas_follow', { canvasPath: p, ref: 'F1' }), `File path: ${join(vault, 'maps', 'a.md')}\nVault URI: vault://notes/maps/a.md`);
+  assert.match(await call('canvas_follow', { canvasPath: p, ref: 'P2' }), /^Vault URI: vault:\/\/other\/sub\.canvas\n\(vault not configured/);
 });
