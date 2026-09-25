@@ -24,7 +24,9 @@ export interface Pair { column: Column; outputX: number; outputW: number; right:
 //   another node's row. Every caller builds it from the canvas edges with `ridersOf` below.
 // - `hanging` = the nodes that move down with a node (§3.5): source id → target ids. Every caller
 //   builds it from the canvas edges with `hangingBelow` below.
-export interface LayoutOpts { moverIds?: Iterable<string>; columnX?: number; riders?: Map<string, string>; hanging?: Map<string, string[]>; report?: { capped?: boolean }; maxSteps?: number }
+// - `draggedFrom` = where each node the user dragged sat before the drag. The call sees them already
+//   moved, so without it the nodes hanging below a node dragged down would stay where they are.
+export interface LayoutOpts { moverIds?: Iterable<string>; columnX?: number; riders?: Map<string, string>; hanging?: Map<string, string[]>; draggedFrom?: Map<string, { x: number; y: number }>; report?: { capped?: boolean }; maxSteps?: number }
 
 // - what a column pack needs from the call around it (§3.5): `held` = the movers, their pair partners
 //   and the riders of the packed columns (a rider goes under these); `noBump` = the nodes no bump
@@ -118,8 +120,12 @@ export function ridersOf(nodes: EngineNode[], edges: { fromNode: string; toNode:
  * source is not a kernel badge or a band. A pair is left out when the source is held, directly or up
  * the chain, to the target or to a node under the target in its column: the source would then follow
  * the target's row while the target follows the source down.
+ * `draggedFrom` (the call's `LayoutOpts.draggedFrom`) puts the dragged nodes back where they were, so
+ * the map is the one from before the drag: a node dragged down onto or past a node hanging below it
+ * still takes that node along.
  */
-export function hangingBelow(nodes: EngineNode[], edges: { fromNode: string; toNode: string; fromSide?: string; toSide?: string }[]): Map<string, string[]> {
+export function hangingBelow(input: EngineNode[], edges: { fromNode: string; toNode: string; fromSide?: string; toSide?: string }[], draggedFrom?: Map<string, { x: number; y: number }>): Map<string, string[]> {
+  const nodes = draggedFrom ? input.map(n => { const was = draggedFrom.get(n.id); return was ? { ...n, x: was.x, y: was.y } : n; }) : input;
   const map = byId(nodes);
   const owners = outputOwners(nodes);
   const riders = ridersOf(nodes, edges);
@@ -679,7 +685,8 @@ function layoutCall(input: EngineNode[], opts: LayoutOpts, recheck: boolean): Pa
   let settled = false;
   // - a node the packs moved down takes the nodes hanging below it down by the same amount, with what
   //   sits under them in their own column, outside the packed columns (§3.5). The largest move goes
-  //   first, and a node follows once per turn.
+  //   first, and a node follows once per turn. In the first turn a dragged node's move counts from
+  //   where it was before the drag.
   const follow = (was: Map<string, number>, moved: Patches) => {
     const queue = [...hanging.keys()]
       .map(id => map.get(id))
@@ -702,7 +709,7 @@ function layoutCall(input: EngineNode[], opts: LayoutOpts, recheck: boolean): Pa
     }
   };
   for (let pass = 0; pass < 4 && !settled; pass++) {
-    const was = new Map(nodes.map(n => [n.id, n.y] as const));
+    const was = new Map(nodes.map(n => [n.id, (pass === 0 ? opts.draggedFrom?.get(n.id)?.y : undefined) ?? n.y] as const));
     const moved = packRounds();
     follow(was, moved);
     if (pass > 0 && Object.keys(moved).length === 0) { settled = true; break; }
@@ -716,7 +723,7 @@ function layoutCall(input: EngineNode[], opts: LayoutOpts, recheck: boolean): Pa
   }
   if (!settled && first) {
     // - the second call does not check again: an unsettled second call counts as moving something
-    const again = recheck ? layoutCall(nodes.map(n => ({ ...n })), { ...opts, report: undefined }, false) : { unsettled: { x: 0, y: 0 } };
+    const again = recheck ? layoutCall(nodes.map(n => ({ ...n })), { ...opts, draggedFrom: undefined, report: undefined }, false) : { unsettled: { x: 0, y: 0 } };
     if (Object.keys(again).length > 0) {
       for (const f of first) { f.node.x = f.x; f.node.y = f.y; }
       if (opts.report) opts.report.capped = true;

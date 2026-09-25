@@ -2058,3 +2058,24 @@ test('resize C5 on H3 from 300 to 400: every node that moves goes 100 down', () 
   assert.deepEqual(tooClosePairs(after).filter(p => !was.has(p)), []);
   assert.deepEqual(layoutSection(after, { moverIds: ['C5'], riders: ridersOf(after, data.edges), hanging: hangingBelow(after, data.edges) }), {});
 });
+
+// 126
+test('the nodes hanging below a node the user drags down go down by the same amount; an upward drag moves nothing', () => {
+  // - W heads column 0 alone. The user drags it from 400 to 700: the engine sees it at 700, and the
+  //   caller gives where it was. T and U, under T in column 800, go 300 down with it.
+  const edges = [edgeDown('W', 'T')];
+  const was = [note('W', 0, 400, 1500, 100), note('T', 800, 1000, 700, 300), note('U', 800, 1400, 700, 300)];
+  const drag = (from, to) => {
+    const nodes = was.map(n => (n.id === 'W' ? { ...n, y: to } : n));
+    const draggedFrom = new Map([['W', { x: 0, y: from }]]);
+    return { nodes, patches: layoutSection(nodes, { moverIds: ['W'], draggedFrom, riders: ridersOf(nodes, edges), hanging: hangingBelow(nodes, edges, draggedFrom) }) };
+  };
+  const down = drag(400, 700);
+  assert.deepEqual(down.patches, { T: { x: 800, y: 1300 }, U: { x: 800, y: 1700 } });
+  const after = apply(down.nodes, down.patches);
+  assert.equal(overlapCount(after), 0);
+  assert.deepEqual(layoutSection(after, { moverIds: ['W'], riders: ridersOf(after, edges), hanging: hangingBelow(after, edges) }), {});
+  // - the same drag the other way, from 700 up to 400 with T at 1000: T and U stay
+  assert.deepEqual(drag(700, 400).patches, {});
+});
+
