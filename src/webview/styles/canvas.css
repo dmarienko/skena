@@ -19,7 +19,7 @@ body.vscode-dark, body.vscode-high-contrast {
   --skena-rail-border: #20d0b030;
   --skena-focus-ring: rgba(247, 67, 2, 0.5);
   --skena-focus-fill: var(--skena-focus-ring);
-  --skena-pinned-tint: rgba(64, 160, 255, 0.14);
+  --skena-pinned-tint: rgba(201, 207, 27, 0.285);
 }
 
 .react-flow__background { background: var(--vscode-editor-background); }
