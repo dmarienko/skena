@@ -72,19 +72,19 @@ test('10. the wired node does not hide the unwired node between them', () => {
   assert.equal(findNearestNode(N8, 'up', h4), 'E5');
 });
 
-test('11. with only one other node in the section, its band is always the neighbouring one, wired or not', () => {
+test('11. a wired node outside the row band is never a target, for down or for right', () => {
   const far = node('far', 6000, 800);
   const over = { nodes: [a, far], lanes: [lane('S1', 0)] };
-  // - far shares no column with a, but it is the only other node in the section, so column 6000
-  //   is the neighbouring one, and far sits below a in the pressed direction — reached by the
-  //   fallback whether or not the edge exists
-  assert.equal(findNearestNode(a, 'down', ctx(over)), 'far');
-  assert.equal(findNearestNode(a, 'down', ctx({ ...over, edges: [edge('a', 'far', 'bottom')] })), 'far');
-  // - same for a row: low is the only other node, so its row is the neighbouring one
+  // - far is the only other node in the section, so column 6000 is the neighbouring one, and far
+  //   sits below a in the pressed direction — but its x-span is 5200 px to the side of a's, far
+  //   past the one-grid-gap cap, so it is not a fallback target either
+  assert.equal(findNearestNode(a, 'down', ctx(over)), null);
+  assert.equal(findNearestNode(a, 'down', ctx({ ...over, edges: [edge('a', 'far', 'bottom')] })), null);
+  // - same for a row: low is the only other node, but 2500 px off to the side
   const low = node('low', 1000, 3000);
   const side = { nodes: [a, low], lanes: [lane('S1', 0)] };
-  assert.equal(findNearestNode(a, 'right', ctx(side)), 'low');
-  assert.equal(findNearestNode(a, 'right', ctx({ ...side, edges: [edge('a', 'low', 'right')] })), 'low');
+  assert.equal(findNearestNode(a, 'right', ctx(side)), null);
+  assert.equal(findNearestNode(a, 'right', ctx({ ...side, edges: [edge('a', 'low', 'right')] })), null);
 });
 
 // - revealPan: `area` and the result are pane pixels, the boxes flow coordinates
@@ -391,16 +391,16 @@ test('46. a wired node behind the pressed direction is not a candidate even alon
   assert.equal(findNearestNode(WIDE, 'down', wideCtx()), null);
 });
 
-// - measured on H3: N1's row is y 0-300; nothing to its right shares it, so l falls back to the
-//   neighbouring row (900), where E7 and N8 both sit
+// - measured on H3: N1's row is y 0-300; nothing to its right shares it. E7 and N8 sit in the
+//   neighbouring row (900), but 600 px to the side of N1's row — past the one-grid-gap cap — so l
+//   does not move
 const rowN1 = node('N1', 800, 0);
 const rowE7 = node('E7', 2300, 900);
 const rowN8 = node('N8', 3100, 900);
 const rowCtx = (extra = []) => ({ nodes: [rowN1, rowE7, rowN8, ...extra], edges: [], lanes: [lane('S1', 0)] });
 
-test('47. H3: l falls back to the neighbouring row when nothing shares N1\'s own row band', () => {
-  // - E7 (gap 800) is closer than N8 (gap 1600), so E7 wins
-  assert.equal(findNearestNode(rowN1, 'right', rowCtx()), 'E7');
+test('47. H3: l returns null when nothing shares N1\'s row band', () => {
+  assert.equal(findNearestNode(rowN1, 'right', rowCtx()), null);
 });
 
 test('48. l reaches a node that shares part of the row band', () => {
@@ -488,4 +488,16 @@ const phantomCtx = { nodes: [pN16, pC3, pN3, pN4], edges: [], lanes: [lane('S1',
 
 test('56. a node behind the focused node draws no band, so it cannot hide a further, correct one', () => {
   assert.equal(findNearestNode(pN16, 'down', phantomCtx), 'N4');
+});
+
+// - measured live on H3 (recaptured 2026-09-25): N3's own column (3200) is empty below it. W1 sits
+//   on the neighbouring column (4700) and lies in the pressed direction (gap 0), but its x-span is
+//   900 px to the side of N3's — far past one grid gap. The side cap, not the pressed-direction
+//   gap, is what rules it out; with nothing else on either neighbouring column, the result is null.
+const gapN3 = { id: 'N3', x: 3200, y: 1500, w: 600, h: 300 };
+const gapW1 = { id: 'W1', x: 4700, y: 1800, w: 700, h: 600 };
+const gapCtx = { nodes: [gapN3, gapW1], edges: [], lanes: [lane('S1', 0)] };
+
+test('57. a neighbouring-band node more than one grid gap to the side is not a fallback target', () => {
+  assert.equal(findNearestNode(gapN3, 'down', gapCtx), null);
 });

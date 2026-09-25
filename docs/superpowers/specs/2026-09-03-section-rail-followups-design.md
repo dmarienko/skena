@@ -97,9 +97,10 @@ with its pinned members ignored and moved with the lane; idempotent after one pa
   band (x-span) for `j`/`k`. It must lie in the pressed direction; its near edge may sit up to half a
   grid behind the focused node's far edge. The nearest by gap wins. On a tied gap, the nearest top
   edge wins for `h`/`l` and the nearest left edge for `j`/`k`; then the wider overlap, then the first
-  node in canvas order. Nothing in the own band → the neighbouring-band fallback of §8.1a; nothing
-  there either → no move. Edges play no part: a connected node elsewhere is reached with `g`. Folding
-  the section that holds the selected node clears the selection.
+  node in canvas order. Nothing in the own band → the neighbouring-band fallback of §8.1a (capped at
+  one grid gap, 100 px, to the side); nothing within reach there either → no move. Edges play no
+  part: a connected node elsewhere is reached with `g`. Folding the section that holds the selected
+  node clears the selection.
 - A new node is clamped to the canvas (`clampToOrigin`) at the single creation funnel, and the first
   node added to an empty canvas seeds the first section at `y = 0` (webview and `applyLaneFit`, so MCP
   `canvas_add_node` does the same).
@@ -119,13 +120,17 @@ that band holds nothing in the pressed direction, the next band over is tried on
 the neighbouring column for `j`/`k`, the neighbouring row for `h`/`l`. Never a second band beyond
 that — a candidate two bands over is not reached even when the one band between holds nothing.
 
-A band is a grid-snapped x (column) or y (row) of a node in the focused node's section. The focused
-node's own band is its own snapped x/y; the neighbouring bands are the next distinct band value on
-each side of it. A fallback candidate is a node sitting on one of those two neighbouring bands and
-lying in the pressed direction — wired or not, the same as §7. Among the fallback candidates, the
+A band is a grid-snapped x (column) or y (row) of a node in the focused node's section that itself
+lies in the pressed direction — a node behind the focused node draws no band, so it cannot make a
+further, correct band look like it is two away. The focused node's own band is its own snapped x/y;
+the neighbouring bands are the next distinct band value on each side of it, among the nodes that
+draw one. A fallback candidate is a node sitting on one of those two neighbouring bands, lying in the
+pressed direction, and within one grid gap (`GRID`, 100 px) of the focused node's span on the side
+(off) axis — wired or not, the same as §7. A neighbouring-band node further off to the side than that
+does not count, even when it is the only one on that band. Among the fallback candidates, the
 smallest gap wins; a tied gap is broken the same way as §7 (nearest top/left edge, then the wider
-overlap, then canvas order). Nothing in the own band, and nothing on either neighbouring band, means
-no move.
+overlap, then canvas order). Nothing in the own band, and nothing within reach on either neighbouring
+band, means no move.
 
 **8.2 Focus shows the output when it fits.** Pair = the focused code node + the node named by its
 `outputNodeId` (when it exists). If the pair box fits inside the usable area at the current zoom

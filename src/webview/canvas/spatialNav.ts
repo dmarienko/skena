@@ -83,7 +83,9 @@ function bestOf(from: NavNode, dir: NavDir, horiz: boolean, nodes: NavNode[], sc
  * tried instead — the neighbouring column for `j`/`k`, the neighbouring row for `h`/`l` — never a
  * band beyond that. A band is a grid-snapped x (`j`/`k`) or y (`h`/`l`) of a node in `from`'s
  * section that itself lies in `dir`; a node behind `from` draws no band; a fallback candidate is
- * any reachable node sitting exactly on one of those two bands and lying in `dir`, picked by gap
+ * any reachable node sitting exactly on one of those two bands, lying in `dir`, and within one grid
+ * gap (`GRID`) of `from`'s span on the side (off) axis — a node on a neighbouring band that sits
+ * further off to the side than that does not count, and no closer one means no move. Picked by gap
  * alone (no band-overlap term, since a fallback candidate is off `from`'s band by definition), then
  * by the same tie rules as the first pass.
  */
@@ -123,7 +125,10 @@ export function findNearestNode(from: NavNode, dir: NavDir, ctx: NavContext): st
 
   const fallback = ctx.nodes.filter(n => {
     if (n.id === from.id || !reachable(n) || !neighbourBands.has(bandOf(n))) return false;
-    return inDir(boxDelta(from, n, dir).gap);
+    const { gap, off } = boxDelta(from, n, dir);
+    // - a neighbouring-band node still has to sit within one grid gap, side to side, of from's own
+    //   span — a distant node on the same band is not a fallback target
+    return inDir(gap) && off <= GRID;
   });
   return bestOf(from, dir, horiz, fallback, n => boxDelta(from, n, dir).gap);
 }
