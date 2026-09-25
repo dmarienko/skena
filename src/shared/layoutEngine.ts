@@ -612,6 +612,21 @@ function layoutCall(input: EngineNode[], opts: LayoutOpts, recheck: boolean): Pa
   //   turns have not settled after 4, the result is checked with a second call: if that moves nothing
   //   the result stands, else the call keeps what the first turn gave and reports it capped (§3.2)
   const positions = () => nodes.map(n => `${n.x},${n.y}`).join(';');
+  // - between turns a packed column reads its width and output slot again (§3.4): a column that moved
+  //   right changes which members of the column on its left stay a gap clear of it, and the next call
+  //   would put the outputs on the new slot. A column whose members changed keeps what it read.
+  const rereadSlots = (): boolean => {
+    const now = derivePairs(nodes, deriveColumns(nodes, movers));
+    let changed = false;
+    for (const p of packed) {
+      const q = now.find(c => c.column.x === p.column.x);
+      if (!q || q.outputX === p.outputX) continue;
+      if (q.column.cellIds.length !== p.column.cellIds.length || q.column.cellIds.some(id => !p.column.cellIds.includes(id))) continue;
+      p.column.width = q.column.width; p.outputX = q.outputX; p.outputW = q.outputW; p.right = q.right;
+      changed = true;
+    }
+    return changed;
+  };
   let first: { node: EngineNode; x: number; y: number }[] | null = null;
   let settled = false;
   for (let pass = 0; pass < 4 && !settled; pass++) {
@@ -622,7 +637,8 @@ function layoutCall(input: EngineNode[], opts: LayoutOpts, recheck: boolean): Pa
     resolveBumps(nodes, owners, riders, pinned, placed, new Set([...movers, ...Object.keys(moved)]), sets.movedOutputs!, { report, maxSteps: opts.maxSteps });
     if (report.capped) { if (opts.report) opts.report.capped = true; if (pass === 0) settled = true; break; }
     if (pass === 0) first = nodes.map(n => ({ node: n, x: n.x, y: n.y }));
-    if (positions() === was) settled = true;
+    const reread = rereadSlots();
+    if (positions() === was && !reread) settled = true;
   }
   if (!settled && first) {
     // - the second call does not check again: an unsettled second call counts as moving something

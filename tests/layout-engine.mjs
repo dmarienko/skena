@@ -1988,3 +1988,20 @@ test('a dragged output that lands on a plain note of a column right of it moves 
   const nodes = [note('N3', 3800, 600, 1100, 100), { ...code('E5', 1500, 700, 300, 'OE5'), w: 600 }, cell('OE5', 3500, 1200, 600, 500), { ...code('E6', 0, 700), w: 600 }, note('N7', 1500, 1900, 1500, 700)];
   settles(nodes, [edgeTo('E6', 'E5')], ['OE5'], { N3: { x: 4200, y: 600 }, OE5: { x: 3500, y: 700 } });
 });
+
+// 122
+test('a column that moved right to make room changes the slot of the column on its left in the same call', () => {
+  // - test 117's 7 nodes; E1 runs. C1 lands on E4 and column 3400 moves 700 right. M6, 800 wide in
+  //   E1's column, then stays a gap clear of E4's column, so the width of column 2600 is 800 and the
+  //   slot 3500: C1 goes there in this call, and E4 100 further. Read once, the slot stayed at 3400
+  //   and a second call moved C1 and E4.
+  const cells = [
+    code('E4', 3400, 400), note('N10', 1900, 800, 2200, 100), note('N11', 1800, 1000, 700, 300),
+    { id: 'M6', type: 'file', x: 2600, y: 2600, w: 800, h: 900 }, code('E10', 1800, 1800, 300, 'C4'), cell('C4', 2600, 1800),
+    code('E1', 2600, 400),
+  ];
+  const slot = placeOutput(cells, 'E1');
+  assert.deepEqual(slot, { x: 3400, y: 400, width: 600, height: 300 });
+  const nodes = [...cells.map(n => (n.id === 'E1' ? { ...n, outputNodeId: 'C1' } : n)), cell('C1', slot.x, slot.y)];
+  settles(nodes, [], ['C1'], { C1: { x: 3500, y: 400 }, E4: { x: 4200, y: 400 }, M6: { x: 2600, y: 2200 } });
+});
