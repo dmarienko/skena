@@ -2094,3 +2094,24 @@ test('an output resized by hand pushes the note it grows onto down; a new output
   assert.deepEqual(layoutSection(nodes, { moverIds: ['O'] }), { N: { x: 1500, y: 500 }, E2: { x: 0, y: 600 } });
 });
 
+// 128
+test('a new output on a member that reaches into the next column moves that member down, not its column right', () => {
+  // - the reviewer's generator for one output, seed 1164, the output at its slot. N0, 1100 wide, is the
+  //   only member of column 1600 and reaches over column 1700. O lands on it. Before, column 1600 moved
+  //   700 right, past N2, and the next call read the edge N2 → N0 as holding N0 on N2's row and moved
+  //   N0 again. Now N1 takes A0's row, 0, and pushes N0 100 down; O moves N0 down by the overlap, to
+  //   1000, and N0 then goes one gap under N2, to 1200, as before 0.17.66. A member that stays clear of
+  //   the next column still moves right (test 118).
+  const nodes = [
+    code('A0', 800, 0), code('E', 800, 400, 300, 'O'), note('N0', 1600, 300, 1100, 100),
+    note('N1', 1700, 500, 300, 300), note('N2', 1700, 1000, 700, 100), cell('O', 1600, 400, 600, 500),
+  ];
+  const edges = [edgeTo('N2', 'N0'), edgeTo('A0', 'N1')];
+  const report = {};
+  const patches = layoutSection(nodes, { moverIds: ['O'], riders: ridersOf(nodes, edges), hanging: hangingBelow(nodes, edges), report });
+  assert.equal(!!report.capped, false);
+  assert.deepEqual(patches, { N0: { x: 1600, y: 1200 }, N1: { x: 1700, y: 0 } });
+  const after = apply(nodes, patches);
+  assert.equal(overlapCount(after), 0);
+  assert.deepEqual(layoutSection(after, { moverIds: ['O'], riders: ridersOf(after, edges), hanging: hangingBelow(after, edges) }), {});
+});

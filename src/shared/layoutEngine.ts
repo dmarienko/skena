@@ -261,6 +261,14 @@ function rowStart(start: number, x: number, member: EngineNode, obstacles: Engin
   return y;
 }
 
+// - whether a column member reaches over the next column on its right, or ends less than a gap before
+//   it: such a member does not set its column's width (§3.4)
+function spansNext(node: EngineNode, nodes: EngineNode[], owners: Map<string, string>): boolean {
+  const x = snapGrid(node.x);
+  const next = Math.min(...nodes.filter(n => isMember(n, owners) && snapGrid(n.x) > x).map(n => snapGrid(n.x)));
+  return x + node.w + GRID > next;
+}
+
 // - whether `node` is held to a source in another column (§3.5): one held to a member of its own
 //   column is held to nothing there
 function heldElsewhere(node: EngineNode, riders: Map<string, string>, map: Map<string, EngineNode>): boolean {
@@ -492,8 +500,9 @@ function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, riders: 
     const { mover, other } = hit;
     const column = bumpGroup(other, nodes, owners, map, false);
     // - an output the operation placed or moved that lands on a member of a column at or right of it,
-    //   held to no other column's row, moves that column right, even when down is the smaller move (§3.5)
-    const makesRoom = movedOutputs.has(mover.id) && isMember(other, owners) && !heldElsewhere(other, riders, map) && snapGrid(other.x) >= snapGrid(mover.x);
+    //   held to no other column's row, moves that column right, even when down is the smaller move
+    //   (§3.5). A member that reaches into the next column goes down by the ordinary bump instead.
+    const makesRoom = movedOutputs.has(mover.id) && isMember(other, owners) && !heldElsewhere(other, riders, map) && snapGrid(other.x) >= snapGrid(mover.x) && !spansNext(other, nodes, owners);
     // - a sideways step is RIGHT only, and is the overlap rounded UP to the grid: the whole column
     //   moves by the same grid multiple, so it still shares one snapped x and the next call reads
     //   the same column. A node left of the mover has no sideways move at all — a left step is not
@@ -620,15 +629,16 @@ function layoutCall(input: EngineNode[], opts: LayoutOpts, recheck: boolean): Pa
   const sets: PackSets = { held, noBump, placed: new Set(), movedOutputs: new Set([...movers].filter(id => owners.has(id) && !resized.has(id))), wentUnder, hanging };
   const packed = new Set(pairs.filter(p => touched.has(p.column.x)));
   // - an output the operation placed or moved that lands on a member of a packed column at or right of
-  //   it, held to no other column's row, moves that column right before it packs, by the overlap rounded
-  //   up to the grid (§3.5). A column holding a node the operation placed, or a held node the output's
-  //   code cell went under, keeps its x: the column packs around the output instead.
+  //   it, held to no other column's row and clear of the next column, moves that column right before it
+  //   packs, by the overlap rounded up to the grid (§3.5). A column holding a node the operation placed,
+  //   or a held node the output's code cell went under, keeps its x: the column packs around the output
+  //   instead.
   const makeRoom = (pair: Pair, moved: Patches) => {
     const members = pair.column.cellIds.map(id => map.get(id)!);
     if (members.some(n => placed.has(n.id) || wentUnder.has(n.id))) return;
     for (const id of sets.movedOutputs!) {
       const o = map.get(id)!;
-      if (snapGrid(o.x) > pair.column.x || !members.some(m => !heldElsewhere(m, riders, map) && overlaps(o, m))) continue;
+      if (snapGrid(o.x) > pair.column.x || !members.some(m => !heldElsewhere(m, riders, map) && !spansNext(m, nodes, owners) && overlaps(o, m))) continue;
       const dx = gridUp(o.x + o.w + GRID - pair.column.x);
       for (const m of members) for (const n of [m, map.get(m.outputNodeId ?? '')]) if (n) { n.x += dx; moved[n.id] = { x: n.x, y: n.y }; }
       pair.column.x += dx; pair.outputX += dx; pair.right += dx;
