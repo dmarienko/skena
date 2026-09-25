@@ -72,16 +72,19 @@ test('10. the wired node does not hide the unwired node between them', () => {
   assert.equal(findNearestNode(N8, 'up', h4), 'E5');
 });
 
-test('11. a wired node outside the row band is never a target, for down or for right', () => {
+test('11. with only one other node in the section, its band is always the neighbouring one, wired or not', () => {
   const far = node('far', 6000, 800);
   const over = { nodes: [a, far], lanes: [lane('S1', 0)] };
-  assert.equal(findNearestNode(a, 'down', ctx(over)), null);
-  assert.equal(findNearestNode(a, 'down', ctx({ ...over, edges: [edge('a', 'far', 'bottom')] })), null);
-  // - 200 right of a and 2500 below its row: no shared row band, wired or not
+  // - far shares no column with a, but it is the only other node in the section, so column 6000
+  //   is the neighbouring one, and far sits below a in the pressed direction — reached by the
+  //   fallback whether or not the edge exists
+  assert.equal(findNearestNode(a, 'down', ctx(over)), 'far');
+  assert.equal(findNearestNode(a, 'down', ctx({ ...over, edges: [edge('a', 'far', 'bottom')] })), 'far');
+  // - same for a row: low is the only other node, so its row is the neighbouring one
   const low = node('low', 1000, 3000);
   const side = { nodes: [a, low], lanes: [lane('S1', 0)] };
-  assert.equal(findNearestNode(a, 'right', ctx(side)), null);
-  assert.equal(findNearestNode(a, 'right', ctx({ ...side, edges: [edge('a', 'low', 'right')] })), null);
+  assert.equal(findNearestNode(a, 'right', ctx(side)), 'low');
+  assert.equal(findNearestNode(a, 'right', ctx({ ...side, edges: [edge('a', 'low', 'right')] })), 'low');
 });
 
 // - revealPan: `area` and the result are pane pixels, the boxes flow coordinates
@@ -356,15 +359,17 @@ test('42. a node below, offset by less than its width, shares the column and is 
   assert.equal(findNearestNode(E11, 'down', h3([offset])), 'offset');
 });
 
-test('43. a node connected from the bottom border but outside the column is not a j target', () => {
+test('43. a node in the neighbouring column is reached by the fallback whether or not it is wired', () => {
+  // - E11's own column (2400) is empty below it; wired sits in the neighbouring column (1600)
+  //   and below — the edge changes nothing, since edges play no part in either pass
   const wired = node('wired', 1600, 4600);
-  assert.equal(findNearestNode(E11, 'down', h3([wired], [edge('E11', 'wired', 'bottom', 'top')])), null);
+  assert.equal(findNearestNode(E11, 'down', h3([wired], [edge('E11', 'wired', 'bottom', 'top')])), 'wired');
 });
 
-test('44. a node below one column over, near enough to be roughly aligned, is not a j target', () => {
-  // - 400 below E11's bottom and 100 left of its x-span
+test('44. a node one column over and below is reached once the own column is empty', () => {
+  // - 400 below E11's bottom, in the neighbouring column (1600)
   const near = node('near', 1600, 4800);
-  assert.equal(findNearestNode(E11, 'down', h3([near])), null);
+  assert.equal(findNearestNode(E11, 'down', h3([near])), 'near');
 });
 
 // - measured on test/H3.canvas: a wide note with a bottom→top edge to a node that now sits above it
@@ -386,14 +391,16 @@ test('46. a wired node behind the pressed direction is not a candidate even alon
   assert.equal(findNearestNode(WIDE, 'down', wideCtx()), null);
 });
 
-// - measured on H3: N1's row is y 0-300; nothing to its right shares it, so l does not move
+// - measured on H3: N1's row is y 0-300; nothing to its right shares it, so l falls back to the
+//   neighbouring row (900), where E7 and N8 both sit
 const rowN1 = node('N1', 800, 0);
 const rowE7 = node('E7', 2300, 900);
 const rowN8 = node('N8', 3100, 900);
 const rowCtx = (extra = []) => ({ nodes: [rowN1, rowE7, rowN8, ...extra], edges: [], lanes: [lane('S1', 0)] });
 
-test('47. H3: l returns null when nothing shares N1\'s row band', () => {
-  assert.equal(findNearestNode(rowN1, 'right', rowCtx()), null);
+test('47. H3: l falls back to the neighbouring row when nothing shares N1\'s own row band', () => {
+  // - E7 (gap 800) is closer than N8 (gap 1600), so E7 wins
+  assert.equal(findNearestNode(rowN1, 'right', rowCtx()), 'E7');
 });
 
 test('48. l reaches a node that shares part of the row band', () => {
@@ -428,4 +435,42 @@ const tieVCtx = { nodes: [tieV0, tieV2, tieV1], edges: [], lanes: [lane('S1', 0)
 
 test('51. a tied gap on j / k goes to the node whose left edge is closest', () => {
   assert.equal(findNearestNode(tieV0, 'down', tieVCtx), 'V1');
+});
+
+// - H3 fallback (2026-09-25): own column/row first, exactly as above; when nothing lies in the
+//   pressed direction there, the nearest node in the pressed direction on the neighbouring column
+//   (j / k) or row (h / l) — never a column/row further out than that. Positions measured on H3.
+const fN11 = { id: 'N11', x: 2400, y: 1100, w: 700, h: 300 };
+const fN3  = { id: 'N3',  x: 3200, y: 1500, w: 600, h: 300 };
+const fN16 = { id: 'N16', x: 3900, y: 1100, w: 700, h: 300 };
+const fN4  = { id: 'N4',  x: 4700, y: 1400, w: 700, h: 300 };
+// - C1 shares N3's column but sits above N11's row, so it never qualifies as a "down" target
+const fC1  = { id: 'C1',  x: 3200, y: 100,  w: 700, h: 300 };
+const fW1  = { id: 'W1',  x: 4700, y: 1800, w: 700, h: 300 };
+const fallCtx = { nodes: [fN11, fN3, fN16, fN4, fC1, fW1], edges: [], lanes: [lane('S1', 0)] };
+
+test('52. H3: nothing under N11 in its own column, so j falls back to N3 in the next column right', () => {
+  assert.equal(findNearestNode(fN11, 'down', fallCtx), 'N3');
+});
+
+test('53. H3: the fallback weighs both neighbouring columns and takes the smaller vertical gap', () => {
+  // - N16's own column (3900) is empty below it; N4 (column 4700, top 1400, gap 0) beats N3
+  //   (column 3200, top 1500, gap 100)
+  assert.equal(findNearestNode(fN16, 'down', fallCtx), 'N4');
+});
+
+// - the old block still holds: a buffer column (M6, 1600) sits between E11's column (2400) and
+//   N15's (800), so the fallback stops at the buffer and never reaches all the way to N15
+const M6 = node('M6', 1600, 100);
+test('54. H3: two columns away still never counts, even with the fallback in play', () => {
+  assert.equal(findNearestNode(E11, 'down', h3([M6])), null);
+});
+
+// - h/l counterpart: N11 / N3 rotated 90°, a row band standing in for a column band
+const rN11 = { id: 'N11', x: 1100, y: 2400, w: 300, h: 700 };
+const rN3  = { id: 'N3',  x: 1500, y: 3200, w: 300, h: 600 };
+const rowFallCtx = { nodes: [rN11, rN3], edges: [], lanes: [lane('S1', 0)] };
+
+test('55. h/l counterpart: nothing right of N11 in its own row, so l falls back to N3 in the row below', () => {
+  assert.equal(findNearestNode(rN11, 'right', rowFallCtx), 'N3');
 });

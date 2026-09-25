@@ -9,6 +9,7 @@
 
 import { GRID } from '../../shared/constants';
 import { facingSide, sideOfHandle, type Point, type Side } from '../../shared/edgeRouting';
+import { snapGrid } from '../../shared/grid';
 import { laneIndexForNode, pinnedLaneIndex, sortLanes, type SectionLane } from '../../shared/sectionLanes';
 
 export type NavDir = 'left' | 'right' | 'up' | 'down';
@@ -54,12 +55,36 @@ export function navScore(from: NavNode, to: NavNode, dir: NavDir): number {
 }
 
 /**
- * The node to focus when `dir` is pressed on `from`, or null when nothing qualifies. A candidate has
- * to share part of `from`'s span on the other axis — its row band for `h`/`l`, its column for
- * `j`/`k` — wired or not; a node connected elsewhere is reached with `g`, never with a direction
- * key. `left`/`right` stay in `from`'s section; `up`/`down` may cross into any open section. A tied
- * score goes to the candidate whose near edge (top for `h`/`l`, left for `j`/`k`) sits closest to
- * `from`'s, then to the wider overlap, then to the first node in canvas order.
+ * The winner among `nodes`, scored by `scoreOf`: lowest score wins. A tied score goes to the
+ * candidate whose near edge (top for `h`/`l`, left for `j`/`k`) sits closest to `from`'s, then to
+ * the wider overlap, then to the first node in canvas order.
+ */
+function bestOf(from: NavNode, dir: NavDir, horiz: boolean, nodes: NavNode[], scoreOf: (n: NavNode) => number): string | null {
+  let best: string | null = null;
+  let bestScore = Infinity;
+  let bestNear = Infinity;
+  let bestOverlap = -Infinity;
+  for (const n of nodes) {
+    const { overlap } = boxDelta(from, n, dir);
+    const s = scoreOf(n);
+    const near = horiz ? Math.abs(n.y - from.y) : Math.abs(n.x - from.x);
+    const better = s < bestScore || (s === bestScore && (near < bestNear || (near === bestNear && overlap > bestOverlap)));
+    if (better) { bestScore = s; bestNear = near; bestOverlap = overlap; best = n.id; }
+  }
+  return best;
+}
+
+/**
+ * The node to focus when `dir` is pressed on `from`, or null when nothing qualifies. First, a
+ * candidate that shares part of `from`'s span on the other axis — its row band for `h`/`l`, its
+ * column for `j`/`k` — wired or not; a node connected elsewhere is reached with `g`, never with a
+ * direction key. `left`/`right` stay in `from`'s section; `up`/`down` may cross into any open
+ * section. When `from`'s own band holds nothing in `dir`, the next band over on either side is
+ * tried instead — the neighbouring column for `j`/`k`, the neighbouring row for `h`/`l` — never a
+ * band beyond that. A band is a grid-snapped x (`j`/`k`) or y (`h`/`l`) of a node in `from`'s
+ * section; the fallback candidate is any reachable node sitting exactly on one of those two bands
+ * and lying in `dir`, picked by gap alone (no band-overlap term, since a fallback candidate is off
+ * `from`'s band by definition), then by the same tie rules as the first pass.
  */
 export function findNearestNode(from: NavNode, dir: NavDir, ctx: NavContext): string | null {
   const horiz = dir === 'left' || dir === 'right';
@@ -70,22 +95,34 @@ export function findNearestNode(from: NavNode, dir: NavDir, ctx: NavContext): st
   const reachable = (n: NavNode) => !pinned.has(n.id) && (!horiz || laneOf(n) === fromLane);
   const inDir = (gap: number) => gap >= -BEHIND_SLACK;
 
-  let best: string | null = null;
-  let bestScore = Infinity;
-  let bestNear = Infinity;
-  let bestOverlap = -Infinity;
-  for (const n of ctx.nodes) {
-    if (n.id === from.id || !reachable(n)) continue;
+  const inBand = ctx.nodes.filter(n => {
+    if (n.id === from.id || !reachable(n)) return false;
     const { gap, overlap } = boxDelta(from, n, dir);
-    if (overlap <= 0 || !inDir(gap)) continue;
-    const s = navScore(from, n, dir);
-    // - a tied score goes to the nearer top (h / l) or left (j / k), then the wider overlap, then
-    //   the first node in canvas order
-    const near = horiz ? Math.abs(n.y - from.y) : Math.abs(n.x - from.x);
-    const better = s < bestScore || (s === bestScore && (near < bestNear || (near === bestNear && overlap > bestOverlap)));
-    if (better) { bestScore = s; bestNear = near; bestOverlap = overlap; best = n.id; }
+    return overlap > 0 && inDir(gap);
+  });
+  const primary = bestOf(from, dir, horiz, inBand, n => navScore(from, n, dir));
+  if (primary !== null) return primary;
+
+  // - nothing in from's own band: the two bands next to it, on either side, drawn from the nodes
+  //   in from's own section — never a band further out than that
+  const bandOf = (n: NavNode) => snapGrid(horiz ? n.y : n.x);
+  const ownBand = bandOf(from);
+  let lowerBand = -Infinity;
+  let upperBand = Infinity;
+  for (const n of ctx.nodes) {
+    if (n.id === from.id || pinned.has(n.id) || laneOf(n) !== fromLane) continue;
+    const band = bandOf(n);
+    if (band < ownBand && band > lowerBand) lowerBand = band;
+    if (band > ownBand && band < upperBand) upperBand = band;
   }
-  return best;
+  const neighbourBands = new Set([lowerBand, upperBand].filter(Number.isFinite));
+  if (neighbourBands.size === 0) return null;
+
+  const fallback = ctx.nodes.filter(n => {
+    if (n.id === from.id || !reachable(n) || !neighbourBands.has(bandOf(n))) return false;
+    return inDir(boxDelta(from, n, dir).gap);
+  });
+  return bestOf(from, dir, horiz, fallback, n => boxDelta(from, n, dir).gap);
 }
 
 /** The box a delete leaves behind, with the section it sat in — both read before the removal. */
