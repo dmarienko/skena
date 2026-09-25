@@ -30,8 +30,9 @@ export interface LayoutOpts { moverIds?: Iterable<string>; columnX?: number; rid
 //   `headY` = where a column head starts each round, the y it had when these rounds began (none: its
 //   current y); `reflow` = the pack is Reflow's, where no bump runs after it (§3.4); `movedOutputs` =
 //   the output cells among the movers (a new output is one): each goes under a node held to another
-//   cell's row in a packed column, with its code cell.
-interface PackSets { held: Set<string>; noBump: Set<string>; placed: Set<string>; headY?: Map<string, number>; reflow?: boolean; movedOutputs?: Set<string> }
+//   cell's row in a packed column, with its code cell; `wentUnder` = the held nodes such a code cell
+//   went under in this call, whose columns keep their x (§3.5).
+interface PackSets { held: Set<string>; noBump: Set<string>; placed: Set<string>; headY?: Map<string, number>; reflow?: boolean; movedOutputs?: Set<string>; wentUnder?: Set<string> }
 
 const byId = (nodes: EngineNode[]) => new Map(nodes.map(n => [n.id, n] as const));
 
@@ -140,11 +141,11 @@ export function deriveColumns(nodes: EngineNode[], movers = new Set<string>()): 
 }
 
 /**
- * Pairs = columns with their output column: x one gap right of the column's widest member, width =
- * the widest output the column holds, at its REAL width (never clamped: a wide output must not
- * overlap the pair to its right — OUTPUT_MAX_W is for the callers that create or resize an output),
- * floored at OUTPUT_MIN_W. Every column gets a pair; the output column only means something for a
- * column that holds a code cell, since nothing else has an output.
+ * Pairs = columns with their output column: x one gap right of the column's width and of every code
+ * cell in the column, width = the widest output the column holds, at its REAL width (never clamped: a
+ * wide output must not overlap the pair to its right — OUTPUT_MAX_W is for the callers that create or
+ * resize an output), floored at OUTPUT_MIN_W. Every column gets a pair; the output column only means
+ * something for a column that holds a code cell, since nothing else has an output.
  * `right` is the far edge of the pair as it really sits: the modelled slot (kept for a code column
  * whose cells have not run yet, so a fork clears the outputs to come), or an output the user has
  * parked further right than it. A column with no code cell ends at its own right edge.
@@ -158,13 +159,16 @@ export function derivePairs(nodes: EngineNode[], columns: Column[]): Pair[] {
     let parked = 0;
     let hasCode = false;
     let hasOutput = false;
+    let codeW = 0;
     for (const id of column.cellIds) {
       const cell = map.get(id);
-      if (cell?.type === 'code') hasCode = true;
+      if (cell?.type === 'code') { hasCode = true; codeW = Math.max(codeW, cell.w); }
       const out = map.get(cell?.outputNodeId ?? '');
       if (out) { hasOutput = true; outputW = Math.max(outputW, out.w); parked = Math.max(parked, out.x + out.w); }
     }
-    const outputX = column.x + column.width + GRID;
+    // - a code cell too wide to set the width (§3.4) still sets the slot: an output never touches its own
+    //   code cell
+    const outputX = column.x + Math.max(column.width, codeW) + GRID;
     const right = hasCode ? Math.max(outputX + outputW, parked) : column.x + column.width;
     return { column, outputX, outputW, right, hasOutput };
   });
@@ -214,6 +218,13 @@ function rowStart(start: number, x: number, member: EngineNode, obstacles: Engin
     y = o.y + o.h + GRID;
   }
   return y;
+}
+
+// - whether `node` is held to a source in another column (§3.5): one held to a member of its own
+//   column is held to nothing there
+function heldElsewhere(node: EngineNode, riders: Map<string, string>, map: Map<string, EngineNode>): boolean {
+  const source = map.get(riders.get(node.id) ?? '');
+  return source !== undefined && snapGrid(source.x) !== snapGrid(node.x);
 }
 
 // - whether `node` keeps its row against the output of `cellId` when that output is a mover (§3.5):
@@ -281,6 +292,7 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
       if (my === y) break;
       y = my;
     }
+    if (y > start) for (const n of keep) if (n.y < y && n.x < ox + o.w + GRID && ox < n.x + n.w + GRID) sets.wentUnder?.add(n.id);
     return y;
   };
   let prevRider: number | null = null;
@@ -406,12 +418,14 @@ function nextBump(nodes: EngineNode[], owners: Map<string, string>, pinned: Set<
  * the node the operation placed YIELDS and drops below it, with whatever sits under it in its own
  * column. That is the one case where a mover moves. A cell the pack has just laid out does not
  * yield; the node above it steps aside, and falls past it only when it cannot.
+ * Two exceptions: a column never steps aside because one of its outputs is in the way (that output's
+ * row goes down), and a column a moved output lands on steps aside even when down is the smaller move.
  * Everything a bump moved is checked again, so a bump cascades — through real overlaps and by
  * overlap amounts only, never by a modelled distance, which is why a hand-placed section an edit
  * does not actually reach is left alone. `report.capped` is set when the walk ran out of steps with
  * overlaps still on the section.
  */
-function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, riders: Map<string, string>, pinned: Set<string>, placed: Set<string>, active: Set<string>, opts: { report?: { capped?: boolean }; maxSteps?: number } = {}): void {
+function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, riders: Map<string, string>, pinned: Set<string>, placed: Set<string>, active: Set<string>, movedOutputs: Set<string>, opts: { report?: { capped?: boolean }; maxSteps?: number } = {}): void {
   const map = byId(nodes);
   const before = nodes.map(n => ({ node: n, x: n.x, y: n.y }));
   // - the cap is a real limit, not a formality: a dense section (a diagonal staircase, a tight grid)
@@ -422,6 +436,9 @@ function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, riders: 
     if (!hit) return;
     const { mover, other } = hit;
     const column = bumpGroup(other, nodes, owners, map, false);
+    // - an output the operation placed or moved that lands on a member of a column at or right of it,
+    //   held to no other column's row, moves that column right, even when down is the smaller move (§3.5)
+    const makesRoom = movedOutputs.has(mover.id) && isMember(other, owners) && !heldElsewhere(other, riders, map) && snapGrid(other.x) >= snapGrid(mover.x);
     // - a sideways step is RIGHT only, and is the overlap rounded UP to the grid: the whole column
     //   moves by the same grid multiple, so it still shares one snapped x and the next call reads
     //   the same column. A node left of the mover has no sideways move at all — a left step is not
@@ -430,7 +447,9 @@ function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, riders: 
     //   A column slides only as one, so it does not slide at all while a pinned node sits in it, nor
     //   while the node doing the bumping does: that one would ride along and the overlap would come
     //   out the same, step after step — 20 000 identical right steps, measured. It goes down instead.
-    const dx = other.x < mover.x || column.some(n => pinned.has(n.id) || n.id === mover.id) ? 0
+    //   Nor does a column slide because one of its outputs is in the way: the output's row goes down,
+    //   so code cells never slide onto another column for an output (§3.2).
+    const dx = (other.x < mover.x && !makesRoom) || owners.has(other.id) || column.some(n => pinned.has(n.id) || n.id === mover.id) ? 0
       : gridUp(mover.x + mover.w + GRID - other.x);
     const dy = mover.y + mover.h + GRID - other.y;    // - the other node clears the mover, downward
     const drop = other.y + other.h + GRID - mover.y;   // - the mover clears the other node, downward
@@ -441,7 +460,7 @@ function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, riders: 
     //   node the operation itself placed yields: a cell the pack has just laid out keeps its place,
     //   so the pack and the bumps never fight over it (that fight is not idempotent).
     const yields = other.y < mover.y && placed.has(mover.id);
-    const sideways = dx !== 0 && (yields ? dx <= drop : other.y < mover.y || dx <= dy);
+    const sideways = dx !== 0 && (makesRoom || (yields ? dx <= drop : other.y < mover.y || dx <= dy));
     // - the down group is the node in the way and what sits under it in its column, and that can
     //   hold the node doing the bumping too, which then rides down with them and leaves the overlap
     //   exactly as it was — the same walk that never closes as a column sliding with it. It is held
@@ -540,7 +559,24 @@ function layoutCall(input: EngineNode[], opts: LayoutOpts, recheck: boolean): Pa
     noBump.add(id);
     const outId = map.get(id)!.outputNodeId; if (outId) noBump.add(outId);
   }
-  const sets: PackSets = { held, noBump, placed: new Set(), movedOutputs: new Set([...movers].filter(id => owners.has(id))) };
+  const wentUnder = new Set<string>();
+  const sets: PackSets = { held, noBump, placed: new Set(), movedOutputs: new Set([...movers].filter(id => owners.has(id))), wentUnder };
+  const packed = new Set(pairs.filter(p => touched.has(p.column.x)));
+  // - an output the operation placed or moved that lands on a member of a packed column at or right of
+  //   it, held to no other column's row, moves that column right before it packs, by the overlap rounded
+  //   up to the grid (§3.5). A column holding a node the operation placed, or a held node the output's
+  //   code cell went under, keeps its x: the column packs around the output instead.
+  const makeRoom = (pair: Pair, moved: Patches) => {
+    const members = pair.column.cellIds.map(id => map.get(id)!);
+    if (members.some(n => placed.has(n.id) || wentUnder.has(n.id))) return;
+    for (const id of sets.movedOutputs!) {
+      const o = map.get(id)!;
+      if (snapGrid(o.x) > pair.column.x || !members.some(m => !heldElsewhere(m, riders, map) && overlaps(o, m))) continue;
+      const dx = gridUp(o.x + o.w + GRID - pair.column.x);
+      for (const m of members) for (const n of [m, map.get(m.outputNodeId ?? '')]) if (n) { n.x += dx; moved[n.id] = { x: n.x, y: n.y }; }
+      pair.column.x += dx; pair.outputX += dx; pair.right += dx;
+    }
+  };
 
   // - the packs run again until a round moves nothing: a column packed early in a round read the y
   //   of nodes that a later pack then moved (a rider, a node a wide member here packed around), so
@@ -555,7 +591,10 @@ function layoutCall(input: EngineNode[], opts: LayoutOpts, recheck: boolean): Pa
     for (let round = 0; round < 16; round++) {
       sets.headY = round < 8 ? headY : undefined;
       const moved: Patches = {};
-      for (const pair of pairs) if (touched.has(pair.column.x)) {
+      // - left → right again once a column has moved right to make room
+      pairs.sort((a, b) => a.column.x - b.column.x);
+      for (const pair of pairs) if (packed.has(pair)) {
+        makeRoom(pair, moved);
         // - an output goes back on the slot when the operation moved its code cell AND left it off that
         //   cell's row: the pair is broken, and a cell the user dragged takes its output with it
         packColumn(pair, nodes, map, riders, owners, moved, (id, o, wasY) => movers.has(id) && o.y !== wasY, sets);
@@ -580,7 +619,7 @@ function layoutCall(input: EngineNode[], opts: LayoutOpts, recheck: boolean): Pa
     if (pass > 0 && Object.keys(moved).length === 0) { settled = true; break; }
     const was = positions();
     const report: { capped?: boolean } = {};
-    resolveBumps(nodes, owners, riders, pinned, placed, new Set([...movers, ...Object.keys(moved)]), { report, maxSteps: opts.maxSteps });
+    resolveBumps(nodes, owners, riders, pinned, placed, new Set([...movers, ...Object.keys(moved)]), sets.movedOutputs!, { report, maxSteps: opts.maxSteps });
     if (report.capped) { if (opts.report) opts.report.capped = true; if (pass === 0) settled = true; break; }
     if (pass === 0) first = nodes.map(n => ({ node: n, x: n.x, y: n.y }));
     if (positions() === was) settled = true;

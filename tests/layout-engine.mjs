@@ -296,14 +296,15 @@ test('a note sitting on a cell moves only when its own column is the one this ca
 });
 
 // 18
-test('an output measured at its real width, past OUTPUT_MAX_W, bumps on the shorter axis', () => {
+test('an output measured at its real width, past OUTPUT_MAX_W, moves the next column right by the real overlap', () => {
   const nodes = [
     code('E1', 1600, 400, 300, 'C1'),
     cell('C1', 2400, 400, 1600, 300),   // - wider than OUTPUT_MAX_W: the clamp is the caller's, not the engine's
     code('F1', 3100, 400),
   ];
-  // - C1 reaches 4000 and F1 is 1000 into it; down is 400, so F1 goes down, not right
-  assert.deepEqual(layoutSection(nodes, { moverIds: ['C1'] }), { F1: { x: 3100, y: 800 } });
+  // - C1 reaches 4000 and F1 is 1000 into it, a gap included: F1's column moves 1000 right to make room
+  //   (§3.5), even though down would be 400
+  assert.deepEqual(layoutSection(nodes, { moverIds: ['C1'] }), { F1: { x: 4100, y: 400 } });
   assert.deepEqual(layoutSection(apply(nodes, layoutSection(nodes, { moverIds: ['C1'] })), { moverIds: ['C1'] }), {});
 });
 
@@ -1707,13 +1708,6 @@ test('Reflow brings a head back up once the tight pass has moved the column it c
 
 // 99
 test('when packs and bumps do not settle in their turns, the call keeps the first turn and reports it', () => {
-  // - OE5 dragged; E5 is held to E6's row; N7 heads column 1500. The turns go round without settling;
-  //   the call returns the first turn (N7 at 2000, 100 lower) and says it was capped.
-  const a = [note('N3', 3800, 600, 1100, 100), { ...code('E5', 1500, 700, 300, 'OE5'), w: 600 }, cell('OE5', 3500, 1200, 600, 500), { ...code('E6', 0, 700), w: 600 }, note('N7', 1500, 1900, 1500, 700)];
-  const r1 = {};
-  assert.deepEqual(layoutSection(a, { moverIds: ['OE5'], riders: ridersOf(a, [edgeTo('E6', 'E5')]), report: r1 }),
-    { E5: { x: 1500, y: 800 }, OE5: { x: 3500, y: 800 }, N7: { x: 1500, y: 2000 } });
-  assert.equal(r1.capped, true);
   // - N1 held to E2; the mover N1 yields under N5 and takes N8 with it: the first turn moves N8 400
   const b = [note('N1', 3100, 1600, 800, 500), { ...code('E2', 1500, 1200, 500), w: 600 }, note('N5', 2300, 800, 750, 700), note('N8', 3100, 2200, 600, 500)];
   const r2 = {};
@@ -1806,9 +1800,10 @@ test('a new output on a node held to its own code cell still sends that node one
 
 // 105
 test('a new output on a plain note moves the note, not the code cell', () => {
-  // - P is held by nothing: the bump moves it by the overlap, 400 down against 700 right
+  // - P is held by nothing: its column moves right to make room (§3.5), 800 + 600 + 100 - 800 = 700,
+  //   although down would be 400
   const nodes = [code('E', 0, 0, 300, 'O'), note('P', 800, 0, 700, 300), cell('O', 800, 0)];
-  settles(nodes, [], ['O'], { P: { x: 800, y: 400 } });
+  settles(nodes, [], ['O'], { P: { x: 1500, y: 0 } });
 });
 
 // 106
@@ -1858,13 +1853,14 @@ test('a code cell held to another row still goes under the held node its new out
 
 // 111
 test('a new output on a node whose source is in its own column moves that node, since it is held to nothing there', () => {
-  // - the map holds N to S, but S is a member of N's column, so N packs as a plain member: it goes
-  //   under O and under H (held to A, at 400), to 800, and S under N. E and O stay.
+  // - the map holds N to S, but S is a member of N's column, so N is a plain member: O lands on it and
+  //   column 800 moves right to make room, 700 (§3.5). There H takes A's row, 400, and S goes under it.
+  //   E and O stay.
   const nodes = [code('E', 0, 0, 300, 'O'), cell('O', 800, 0), note('A', 0, 400, 700, 300), note('N', 800, 0, 700, 300), note('S', 800, 400, 700, 300), note('H', 800, 1200, 700, 300)];
   const riders = new Map([['N', 'S'], ['H', 'A']]);
   const report = {};
   const patches = layoutSection(nodes, { moverIds: ['O'], riders, report });
-  assert.deepEqual(patches, { N: { x: 800, y: 800 }, S: { x: 800, y: 1200 }, H: { x: 800, y: 400 } });
+  assert.deepEqual(patches, { N: { x: 1500, y: 0 }, S: { x: 1500, y: 800 }, H: { x: 1500, y: 400 } });
   assert.equal(!!report.capped, false);
   const after = apply(nodes, patches);
   assert.equal(overlapCount(after), 0);
@@ -1895,4 +1891,100 @@ test('a code cell moved under a held node also goes under a node above its new r
   //   it too, 600 + 300 + 100.
   const nodes = [note('S', 0, 0, 700, 300), code('E', 0, 400, 300, 'O'), cell('O', 800, 400, 650, 300), note('R', 800, 0, 600, 700), note('P', 1500, 600, 700, 300)];
   settles(nodes, [edgeTo('S', 'R')], ['O'], { E: { x: 0, y: 1000 }, O: { x: 800, y: 1000 } });
+});
+
+// 115
+test('run E1 on H3: the output slot clears E1 by a gap, the column the output lands on moves right, column 1800 stays', () => {
+  // - tests/fixtures/H3-E1.json: H3 before the user ran E1 on 2026-09-25, geometry only
+  const data = JSON.parse(fs.readFileSync(path.join(here, 'fixtures', 'H3-E1.json'), 'utf8'));
+  const before = toEngineNodes(data.nodes);
+  // - E1 (2600, 400) is 700 wide and ends at 3300; N3, 600 wide, sets the width of column 2600
+  const slot = placeOutput(before, 'E1');
+  assert.deepEqual(slot, { x: 3400, y: 400, width: 600, height: 300 });
+  const nodes = [...before.map(n => (n.id === 'E1' ? { ...n, outputNodeId: 'C1' } : n)), cell('C1', slot.x, slot.y, slot.width, slot.height)];
+  const report = {};
+  const patches = layoutSection(nodes, { moverIds: ['C1'], riders: ridersOf(nodes, data.edges), report });
+  assert.equal(!!report.capped, false);
+  // - C1 lands on E4: column 3400 (C3, E4, W1) moves right by 3400 + 600 + 100 - 3400 = 700. C3 is held
+  //   to N8 in E1's column, so the call packs column 3400 too: W1 goes up to one gap under N10, 1000.
+  assert.deepEqual(patches, { C3: { x: 4100, y: 0 }, E4: { x: 4100, y: 400 }, W1: { x: 4100, y: 1000 } });
+  const after = apply(nodes, patches);
+  const was = new Set(tooClosePairs(before));
+  assert.deepEqual(tooClosePairs(after).filter(p => !was.has(p)), []);
+  assert.deepEqual(layoutSection(after, { moverIds: ['C1'], riders: ridersOf(after, data.edges) }), {});
+});
+
+// 116
+test('an output slot sits one gap right of every code cell in its column, even one too wide to set the width', () => {
+  // - N, 600 wide, sets column 0's width; E, 700 wide, ends where Q's column starts, so it does not
+  const nodes = [code('E', 0, 0), note('N', 0, 400, 600, 300), note('Q', 700, 1000, 700, 300)];
+  assert.equal(deriveColumns(nodes)[0].width, 600);
+  assert.deepEqual(placeOutput(nodes, 'E'), { x: 800, y: 0, width: 600, height: 300 });
+  // - Reflow reads the same slot, and a second Reflow moves nothing
+  const withOut = [...nodes.map(n => (n.id === 'E' ? { ...n, outputNodeId: 'O' } : n)), cell('O', 800, 0)];
+  const after = apply(withOut, reflowSection(withOut));
+  assert.equal(after.find(n => n.id === 'O').x, 800);
+  assert.equal(overlapCount(after), 0);
+  assert.deepEqual(reflowSection(after), {});
+});
+
+// 117
+test('a code column does not slide sideways when one of its outputs is in the way', () => {
+  // - the 7 nodes left of H3 when the E1 run is reduced to the part that slides column 1800 (no edges).
+  //   E1 is dragged 400 down.
+  const nodes = [
+    code('E4', 3400, 400), note('N10', 1900, 800, 2200, 100), note('N11', 1800, 1000, 700, 300),
+    { id: 'M6', type: 'file', x: 2600, y: 2600, w: 800, h: 900 }, code('E10', 1800, 1800, 300, 'C4'), cell('C4', 2600, 1800),
+    code('E1', 2600, 800),
+  ];
+  const report = {};
+  const patches = layoutSection(nodes, { moverIds: ['E1'], report });
+  assert.equal(!!report.capped, false);
+  const slid = Object.keys(patches).filter(id => patches[id].x !== nodes.find(n => n.id === id).x);
+  assert.deepEqual(slid, []);
+  // - E1 pushes N10 down to 1200, and N10 pushes N11, E10 and C4 400 down, onto M6, which the first
+  //   turn packed at 2200, under E1 and C4. E10's row goes one gap under M6, to 3200, where before
+  //   column 1800 moved 1700 right. The next turn packs M6 up to 1400, one gap under N10; no bump moves
+  //   E10 back up.
+  assert.deepEqual(patches, {
+    N10: { x: 1900, y: 1200 }, N11: { x: 1800, y: 1400 }, M6: { x: 2600, y: 1400 },
+    E10: { x: 1800, y: 3200 }, C4: { x: 2600, y: 3200 },
+  });
+  const after = apply(nodes, patches);
+  assert.deepEqual(tooClosePairs(after), []);
+  assert.deepEqual(layoutSection(after, { moverIds: ['E1'] }), {});
+});
+
+// 118
+test('a new output on a plain note moves the note column right to make room', () => {
+  // - E1 and E2 have not run; J1 and J2 sit one gap right of them. E1 runs and its output lands on J1:
+  //   column 800 moves right by 800 + 600 + 100 - 800 = 700
+  const cells = [code('E1', 0, 0), code('E2', 0, 400), note('J1', 800, 0, 700, 300), note('J2', 800, 400, 700, 300)];
+  const slot = placeOutput(cells, 'E1');
+  assert.deepEqual(slot, { x: 800, y: 0, width: 600, height: 300 });
+  const nodes = [...cells.map(n => (n.id === 'E1' ? { ...n, outputNodeId: 'O' } : n)), cell('O', slot.x, slot.y)];
+  settles(nodes, [], ['O'], { J1: { x: 1500, y: 0 }, J2: { x: 1500, y: 400 } });
+});
+
+// 119
+test('a new output on a code cell of the next column moves that column right to make room', () => {
+  const nodes = [code('E', 0, 0, 300, 'O'), code('F', 800, 0), note('G', 800, 400, 700, 300), cell('O', 800, 0)];
+  settles(nodes, [], ['O'], { F: { x: 1500, y: 0 }, G: { x: 1500, y: 400 } });
+});
+
+// 120
+test('a new output on a plain member of a column the call packs moves that column right too', () => {
+  // - R, held to S in column 0, puts column 800 in the call; F, a plain code cell, heads the rest of it.
+  //   Before, F went one gap under the output, to 800.
+  const nodes = [note('S', 0, 0, 700, 300), code('E', 0, 400, 300, 'O'), note('R', 800, 0, 700, 300), code('F', 800, 400), cell('O', 800, 400)];
+  settles(nodes, [edgeTo('S', 'R')], ['O'], { R: { x: 1500, y: 0 }, F: { x: 1500, y: 400 } });
+});
+
+// 121
+test('a dragged output that lands on a plain note of a column right of it moves that column right, and the call settles', () => {
+  // - OE5 is dragged to (3500, 1200) and packs onto E5's row, 700, where it lands on N3: column 3800
+  //   moves right by 3500 + 600 + 100 - 3800 = 400. Before, the turns did not settle and the call kept
+  //   its first turn, capped.
+  const nodes = [note('N3', 3800, 600, 1100, 100), { ...code('E5', 1500, 700, 300, 'OE5'), w: 600 }, cell('OE5', 3500, 1200, 600, 500), { ...code('E6', 0, 700), w: 600 }, note('N7', 1500, 1900, 1500, 700)];
+  settles(nodes, [edgeTo('E6', 'E5')], ['OE5'], { N3: { x: 4200, y: 600 }, OE5: { x: 3500, y: 700 } });
 });
