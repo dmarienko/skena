@@ -37,13 +37,49 @@ Scope of this round: §1–§4 below. Out: engine-drawn sequence edges, paragrap
   −20 … ±40: 9 lanes in a 100 px gap), so a lone route keeps the centre and a pair straddles it. A
   route takes the first free lane in each channel segment it uses; a tenth edge shares the centre. Lanes are
   assigned in a stable order (edges sorted by id), so a re-render never swaps them.
+- A route never has a slanted segment. A run that has to move into a lane usually has a corner at
+  each end, and the corner slides along the run beside it. A run that lies in line with the step
+  out of a border (or into one) has no corner there. It leaves its gap line and comes back to it
+  in right-angle jogs, each on a gap line of the other axis: the last one before the stretch of
+  its own line that another route already uses. A jog that touches another route, even at one
+  point, is used only when no lane has a jog that does not. (2026-09-25. Before, the router wrote
+  each run's coordinate into both of its end points, so the step wrote the shared point back onto
+  its own line and the route got two slanted segments: M1→M6 on H3 was (700,350) (750,340)
+  (5550,350) (5600,350).)
 - The edges leaving or entering one border are spread along it 10 px apart, centred on the border's
-  middle, ordered by the position of the node at the other end (topmost / leftmost first). An edge
-  keeps its point while the set of edges on that border is unchanged. A border with a single edge
-  takes the offset of the other end's slot, so a facing pair runs straight across.
+  middle. They are ordered by where each route first turns after leaving the border: routes that
+  turn towards the first slot (up on a left or right border, left on a top or bottom border) come
+  first, the sooner the turn the further out; straight routes come next; routes that turn the other
+  way come last, the sooner the turn the further out. Ties go by the position of the node at the
+  other end (topmost / leftmost first). To know where a route turns, every edge is routed once with
+  the ties-only order; an edge whose end point then moves is routed again (2026-09-25). A border
+  with a single edge takes the offset of the other end's slot, so a facing pair runs straight
+  across.
+- An edge keeps its point while the edges on that border and their routes are unchanged. A route
+  can change when a node that is neither of its ends moves; the order on that border, and the `g`
+  labels of §4 that follow it, can then change too. Before 2026-09-25 only a move of the node at
+  the other end could change the order.
 - Corners keep today's small radius; arrowheads stay.
 - All edges of a section are routed in one pass whenever its nodes or edges change, so lane
   assignment sees every edge.
+
+### 2.1 Measured, 2026-09-25 (FACT)
+
+Router before the two changes (`76fc79f`), after the right-angle jogs (`e5c29a3`), after the exit
+order (`bf6f23e`). The benchmark is the 300 random sections of `tests/edge-routing.mjs` case 10
+(seed 20260911, 6000 edges). The fixtures are `tests/fixtures/*.json`, one routing pass per section
+as the webview runs it. Crossings: two segments of different edges whose interiors cross. Overlaps:
+two collinear segments of different edges that share length. Time: median of 3 runs.
+
+| Set | Bends | Crossings | Overlaps | Slanted | µs per edge |
+|---|---|---|---|---|---|
+| Benchmark | 15924 / 15924 / 15910 | 15070 / 15070 / 14695 | 250 / 250 / 255 | 0 / 0 / 0 | 82 / 84 / 96 |
+| H1–H6, H3-C5, H3-E1 (206 edges) | 296 / 296 / 296 | 70 / 70 / 62 | 0 / 0 / 0 | 0 / 0 / 0 | — |
+| M1 case, 6 nodes (case 19) | 8 / 10 / 10 | 1 / 1 / 1 | 0 / 0 / 0 | 2 / 0 / 0 | — |
+| H3 as captured 2026-09-25 (not in the repo) | 34 / 36 / 36 | 8 / 8 / 8 | 0 / 0 / 0 | 2 / 0 / 0 | — |
+| H3 with M6 at (3400,800) (case 21) | 32 / 32 / 34 | 9 / 9 / 8 | 0 / 0 / 0 | 0 / 0 / 0 | — |
+
+All 255 overlapping pairs of the benchmark are two first or last runs, which take no lane.
 
 ## 3. Colour
 
@@ -98,10 +134,16 @@ the upstream path of a running cell — draw lighter and wider. The selected sty
 | `src/webview/canvas/palette.ts`, `theme.ts` | kind colours + the variant rule |
 | `src/webview/canvas/routing/orthogonal.ts` | kept as the fallback |
 | `test/spatial-nav.mjs` | `edgesOnSide`: order by slot; `variantIn` on the target side; an unrouted edge last, by the other end's y. `connectionLabels`: the 2-left/3-right case reads `h 1 l 2 3`; twelve on one border read `h 1`–`9 a b`; no connection → none; the sequence never hands out `g h j k l` |
-| `test/edge-routing.mjs` | gap graph from a two-column section; shortest route with the bend penalty on the H4/H5 shapes (no detour); lanes 10 px, 9 per gap, stable order; exit spreading; fallback when no gap route |
+| `test/edge-routing.mjs` | gap graph from a two-column section; shortest route with the bend penalty on the H4/H5 shapes (no detour); lanes 10 px, 9 per gap, stable order; exit spreading; fallback when no gap route; no slanted segment on the 300 random sections and on the H fixtures; the six-node M1 case under all 24 edge-id orders (right-angle jogs, clear of the other exits' corners); H3 with M6 below-right (M1's exits ordered by where they turn, no crossing among them) |
 | `README.md` | the keys |
 
 ## 6. Open / later
 
 - Engine-drawn sequence edges (re-wire on move) — deliberately not built.
+- The exit order by turn (§2) lets a move of an unrelated node reorder a border's slots and its
+  `g` labels. Open: keep it, or order by the other node only and accept the crossings (benchmark
+  14695 vs 15070).
+- A run that has to move but whose line is used right up to its end point can only jog at that end
+  point, where the neighbouring exits of a busy border turn; the jog then touches them, or draws
+  over part of one of them. The benchmark has no such run, so it does not measure this.
 - Paragraph anchors and embedding links (spatial-notebook §5 phase 2).
