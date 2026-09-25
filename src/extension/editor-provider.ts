@@ -31,6 +31,7 @@ import { nextKernelColorIndex } from '../shared/kernelPalette';
 import { KernelManager } from './jupyter/manager';
 import { listKernels, startKernel, listKernelSpecs, listSessions } from './jupyter/client';
 import { canvasSessionName } from './llm-adapters/harness';
+import { buildDroppedNode } from './dropNodes';
 import type { CollectedOutput } from './jupyter/protocol';
 import { renderOutput, hasVisibleOutput } from './jupyter/output';
 import {
@@ -1092,17 +1093,16 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
 
       // - try to express as vault:// URI first
       const resolved = resolver.resolveFromFsPath(fsPath);
+      const relPath  = resolved ?? path.relative(canvasDir, fsPath).replace(/\\/g, '/');
 
       // - stagger multiple drops slightly so nodes don't stack exactly
-      const node: FileNode = {
-        id:     `node-${Date.now()}-${i}`,
-        type:   'file',
-        file:   resolved ?? path.relative(canvasDir, fsPath).replace(/\\/g, '/'),
-        x:      Math.round(position.x + i * 24),
-        y:      Math.round(position.y + i * 24),
-        width:  NODE_SIZE.file.w,
-        height: NODE_SIZE.file.h,
-      };
+      const node = buildDroppedNode(
+        `node-${Date.now()}-${i}`,
+        fsPath,
+        relPath,
+        Math.round(position.x + i * 24),
+        Math.round(position.y + i * 24),
+      );
       nodes.push(node);
     });
 
