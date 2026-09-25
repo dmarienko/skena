@@ -674,6 +674,13 @@ export interface MsgNotify {
   text: string;
 }
 
+// - temporary drag diagnostics
+/** - webview → host: one drag/drop event line, appended to the Skena Output channel */
+export interface MsgDiagLog {
+  type: 'diagLog';
+  text: string;
+}
+
 /** - webview → host: request system clipboard text (navigator.clipboard is sandboxed) */
 export interface MsgRequestClipboardRead {
   type: 'requestClipboardRead';
@@ -806,6 +813,7 @@ export type WebviewToHost =
   | MsgRenderMarkdown
   | MsgShowWarning
   | MsgNotify
+  | MsgDiagLog // - temporary drag diagnostics
   | MsgPickModel
   | MsgRunCell
   | MsgRunSection

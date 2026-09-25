@@ -630,6 +630,10 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         case 'notify':
           void vscode.window.showInformationMessage(msg.text);
           break;
+        // - temporary drag diagnostics
+        case 'diagLog':
+          this.indexer.output.appendLine(`[${new Date().toISOString()}] ${msg.text}`);
+          break;
         case 'runCell':      await this.handleRunCell(msg, manager, panel, document, v => { isSelfSaving = v; }, s => rememberWrite(s)); break;
         case 'runSection':   await this.handleRunSection(msg, manager, panel, document, v => { isSelfSaving = v; }, s => rememberWrite(s)); break;
         case 'addKernel':    await this.handleAddKernel(msg, manager, document, send, v => { isSelfSaving = v; }, s => rememberWrite(s)); break;
@@ -1095,6 +1099,11 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
   ): void {
     const nodes: CanvasNode[] = [];
 
+    // - temporary drag diagnostics
+    this.indexer.output.appendLine(
+      `[${new Date().toISOString()}] handleDropFiles: ${rawUris.length} uri(s) arrived`
+    );
+
     rawUris.forEach((rawUri, i) => {
       let fsPath: string;
       try {
@@ -1119,6 +1128,11 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       );
       nodes.push(node);
     });
+
+    // - temporary drag diagnostics
+    this.indexer.output.appendLine(
+      `[${new Date().toISOString()}] handleDropFiles: ${nodes.length} node(s) built`
+    );
 
     if (nodes.length > 0) {
       send({ type: 'nodesFromDrop', nodes, connectTo });

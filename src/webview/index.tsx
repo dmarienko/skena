@@ -40,6 +40,7 @@ loader.config({ monaco });
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+import { installDragDiagnostics } from './dragDiagnostics'; // - temporary drag diagnostics
 import './styles/canvas.css';
 import './styles/fonts-ibm-plex.css';
 import './styles/markdown.css';
@@ -57,6 +58,8 @@ declare function acquireVsCodeApi(): {
 // - acquire once and expose globally so hooks can post messages
 const vscodeApi = acquireVsCodeApi();
 (window as unknown as Record<string, unknown>)['vscodeApi'] = vscodeApi;
+
+installDragDiagnostics(); // - temporary drag diagnostics
 
 const root = createRoot(document.getElementById('root')!);
 root.render(

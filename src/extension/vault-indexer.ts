@@ -103,6 +103,11 @@ export class VaultIndexer implements vscode.Disposable {
     return this.entries;
   }
 
+  /** - the shared "Skena" Output channel; reuse this, never create a second channel with the same name */
+  get output(): vscode.OutputChannel {
+    return this.out;
+  }
+
   /** - show a VS Code QuickPick for vault search, return selected entry */
   async quickPick(): Promise<VaultEntry | undefined> {
     const pick = vscode.window.createQuickPick<vscode.QuickPickItem & { entry: VaultEntry }>();
