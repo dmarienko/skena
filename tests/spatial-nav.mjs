@@ -362,7 +362,7 @@ test('43. a node connected from the bottom border but outside the column is not 
 });
 
 test('44. a node below one column over, near enough to be roughly aligned, is not a j target', () => {
-  // - 400 below E11's bottom and 100 left of its x-span: inside the 0.6 × gap that h / l allow
+  // - 400 below E11's bottom and 100 left of its x-span
   const near = node('near', 1600, 4800);
   assert.equal(findNearestNode(E11, 'down', h3([near])), null);
 });
@@ -386,8 +386,7 @@ test('46. a wired node behind the pressed direction is not a candidate even alon
   assert.equal(findNearestNode(WIDE, 'down', wideCtx()), null);
 });
 
-// - measured on H3: N1's row is y 0-300; nothing to its right shares it, so l does not move even
-//   though N8 sits inside the old cone allowance
+// - measured on H3: N1's row is y 0-300; nothing to its right shares it, so l does not move
 const rowN1 = node('N1', 800, 0);
 const rowE7 = node('E7', 2300, 900);
 const rowN8 = node('N8', 3100, 900);

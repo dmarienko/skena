@@ -14,7 +14,7 @@ import { laneIndexForNode, pinnedLaneIndex, sortLanes, type SectionLane } from '
 export type NavDir = 'left' | 'right' | 'up' | 'down';
 export interface NavNode { id: string; x: number; y: number; w: number; h: number }
 export interface NavEdge { id?: string; source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }
-export interface NavContext { nodes: NavNode[]; edges: NavEdge[]; lanes: SectionLane[] }
+export interface NavContext { nodes: NavNode[]; lanes: SectionLane[] }
 
 // - ranking: aligned beats near
 const CROSS_WEIGHT = 2.5;
@@ -45,9 +45,8 @@ function boxDelta(from: NavNode, to: NavNode, dir: NavDir): { gap: number; off: 
  * their off-axis miss weighted up, so an aligned node beats one off to the side. Measured edge to
  * edge, never centre to centre — a tall node beside a short one has a far-off centre but no gap.
  * A candidate that does not share any of the source's span on the other axis pays one grid on top
- * of the miss, so a neighbour sharing the row beats one merely touching its corner.
- * `findNearestNode` excludes a non-overlapping candidate outright rather than scoring it; the miss
- * penalty here is for a caller that still wants a score for such a pair.
+ * of the miss. `findNearestNode` drops such a candidate before scoring, so there the score is the
+ * gap.
  */
 export function navScore(from: NavNode, to: NavNode, dir: NavDir): number {
   const { gap, off, overlap } = boxDelta(from, to, dir);

@@ -3233,7 +3233,6 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
       const targetId = findNearestNode(toNav(current), dir, {
         nodes: nodesRef.current.filter(n => !isBandType(n.type)).map(toNav),
-        edges: edgesRef.current,
         lanes: lanesRef.current,
       });
       if (!targetId) return;

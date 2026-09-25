@@ -91,10 +91,15 @@ with its pinned members ignored and moved with the lane; idempotent after one pa
 - The first lane is always at the origin: `fitLanes` parks lane 0 at `y = 0` (no node moves).
 - `▶` is drawn bright when the section binds a resolvable kernel, dim otherwise (tooltip says so;
   cells with a kernel edge still run through it).
-- Spatial navigation (`hjkl`): candidates are the **visible nodes of the same section**, cone only —
-  nothing in that direction means nothing happens; it never falls back to a far node or another
-  section. A wired node is one more candidate (see §8.1). Folding the section that
-  holds the selected node clears the selection.
+- Spatial navigation (`hjkl`): candidates are the **visible nodes** (in no fold list); `h`/`l` stay
+  in the section, `j`/`k` may cross into another (§8.1). A node counts only if it shares part of the
+  focused node's range across the direction of travel: the row band (y-span) for `h`/`l`, the column
+  band (x-span) for `j`/`k`. It must lie in the pressed direction; its near edge may sit up to half a
+  grid behind the focused node's far edge. The nearest by gap wins. On a tied gap, the nearest top
+  edge wins for `h`/`l` and the nearest left edge for `j`/`k`; then the wider overlap, then the first
+  node in canvas order. No candidate means no move; it never falls back to a far node. Edges play no
+  part: a connected node elsewhere is reached with `g`. Folding the section that holds the selected
+  node clears the selection.
 - A new node is clamped to the canvas (`clampToOrigin`) at the single creation funnel, and the first
   node added to an empty canvas seeds the first section at `y = 0` (webview and `applyLaneFit`, so MCP
   `canvas_add_node` does the same).
@@ -102,13 +107,11 @@ with its pinned members ignored and moved with the lane; idempotent after one pa
 ## 8. From the 0.17.4 smoke (2026-09-08): focus reveals the output; `j`/`k` cross sections
 
 **8.1 `j`/`k` may leave the section.** Candidates for `j`/`k` are all visible nodes (in no fold list)
-inside the cone below/above, in any section. `h`/`l` stay in the section. A folded section has no
-visible nodes, so it is passed over: `j` from the last row of S1 lands in S2 when S2 is open, else in
-the next open section; nothing visible below → no move. An edge attached on the pressed side is one
-more candidate, scored like the cone candidates but without the cone test, so a wired node is
-reachable when nothing nearer lies in that direction; the nearest wins. The exclusions per
-direction are unchanged: an edge into a folded node is never followed; an edge into another
-section is followed for `j`/`k`, not for `h`/`l`.
+below/above that share part of the focused node's column band, in any section. `h`/`l` stay in the
+section. A folded section has no visible nodes, so it is passed over: `j` from the last row of S1
+lands in S2 when S2 has a node in the column, else in the next open section that has one; nothing
+visible below in the column → no move. The rule of §7 decides between candidates. Edges are not
+followed by `hjkl`; `g` follows them.
 
 **8.2 Focus shows the output when it fits.** Pair = the focused code node + the node named by its
 `outputNodeId` (when it exists). If the pair box fits inside the usable area at the current zoom
@@ -127,8 +130,8 @@ the pan uses the pane's rect, not `window.innerWidth`; the chat panel's rect is 
 coordinates before the dock test.
 
 **8.5 Pure helpers.** `src/webview/canvas/spatialNav.ts`: `findNearestNode(from, dir, { nodes,
-edges, lanes })` and `revealPan(node, pair, area, viewport)` — no React, tested in
-`test/spatial-nav.mjs`. `CanvasView` only maps its state into them.
+lanes })` and `revealPan(node, pair, area, viewport)` — no React, tested in
+`tests/spatial-nav.mjs`. `CanvasView` only maps its state into them.
 
 ## 9. Paste lands at the focused node (2026-09-08, from the 0.17.6 smoke)
 
