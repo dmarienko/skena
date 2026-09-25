@@ -381,7 +381,8 @@ function withRiders(moving: EngineNode[], riders: Map<string, string>, map: Map<
     for (const [target, source] of riders) {
       if (source !== out[i].id || seen.has(target)) continue;
       const rider = map.get(target);
-      if (!rider) continue;
+      // - a node giving way never takes along the node it gives way to: it would land on it again
+      if (!rider || target === bumper.id) continue;
       if (!pinned.has(target) && sourceOf(target, bumper.id, riders)) continue;
       seen.add(target); out.push(rider);
       const o = map.get(rider.outputNodeId ?? '');
@@ -415,9 +416,10 @@ function nextBump(nodes: EngineNode[], owners: Map<string, string>, pinned: Set<
  * move is down, past the mover's row; sitting at or right of it, it takes the smaller of right and
  * down, a tie going right. A column never changes order, so a node ABOVE the one in hand does not
  * move past it: it steps aside, or — when that is the smaller move, or there is nowhere to step —
- * the node the operation placed YIELDS and drops below it, with whatever sits under it in its own
- * column. That is the one case where a mover moves. A cell the pack has just laid out does not
- * yield; the node above it steps aside, and falls past it only when it cannot.
+ * the node in hand YIELDS and drops below it, with whatever sits under it in its own column. The
+ * node in hand yields when the operation placed it, or when it is pinned only because this call
+ * packs its column (`keepPlace` holds the others: the movers, their pair partners, the held nodes).
+ * A held node does not yield; the node above it steps aside, and falls past it only when it cannot.
  * Two exceptions: a column never steps aside because one of its outputs is in the way (that output's
  * row goes down), and a column a moved output lands on steps aside even when down is the smaller move.
  * Everything a bump moved is checked again, so a bump cascades — through real overlaps and by
@@ -425,7 +427,7 @@ function nextBump(nodes: EngineNode[], owners: Map<string, string>, pinned: Set<
  * does not actually reach is left alone. `report.capped` is set when the walk ran out of steps with
  * overlaps still on the section.
  */
-function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, riders: Map<string, string>, pinned: Set<string>, placed: Set<string>, active: Set<string>, movedOutputs: Set<string>, opts: { report?: { capped?: boolean }; maxSteps?: number } = {}): void {
+function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, riders: Map<string, string>, pinned: Set<string>, placed: Set<string>, keepPlace: Set<string>, active: Set<string>, movedOutputs: Set<string>, opts: { report?: { capped?: boolean }; maxSteps?: number } = {}): void {
   const map = byId(nodes);
   const before = nodes.map(n => ({ node: n, x: n.x, y: n.y }));
   // - the cap is a real limit, not a formality: a dense section (a diagonal staircase, a tight grid)
@@ -456,10 +458,10 @@ function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, riders: 
     // - a node ABOVE the node in hand does not move down past it: that would reorder the column the
     //   user is looking at. It steps aside if its column can slide, and otherwise the node in hand
     //   YIELDS — it drops below the one in its way, taking what sits under it in its own column. The
-    //   smaller of the two wins, ties sideways, the same comparison the other direction uses. Only a
-    //   node the operation itself placed yields: a cell the pack has just laid out keeps its place,
-    //   so the pack and the bumps never fight over it (that fight is not idempotent).
-    const yields = other.y < mover.y && placed.has(mover.id);
+    //   smaller of the two wins, ties sideways, the same comparison the other direction uses. A node
+    //   the operation placed yields, and so does a cell pinned only because this call packs its column.
+    //   A held node keeps its place, and so does a node no pack of this call laid out.
+    const yields = other.y < mover.y && (placed.has(mover.id) || (pinned.has(mover.id) && !keepPlace.has(mover.id)));
     const sideways = dx !== 0 && (makesRoom || (yields ? dx <= drop : other.y < mover.y || dx <= dy));
     // - the down group is the node in the way and what sits under it in its column, and that can
     //   hold the node doing the bumping too, which then rides down with them and leaves the overlap
@@ -634,7 +636,7 @@ function layoutCall(input: EngineNode[], opts: LayoutOpts, recheck: boolean): Pa
     if (pass > 0 && Object.keys(moved).length === 0) { settled = true; break; }
     const was = positions();
     const report: { capped?: boolean } = {};
-    resolveBumps(nodes, owners, riders, pinned, placed, new Set([...movers, ...Object.keys(moved)]), sets.movedOutputs!, { report, maxSteps: opts.maxSteps });
+    resolveBumps(nodes, owners, riders, pinned, placed, held, new Set([...movers, ...Object.keys(moved)]), sets.movedOutputs!, { report, maxSteps: opts.maxSteps });
     if (report.capped) { if (opts.report) opts.report.capped = true; if (pass === 0) settled = true; break; }
     if (pass === 0) first = nodes.map(n => ({ node: n, x: n.x, y: n.y }));
     const reread = rereadSlots();

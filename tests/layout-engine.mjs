@@ -2005,3 +2005,17 @@ test('a column that moved right to make room changes the slot of the column on i
   const nodes = [...cells.map(n => (n.id === 'E1' ? { ...n, outputNodeId: 'C1' } : n)), cell('C1', slot.x, slot.y)];
   settles(nodes, [], ['C1'], { C1: { x: 3500, y: 400 }, E4: { x: 4200, y: 400 }, M6: { x: 2600, y: 2200 } });
 });
+
+// 123
+test('a node the pack laid out gives way to a node above it instead of pushing that node down past it', () => {
+  // - H3 reduced to what moves when C5, E1's output, grows from 300 to 400 tall. C5 reaches N10, which
+  //   goes 100 down and lands on E3. E3 is pinned only because the call packs its column (C3, held to
+  //   N8 in E1's column, is in it), so E3 gives way by the overlap, 100. Before, N10 went 500 down,
+  //   past E3, to 1400.
+  const nodes = [
+    note('N8', 2600, 0, 700, 300), note('N10', 1800, 800, 2300, 100), cell('C3', 4100, 0, 600, 200),
+    code('E1', 2600, 400, 300, 'C5'), code('E3', 4100, 1000), cell('C5', 3400, 400, 600, 400),
+  ];
+  settles(nodes, [edgeTo('N8', 'C3')], ['C5'], { N10: { x: 1800, y: 900 }, E3: { x: 4100, y: 1100 } });
+});
+
