@@ -22,7 +22,9 @@ export interface Pair { column: Column; outputX: number; outputW: number; right:
 //   many steps that walk gets (default `nodes.length * 4 + 32`), which is how the cap is tested.
 // - `riders` is the anchoring of §3.5: target id → source id, one entry per node that keeps
 //   another node's row. Every caller builds it from the canvas edges with `ridersOf` below.
-export interface LayoutOpts { moverIds?: Iterable<string>; columnX?: number; riders?: Map<string, string>; report?: { capped?: boolean }; maxSteps?: number }
+// - `hanging` = the nodes that move down with a node (§3.5): source id → target ids. Every caller
+//   builds it from the canvas edges with `hangingBelow` below.
+export interface LayoutOpts { moverIds?: Iterable<string>; columnX?: number; riders?: Map<string, string>; hanging?: Map<string, string[]>; report?: { capped?: boolean }; maxSteps?: number }
 
 // - what a column pack needs from the call around it (§3.5): `held` = the movers, their pair partners
 //   and the riders of the packed columns (a rider goes under these); `noBump` = the nodes no bump
@@ -31,8 +33,9 @@ export interface LayoutOpts { moverIds?: Iterable<string>; columnX?: number; rid
 //   current y); `reflow` = the pack is Reflow's, where no bump runs after it (§3.4); `movedOutputs` =
 //   the output cells among the movers (a new output is one): each goes under a node held to another
 //   cell's row in a packed column, with its code cell; `wentUnder` = the held nodes such a code cell
-//   went under in this call, whose columns keep their x (§3.5).
-interface PackSets { held: Set<string>; noBump: Set<string>; placed: Set<string>; headY?: Map<string, number>; reflow?: boolean; movedOutputs?: Set<string>; wentUnder?: Set<string> }
+//   went under in this call, whose columns keep their x (§3.5); `hanging` = the nodes that move down
+//   with a node (`LayoutOpts.hanging`).
+interface PackSets { held: Set<string>; noBump: Set<string>; placed: Set<string>; headY?: Map<string, number>; reflow?: boolean; movedOutputs?: Set<string>; wentUnder?: Set<string>; hanging?: Map<string, string[]> }
 
 const byId = (nodes: EngineNode[]) => new Map(nodes.map(n => [n.id, n] as const));
 
@@ -105,6 +108,36 @@ export function ridersOf(nodes: EngineNode[], edges: { fromNode: string; toNode:
     if (!held || snapGrid(source.x) < snapGrid(held.x) || (snapGrid(source.x) === snapGrid(held.x) && source.id < held.id)) best.set(to.id, source);
   }
   return new Map([...best].map(([target, source]) => [target, source.id] as const));
+}
+
+/**
+ * Which nodes move down with another node (§3.5): source id → target ids. An edge counts when it
+ * leaves the source's bottom border and enters the target's top border, the target's top is at or
+ * below the source's bottom, the two x-spans cross, and the two are in different columns (a target in
+ * the source's own column packs under it anyway). The target is a column member and not a band; the
+ * source is not a kernel badge or a band. A pair is left out when the source is held, directly or up
+ * the chain, to the target or to a node under the target in its column: the source would then follow
+ * the target's row while the target follows the source down.
+ */
+export function hangingBelow(nodes: EngineNode[], edges: { fromNode: string; toNode: string; fromSide?: string; toSide?: string }[]): Map<string, string[]> {
+  const map = byId(nodes);
+  const owners = outputOwners(nodes);
+  const riders = ridersOf(nodes, edges);
+  const out = new Map<string, string[]>();
+  for (const e of edges) {
+    if (e.fromSide !== 'bottom' || e.toSide !== 'top') continue;
+    const from = map.get(e.fromNode);
+    const to = map.get(e.toNode);
+    if (!from || !to || !isMember(to, owners) || to.type === 'group' || from.type === 'kernel' || from.type === 'group') continue;
+    if (snapGrid(from.x) === snapGrid(to.x) || to.y < from.y + from.h) continue;
+    if (from.x >= to.x + to.w || to.x >= from.x + from.w) continue;
+    const under = nodes.filter(n => isMember(n, owners) && snapGrid(n.x) === snapGrid(to.x) && n.y >= to.y);
+    if (under.some(n => sourceOf(n.id, from.id, riders))) continue;
+    const list = out.get(from.id) ?? [];
+    if (!list.includes(to.id)) list.push(to.id);
+    out.set(from.id, list);
+  }
+  return out;
 }
 
 /**
@@ -322,8 +355,11 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
     // - a member clears what no bump will move by a gap on either side, and a plain member packs
     //   around the riders of other packed columns too. A held member does not: those riders go under
     //   it. No member packs around its own rider.
+    // - nor around a node hanging below it (§3.5): that node follows it down, or packs under it in its
+    //   own packed column. One held to another node's row keeps that row, so the member packs around it.
     const isHeld = held.has(cell.id);
-    const keep = (o: EngineNode) => riders.get(o.id) !== cell.id && !(isHeld && others.has(o.id));
+    const below = (sets.hanging?.get(cell.id) ?? []).filter(id => !others.has(id));
+    const keep = (o: EngineNode) => riders.get(o.id) !== cell.id && !below.includes(o.id) && !(isHeld && others.has(o.id));
     // - the head keeps its own y against a node a bump can still move (§3.4), and starts from `headY`
     //   each round, so it comes back up once what it cleared has moved on
     // - on Reflow the head clears obstacles like a stacked member: no bump runs after this pack
@@ -372,9 +408,10 @@ function sourceOf(id: string, of: string, riders: Map<string, string>): boolean 
 // - the nodes a downward bump moves, plus the riders of every one of them and those riders' outputs
 //   (§3.5): a source that drops without its riders leaves them off the row they are anchored to. A
 //   rider outside the packed columns that is a source, directly or up the chain, of the node doing
-//   the bumping stays: following, it would land on that node and push it on, for ever. The list grows
-//   as it is walked, so a rider of a rider comes too.
-function withRiders(moving: EngineNode[], riders: Map<string, string>, map: Map<string, EngineNode>, pinned: Set<string>, bumper: EngineNode): EngineNode[] {
+//   the bumping stays: following, it would land on that node and push it on, for ever. The nodes
+//   hanging below a moving node come too, outside the packed columns, with what sits under them in
+//   their own column. The list grows as it is walked, so a rider of a rider comes too.
+function withRiders(moving: EngineNode[], nodes: EngineNode[], owners: Map<string, string>, riders: Map<string, string>, hanging: Map<string, string[]>, map: Map<string, EngineNode>, pinned: Set<string>, bumper: EngineNode): EngineNode[] {
   const out = [...moving];
   const seen = new Set(out.map(n => n.id));
   for (let i = 0; i < out.length; i++) {
@@ -387,6 +424,14 @@ function withRiders(moving: EngineNode[], riders: Map<string, string>, map: Map<
       seen.add(target); out.push(rider);
       const o = map.get(rider.outputNodeId ?? '');
       if (o && !seen.has(o.id)) { seen.add(o.id); out.push(o); }
+    }
+    for (const target of hanging.get(out[i].id) ?? []) {
+      const t = map.get(target);
+      if (!t || seen.has(target) || pinned.has(target) || target === bumper.id) continue;
+      for (const n of bumpGroup(t, nodes, owners, map, true)) {
+        if (seen.has(n.id) || pinned.has(n.id) || n.id === bumper.id) continue;
+        seen.add(n.id); out.push(n);
+      }
     }
   }
   return out;
@@ -427,7 +472,7 @@ function nextBump(nodes: EngineNode[], owners: Map<string, string>, pinned: Set<
  * does not actually reach is left alone. `report.capped` is set when the walk ran out of steps with
  * overlaps still on the section.
  */
-function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, riders: Map<string, string>, pinned: Set<string>, placed: Set<string>, keepPlace: Set<string>, active: Set<string>, movedOutputs: Set<string>, opts: { report?: { capped?: boolean }; maxSteps?: number } = {}): void {
+function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, riders: Map<string, string>, pinned: Set<string>, placed: Set<string>, keepPlace: Set<string>, active: Set<string>, movedOutputs: Set<string>, hanging: Map<string, string[]>, opts: { report?: { capped?: boolean }; maxSteps?: number } = {}): void {
   const map = byId(nodes);
   const before = nodes.map(n => ({ node: n, x: n.x, y: n.y }));
   // - the cap is a real limit, not a formality: a dense section (a diagonal staircase, a tight grid)
@@ -473,10 +518,10 @@ function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, riders: 
     //   takes them, and their outputs, with the source. In a column this call did not pack, such a
     //   node is otherwise a plain node here: a bump can push it off the row it is anchored to.
     if (sideways) for (const n of column) { n.x += dx; active.add(n.id); }
-    else if (yields) for (const n of withRiders(bumpGroup(mover, nodes, owners, map, true), riders, map, pinned, other)) { n.y += drop; active.add(n.id); }
+    else if (yields) for (const n of withRiders(bumpGroup(mover, nodes, owners, map, true), nodes, owners, riders, hanging, map, pinned, other)) { n.y += drop; active.add(n.id); }
     else {
       const group = bumpGroup(other, nodes, owners, map, true).filter(n => !pinned.has(n.id) && !held.has(n.id));
-      for (const n of withRiders(group, riders, map, pinned, mover).filter(n => !held.has(n.id))) { n.y += dy; active.add(n.id); }
+      for (const n of withRiders(group, nodes, owners, riders, hanging, map, pinned, mover).filter(n => !held.has(n.id))) { n.y += dy; active.add(n.id); }
     }
   }
   // - the last allowed step may be the one that cleared the section: out of steps is not out of
@@ -514,6 +559,7 @@ function layoutCall(input: EngineNode[], opts: LayoutOpts, recheck: boolean): Pa
   const movers = new Set(opts.moverIds ?? []);
   const owners = outputOwners(nodes);
   const riders = opts.riders ?? new Map<string, string>();
+  const hanging = opts.hanging ?? new Map<string, string[]>();
   const pairs = derivePairs(nodes, deriveColumns(nodes, movers));
 
   // - which columns are touched: the movers' (a moved output counts for its code's column) + columnX
@@ -562,7 +608,7 @@ function layoutCall(input: EngineNode[], opts: LayoutOpts, recheck: boolean): Pa
     const outId = map.get(id)!.outputNodeId; if (outId) noBump.add(outId);
   }
   const wentUnder = new Set<string>();
-  const sets: PackSets = { held, noBump, placed: new Set(), movedOutputs: new Set([...movers].filter(id => owners.has(id))), wentUnder };
+  const sets: PackSets = { held, noBump, placed: new Set(), movedOutputs: new Set([...movers].filter(id => owners.has(id))), wentUnder, hanging };
   const packed = new Set(pairs.filter(p => touched.has(p.column.x)));
   // - an output the operation placed or moved that lands on a member of a packed column at or right of
   //   it, held to no other column's row, moves that column right before it packs, by the overlap rounded
@@ -631,16 +677,42 @@ function layoutCall(input: EngineNode[], opts: LayoutOpts, recheck: boolean): Pa
   };
   let first: { node: EngineNode; x: number; y: number }[] | null = null;
   let settled = false;
+  // - a node the packs moved down takes the nodes hanging below it down by the same amount, with what
+  //   sits under them in their own column, outside the packed columns (§3.5). The largest move goes
+  //   first, and a node follows once per turn.
+  const follow = (was: Map<string, number>, moved: Patches) => {
+    const queue = [...hanging.keys()]
+      .map(id => map.get(id))
+      .filter((n): n is EngineNode => n !== undefined && n.y > (was.get(n.id) ?? n.y))
+      .map(n => ({ n, d: n.y - was.get(n.id)! }))
+      .sort((a, b) => b.d - a.d);
+    const followed = new Set<string>();
+    while (queue.length > 0) {
+      const { n, d } = queue.shift()!;
+      for (const id of hanging.get(n.id) ?? []) {
+        const t = map.get(id);
+        if (!t || pinned.has(id) || followed.has(id)) continue;
+        for (const m of bumpGroup(t, nodes, owners, map, true)) {
+          if (pinned.has(m.id) || followed.has(m.id)) continue;
+          followed.add(m.id);
+          m.y += d; moved[m.id] = { x: m.x, y: m.y };
+          if (hanging.has(m.id)) queue.push({ n: m, d });
+        }
+      }
+    }
+  };
   for (let pass = 0; pass < 4 && !settled; pass++) {
+    const was = new Map(nodes.map(n => [n.id, n.y] as const));
     const moved = packRounds();
+    follow(was, moved);
     if (pass > 0 && Object.keys(moved).length === 0) { settled = true; break; }
-    const was = positions();
+    const at = positions();
     const report: { capped?: boolean } = {};
-    resolveBumps(nodes, owners, riders, pinned, placed, held, new Set([...movers, ...Object.keys(moved)]), sets.movedOutputs!, { report, maxSteps: opts.maxSteps });
+    resolveBumps(nodes, owners, riders, pinned, placed, held, new Set([...movers, ...Object.keys(moved)]), sets.movedOutputs!, hanging, { report, maxSteps: opts.maxSteps });
     if (report.capped) { if (opts.report) opts.report.capped = true; if (pass === 0) settled = true; break; }
     if (pass === 0) first = nodes.map(n => ({ node: n, x: n.x, y: n.y }));
     const reread = rereadSlots();
-    if (positions() === was && !reread) settled = true;
+    if (positions() === at && !reread) settled = true;
   }
   if (!settled && first) {
     // - the second call does not check again: an unsettled second call counts as moving something

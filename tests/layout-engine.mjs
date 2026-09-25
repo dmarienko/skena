@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { codeCellHeight, estimateCodeNeedPx, ridersOf, deriveColumns, derivePairs, outputOwners, layoutSection, reflowSection, insertAfter, forkOf, placeOutput, applyPatchesToCanvas, toEngineNodes, sectionEngineNodes, sectionMembership, columnsOfDeleted } from './.build/layoutEngine.mjs';
+import { codeCellHeight, estimateCodeNeedPx, ridersOf, hangingBelow, deriveColumns, derivePairs, outputOwners, layoutSection, reflowSection, insertAfter, forkOf, placeOutput, applyPatchesToCanvas, toEngineNodes, sectionEngineNodes, sectionMembership, columnsOfDeleted } from './.build/layoutEngine.mjs';
 import { deriveLanes, fitLanes } from './.build/sectionLanes.mjs';
 
 // - mirrors src/shared/constants.ts; the bundle does not re-export it
@@ -1502,15 +1502,16 @@ test('Reflow packs a plain member around a rider as a regular call does, and a s
 // - a call, its result, no two nodes closer than a gap, and a second call that moves nothing
 const settles = (nodes, edges, moverIds, want, label = '') => {
   const report = {};
-  const patches = layoutSection(nodes, { moverIds, riders: ridersOf(nodes, edges), report });
+  const patches = layoutSection(nodes, { moverIds, riders: ridersOf(nodes, edges), hanging: hangingBelow(nodes, edges), report });
   assert.deepEqual(patches, want, label);
   assert.equal(!!report.capped, false, label);
   const after = apply(nodes, patches);
   assert.equal(overlapCount(after), 0, label);
-  assert.deepEqual(layoutSection(after, { moverIds, riders: ridersOf(after, edges) }), {}, label);
+  assert.deepEqual(layoutSection(after, { moverIds, riders: ridersOf(after, edges), hanging: hangingBelow(after, edges) }), {}, label);
   return after;
 };
 const edgeTo = (from, to) => ({ id: `${from}-${to}`, fromNode: from, fromSide: 'right', toNode: to, toSide: 'left' });
+const edgeDown = (from, to) => ({ id: `${from}v${to}`, fromNode: from, fromSide: 'bottom', toNode: to, toSide: 'top' });
 
 // 82
 test('a plain member counts a packed node of another column that stops inside the gap, not only one that crosses', () => {
@@ -2019,3 +2020,41 @@ test('a node the pack laid out gives way to a node above it instead of pushing t
   settles(nodes, [edgeTo('N8', 'C3')], ['C5'], { N10: { x: 1800, y: 900 }, E3: { x: 4100, y: 1100 } });
 });
 
+// 124
+test('a node hanging below a wide node of another column moves down with it, with what sits under it', () => {
+  // - W, 1500 wide, sits under A in column 0 and reaches over column 800; the edge W → T leaves W's
+  //   bottom and enters T's top. A grows by 200, the pack moves W 200 down, and T and U, under T in
+  //   column 800, go 200 down with it. Before, W stayed a gap clear of T and nothing else moved.
+  const nodes = [code('A', 0, 0, 500), note('W', 0, 400, 1500, 100), note('T', 800, 800, 700, 300), note('U', 800, 1200, 700, 300)];
+  const edges = [edgeDown('W', 'T')];
+  assert.deepEqual([...hangingBelow(nodes, edges)], [['W', ['T']]]);
+  settles(nodes, edges, ['A'], { W: { x: 0, y: 600 }, T: { x: 800, y: 1000 }, U: { x: 800, y: 1400 } });
+  // - what does not hang: an edge between two sides, a target above the source's bottom, a target in
+  //   the source's column, a target the source's x-span does not reach
+  const others = [...nodes, note('V', 0, 800, 700, 300), note('X', 1600, 800, 700, 300), note('Y', 800, 0, 700, 300)];
+  assert.deepEqual([...hangingBelow(others, [edgeTo('W', 'T'), edgeDown('W', 'Y'), edgeDown('W', 'V'), edgeDown('W', 'X')])], []);
+  // - T held to S's row keeps that row when the pack moves W, in column 800, down onto it: W packs
+  //   around T, to 1000 + 300 + 100
+  const kept = [code('A', 800, 0, 900), note('W', 800, 400, 1500, 100), note('T', 1600, 1000, 700, 300), note('S', 0, 1000, 700, 300)];
+  settles(kept, [edgeDown('W', 'T'), edgeTo('S', 'T')], ['A', 'S'], { W: { x: 800, y: 1400 } });
+});
+
+// 125
+test('resize C5 on H3 from 300 to 400: every node that moves goes 100 down', () => {
+  // - tests/fixtures/H3-C5.json: H3 on 2026-09-25 before the user resized C5, E1's output, geometry
+  //   only. C5 reaches N10 (2300 wide). N10 goes 100 down; E3 gives way under it (test 123); N11, E9,
+  //   E10 and E11 under N10 in column 1800 follow with their outputs C1 and C4; N4 and N3 hang below
+  //   N10 and W1 below N4, so they follow with what sits under them in column 3300 (N16, M6).
+  const data = JSON.parse(fs.readFileSync(path.join(here, 'fixtures', 'H3-C5.json'), 'utf8'));
+  const nodes = toEngineNodes(data.nodes).map(n => (n.id === 'C5' ? { ...n, h: 400 } : n));
+  const report = {};
+  const patches = layoutSection(nodes, { moverIds: ['C5'], riders: ridersOf(nodes, data.edges), hanging: hangingBelow(nodes, data.edges), report });
+  assert.equal(!!report.capped, false);
+  const down = id => ({ x: nodes.find(n => n.id === id).x, y: nodes.find(n => n.id === id).y + 100 });
+  const ids = ['N10', 'N11', 'E9', 'C1', 'E10', 'C4', 'E11', 'N16', 'M6', 'N4', 'W1', 'N3', 'E3', 'C2'];
+  assert.deepEqual(patches, Object.fromEntries(ids.map(id => [id, down(id)])));
+  const after = apply(nodes, patches);
+  const was = new Set(tooClosePairs(nodes));
+  assert.deepEqual(tooClosePairs(after).filter(p => !was.has(p)), []);
+  assert.deepEqual(layoutSection(after, { moverIds: ['C5'], riders: ridersOf(after, data.edges), hanging: hangingBelow(after, data.edges) }), {});
+});
