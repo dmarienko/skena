@@ -1,0 +1,15 @@
+/* - a g preview card: the body holds at most three lines, so a rendered note loses the margins and
+   - the line height it has inside a node, and every block stays on one line. !important because the
+   - factors theme sets these through a more specific selector. */
+.skena-preview-card .skena-markdown {
+  font-size: 11.5px !important;
+  line-height: 1.35 !important;
+}
+.skena-preview-card .skena-markdown > * {
+  margin: 0 !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.skena-preview-card .katex-display { margin: 0 !important; text-align: left; }
+.skena-preview-card .typst-math.typst-block { margin: 0 !important; }

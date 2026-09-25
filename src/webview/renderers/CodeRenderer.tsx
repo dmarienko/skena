@@ -7,7 +7,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { createHighlighter, Highlighter } from 'shiki';
+import { createHighlighter, Highlighter, type BundledLanguage, type BundledTheme } from 'shiki';
 import { FACTORS_THEME } from '../lib/codeHighlight';
 
 let highlighterPromise: Promise<Highlighter> | null = null;
@@ -66,4 +66,40 @@ export function CodeRenderer({ content, language }: CodeRendererProps): JSX.Elem
       {content}
     </pre>
   );
+}
+
+/** One coloured run of a highlighted line. */
+export interface CodeToken { content: string; color?: string; italic: boolean }
+
+/**
+ * `content` split into lines of coloured runs, with the highlighter and theme the code preview uses,
+ * for a caller that draws its own lines. Null until the highlighter is ready, or when it does not
+ * know `language`.
+ */
+export function useCodeTokens(content: string, language: string): CodeToken[][] | null {
+  const [tokens, setTokens] = useState<CodeToken[][] | null>(null);
+  const [themeTick, setThemeTick] = useState(0);
+  useEffect(() => {
+    const on = () => setThemeTick(t => t + 1);
+    window.addEventListener('skena:mdTheme', on);
+    return () => window.removeEventListener('skena:mdTheme', on);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const theme = document.documentElement.dataset.mdTheme === 'factors' ? 'factors' : 'dark-plus';
+    getHighlighter().then(hl => {
+      if (cancelled) return;
+      // - the typed options list shiki's bundled names only; `factors` is registered by object above
+      const lines = hl.codeToTokensBase(content, { lang: language as BundledLanguage, theme: theme as BundledTheme });
+      // - fontStyle is a bit set, and -1 when the theme sets none
+      setTokens(lines.map(line => line.map(t => {
+        const style = Number(t.fontStyle ?? 0);
+        return { content: t.content, color: t.color, italic: style > 0 && (style & 1) === 1 };
+      })));
+    }).catch(() => { if (!cancelled) setTokens(null); });
+    return () => { cancelled = true; };
+  }, [content, language, themeTick]);
+
+  return tokens;
 }

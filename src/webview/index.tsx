@@ -43,6 +43,7 @@ import { App } from './App';
 import './styles/canvas.css';
 import './styles/fonts-ibm-plex.css';
 import './styles/markdown.css';
+import './styles/preview-card.css';
 import 'katex/dist/katex.min.css';
 import '@vscode/codicons/dist/codicon.css';
 
