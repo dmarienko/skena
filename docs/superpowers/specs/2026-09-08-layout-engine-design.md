@@ -938,7 +938,6 @@ Open (2026-09-25), the calls that got worse, none traced:
 - the output dragged: seeds 22932 and 106116.
 
 Other open items:
-- whether Obsidian keeps `keepRow` when it saves a canvas is not checked;
 - the load rule writes no `false`, so an edge that fails is tested again at every load and can pass
   later, once its target sits where holding moves nothing;
 - a new connection that replaces a code cell's input edge still releases the node that edge held,
