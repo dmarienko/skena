@@ -113,6 +113,28 @@ One algorithm behind every row of §2, run per section:
    per call, and the log shows the same order in both pack rounds, so re-reading it is not the cause;
    reading it by id gives a different start from which the walk settles.
 
+   **A column does not step aside for one of its outputs (2026-09-25).** When the node in the way of a
+   bump is an output cell, its code cell's column does not move sideways, whichever move is smaller.
+   The output's row goes down instead, by the ordinary downward move: the code cell, what sits under
+   it in its column, and their outputs. Before, that sideways move took every code cell of the column
+   onto the next column. Measured on H3 (the user's E1 run of 2026-09-25): C4, E10's output, sat above
+   M6, so the code column 1800 (E7, E2, N11, E9, E10, E11 and the outputs C2 and C4) moved 900 px
+   right, onto E1's column. A 7-node section reduced from that run slides the same way at 4a9f3db and
+   at 76e4ec4. On those 7 nodes with E1 dragged 400 down (test 117), column 1800 moved 1700 px right
+   before; now E10 and C4 go down to 3200 and nothing moves sideways.
+   Only an output as the node in the way is covered. A code column still moves sideways when a node
+   lands on one of its members. Measured on the same 7 nodes, every node dragged by −300 to 300 px on
+   x and −400 to 1600 px on y: the calls that move a code cell sideways other than the dragged one
+   are 47 at 4a9f3db and 39 now. The 39 move column 2600 (E1, M6) or column 3400 (E4).
+   Measured with this change alone against 4a9f3db, on the reviewer's generator (7703 calls, §3.5):
+   bad calls (capped, leaving a new pair closer than a gap, or changed by a second call) go from 316
+   to 284; 16 are worse and 48 better. 15 of the 16 start with an output 200 px below its code
+   cell's row, and 12 are capped. In the one traced (seed 969, mover N1), a wide member of the code
+   cell's column, above the cell, lies on the output: the output's row goes under it, the cell lands
+   on it, it goes down past the cell and lies on the output again, lower each time, until the walk is
+   capped. At 4a9f3db the same walk ran, and a code column that moved sideways took one of its nodes
+   out of it.
+
    **Packs and bumps take turns (2026-09-24).** After the bumps, the packed columns are packed again
    on the new rows, then the bumps run again, until a turn moves nothing, at most 4 turns; a capped
    walk still ends the call. A bump can move a node a pack read: a mover that yields below a node
@@ -120,6 +142,18 @@ One algorithm behind every row of §2, run per section:
    anchored to N8. The pack put N5 under E1's first row; the bumps then dropped E1 to 1600, onto N5,
    and a second call moved N5. Now N5 goes back under N8, to 800 (test 93). Measured on the
    reviewer's generator (7703 calls): not idempotent 775 → 233, a new overlap 97 → 66; no call worse.
+
+   **A packed column reads its slot again between turns (2026-09-25).** After the bumps of a turn,
+   every column the call packs reads its width and output slot again from where the nodes now sit,
+   while it holds the same members. A column that moved right, by a bump or to make room for a new
+   output (§3.5), changes which members of the column on its left stay a gap clear of it (§3.4), so
+   that column's width and slot change. The next turn puts its outputs on the new slot, as the next
+   call would, and the turns stop only when nothing moved and no slot changed. Example (test 122): on
+   test 117's 7 nodes E1 runs, E4's column moves 700 right, M6 (800 wide, in E1's column) then stays
+   a gap clear of it, and C1 goes to the new slot, 3500, in the same call; before, a second call moved
+   C1 and E4. Measured on its own against 4a9f3db, no call is worse: bad calls on the reviewer's
+   generator 316 → 207, in the tidy trials 88 → 69 and 237 → 191 (§3.5); the calls where one code
+   cell's output is the mover and the 170 fixture calls are unchanged.
 
    **The turn cap.** When the turns have not settled after 4, the call runs once more on its result.
    If that moves nothing, the result stands. If it moves something, the call keeps what the first
@@ -129,6 +163,8 @@ One algorithm behind every row of §2, run per section:
    moved 400 px per call where 26cf0ab moved it 100, and N8 1600 px where 26cf0ab moved it 400; with
    it they move 100 and 400 again. Capped calls: 135 of 7703 now, against 78 at 26cf0ab; of the 57
    that are capped now and were not there, 56 were not idempotent at 26cf0ab either.
+   Since 2026-09-25 the first shape of test 99 (N7) settles: the dragged output OE5 lands on N3, and
+   N3's column moves right to make room (§3.5). That shape is test 121 now; test 99 keeps the second.
 
    Open (2026-09-24), measured on the same 7703 calls:
    - a call that falls back to its first turn is reported capped, and the next call moves it again:
@@ -185,6 +221,16 @@ forth. Measured over 1500 random dense sections: the two rules give a different 
 them, and the plain `column.x + w <= nextColumn.x` rule leaves 44 sections non-idempotent against
 the gap rule's 35. On H1, H4 and H5 the two agree everywhere.
 
+**The output slot clears every code cell (2026-09-25).** A pair's output x is one gap right of the
+column's width and one gap right of every code cell in the column, whichever is further. So a code
+cell that the width rule leaves out still never touches its own output. Measured on H3 (the user's
+E1 run of 2026-09-25): column 2600's width was 600, read off N3, because E1, N8 and N16 (700 wide)
+and M6 (800 wide) end within a gap of N4's column at 3300. The slot was 3300, E1's right edge: the
+new output C1 touched E1 and landed on E4 at (3400, 400). The slot is 3400 now (test 115; test 116
+holds a 3-node shape). Reflow reads the slot from the same `derivePairs`, so its tight pass puts the
+next column right of it and a second Reflow returns `{}` (test 116). Measured with this change alone
+against 4a9f3db, on the reviewer's generator (7703 calls): 5 calls differ, 0 worse, 2 better.
+
 **The obstacle test.** The row clears an obstacle by a full grid gap on y, the distance the bump
 rule asks for everywhere: the obstacle counts while `obstacle.y + obstacle.h + GRID > y` and
 `y + member.h + GRID > obstacle.y`. On x an obstacle to the LEFT of the column counts when it
@@ -239,10 +285,10 @@ decision the slot was kept for every column holding a code cell.
 
 Measured (test 78): column 0 holds two code cells without outputs, and the notes J1 and J2 sit in
 column 800. Reflow leaves them at x 800 (before: x 1500), and a second Reflow changes nothing. When
-the first cell of column 0 then runs, its output lands at (800, 0), on J1. The bump moves J1 and J2
-down by 400, to (800, 400) and (800, 800), not right: J1 sits at the output's x, so it takes the
-smaller move, 400 down against 700 right. The next Reflow moves them right, to x 1500, on the same
-rows; a second Reflow changes nothing. On the current H4 S2 column 0 has outputs, so Reflow puts the
+the first cell of column 0 then runs, its output lands at (800, 0), on J1. Until 2026-09-25 the bump
+moved J1 and J2 down by 400, the smaller move, and the next Reflow moved them right to x 1500. Since
+the rule for a new output of that day (§3.5), column 800 moves right to make room: J1 and J2 go to
+x 1500 on their rows (test 118). On the current H4 S2 column 0 has outputs, so Reflow puts the
 next column at x 1700 before and after the decision.
 
 **The snap on Reflow (decided by the user 2026-09-24, option b).** Reflow first puts every node on a
@@ -391,8 +437,10 @@ Scope:
   nodes and the output went 3200 px down with the output still on the node, and a second call moved
   them 3200 px more;
 - a node the `riders` map anchors to a member of its own column is anchored to nothing there (see
-  "A source in the same column is no source" above): it packs under the output (test 111);
-- an output landing on a node anchored to nothing moves that node by the bumps, as before (test 105);
+  "A source in the same column is no source" above): its column moves right to make room (the next
+  rule, test 111);
+- an output landing on a node anchored to nothing moves that node's column right (the next rule,
+  test 105);
 - an anchored node carried onto another cell's output because its source moved goes one gap under
   that output, as before: that output is not the mover (test 106).
 
@@ -475,6 +523,84 @@ Open (2026-09-24), the calls that got worse:
   (39017) is capped, and the first turn it keeps leaves the output on P1, a plain note below the new
   row in a column this call does not pack. All of them are as bad at bbf7978, so the rule for a new
   output sets them off, not the step that clears the nodes above.
+
+**The next column makes room for a new output (decided by the user 2026-09-25 on H3).** When an
+output cell is the mover (a new output, or one the user dragged) and it lands on a member of another
+column, that column moves right by the overlap rounded up to the grid, with all its members and
+their outputs, even when down is the smaller move. Any member type counts: a code cell, a note, a
+file, a knowledge node (the user confirmed notes the same day). The column has to be at or right of
+the output's x; a wide member of a column on the left still moves down. Columns further right move
+by the ordinary bumps (§3.2).
+
+Where the rule does not apply:
+- the member is held to a source in another column. In a column the call packs it keeps its row and
+  the code cell goes under it ("A new output on an anchored node" above); elsewhere the bumps move
+  it (test 108). A node held to the output's own code cell goes one gap under the output (test 104);
+- the column holds a mover, the other half of a mover's pair, or a held node the output's code cell
+  went under in this call. The column keeps its x and packs around the output (test 103: N3, in the
+  column of N8, goes under C6).
+
+In a column the call packs, the move is made before the column packs (`makeRoom` in `layoutCall`);
+elsewhere a bump makes it (`resolveBumps`).
+
+Example (test 118): E1 and E2 in column 0 have no output; J1 (800, 0) and J2 (800, 400) are 700
+wide. E1 runs, its output lands on J1, and column 800 moves 800 + 600 + 100 − 800 = 700 right: J1
+and J2 go to x 1500 on their rows. Before, J1 and J2 moved 400 down. Tests 119 (a code cell), 120 (a
+column the call packs) and 121 (a dragged output) hold the other cases.
+
+Measured on H3 (`tests/fixtures/H3-E1.json`, H3 before the user ran E1 on 2026-09-25, geometry only;
+test 115; the host's run path replayed on the same file gives the same moves):
+- the slot is (3400, 400) (§3.4), and C1 lands on E4 at (3400, 400);
+- column 3400 (C3, E4, W1) moves 3400 + 600 + 100 − 3400 = 700 right: C3 to (4100, 0), E4 to
+  (4100, 400). C3 keeps its row but not its x: it is a member of column 3400;
+- the call packs column 3400, because C3 is held to N8 in E1's column, so W1 also moves up, from
+  (3400, 1400) to (4100, 1000), one gap under N10;
+- nothing else moves: column 1800 and N8 stay. No pair is closer than a gap after the call, and a
+  second call returns `{}`.
+At 4a9f3db the same run moved 17 nodes (column 1800 to x 4200, N8 and C3 to y 2500), left C1
+touching E1, and a second call moved 6 more.
+
+Measured against 4a9f3db with the four changes of 2026-09-25: the output slot that clears every code
+cell (§3.4), a column that does not step aside for one of its outputs and a packed column that reads
+its slot again between turns (§3.2), and this rule. "Bad" is as above:
+capped, a new pair closer than a gap, or changed by a second call.
+- H1 to H6, every node of every section as the only mover (170 calls): none differ. On H1, H4 and
+  H5: capped 0, overlap growth 0, not idempotent 0, and a second Reflow moves nothing, before and
+  after.
+- The reviewer's section generator, seeds 1 to 3000 (7703 calls): bad 316 and 193 (capped 135 and
+  134, a new close pair 36 and 30, changed by a second call 230 and 101); 34 worse, 157 better.
+- Tidy trials, NMAX 6, EMAX 4 (18589 calls): bad 88 and 70; 8 worse, 26 better. NMAX 10, EMAX 7
+  (36528 calls): bad 237 and 186; 20 worse, 71 better.
+- One code cell whose output is the only mover, seeds 1 to 150000 (34834 calls): with the output at
+  its slot, bad 72 and 189, 146 worse, 29 better; boxes intersecting 22 and 2, capped 13 and 3,
+  changed by a second call 36 and 185. Dragged: bad 72 and 75, 21 worse, 18 better.
+- Reflow on the generator's 3000 sections: 0 leave two boxes intersecting and 0 leave a pair closer
+  than a gap, before and after; a second Reflow changes 66, before and after.
+
+Open (2026-09-25), the calls that got worse, by what the result shows:
+- The anchoring map changes: the column moved right takes a node past the source of an edge drawn
+  right to left, and the next call reads that edge as holding the node. Given the call's own map, a
+  second call moves nothing. With the output at its slot 128 of the 146, dragged 14 of the 21, the
+  generator 8 of the 34, the tidy trials 3 of the 28. Seed 1164 (output at its slot): N0 moves from
+  x 1600 to 2300, right of N2 at 1700, and the edge from N2 to N0 then holds N0 on N2's row.
+- Two columns become one: the column moved right lands on the x of the next column, the ordinary
+  bumps move the nodes of that column down rather than right, and the next call packs the two as one
+  column. With the output at its slot 18, dragged 7, the tidy trials 24, the generator 6. 3 more in
+  the generator come from the §3.2 change for outputs, where the walk then moves another column
+  sideways onto the next one (seed 1519, mover N3). Tidy seed 480 (NMAX 10, EMAX 7, OE4 dragged):
+  column 1500 moves 700 right onto E3's column at 2200, and E3 goes down 2200 under the notes that
+  came with it. Pushing the next column right instead, whenever a column moved for an output lands on
+  it, was measured and changes almost nothing (tidy NMAX 10: 24 worse → 22 without the slot read
+  again between turns, 20 → 18 with it): the column landed on is most often one the call packs, and
+  no bump moves those.
+- Capped: the generator 18. 12 come from the §3.2 change for outputs (the walk described there), 6
+  from this rule, where the columns it moves start the same walk (seed 328, mover OE5). Seed 1390,
+  mover OE4, is capped and also has two columns become one.
+- One tidy trial leaves a new close pair (NMAX 10, EMAX 7, seed 1689, OE2 dragged 400 right and 600
+  down): at 4a9f3db OE2 went down 200 under N5 and E6, held to OE2's code cell, followed it. Now N5's
+  column moves right instead, E6 stays at 1000, and the pack of column 3500 puts E1 at 600, where its
+  output OE1 (500 tall) reaches 100 px into E6's output OE6. A regular pack does not check a member's
+  output against the nodes it packs around.
 
 Test 75 (two nodes anchored to one row; X, 1500 wide, crosses R's column): X is anchored itself, so
 R goes one gap under it, to (1600, 800), and a second call returns `{}`. Measured with a variant in
