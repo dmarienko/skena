@@ -1,7 +1,8 @@
 // - run: npx esbuild src/shared/edgeRouting.ts --bundle --format=esm --outfile=tests/.build/edgeRouting.mjs && node --test tests/edge-routing.mjs
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { edgeKind, facingSide, buildGapGraph, routeSection, LANE_STEP, BEND_COST, MAX_CROSSINGS } from './.build/edgeRouting.mjs';
+import { readFileSync } from 'node:fs';
+import { edgeKind, facingSide, buildGapGraph, routeSection, sideOfHandle, LANE_STEP, BEND_COST, MAX_CROSSINGS } from './.build/edgeRouting.mjs';
 
 // - mirrors src/shared/constants.ts; the bundle does not re-export it
 const GRID = 100;
@@ -149,6 +150,12 @@ const overlaps = routes => {
   return bad;
 };
 
+// - a segment that is neither horizontal nor vertical
+const slanted = routes => routes.flatMap(r => r.points.slice(1)
+  .map((p, i) => [r.points[i], p])
+  .filter(([a, b]) => a[0] !== b[0] && a[1] !== b[1])
+  .map(([a, b]) => ({ id: r.id, a, b })));
+
 const insideAny = (nodes, routes) => segmentsOf(routes).filter(s => {
   const [xa, xb] = s.vertical ? [s.coord, s.coord] : [s.lo, s.hi];
   const [ya, yb] = s.vertical ? [s.lo, s.hi] : [s.coord, s.coord];
@@ -203,6 +210,7 @@ test('lanes keep the runs of 300 random sections apart: only first and last runs
     const { nodes, edges } = randomSection(next);
     const routes = routeSection(nodes, edges);
     assert.deepEqual(insideAny(nodes, routes), []);
+    assert.deepEqual(slanted(routes), []);
     for (const bad of overlaps(routes)) {
       // - two edges crossing one gap in opposite directions have their four border points on the same
       //   two lines, so whichever lane each takes, one pair of steps reaches past the other. The
@@ -348,4 +356,75 @@ test('an end point two thirds of a row above the other: the route turns twice ac
   const r = routeOf(routes, 'E18->N27');
   assert.equal(r.fallback, false);
   assert.ok(r.points.length <= 4, `more than two corners: ${JSON.stringify(r.points)}`);
+});
+
+// - H3 on 2026-09-25, reduced to the six nodes that matter: M1 has three edges off its right border,
+//   to N1 above-right, N2 below-right and M6 far right on the same row. M1's middle is on the gap
+//   line between N1 and N2, so the route to M6 runs straight along that line, and E7→E4 already
+//   holds the line from x 2150 to 4450.
+const m1Section = () => [
+  { id: 'M1', type: 'file', x: 0, y: 0, w: 700, h: 700 }, note('N1', 800, 0), note('N2', 800, 400),
+  code('E7', 1800, 0), code('E4', 4100, 400), { id: 'M6', type: 'file', x: 5600, y: 0, w: 700, h: 700 },
+];
+const m1Edges = ids => [
+  link(ids[0], 'M1', 'N1', 'right', 'left'), link(ids[1], 'M1', 'N2', 'right', 'left'),
+  link(ids[2], 'E7', 'E4', 'bottom', 'top'), link(ids[3], 'M1', 'M6', 'right', 'left'),
+];
+const onSegment = (p, a, b) =>
+  (a[0] === b[0] && p[0] === a[0] && p[1] >= Math.min(a[1], b[1]) && p[1] <= Math.max(a[1], b[1])) ||
+  (a[1] === b[1] && p[1] === a[1] && p[0] >= Math.min(a[0], b[0]) && p[0] <= Math.max(a[0], b[0]));
+const permutations = a => a.length <= 1 ? [a] : a.flatMap((x, i) => permutations([...a.slice(0, i), ...a.slice(i + 1)]).map(p => [x, ...p]));
+
+// 19
+test('M1 on H3: a run moved into a lane beside a straight step turns at right angles, clear of the other exits\' corners', () => {
+  const nodes = m1Section();
+  const routes = routeSection(nodes, m1Edges(['e1', 'e2', 'e3', 'e4']));
+  assert.deepEqual(slanted(routes), []);
+  assert.deepEqual(insideAny(nodes, routes), []);
+  assert.deepEqual(overlaps(routes), []);
+  const m6 = routeOf(routes, 'e4').points;
+  // - it keeps to the gap line up to x 1750, the last line before E7→E4's run, takes lane 340 past
+  //   it, and comes back at x 4850, the first line after it
+  assert.deepEqual(m6, [[700, 350], [1750, 350], [1750, 340], [4850, 340], [4850, 350], [5600, 350]]);
+  for (const id of ['e1', 'e2']) {
+    const corners = routeOf(routes, id).points.slice(1, -1);
+    const hit = corners.filter(c => m6.slice(1).some((p, i) => onSegment(c, m6[i], p)));
+    assert.deepEqual(hit, [], `M1→M6 ${JSON.stringify(m6)} passes through a corner of ${id}`);
+  }
+  // - the lanes depend on which edge books a line first; the shape of every route may change with the
+  //   order, a slanted segment may not
+  for (const ids of permutations(['e1', 'e2', 'e3', 'e4'])) {
+    const again = routeSection(nodes, m1Edges(ids));
+    assert.deepEqual(slanted(again), [], `order ${ids.join(' ')}`);
+    assert.deepEqual(overlaps(again), [], `order ${ids.join(' ')}`);
+  }
+});
+
+// - the H canvases in tests/fixtures/, one pass per section as the webview runs it: folded members
+//   and groups left out, only the edges with both ends in the section
+const fixtureSections = name => {
+  const c = JSON.parse(readFileSync(new URL(`./fixtures/${name}.json`, import.meta.url), 'utf8'));
+  const lanes = [...c.metadata.sections].sort((a, b) => a.y - b.y);
+  const folded = new Map();
+  lanes.forEach((l, i) => { for (const id of l.folded ?? []) folded.set(id, i); });
+  const laneOf = n => folded.get(n.id) ?? lanes.reduce((k, l, i) => l.y <= n.y ? i : k, 0);
+  return lanes.map((_, i) => {
+    const nodes = c.nodes.filter(n => laneOf(n) === i && !folded.has(n.id) && n.type !== 'group')
+      .map(n => ({ id: n.id, type: n.type, x: n.x, y: n.y, w: n.width, h: n.height, outputNodeId: n.outputNodeId }));
+    const ids = new Set(nodes.map(n => n.id));
+    const edges = c.edges.filter(e => ids.has(e.fromNode) && ids.has(e.toNode)).map(e => ({
+      id: e.id, source: e.fromNode, target: e.toNode, sourceSide: sideOfHandle(e.fromSide), targetSide: sideOfHandle(e.toSide),
+    }));
+    return { nodes, edges };
+  }).filter(s => s.edges.length > 0);
+};
+const FIXTURES = ['H1', 'H2', 'H3', 'H3-C5', 'H3-E1', 'H4', 'H5', 'H6'];
+
+// 20
+test('the H fixtures: every segment of every route is horizontal or vertical', () => {
+  for (const name of FIXTURES) for (const { nodes, edges } of fixtureSections(name)) {
+    const routes = routeSection(nodes, edges);
+    assert.deepEqual(slanted(routes), [], name);
+    assert.deepEqual(insideAny(nodes, routes), [], name);
+  }
 });

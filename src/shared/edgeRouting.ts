@@ -429,6 +429,8 @@ interface Span { a: number; b: number }
  * against the coordinate a run ends up on, not the line it came from, so two lines shifting towards
  * each other are seen as well. The two steps between a border and its end point never move: two
  * edges crossing one gap therefore still share part of one step, which is what `crowded` counts.
+ * A run that lies in line with such a step has no corner there to slide, so it leaves its line and
+ * comes back to it in right-angle jogs (see `jogAt`); every segment stays horizontal or vertical.
  */
 function laneShift(nodes: RouteNode[], paths: Map<string, Point[]>, order: string[], g: GapGraph, report: RouteReport): void {
   const onX = new Set(g.xs), onY = new Set(g.ys);
@@ -436,7 +438,11 @@ function laneShift(nodes: RouteNode[], paths: Map<string, Point[]>, order: strin
   const key = (vertical: boolean, coord: number) => `${vertical ? 'v' : 'h'}${coord}`;
   // - how much of `s` is already drawn on: 0 means the lane is free there
   const over = (k: string, s: Span) => (taken.get(k) ?? []).reduce((sum, t) => sum + Math.max(0, Math.min(s.b, t.b) - Math.max(s.a, t.a)), 0);
+  // - whether anything is drawn on `s`, its two ends included: a corner on another route's line reads
+  //   as a branch of that route
+  const hits = (k: string, s: Span) => (taken.get(k) ?? []).some(t => t.a <= s.b && t.b >= s.a);
   const book = (k: string, s: Span) => { const l = taken.get(k); if (l) l.push(s); else taken.set(k, [s]); };
+  const span = (u: number, w: number): Span => ({ a: Math.min(u, w), b: Math.max(u, w) });
 
   for (const id of order) {
     const pts = paths.get(id);
@@ -456,10 +462,12 @@ function laneShift(nodes: RouteNode[], paths: Map<string, Point[]>, order: strin
     //   a lane moves its neighbours' corners. Beside a parallel run — the step to a border end point
     //   can be one — that coordinate is on the other axis, so there the shared point is the end.
     const along = (p: Point, i: number) => vertical[i] ? p[1] : p[0];
+    // - where a run moved off its line jogs away from, or back to, a parallel run beside it
+    const jogFrom: (number | undefined)[] = [], jogTo: (number | undefined)[] = [];
     // - `reach` is only padded while the run after this one is still waiting for its lane
     const stretch = (i: number, pad: boolean): Span => {
-      const from = i === 0 || vertical[i - 1] === vertical[i] ? along(pts[i], i) : coord[i - 1];
-      const reach = i === runs - 1 || vertical[i + 1] === vertical[i] ? along(pts[i + 1], i) : coord[i + 1];
+      const from = jogFrom[i] ?? (i === 0 || vertical[i - 1] === vertical[i] ? along(pts[i], i) : coord[i - 1]);
+      const reach = jogTo[i] ?? (i === runs - 1 || vertical[i + 1] === vertical[i] ? along(pts[i + 1], i) : coord[i + 1]);
       const to = pad ? reach + (reach >= from ? LANE_SPREAD : -LANE_SPREAD) : reach;
       return { a: Math.min(from, to), b: Math.max(from, to) };
     };
@@ -467,36 +475,97 @@ function laneShift(nodes: RouteNode[], paths: Map<string, Point[]>, order: strin
       const s = stretch(i, false);
       return vertical[i] ? clearSeg(nodes, coord[i], s.a, coord[i], s.b) : clearSeg(nodes, s.a, coord[i], s.b, coord[i]);
     };
+    // - run i, moved from `line` to `lane`, in line with the step at its start (or its end): where it
+    //   jogs, on a line of the other axis, and how much the jog draws over. It keeps to its own line
+    //   as far as nothing else is drawn there, so it jogs at the last such line before the stretch
+    //   that made it move; the end point itself counts as a line. A `clean` jog, and the part left on
+    //   the line, touch no other route, not even at one point. Null when no jog is clear of nodes.
+    const jogAt = (i: number, line: number, lane: number, atEnd: boolean, clean: boolean): { at: number; cost: number } | null => {
+      const v = vertical[i];
+      const start = along(pts[atEnd ? i + 1 : i], i);
+      let far: number;
+      if (atEnd) far = jogFrom[i] ?? coord[i - 1];
+      else if (vertical[i + 1] === v) far = along(pts[i + 1], i);
+      else {
+        // - a run after this one still waiting for its lane can slide the far corner this way
+        far = coord[i + 1];
+        if (i + 1 < runs - 1 && movable[i + 1]) far += far >= start ? -LANE_SPREAD : LANE_SPREAD;
+      }
+      const dir = Math.sign(far - start);
+      if (dir === 0) return null;
+      const lines = (v ? g.ys : g.xs).filter(c => (c - start) * dir > 0 && (far - c) * dir > 0);
+      if (dir < 0) lines.reverse();
+      let best: { at: number; cost: number } | null = null;
+      for (const c of [start, ...lines]) {
+        const kept = span(start, c), across = span(line, lane);
+        if (clean ? hits(key(v, line), kept) : over(key(v, line), kept) > 0) break;
+        if (!(v ? clearSeg(nodes, line, c, lane, c) : clearSeg(nodes, c, line, c, lane))) continue;
+        if (clean && hits(key(!v, c), across)) continue;
+        const cost = clean ? 0 : over(key(!v, c), across);
+        if (!best || cost <= best.cost) best = { at: c, cost };
+      }
+      return best;
+    };
 
     for (let i = 1; i < runs - 1; i++) {
       if (!movable[i]) continue;
       const line = coord[i], next = i + 1;
-      let chosen = line, least = Infinity;
+      let chosen = line, least = Infinity, leastTouches = false;
+      let chosenFrom: number | undefined, chosenTo: number | undefined;
       for (let k = 0; k < LANE_COUNT; k++) {
         coord[i] = line + laneOffset(k);
+        jogFrom[i] = jogTo[i] = undefined;
+        // - a jog that touches another route is taken only when no lane has a clean one
+        let jogs = 0, touches = false;
+        const ends: boolean[] = coord[i] === line ? [] :
+          [false, true].filter(atEnd => vertical[atEnd ? next : i - 1] === vertical[i]);
+        let ok = true;
+        for (const atEnd of ends) {
+          let s = jogAt(i, line, coord[i], atEnd, true);
+          if (!s) { s = jogAt(i, line, coord[i], atEnd, false); touches = true; }
+          if (!s) { ok = false; break; }
+          if (atEnd) jogTo[i] = s.at; else jogFrom[i] = s.at;
+          jogs += s.cost;
+        }
+        if (!ok) continue;
         // - a lane can push a run inside a node where the gap is under one grid; keep looking
         if (!clearOf(i)) { report.blockedLanes = (report.blockedLanes ?? 0) + 1; continue; }
         // - what this lane would draw over: the run itself, the run before it, whose corner it moves,
         //   and the run after it when that one has no lane of its own to dodge with
-        const drawn =
+        const drawn = jogs +
           over(key(vertical[i], coord[i]), stretch(i, next < runs - 1 && movable[next])) +
           over(key(vertical[i - 1], coord[i - 1]), stretch(i - 1, false)) +
           (movable[next] ? 0 : over(key(vertical[next], coord[next]), stretch(next, next + 1 < runs - 1 && movable[next + 1])));
-        if (drawn < least) { least = drawn; chosen = coord[i]; }
-        if (drawn === 0) break;
+        if (drawn < least || (drawn === least && leastTouches && !touches)) {
+          least = drawn; leastTouches = touches; chosen = coord[i]; chosenFrom = jogFrom[i]; chosenTo = jogTo[i];
+        }
+        if (drawn === 0 && !touches) break;
       }
       if (least > 0) report.crowded = (report.crowded ?? 0) + 1;
       coord[i] = chosen;
+      jogFrom[i] = chosenFrom;
+      jogTo[i] = chosenTo;
     }
 
-    // - book before moving anything: `stretch` reads the points the route was found on
-    for (let i = 0; i < runs; i++) book(key(vertical[i], coord[i]), stretch(i, false));
-    for (let i = 0; i < runs; i++) {
-      const axis = vertical[i] ? 0 : 1;
-      pts[i][axis] = coord[i];
-      pts[i + 1][axis] = coord[i];
+    // - each corner takes its x from the vertical run and its y from the horizontal one; two parallel
+    //   runs on different coordinates meet in a jog
+    const moved: Point[] = [pts[0]];
+    for (let p = 1; p < runs; p++) {
+      const a = p - 1, b = p;
+      if (vertical[a] !== vertical[b]) moved.push(vertical[a] ? [coord[a], coord[b]] : [coord[b], coord[a]]);
+      else if (coord[a] === coord[b]) moved.push(pts[p]);
+      else {
+        const c = jogTo[a] ?? jogFrom[b] ?? along(pts[p], a);
+        moved.push(vertical[a] ? [coord[a], c] : [c, coord[a]], vertical[a] ? [coord[b], c] : [c, coord[b]]);
+      }
     }
-    paths.set(id, simplify(pts));
+    moved.push(pts[runs]);
+    const out = simplify(moved);
+    for (let p = 1; p < out.length; p++) {
+      const v = out[p - 1][0] === out[p][0];
+      book(key(v, v ? out[p][0] : out[p][1]), v ? span(out[p - 1][1], out[p][1]) : span(out[p - 1][0], out[p][0]));
+    }
+    paths.set(id, out);
   }
 }
 
