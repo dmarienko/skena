@@ -460,10 +460,11 @@ test('53. H3: the fallback weighs both neighbouring columns and takes the smalle
 });
 
 // - the old block still holds: a buffer column (M6, 1600) sits between E11's column (2400) and
-//   N15's (800), so the fallback stops at the buffer and never reaches all the way to N15
-const M6 = node('M6', 1600, 100);
+//   N15's (800), in the pressed direction, so the fallback stops at the buffer — M6 — and never
+//   reaches all the way to N15, even though M6 is itself a candidate
+const M6 = node('M6', 1600, 4500);
 test('54. H3: two columns away still never counts, even with the fallback in play', () => {
-  assert.equal(findNearestNode(E11, 'down', h3([M6])), null);
+  assert.equal(findNearestNode(E11, 'down', h3([M6])), 'M6');
 });
 
 // - h/l counterpart: N11 / N3 rotated 90°, a row band standing in for a column band
@@ -473,4 +474,18 @@ const rowFallCtx = { nodes: [rN11, rN3], edges: [], lanes: [lane('S1', 0)] };
 
 test('55. h/l counterpart: nothing right of N11 in its own row, so l falls back to N3 in the row below', () => {
   assert.equal(findNearestNode(rN11, 'right', rowFallCtx), 'N3');
+});
+
+// - measured live on H3 through the MCP server: C3 sits at column 4100, between N16's own column
+//   (3900) and N4's (4700), but ABOVE N16 — behind the pressed direction. A node behind from must
+//   not draw a band: on 25ef4ae, C3 still counted, so 4700 read as two columns away and the
+//   fallback stopped one short, at N3 (column 3200) instead of N4 (column 4700, gap 0).
+const pN16 = { id: 'N16', x: 3900, y: 1100, w: 700, h: 300 };
+const pC3  = { id: 'C3',  x: 4100, y: 100,  w: 600, h: 200 };
+const pN3  = { id: 'N3',  x: 3200, y: 1700, w: 600, h: 300 };
+const pN4  = { id: 'N4',  x: 4700, y: 1400, w: 700, h: 300 };
+const phantomCtx = { nodes: [pN16, pC3, pN3, pN4], edges: [], lanes: [lane('S1', 0)] };
+
+test('56. a node behind the focused node draws no band, so it cannot hide a further, correct one', () => {
+  assert.equal(findNearestNode(pN16, 'down', phantomCtx), 'N4');
 });

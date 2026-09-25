@@ -82,9 +82,10 @@ function bestOf(from: NavNode, dir: NavDir, horiz: boolean, nodes: NavNode[], sc
  * section. When `from`'s own band holds nothing in `dir`, the next band over on either side is
  * tried instead — the neighbouring column for `j`/`k`, the neighbouring row for `h`/`l` — never a
  * band beyond that. A band is a grid-snapped x (`j`/`k`) or y (`h`/`l`) of a node in `from`'s
- * section; the fallback candidate is any reachable node sitting exactly on one of those two bands
- * and lying in `dir`, picked by gap alone (no band-overlap term, since a fallback candidate is off
- * `from`'s band by definition), then by the same tie rules as the first pass.
+ * section that itself lies in `dir`; a node behind `from` draws no band; a fallback candidate is
+ * any reachable node sitting exactly on one of those two bands and lying in `dir`, picked by gap
+ * alone (no band-overlap term, since a fallback candidate is off `from`'s band by definition), then
+ * by the same tie rules as the first pass.
  */
 export function findNearestNode(from: NavNode, dir: NavDir, ctx: NavContext): string | null {
   const horiz = dir === 'left' || dir === 'right';
@@ -104,13 +105,15 @@ export function findNearestNode(from: NavNode, dir: NavDir, ctx: NavContext): st
   if (primary !== null) return primary;
 
   // - nothing in from's own band: the two bands next to it, on either side, drawn from the nodes
-  //   in from's own section — never a band further out than that
+  //   in from's own section that lie in the pressed direction — never a band further out than
+  //   that, and never a band a node BEHIND from would draw (it is not on the way there)
   const bandOf = (n: NavNode) => snapGrid(horiz ? n.y : n.x);
   const ownBand = bandOf(from);
   let lowerBand = -Infinity;
   let upperBand = Infinity;
   for (const n of ctx.nodes) {
     if (n.id === from.id || pinned.has(n.id) || laneOf(n) !== fromLane) continue;
+    if (!inDir(boxDelta(from, n, dir).gap)) continue;
     const band = bandOf(n);
     if (band < ownBand && band > lowerBand) lowerBand = band;
     if (band > ownBand && band < upperBand) upperBand = band;
