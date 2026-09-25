@@ -594,40 +594,55 @@ const anchorFixture = async p => {
   writeFileSync(p, JSON.stringify(d, null, 2));
 };
 
-test('canvas_add_edge puts the target on its source row, canvas_remove_edge lets it pack up', async () => {
+test('canvas_add_edge moves nothing: a target off its source row gets keepRow false, and canvas_remove_edge moves nothing', async () => {
   const p = fresh('anchor');
   await anchorFixture(p);
 
   const added = await call('canvas_add_edge', { canvasPath: p, from: 'E6', to: 'E8', fromSide: 'right', toSide: 'left' });
   console.log(`--- canvas_add_edge ---\n${added}\n---`);
   assert.match(added, /^Connected E6 → E8/);
-  assert.match(added, / — moved E8$/);
-  assert.deepEqual(pick(read(p), 'E8'), [800, 1900], 'E8 rides on E6 row');
-  assert.deepEqual(pick(read(p), 'E7'), [800, 200], 'the cell above it stays');
+  assert.equal(added.includes('moved'), false, added);
+  assert.deepEqual(pick(read(p), 'E8'), [800, 1100], 'holding E8 on E6 row would move it');
+  assert.equal(read(p).edges[0].keepRow, false);
 
-  const edgeId = read(p).edges[0].id;
-  const removed = await call('canvas_remove_edge', { canvasPath: p, ref: edgeId });
-  console.log(`--- canvas_remove_edge ---\n${removed}\n---`);
-  assert.match(removed, / — moved E8$/);
-  assert.deepEqual(pick(read(p), 'E8'), [800, 1100], 'released, it packs up under the wide cell');
+  const removed = await call('canvas_remove_edge', { canvasPath: p, ref: read(p).edges[0].id });
+  assert.doesNotMatch(removed, / — moved/);
+  assert.deepEqual(pick(read(p), 'E8'), [800, 1100]);
 });
 
-test('canvas_add_edge from a code cell to a note puts the note on its row, canvas_remove_edge lets it pack up', async () => {
+test('canvas_add_edge M1 → M6 on H3 moves nothing and stores keepRow false', async () => {
+  const p = fresh('m1m6');
+  const d = JSON.parse(readFileSync(join(REPO, 'tests', 'fixtures', 'H3-M1M6.json'), 'utf8'));
+  d.nodes = d.nodes.map(n => ({ ...n, nodeLabel: n.id }));
+  writeFileSync(p, JSON.stringify(d, null, 2));
+  const out = await call('canvas_add_edge', { canvasPath: p, from: 'M1', to: 'M6', fromSide: 'right', toSide: 'left' });
+  console.log(`--- canvas_add_edge M1 → M6 ---\n${out}\n---`);
+  assert.equal(out.includes('moved'), false, out);
+  const after = read(p);
+  assert.deepEqual(after.nodes.map(n => [n.id, n.x, n.y]), d.nodes.map(n => [n.id, n.x, n.y]));
+  assert.equal(after.edges[0].keepRow, false);
+});
+
+test('canvas_add_edge from a code cell to a note on its row gets keepRow true: the note follows the cell, and canvas_remove_edge lets it pack up', async () => {
   const p = fresh('anchor-note');
   await anchorFixture(p);
   const d = read(p);
-  d.nodes = d.nodes.map(n => (n.nodeLabel === 'E8' ? { id: 'text-1', type: 'text', x: 800, y: 1100, width: 700, height: 300, text: 'a note', nodeLabel: 'N1' } : n));
+  d.nodes = d.nodes.map(n => (n.nodeLabel === 'E8' ? { id: 'text-1', type: 'text', x: 800, y: 1900, width: 700, height: 300, text: 'a note', nodeLabel: 'N1' } : n));
   writeFileSync(p, JSON.stringify(d, null, 2));
 
   const added = await call('canvas_add_edge', { canvasPath: p, from: 'E6', to: 'N1', fromSide: 'right', toSide: 'left' });
   console.log(`--- canvas_add_edge code → note ---\n${added}\n---`);
   assert.match(added, /^Connected E6 → N1/);
-  assert.match(added, / — moved N1$/);
-  assert.deepEqual(pick(read(p), 'N1'), [800, 1900], 'N1 takes E6 row');
-  assert.deepEqual(pick(read(p), 'E7'), [800, 200], 'the cell above it stays');
+  assert.equal(added.includes('moved'), false, added);
+  assert.equal(read(p).edges[0].keepRow, true);
 
-  const edgeId = read(p).edges[0].id;
-  const removed = await call('canvas_remove_edge', { canvasPath: p, ref: edgeId });
+  // - a cell inserted under E4 pushes E5 and E6 400 down, and N1 with them
+  const inserted = await call('canvas_add_node', { canvasPath: p, type: 'code', content: 'y', after: 'E4' });
+  console.log(`--- canvas_add_node after E4 ---\n${inserted}\n---`);
+  assert.deepEqual(pick(read(p), 'E6'), [0, 2300]);
+  assert.deepEqual(pick(read(p), 'N1'), [800, 2300], 'N1 keeps E6 row');
+
+  const removed = await call('canvas_remove_edge', { canvasPath: p, ref: read(p).edges[0].id });
   console.log(`--- canvas_remove_edge code → note ---\n${removed}\n---`);
   assert.match(removed, / — moved N1$/);
   assert.deepEqual(pick(read(p), 'N1'), [800, 1100], 'released, it packs up under the wide cell');
@@ -639,37 +654,66 @@ test('a bottom-to-top edge anchors nothing', async () => {
   const out = await call('canvas_add_edge', { canvasPath: p, from: 'E6', to: 'E8', fromSide: 'bottom', toSide: 'top' });
   assert.equal(out.includes('moved'), false, out);
   assert.deepEqual(pick(read(p), 'E8'), [800, 1100]);
+  assert.equal(read(p).edges[0].keepRow, false);
 });
 
-test('canvas_update_edge that turns an edge right → left puts the target on its source row', async () => {
+test('canvas_update_edge that turns an edge right → left tests keepRow again: off its row the target gets false and stays', async () => {
   const p = fresh('anchor-update');
   await anchorFixture(p);
   await call('canvas_add_edge', { canvasPath: p, from: 'E6', to: 'E8', fromSide: 'bottom', toSide: 'top' });
-  assert.deepEqual(pick(read(p), 'E8'), [800, 1100], 'a bottom → top edge anchors nothing');
-
   const edgeId = read(p).edges[0].id;
   const out = await call('canvas_update_edge', { canvasPath: p, ref: edgeId, fromSide: 'right', toSide: 'left' });
   console.log(`--- canvas_update_edge to right/left ---\n${out}\n---`);
-  assert.match(out, / — moved E8$/);
-  assert.deepEqual(pick(read(p), 'E8'), [800, 1900], 'E8 rides on E6 row');
-  assert.deepEqual(pick(read(p), 'E7'), [800, 200], 'the cell above it stays');
+  assert.equal(out.includes('moved'), false, out);
+  assert.deepEqual(pick(read(p), 'E8'), [800, 1100]);
+  assert.equal(read(p).edges[0].keepRow, false);
+
+  // - the same edge onto a cell on E6's row gets true
+  const d = read(p);
+  d.nodes = d.nodes.map(n => (n.nodeLabel === 'E8' ? { ...n, y: 1900 } : n));
+  d.edges[0] = { ...d.edges[0], fromSide: 'bottom', toSide: 'top', keepRow: false };
+  writeFileSync(p, JSON.stringify(d, null, 2));
+  const on = await call('canvas_update_edge', { canvasPath: p, ref: edgeId, fromSide: 'right', toSide: 'left' });
+  assert.equal(on.includes('moved'), false, on);
+  assert.equal(read(p).edges[0].keepRow, true);
 });
 
-test('canvas_update_edge that turns a sequence edge downward releases the target', async () => {
+test('canvas_update_edge that turns a held edge downward releases the target', async () => {
   const p = fresh('anchor-release');
   await anchorFixture(p);
+  const d = read(p);
+  d.nodes = d.nodes.map(n => (n.nodeLabel === 'E8' ? { ...n, y: 1900 } : n));
+  writeFileSync(p, JSON.stringify(d, null, 2));
   await call('canvas_add_edge', { canvasPath: p, from: 'E6', to: 'E8', fromSide: 'right', toSide: 'left' });
-  assert.deepEqual(pick(read(p), 'E8'), [800, 1900]);
+  assert.equal(read(p).edges[0].keepRow, true);
 
   const edgeId = read(p).edges[0].id;
   const out = await call('canvas_update_edge', { canvasPath: p, ref: edgeId, fromSide: 'bottom', toSide: 'top' });
   console.log(`--- canvas_update_edge to bottom/top ---\n${out}\n---`);
   assert.match(out, / — moved E8$/);
   assert.deepEqual(pick(read(p), 'E8'), [800, 1100], 'released, it packs up under the wide cell');
+  assert.equal(read(p).edges[0].keepRow, false);
 
-  // - a label-only update changes no geometry
+  // - a label-only update changes no geometry and leaves the field alone
   const plain = await call('canvas_update_edge', { canvasPath: p, ref: edgeId, label: 'then' });
   assert.equal(plain.includes('moved'), false, plain);
+  assert.equal(read(p).edges[0].keepRow, false);
+});
+
+test('an MCP write keeps keepRow as stored, and writes the load mark of an edge that has none', async () => {
+  const p = fresh('keep-row-survives');
+  await anchorFixture(p);
+  const d = read(p);
+  const id = l => d.nodes.find(n => n.nodeLabel === l).id;
+  d.nodes = d.nodes.map(n => (n.nodeLabel === 'E8' ? { ...n, y: 1900 } : n));
+  d.edges = [
+    { id: 'on-row', fromNode: id('E6'), fromSide: 'right', toNode: id('E8'), toSide: 'left' },
+    { id: 'off', fromNode: id('E4'), fromSide: 'right', toNode: id('E7'), toSide: 'left', keepRow: false },
+    { id: 'held-off-row', fromNode: id('E5'), fromSide: 'right', toNode: id('E7'), toSide: 'left', keepRow: true },
+  ];
+  writeFileSync(p, JSON.stringify(d, null, 2));
+  await call('canvas_update_edge', { canvasPath: p, ref: 'off', label: 'x' });
+  assert.deepEqual(read(p).edges.map(e => [e.id, e.keepRow]), [['on-row', true], ['off', false], ['held-off-row', true]]);
 });
 
 test('canvas_read and canvas_list name a code cell\'s output, and the output\'s code cell', async () => {

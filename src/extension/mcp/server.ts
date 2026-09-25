@@ -34,7 +34,7 @@ import { NODE_SIZE, OUTPUT_MAX_W, OUTPUT_MAX_H } from '../../shared/constants';
 import { clampToOrigin } from '../../shared/bounds';
 import { applyLaneFit, deriveLanes, outputCellGeom, pinOutputToLane, pruneFoldedIds, sectionByRef, insertLaneAt, foldLane, unfoldLane, sectionTargetHeight, parkFirstLaneAtOrigin, memberCodeCellsInRunOrder, type SectionLane } from '../../shared/sectionLanes';
 import { resolveCellKernel, cellKernelView, kernelById, upstreamCellsForRun, resolveKernelCellsInCanvas, type KernelLike } from '../../shared/kernelBinding';
-import { layoutSection, reflowSection, insertAfter, forkOf, placeOutput, applyPatchesToCanvas, columnsOfDeleted, ridersOf, hangingBelow, sectionEngineNodes, sectionMembership, toEngineNodes, codeCellHeight, estimateCodeNeedPx } from '../../shared/layoutEngine';
+import { layoutSection, reflowSection, insertAfter, forkOf, placeOutput, applyPatchesToCanvas, columnsOfDeleted, ridersOf, hangingBelow, sectionEngineNodes, sectionMembership, toEngineNodes, codeCellHeight, estimateCodeNeedPx, keepRowOf, markKeepRowOnLoad } from '../../shared/layoutEngine';
 import { resolveKernelConfig, type KernelServerConfig } from '../jupyter/config';
 import { executeCell, startKernel, shutdownKernel } from '../jupyter/client';
 import { renderOutput, hasVisibleOutput } from '../jupyter/output';
@@ -212,7 +212,15 @@ async function readCanvas(fsPath: string): Promise<CanvasData> {
   };
   // - ensure every node has a label (idempotent)
   data.nodes = ensureLabels(data.nodes);
+  // - an edge stored with no `keepRow` gets true where holding its target moves nothing (§3.5); it
+  //   reaches the file with the write the tool makes, if any
+  data.edges = markKeepRowOnLoad(data.nodes, data.metadata?.sections ?? [], data.edges);
   return data;
+}
+
+// - the target's section, as the engine reads it, for `keepRowOf`
+function holdSection(d: CanvasData, edge: CanvasEdge) {
+  return sectionEngineNodes(d.nodes, d.metadata?.sections ?? [], edge.toNode) ?? toEngineNodes(d.nodes);
 }
 
 async function writeCanvas(fsPath: string, data: CanvasData): Promise<void> {
@@ -977,20 +985,11 @@ async function canvasAddEdge(args: Record<string, unknown>): Promise<string> {
     ...(args.label ? { label: args.label as string } : {}),
     ...(args.color ? { color: args.color as CanvasEdge['color'] } : {}),
   };
-  d.edges.push(edge);
-  // - a sequence edge right → left holds its target on the source's row (§3.5): the engine runs with
-  //   the target as the mover, as the webview does when the user draws one
-  const before = geomOf(d);
-  const report: { capped?: boolean } = {};
-  const around = sectionEngineNodes(d.nodes, d.metadata?.sections ?? [], tn.id) ?? toEngineNodes(d.nodes);
-  if (ridersOf(around, [edge]).has(tn.id)) {
-    Object.assign(d, applyLaneFit(d, Date.now(), applyEngine(d, [tn.id], [], report)));
-  }
-  const moved = movedLabels(d, before);
+  // - connecting moves nothing: the edge keeps its target on the source's row only where holding it
+  //   moves nothing (§3.5), as when the user draws one
+  d.edges.push({ ...edge, keepRow: keepRowOf(holdSection(d, edge), d.edges, edge) });
   await writeCanvas(p, d);
-  return `Connected ${fn.nodeLabel ?? fn.id} → ${tn.nodeLabel ?? tn.id}  (edge id: ${edge.id})`
-    + (moved.length ? ` — moved ${moved.join(', ')}` : '')
-    + (report.capped ? ` — ${CAPPED_NOTE}` : '');
+  return `Connected ${fn.nodeLabel ?? fn.id} → ${tn.nodeLabel ?? tn.id}  (edge id: ${edge.id})`;
   }); // - withFileLock
 }
 
@@ -1000,17 +999,18 @@ async function canvasUpdateEdge(args: Record<string, unknown>): Promise<string> 
     const d = await readCanvas(p);
     const e = findEdge(d, args.ref);
     if (!e) return `Edge not found: ${JSON.stringify(args.ref)}`;
-    // - a new pair of sides can make this edge hold its target on the source's row, or let it go
-    //   (§3.5): read the anchoring before and after the change and run the engine when it differs
-    const around = sectionEngineNodes(d.nodes, d.metadata?.sections ?? [], e.toNode) ?? toEngineNodes(d.nodes);
+    // - new sides test `keepRow` again, as for a new edge (§3.5). An edge that stops holding its target
+    //   releases it, and its column packs, as when the edge is removed; one that starts moves nothing.
+    const around = holdSection(d, e);
     const was = ridersOf(around, [e]).has(e.toNode);
     if (args.label    !== undefined) e.label    = args.label as string;
     if (args.color    !== undefined) e.color    = args.color as CanvasEdge['color'];
     if (args.fromSide !== undefined) e.fromSide = args.fromSide as CanvasEdge['fromSide'];
     if (args.toSide   !== undefined) e.toSide   = args.toSide as CanvasEdge['toSide'];
+    if (args.fromSide !== undefined || args.toSide !== undefined) e.keepRow = keepRowOf(around, d.edges, e);
     const before = geomOf(d);
     const report: { capped?: boolean } = {};
-    if (ridersOf(around, [e]).has(e.toNode) !== was) {
+    if (was && !ridersOf(around, [e]).has(e.toNode)) {
       Object.assign(d, applyLaneFit(d, Date.now(), applyEngine(d, [e.toNode], [], report)));
     }
     const moved = movedLabels(d, before);
@@ -1130,6 +1130,7 @@ async function canvasPinOutput(args: Record<string, unknown>): Promise<string> {
   d.nodes.push(labeled);
 
   let edgeId = '';
+  let pinEdge: CanvasEdge | undefined;
   if (sourceNode) {
     const edge: CanvasEdge = {
       id:       `edge-pin-${uid()}`,
@@ -1140,8 +1141,8 @@ async function canvasPinOutput(args: Record<string, unknown>): Promise<string> {
       toEnd:    'arrow',
       label:    (args.edgeLabel as string | undefined) ?? nowLabel(),
     };
-    d.edges.push(edge);
     edgeId = edge.id;
+    pinEdge = edge;
   }
 
   // - the cell adopts the pinned node as its output, which is what keeps the two in one pair. A cell
@@ -1149,6 +1150,9 @@ async function canvasPinOutput(args: Record<string, unknown>): Promise<string> {
   const adopted = sourceNode?.type === 'code' && !sourceNode.outputNodeId;
   if (adopted) (sourceNode as CodeNode).outputNodeId = labeled.id;
   if (sourceNode && d.metadata?.sections) d.metadata = { ...d.metadata, sections: pinOutputToLane(d.metadata.sections, sourceNode.id, labeled.id) };   // - an output of a folded cell stays folded
+  // - a free pin is a column member its edge could hold: `keepRow` as for any new edge, read in the
+  //   source's section with the pin joining it (§3.5)
+  if (pinEdge) d.edges.push({ ...pinEdge, keepRow: keepRowOf(sectionEngineNodes(d.nodes, d.metadata?.sections ?? [], sourceNode!.id, [labeled.id]) ?? toEngineNodes(d.nodes), d.edges, pinEdge) });
   // - an adopted pin is the mover, as a run's output is. A free one is NOT: it starts beside a code
   //   cell that already has an output, so it has to be the node the settle pushes down and clear,
   //   not the one that stays put — the code cell is what the engine is asked to lay out around.
