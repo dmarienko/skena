@@ -149,3 +149,9 @@ export function useFileContent(uri: string | undefined): FileContentState {
 export function invalidateFileCache(uri: string): void {
   cache.delete(normalizeUri(uri));
 }
+
+/** - the text of a markdown file an open preview has already loaded; nothing is fetched */
+export function loadedFileText(uri: string): string | undefined {
+  const hit = cache.get(normalizeUri(uri));
+  return hit?.status === 'loaded' && hit.fileType === 'markdown' ? hit.content : undefined;
+}

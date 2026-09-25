@@ -57,7 +57,9 @@ import { KnowledgeNodeComponent } from './nodes/KnowledgeNode';
 import { LabeledEdgeComponent } from './edges/LabeledEdge';
 import { HelperLines } from './HelperLines';
 import { SectionSeparators } from './SectionSeparators';
-import { EdgeFollowHints, type EdgeHint } from './EdgeFollowHints';
+import { EdgeFollowHints, type EdgeHint, type ShownHints } from './EdgeFollowHints';
+import { cardContent, type CardContent } from './cardContent';
+import { loadedFileText } from '../hooks/useFileContent';
 import { SectionRail, type RailKernel } from '../rail/SectionRail';
 import { fmtDateTime } from '../rail/RailSegment';
 import { allFolded, deriveLanes, fitLanes, groupIdsByLane, sortLanes, insertLaneAt, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
@@ -541,8 +543,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   // - what each label key follows: the node at the other end of that connection
   const gLabelsRef     = useRef<ReadonlyMap<string, string>>(EMPTY_LABELS);
   const gHintTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // - the labels drawn over the focused node's borders; only while the chord is armed
-  const [gHints, setGHints] = useState<EdgeHint[]>([]);
+  // - the badges drawn over the focused node's borders and the card of the node each one leads to;
+  //   only while the chord is armed
+  const [gShown, setGShown] = useState<ShownHints | null>(null);
   const [marksOpen, setMarksOpen] = useState(false);
   // - mirrored so the stable document-level paste listener sees panel state without re-subscribing
   const panelOpenRef = useRef(false);
@@ -2436,15 +2439,32 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       routes: routesRef.current,
     });
 
+    // - the card of one node, from what the webview already holds: the node, the code cell whose
+    //   output it is, and a markdown file's text once its preview has loaded it
+    const cardOf = (id: string): CardContent | undefined => {
+      const n = nodesRef.current.find(m => m.id === id);
+      if (!n) return undefined;
+      const node = n.data as unknown as CanvasNode & { accentColor?: string };
+      const owner = node.type === 'cell'
+        ? nodesRef.current.find(m => (m.data as { outputNodeId?: string }).outputNodeId === id)
+        : undefined;
+      return cardContent(node, {
+        ownerLabel: (owner?.data as { nodeLabel?: string } | undefined)?.nodeLabel,
+        fileText: node.type === 'file' ? loadedFileText(node.file) : undefined,
+      });
+    };
+
     /**
      * What `g` puts on screen and what the next key means: one badge per connection of the focused
-     * node, on all four borders, carrying the key that follows it (see `connectionLabels`). A
-     * connection the routing pass did not route has no exit point of its own; its badge is spread
-     * along the border the way the router spreads the ones it does route.
+     * node, on all four borders, carrying the key that follows it (see `connectionLabels`), and the
+     * card of the node each badge leads to, under the badge's key. A connection the routing pass did
+     * not route has no exit point of its own; its badge is spread along the border the way the
+     * router spreads the ones it does route.
      */
-    const connectionBadges = (): { hints: EdgeHint[]; byLabel: Map<string, string> } => {
+    const connectionBadges = (): { hints: EdgeHint[]; byLabel: Map<string, string>; cards: Map<string, CardContent> } => {
+      const cards = new Map<string, CardContent>();
       const from = focusedNode();
-      if (!from) return { hints: [], byLabel: new Map() };
+      if (!from) return { hints: [], byLabel: new Map(), cards };
       const geom = toNav(from);
       const labels = connectionLabels(geom, sideContext());
       const bySide = new Map<Side, ConnectionLabel[]>();
@@ -2455,30 +2475,38 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       const hints: EdgeHint[] = [];
       for (const [side, list] of bySide) list.forEach((c, i) => {
         const at = c.at ?? borderPoint(geom, side, (i - (list.length - 1) / 2) * LANE_STEP);
-        hints.push({ key: `${side}:${c.edgeId ?? c.nodeId}`, label: c.label, x: at[0], y: at[1], side });
+        const key = `${side}:${c.edgeId ?? c.nodeId}`;
+        hints.push({ key, label: c.label, x: at[0], y: at[1], side });
+        const card = cardOf(c.nodeId);
+        if (card) cards.set(key, card);
       });
-      return { hints, byLabel: new Map(labels.map(c => [c.label, c.nodeId])) };
+      return { hints, byLabel: new Map(labels.map(c => [c.label, c.nodeId])), cards };
     };
+
+    // - the part of the pane the cards stay inside: the side the floating chat covers is cut off
+    const shownArea = (): Rect => (wrapperRef.current
+      ? paneArea(wrapperRef.current)
+      : { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight });
 
     // - arm the g chord and show the labels. Reading one and typing it takes longer than the second
     //   key of a plain chord, so the window only stretches to G_HINT_MS when there is something to
     //   read; a node with no connection keeps the old 400 ms.
     const armG = () => {
-      const { hints, byLabel } = connectionBadges();
+      const { hints, byLabel, cards } = connectionBadges();
       lastGPressRef.current = Date.now();
       gWindowRef.current = hints.length > 0 ? G_HINT_MS : G_CHORD_MS;
       gLabelsRef.current = byLabel;
       if (gHintTimerRef.current) clearTimeout(gHintTimerRef.current);
       gHintTimerRef.current = null;
-      setGHints(h => (hints.length === 0 && h.length === 0 ? h : hints));
-      if (hints.length > 0) gHintTimerRef.current = setTimeout(() => { lastGPressRef.current = 0; setGHints([]); }, G_HINT_MS);
+      setGShown(hints.length === 0 ? null : { hints, cards, area: shownArea() });
+      if (hints.length > 0) gHintTimerRef.current = setTimeout(() => { lastGPressRef.current = 0; setGShown(null); }, G_HINT_MS);
     };
 
     const disarmG = () => {
       lastGPressRef.current = 0;
       gLabelsRef.current = EMPTY_LABELS;
       if (gHintTimerRef.current) { clearTimeout(gHintTimerRef.current); gHintTimerRef.current = null; }
-      setGHints(h => (h.length === 0 ? h : []));
+      setGShown(null);
     };
 
     // - the section the keys act on: the focused node's, or — after a fold dropped the selection —
@@ -3234,7 +3262,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       if (gHintTimerRef.current) { clearTimeout(gHintTimerRef.current); gHintTimerRef.current = null; }
       lastGPressRef.current = 0;
       gLabelsRef.current = EMPTY_LABELS;
-      setGHints([]);
+      setGShown(null);
     };
   }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, closeKnowledge, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToRegister, engineNodesOf, runEngineAfterMove, anchoredBy, runEngineForCells, canvasPath]); // - nodesRef + spaceSelectedRef carry live state
 
@@ -4048,7 +4076,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       >
         <Background variant={BackgroundVariant.Dots} gap={GRID} size={1} color="var(--vscode-editorIndentGuide-background)" />
         <SectionSeparators lanes={derivedLanes} kernels={railKernels} focusableCounts={laneFocusableCounts} />
-        <EdgeFollowHints hints={gHints} />
+        <EdgeFollowHints shown={gShown} />
         <HelperLines horizontal={helperLines.horizontal} vertical={helperLines.vertical} />
         <Controls showInteractive={false} showFitView={false}>
           {/* - our own fit button: React Flow's fires an unbounded fitView */}
