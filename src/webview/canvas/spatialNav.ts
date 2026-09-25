@@ -16,10 +16,6 @@ export interface NavNode { id: string; x: number; y: number; w: number; h: numbe
 export interface NavEdge { id?: string; source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }
 export interface NavContext { nodes: NavNode[]; edges: NavEdge[]; lanes: SectionLane[] }
 
-// - the off-axis miss may be CONE × the gap, or one grid when the gap is smaller: a node right
-//   beside the source qualifies on any overlap, a distant one only while it stays roughly aligned.
-//   It only matters for left / right: up / down take no node that misses the column at all
-const CONE = 0.6;
 // - ranking: aligned beats near
 const CROSS_WEIGHT = 2.5;
 // - a target whose near edge sits at most half a grid behind the source's far edge still counts
@@ -49,9 +45,9 @@ function boxDelta(from: NavNode, to: NavNode, dir: NavDir): { gap: number; off: 
  * their off-axis miss weighted up, so an aligned node beats one off to the side. Measured edge to
  * edge, never centre to centre — a tall node beside a short one has a far-off centre but no gap.
  * A candidate that does not share any of the source's span on the other axis pays one grid on top
- * of the miss, so a neighbour sharing the row beats one merely touching its corner. That penalty is
- * in the score only: `findNearestNode` cones on the raw miss, or a touching node one grid away
- * would fall out of its own cone.
+ * of the miss, so a neighbour sharing the row beats one merely touching its corner.
+ * `findNearestNode` excludes a non-overlapping candidate outright rather than scoring it; the miss
+ * penalty here is for a caller that still wants a score for such a pair.
  */
 export function navScore(from: NavNode, to: NavNode, dir: NavDir): number {
   const { gap, off, overlap } = boxDelta(from, to, dir);
@@ -59,11 +55,12 @@ export function navScore(from: NavNode, to: NavNode, dir: NavDir): number {
 }
 
 /**
- * The node to focus when `dir` is pressed on `from`, or null when nothing qualifies.
- * Candidates are visible nodes (in no fold list). `left`/`right` stay in `from`'s section;
- * `up`/`down` may cross into any open section, but only to a node that shares part of `from`'s
- * x-span — with nothing in that column there is no move. A node wired to `from` on the pressed side
- * is one more candidate under those same exclusions, scored like the rest but without the cone test.
+ * The node to focus when `dir` is pressed on `from`, or null when nothing qualifies. A candidate has
+ * to share part of `from`'s span on the other axis — its row band for `h`/`l`, its column for
+ * `j`/`k` — wired or not; a node connected elsewhere is reached with `g`, never with a direction
+ * key. `left`/`right` stay in `from`'s section; `up`/`down` may cross into any open section. A tied
+ * score goes to the candidate whose near edge (top for `h`/`l`, left for `j`/`k`) sits closest to
+ * `from`'s, then to the wider overlap, then to the first node in canvas order.
  */
 export function findNearestNode(from: NavNode, dir: NavDir, ctx: NavContext): string | null {
   const horiz = dir === 'left' || dir === 'right';
@@ -73,29 +70,21 @@ export function findNearestNode(from: NavNode, dir: NavDir, ctx: NavContext): st
   const fromLane = laneOf(from);
   const reachable = (n: NavNode) => !pinned.has(n.id) && (!horiz || laneOf(n) === fromLane);
   const inDir = (gap: number) => gap >= -BEHIND_SLACK;
-  const inCone = (gap: number, off: number) => off <= CONE * Math.max(gap, GRID);
-
-  // - handles are named top/right/bottom/left; an edge carries the canvas fromSide/toSide
-  const side = dir === 'up' ? 'top' : dir === 'down' ? 'bottom' : dir;
-  const wired = new Set<string>();
-  for (const e of ctx.edges) {
-    if (e.source === from.id && e.sourceHandle === side) wired.add(e.target);
-    else if (e.target === from.id && e.targetHandle === side) wired.add(e.source);
-  }
 
   let best: string | null = null;
   let bestScore = Infinity;
+  let bestNear = Infinity;
   let bestOverlap = -Infinity;
   for (const n of ctx.nodes) {
     if (n.id === from.id || !reachable(n)) continue;
-    const { gap, off, overlap } = boxDelta(from, n, dir);
-    // - j / k stay in the column, wired or not: an edge elsewhere is followed with `g`
-    if (!horiz && overlap <= 0) continue;
-    // - a wired node still has to sit in the pressed direction; only the cone is waived for it
-    if (!inDir(gap) || (!wired.has(n.id) && !inCone(gap, off))) continue;
+    const { gap, overlap } = boxDelta(from, n, dir);
+    if (overlap <= 0 || !inDir(gap)) continue;
     const s = navScore(from, n, dir);
-    // - equal scores go to the wider overlap; failing that the first node in canvas order stays
-    if (s < bestScore || (s === bestScore && overlap > bestOverlap)) { bestScore = s; bestOverlap = overlap; best = n.id; }
+    // - a tied score goes to the nearer top (h / l) or left (j / k), then the wider overlap, then
+    //   the first node in canvas order
+    const near = horiz ? Math.abs(n.y - from.y) : Math.abs(n.x - from.x);
+    const better = s < bestScore || (s === bestScore && (near < bestNear || (near === bestNear && overlap > bestOverlap)));
+    if (better) { bestScore = s; bestNear = near; bestOverlap = overlap; best = n.id; }
   }
   return best;
 }

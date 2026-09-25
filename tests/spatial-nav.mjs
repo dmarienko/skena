@@ -72,16 +72,16 @@ test('10. the wired node does not hide the unwired node between them', () => {
   assert.equal(findNearestNode(N8, 'up', h4), 'E5');
 });
 
-test('11. a far off-cone edge target is taken for right when nothing else is that way, never for down outside the column', () => {
+test('11. a wired node outside the row band is never a target, for down or for right', () => {
   const far = node('far', 6000, 800);
   const over = { nodes: [a, far], lanes: [lane('S1', 0)] };
   assert.equal(findNearestNode(a, 'down', ctx(over)), null);
   assert.equal(findNearestNode(a, 'down', ctx({ ...over, edges: [edge('a', 'far', 'bottom')] })), null);
-  // - 200 right of a and 2500 below its row: outside the cone, so only the edge makes it a candidate
+  // - 200 right of a and 2500 below its row: no shared row band, wired or not
   const low = node('low', 1000, 3000);
   const side = { nodes: [a, low], lanes: [lane('S1', 0)] };
   assert.equal(findNearestNode(a, 'right', ctx(side)), null);
-  assert.equal(findNearestNode(a, 'right', ctx({ ...side, edges: [edge('a', 'low', 'right')] })), 'low');
+  assert.equal(findNearestNode(a, 'right', ctx({ ...side, edges: [edge('a', 'low', 'right')] })), null);
 });
 
 // - revealPan: `area` and the result are pane pixels, the boxes flow coordinates
@@ -384,4 +384,49 @@ test('45. a wired node behind the pressed direction never beats an unwired one a
 
 test('46. a wired node behind the pressed direction is not a candidate even alone', () => {
   assert.equal(findNearestNode(WIDE, 'down', wideCtx()), null);
+});
+
+// - measured on H3: N1's row is y 0-300; nothing to its right shares it, so l does not move even
+//   though N8 sits inside the old cone allowance
+const rowN1 = node('N1', 800, 0);
+const rowE7 = node('E7', 2300, 900);
+const rowN8 = node('N8', 3100, 900);
+const rowCtx = (extra = []) => ({ nodes: [rowN1, rowE7, rowN8, ...extra], edges: [], lanes: [lane('S1', 0)] });
+
+test('47. H3: l returns null when nothing shares N1\'s row band', () => {
+  assert.equal(findNearestNode(rowN1, 'right', rowCtx()), null);
+});
+
+test('48. l reaches a node that shares part of the row band', () => {
+  const inBand = node('inBand', 1600, 100);
+  assert.equal(findNearestNode(rowN1, 'right', rowCtx([inBand])), 'inBand');
+});
+
+test('49. h reaches a node that shares part of the row band, the same way', () => {
+  const inBand = node('inBand', -700, 100);
+  assert.equal(findNearestNode(rowN1, 'left', rowCtx([inBand])), 'inBand');
+});
+
+// - measured on H3: M2's row (y 800-1500) is shared by both N7 and M3, each 100 px away — a tied
+//   gap. The tie goes to N7, whose top matches M2's, not to M3 merely because it sits first in the
+//   canvas node order
+const tieM2 = { id: 'M2', x: 0,   y: 800,  w: 700, h: 700 };
+const tieN7 = { id: 'N7', x: 800, y: 800,  w: 700, h: 300 };
+const tieM3 = { id: 'M3', x: 800, y: 1200, w: 700, h: 700 };
+const tieCtx = { nodes: [tieM2, tieM3, tieN7], edges: [], lanes: [lane('S1', 0)] };
+
+test('50. a tied gap goes to the node whose top is closest, not to canvas order', () => {
+  assert.equal(findNearestNode(tieM2, 'right', tieCtx), 'N7');
+  assert.equal(findNearestNode(tieN7, 'left', tieCtx), 'M2');
+});
+
+// - the same tie, rotated 90°: two candidates below V0 share its column and sit the same gap away;
+//   V2 is first in canvas order, but V1's left edge matches V0's
+const tieV0 = { id: 'V0', x: 800,  y: 0,   w: 700, h: 700 };
+const tieV1 = { id: 'V1', x: 800,  y: 800, w: 300, h: 700 };
+const tieV2 = { id: 'V2', x: 1200, y: 800, w: 700, h: 700 };
+const tieVCtx = { nodes: [tieV0, tieV2, tieV1], edges: [], lanes: [lane('S1', 0)] };
+
+test('51. a tied gap on j / k goes to the node whose left edge is closest', () => {
+  assert.equal(findNearestNode(tieV0, 'down', tieVCtx), 'V1');
 });
