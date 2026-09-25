@@ -736,8 +736,11 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       const { accentColor: _drop, ...rest } = n.data as Record<string, unknown>;
       return { ...rest, x: n.position.x, y: n.position.y } as unknown as CanvasNode;
     });
-    const keepEdgesAsCanvas = keepEdges.map(e => ({ id: e.id, fromNode: e.source, toNode: e.target,
-      fromSide: e.sourceHandle ?? undefined, toSide: e.targetHandle ?? undefined, toEnd: 'arrow' } as CanvasEdge));
+    // - start from the stored edge so `keepRow`, `label` and `color` survive; the flow edge gives the ends
+    const storedEdges = new Map(canvasRef.current.edges.map(x => [x.id, x]));
+    const keepEdgesAsCanvas = keepEdges.map(e => ({ toEnd: 'arrow', ...storedEdges.get(e.id), id: e.id,
+      fromNode: e.source, toNode: e.target,
+      fromSide: e.sourceHandle ?? undefined, toSide: e.targetHandle ?? undefined } as CanvasEdge));
 
     // - pin just-produced run outputs: a reload firing from a momentarily-stale writer must not revert
     //   their fresh content to an older run. Expire entries past RECENT_OUTPUT_MS.
