@@ -40,11 +40,12 @@ export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
 
   return (
     <>
-    <NodeLabelBadge label={node.nodeLabel} createdBy={(node as any).createdBy} />
+    <NodeLabelBadge label={node.nodeLabel} />
     <div
       className="skena-node skena-node--cell"
       style={{
-        border:        `${bw}px solid ${borderColor}`,
+        // - dashed, not solid: sets output cells apart from other node types at a glance
+        border:        `${bw}px dashed ${borderColor}`,
         height:        '100%',
         borderRadius:  6,
         overflow:      'hidden',
