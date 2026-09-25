@@ -1003,11 +1003,15 @@ async function canvasUpdateEdge(args: Record<string, unknown>): Promise<string> 
     //   releases it, and its column packs, as when the edge is removed; one that starts moves nothing.
     const around = holdSection(d, e);
     const was = ridersOf(around, [e]).has(e.toNode);
+    // - a side passed with the value already stored is no new side; an absent side reads as the
+    //   engine reads it, right → left
+    const newSides = (args.fromSide !== undefined && args.fromSide !== (e.fromSide ?? 'right'))
+                  || (args.toSide   !== undefined && args.toSide   !== (e.toSide   ?? 'left'));
     if (args.label    !== undefined) e.label    = args.label as string;
     if (args.color    !== undefined) e.color    = args.color as CanvasEdge['color'];
     if (args.fromSide !== undefined) e.fromSide = args.fromSide as CanvasEdge['fromSide'];
     if (args.toSide   !== undefined) e.toSide   = args.toSide as CanvasEdge['toSide'];
-    if (args.fromSide !== undefined || args.toSide !== undefined) e.keepRow = keepRowOf(around, d.edges, e);
+    if (newSides) e.keepRow = keepRowOf(around, d.edges, e);
     const before = geomOf(d);
     const report: { capped?: boolean } = {};
     if (was && !ridersOf(around, [e]).has(e.toNode)) {

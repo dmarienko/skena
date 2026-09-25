@@ -700,6 +700,23 @@ test('canvas_update_edge that turns a held edge downward releases the target', a
   assert.equal(read(p).edges[0].keepRow, false);
 });
 
+test('canvas_update_edge with a label and the sides already stored moves nothing and keeps keepRow', async () => {
+  const p = fresh('anchor-same-sides');
+  await anchorFixture(p);
+  const d = read(p);
+  // - E8 sits off E6's row, so testing keepRow again would give false and release it
+  d.nodes = d.nodes.map(n => (n.nodeLabel === 'E8' ? { ...n, y: 1500 } : n));
+  d.edges = [{ id: 'held', fromNode: 'code-6', fromSide: 'right', toNode: 'code-8', toSide: 'left', toEnd: 'arrow', keepRow: true }];
+  writeFileSync(p, JSON.stringify(d, null, 2));
+
+  const out = await call('canvas_update_edge', { canvasPath: p, ref: 'held', label: 'then', fromSide: 'right', toSide: 'left' });
+  console.log(`--- canvas_update_edge label + same sides ---\n${out}\n---`);
+  assert.equal(out.includes('moved'), false, out);
+  assert.deepEqual(pick(read(p), 'E8'), [800, 1500]);
+  assert.equal(read(p).edges[0].keepRow, true);
+  assert.equal(read(p).edges[0].label, 'then');
+});
+
 test('an MCP write keeps keepRow as stored, and writes the load mark of an edge that has none', async () => {
   const p = fresh('keep-row-survives');
   await anchorFixture(p);
