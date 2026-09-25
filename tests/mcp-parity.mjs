@@ -717,7 +717,7 @@ test('canvas_update_edge with a label and the sides already stored moves nothing
   assert.equal(read(p).edges[0].label, 'then');
 });
 
-test('an MCP write keeps keepRow as stored, and writes the load mark of an edge that has none', async () => {
+test('an MCP write keeps keepRow as stored, and writes the keepRow markKeepRowOnLoad gives an edge that has none', async () => {
   const p = fresh('keep-row-survives');
   await anchorFixture(p);
   const d = read(p);

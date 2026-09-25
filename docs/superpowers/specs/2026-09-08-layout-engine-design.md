@@ -892,17 +892,20 @@ back on the source's row, as before (test 138).
 
 Tests 133 to 138 hold the rule. 56 of the 132 tests written before it fail without `keepRow: true`
 on their edges. Every right-to-left edge in them now carries it, and the fixture edges are all read
-as holding (`allHeld`), so they test the engine as before. 45 of the 132 fail when each edge is
-instead marked by the load rule the first time a call reads it. The 38 counted before this decision
+as holding (`allHeld`), so they test the engine as before. 45 of the 132 fail when, instead, each
+edge without the field gets `keepRow: true` the first time a call reads it, where holding its target
+moves nothing, as when a canvas is opened. The 38 counted before this decision
 were counted by position alone: the target on the source's row, or one gap under the source's output
 on that row.
 
-Holds the load rule keeps on the fixtures, of those the engine read before: H1 7 of 7, H2 3 of 6,
-H3 8 of 8, H4 13 of 15, H5 3 of 3, H6 1 of 1; 35 of 40. H2 loses C14 held to N1, N4 to N3 and C2 to
+Holds kept on the fixtures when an edge without the field gets `keepRow: true` where holding its
+target moves nothing, as when a canvas is opened, of those the engine read before: H1 7 of 7, H2 3
+of 6, H3 8 of 8, H4 13 of 15, H5 3 of 3, H6 1 of 1; 35 of 40. H2 loses C14 held to N1, N4 to N3 and C2 to
 N7; H4 loses N7 held to N24 and N11 to N26 (test 136).
 
 Measured against 59da217, both engines given the same calls. The edges of every generated section and
-every fixture section get the load marks first; the engine at 59da217 reads every edge as holding.
+every fixture section first get `keepRow: true` where holding moves nothing, as when a canvas is
+opened; the engine at 59da217 reads every edge as holding.
 "Bad" is as above: capped, a new pair closer than a gap, or changed by a second call; the output
 generator also counts two boxes that intersect. "With a hold" = the calls whose section has at least
 one hold before the call, at 59da217 and now.
@@ -921,7 +924,8 @@ one hold before the call, at 59da217 and now.
 On the fixtures 20 of the 170 calls differ: 9 in H2 and 11 in H4, the two with holds lost. Reflow on
 the generator's 3000 sections: 0 leave two boxes intersecting and 0 leave a pair closer than a gap,
 before and after; a second Reflow changes 66 at 59da217 and 0 now. The section generator and the
-output generator put nodes at random rows, and the load rule marks few of their edges: a call there
+output generator put nodes at random rows, so when a canvas is opened few of their edges get
+`keepRow: true`, since holding their target would move it: a call there
 has a hold in 610 of 7703 and 2700 of 34834 calls now. The tidy trials start from a Reflow.
 
 Open (2026-09-25), the calls that got worse, none traced:
@@ -938,8 +942,9 @@ Open (2026-09-25), the calls that got worse, none traced:
 - the output dragged: seeds 22932 and 106116.
 
 Other open items:
-- the load rule writes no `false`, so an edge that fails is tested again at every load and can pass
-  later, once its target sits where holding moves nothing;
+- when a canvas is opened, an edge without the field gets `keepRow: true` if holding its target
+  would move nothing, and no field otherwise; it never gets `false`, so an edge that fails is tested
+  again at every load and can pass later, once its target sits where holding moves nothing;
 - a new connection that replaces a code cell's input edge still releases the node that edge held,
   so that connection can move one node;
 - the AI companion's `add_note` in the host writes its edge with no `keepRow`. Read in the code, not

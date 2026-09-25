@@ -194,7 +194,7 @@ export function keepRowOf(nodes: EngineNode[], edges: HoldEdge[], edge: HoldEdge
 }
 
 /**
- * The load rule of §3.5, for a canvas as it is opened: an edge the file stores with no `keepRow` gets
+ * What §3.5 gives a canvas as it is opened: an edge the file stores with no `keepRow` gets
  * `keepRow: true` where holding its target moves nothing, all such edges read as holding at once,
  * section by section. An edge that has the field keeps it, and nothing gets `false` here. A canvas
  * with no sections is read as one. Returns `edges` itself when no edge changes.

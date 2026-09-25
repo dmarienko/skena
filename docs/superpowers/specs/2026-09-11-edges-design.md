@@ -51,8 +51,9 @@ Scope of this round: §1–§4 below. Out: engine-drawn sequence edges, paragrap
   turn towards the first slot (up on a left or right border, left on a top or bottom border) come
   first, the sooner the turn the further out; straight routes come next; routes that turn the other
   way come last, the sooner the turn the further out. Ties go by the position of the node at the
-  other end (topmost / leftmost first). To know where a route turns, every edge is routed once with
-  the ties-only order; an edge whose end point then moves is routed again (2026-09-25). A border
+  other end (topmost / leftmost first). To know where a route turns, every edge is first routed with
+  the edges of each border ordered by the position of the node at the other end alone; an edge
+  whose end point then moves is routed again (2026-09-25). A border
   with a single edge takes the offset of the other end's slot, so a facing pair runs straight
   across.
 - An edge keeps its point while the edges on that border and their routes are unchanged. A route
@@ -133,8 +134,8 @@ the upstream path of a running cell — draw lighter and wider. The selected sty
 | `src/webview/canvas/EdgeFollowHints.tsx` (new) | the labels shown while `g` is armed; same overlay as `SectionSeparators`, flow coordinates through React Flow's transform, each border fanned on screen |
 | `src/webview/canvas/palette.ts`, `theme.ts` | kind colours + the variant rule |
 | `src/webview/canvas/routing/orthogonal.ts` | kept as the fallback |
-| `test/spatial-nav.mjs` | `edgesOnSide`: order by slot; `variantIn` on the target side; an unrouted edge last, by the other end's y. `connectionLabels`: the 2-left/3-right case reads `h 1 l 2 3`; twelve on one border read `h 1`–`9 a b`; no connection → none; the sequence never hands out `g h j k l` |
-| `test/edge-routing.mjs` | gap graph from a two-column section; shortest route with the bend penalty on the H4/H5 shapes (no detour); lanes 10 px, 9 per gap, stable order; exit spreading; fallback when no gap route; no slanted segment on the 300 random sections and on the H fixtures; the six-node M1 case under all 24 edge-id orders (right-angle jogs, clear of the other exits' corners); H3 with M6 below-right (M1's exits ordered by where they turn, no crossing among them) |
+| `tests/spatial-nav.mjs` | `edgesOnSide`: order by slot; `variantIn` on the target side; an unrouted edge last, by the other end's y. `connectionLabels`: the 2-left/3-right case reads `h 1 l 2 3`; twelve on one border read `h 1`–`9 a b`; no connection → none; the sequence never hands out `g h j k l` |
+| `tests/edge-routing.mjs` | gap graph from a two-column section; shortest route with the bend penalty on the H4/H5 shapes (no detour); lanes 10 px, 9 per gap, stable order; exit spreading; fallback when no gap route; no slanted segment on the 300 random sections and on the H fixtures; the six-node M1 case under all 24 edge-id orders (right-angle jogs, clear of the other exits' corners); H3 with M6 below-right (M1's exits ordered by where they turn, no crossing among them) |
 | `README.md` | the keys |
 
 ## 6. Open / later

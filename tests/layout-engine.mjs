@@ -2242,7 +2242,7 @@ test('on load an edge that has keepRow keeps it, true or false', () => {
   const heldIds = new Set(data.edges.filter(e => holdsOf(data, [{ ...e, keepRow: true }]).length).map(e => e.id));
   const on = marked.find(e => heldIds.has(e.id) && e.keepRow === true);
   const off = marked.find(e => heldIds.has(e.id) && e.keepRow === undefined);
-  assert.ok(on && off, 'H4 has a hold the load marks and one it does not');
+  assert.ok(on && off, 'H4 has a hold markKeepRowOnLoad marks and one it does not');
   const stored = data.edges.map(e => (e.id === on.id ? { ...e, keepRow: false } : e.id === off.id ? { ...e, keepRow: true } : e));
   const again = withKeepRow.markKeepRowOnLoad(data.nodes, data.metadata.sections, stored);
   assert.equal(again.find(e => e.id === on.id).keepRow, false);
