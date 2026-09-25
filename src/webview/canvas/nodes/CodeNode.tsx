@@ -20,6 +20,7 @@ import type { KernelRecord } from '../../../shared/types';
 import { useLanes } from '../LanesContext';
 import { useKernels } from '../KernelsContext';
 import { CodeRenderer } from '../../renderers/CodeRenderer';
+import { G_BADGES_ATTR } from '../gChord';
 import { ScrollableContent, setScrollPosition } from '../../components/ScrollableContent';
 import { applyVimClipboard, patchVimNewlineAndIndent, patchVimLastLine, patchVimVisualCursor, patchVimExternalSelection, patchVimDeleteLastLine, patchVimJoin } from './TextNode';
 import { ensureKernelCompletion, setActiveCodeCell } from './kernelCompletion';
@@ -291,6 +292,8 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
         !!el.closest?.('textarea, input, [contenteditable="true"], .monaco-editor')
       );
       if (inField(e.target as HTMLElement | null) || inField(document.activeElement as HTMLElement | null)) return;
+      // - while the g badges are shown the next key is theirs; this listener may run before theirs
+      if (document.documentElement.hasAttribute(G_BADGES_ATTR)) return;
       // - Ctrl/Cmd+C interrupts a RUNNING cell (host shows a confirm — it's easy to mishit). Only
       // - fires when this cell is running; otherwise it falls through (no node-copy binding here).
       if (isRunningRef.current && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.key === 'c' || e.key === 'C')) {

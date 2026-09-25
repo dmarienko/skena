@@ -60,6 +60,7 @@ import { SectionSeparators } from './SectionSeparators';
 import { EdgeFollowHints, type EdgeHint, type ShownHints } from './EdgeFollowHints';
 import { cardContent, type CardContent } from './cardContent';
 import { loadedFileText } from '../hooks/useFileContent';
+import { G_BADGES_ATTR, gChordStep } from './gChord';
 import { SectionRail, type RailKernel } from '../rail/SectionRail';
 import { fmtDateTime } from '../rail/RailSegment';
 import { allFolded, deriveLanes, fitLanes, groupIdsByLane, sortLanes, insertLaneAt, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
@@ -172,10 +173,6 @@ function toFlowNode(cn: CanvasNode): Node {
 // - how long a just-produced run output is protected from being reverted by a stale reload
 const RECENT_OUTPUT_MS = 4000;
 
-// - how long g waits for its second key
-const G_CHORD_MS = 400;
-// - the chord window once the labels are on screen: long enough to find one and type it
-const G_HINT_MS = 1500;
 // - the label map of a disarmed chord, so disarming allocates nothing
 const EMPTY_LABELS: ReadonlyMap<string, string> = new Map();
 
@@ -536,16 +533,32 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   // - Alt+X add-node chord: armed until the next h/j/k/l (or 2s timeout)
   const chordRef       = useRef(false);
   const chordTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // - g chord: the moment g was pressed; the next key counts as its second within gWindowRef
+  // - g chord: the moment g was pressed, 0 when disarmed. Badges on screen wait for the next key or
+  //   click; a g that shows nothing lasts G_CHORD_MS (see gChordStep)
   const lastGPressRef  = useRef<number>(0);
-  // - G_CHORD_MS, or G_HINT_MS while the labels are on screen
-  const gWindowRef     = useRef<number>(G_CHORD_MS);
   // - what each label key follows: the node at the other end of that connection
   const gLabelsRef     = useRef<ReadonlyMap<string, string>>(EMPTY_LABELS);
-  const gHintTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
   // - the badges drawn over the focused node's borders and the card of the node each one leads to;
   //   only while the chord is armed
   const [gShown, setGShown] = useState<ShownHints | null>(null);
+  // - gShown !== null, for the key listeners, which read refs
+  const gShowingRef    = useRef(false);
+  // - drop the armed chord and everything it put on screen
+  const closeG = useCallback(() => {
+    lastGPressRef.current = 0;
+    gLabelsRef.current = EMPTY_LABELS;
+    gShowingRef.current = false;
+    document.documentElement.removeAttribute(G_BADGES_ATTR);
+    setGShown(null);
+  }, []);
+  // - a click anywhere closes the badges; the click itself goes on as usual
+  useEffect(() => {
+    if (gShown === null) return;
+    window.addEventListener('pointerdown', closeG, { capture: true });
+    return () => window.removeEventListener('pointerdown', closeG, { capture: true });
+  }, [gShown, closeG]);
+  // - a canvas switch drops the armed chord and its badges
+  useEffect(() => closeG, [canvasPath, closeG]);
   const [marksOpen, setMarksOpen] = useState(false);
   // - mirrored so the stable document-level paste listener sees panel state without re-subscribing
   const panelOpenRef = useRef(false);
@@ -2488,25 +2501,33 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       ? paneArea(wrapperRef.current)
       : { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight });
 
-    // - arm the g chord and show the labels. Reading one and typing it takes longer than the second
-    //   key of a plain chord, so the window only stretches to G_HINT_MS when there is something to
-    //   read; a node with no connection keeps the old 400 ms.
+    // - arm the g chord and show the badges with their cards. They stay until the next key or click;
+    //   a node with no connection shows nothing and keeps the plain G_CHORD_MS window.
     const armG = () => {
       const { hints, byLabel, cards } = connectionBadges();
       lastGPressRef.current = Date.now();
-      gWindowRef.current = hints.length > 0 ? G_HINT_MS : G_CHORD_MS;
       gLabelsRef.current = byLabel;
-      if (gHintTimerRef.current) clearTimeout(gHintTimerRef.current);
-      gHintTimerRef.current = null;
+      gShowingRef.current = hints.length > 0;
+      if (hints.length > 0) document.documentElement.setAttribute(G_BADGES_ATTR, '1');
+      else document.documentElement.removeAttribute(G_BADGES_ATTR);
       setGShown(hints.length === 0 ? null : { hints, cards, area: shownArea() });
-      if (hints.length > 0) gHintTimerRef.current = setTimeout(() => { lastGPressRef.current = 0; setGShown(null); }, G_HINT_MS);
     };
 
-    const disarmG = () => {
-      lastGPressRef.current = 0;
-      gLabelsRef.current = EMPTY_LABELS;
-      if (gHintTimerRef.current) { clearTimeout(gHintTimerRef.current); gHintTimerRef.current = null; }
-      setGShown(null);
+    // - the key after g, as gChordStep reads it. True when the chord used the key; false when the
+    //   key is not the chord's, or cancelled a chord that showed nothing and is handled as usual.
+    const readGKey = (e: KeyboardEvent): boolean => {
+      const step = gChordStep(
+        { armedAt: lastGPressRef.current, showing: gShowingRef.current, labels: gLabelsRef.current },
+        { key: e.key, shift: e.shiftKey, ctrl: e.ctrlKey, meta: e.metaKey, alt: e.altKey },
+        Date.now(),
+      );
+      if (step === null) return false;
+      closeG();
+      if (step.do === 'pass') return false;
+      e.preventDefault();
+      if (step.do === 'first') jumpInSection('first');
+      else if (step.do === 'jump') focusNodeById(step.nodeId);
+      return true;
     };
 
     // - the section the keys act on: the focused node's, or — after a fold dropped the selection —
@@ -2676,19 +2697,10 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         return;
       }
 
-      // ── g chord: consume the second key (a connection label follows it, g jumps to the section top) ──
-      if (lastGPressRef.current !== 0 && Date.now() - lastGPressRef.current < gWindowRef.current) {
-        if (!e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
-          if (e.key === 'g') { disarmG(); e.preventDefault(); jumpInSection('first'); return; }
-          // - h/k/l/j are labels too, so while the chord is armed they follow the first connection of
-          //   their border rather than navigating; a border with none leaves the key unclaimed
-          const target = e.key.length === 1 ? gLabelsRef.current.get(e.key) : undefined;
-          if (target !== undefined) { disarmG(); e.preventDefault(); focusNodeById(target); return; }
-        }
-        // - any other key cancels the chord and is then handled normally, so plain h still
-        //   navigates left; falling through is the whole point
-        disarmG();
-      }
+      // - the key after a g that showed nothing (gCapture takes it while badges are shown): a second
+      //   g goes to the section top, any other key cancels the chord and is then handled normally,
+      //   so plain h still navigates left
+      if (readGKey(e)) return;
 
       // - g: arm the chord. Nothing happens on its own, so a stray g is harmless.
       if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'g') {
@@ -3253,18 +3265,25 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       rfRef.current.setViewport({ x: c.x, y: c.y, zoom }, { duration: CAMERA_MS });
     };
 
+    // - while the badges are shown the next key is theirs, wherever the focus sits: read here at
+    //   capture and stopped, so no node, no other binding and not VS Code acts on it
+    const gCapture = (e: KeyboardEvent) => {
+      if (!gShowingRef.current) return;
+      readGKey(e);
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    };
+
+    // - gCapture before panCapture: listeners on one target run in the order they were added
+    window.addEventListener('keydown', gCapture, { capture: true });
     window.addEventListener('keydown', handler);
     window.addEventListener('keydown', panCapture, { capture: true });
     return () => {
+      window.removeEventListener('keydown', gCapture, { capture: true });
       window.removeEventListener('keydown', handler);
       window.removeEventListener('keydown', panCapture, { capture: true });
-      // - a canvas switch re-runs this effect: drop the armed chord and its badges with it
-      if (gHintTimerRef.current) { clearTimeout(gHintTimerRef.current); gHintTimerRef.current = null; }
-      lastGPressRef.current = 0;
-      gLabelsRef.current = EMPTY_LABELS;
-      setGShown(null);
     };
-  }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, closeKnowledge, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToRegister, engineNodesOf, runEngineAfterMove, anchoredBy, runEngineForCells, canvasPath]); // - nodesRef + spaceSelectedRef carry live state
+  }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, closeKnowledge, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToRegister, engineNodesOf, runEngineAfterMove, anchoredBy, runEngineForCells, canvasPath, closeG]); // - nodesRef + spaceSelectedRef carry live state
 
   // - expose a viewport snapshot for the AI companion (what the user actually sees:
   // - zoom, on-screen node labels, scroll position within the focused node)
