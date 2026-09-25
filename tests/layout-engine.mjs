@@ -2048,7 +2048,8 @@ test('resize C5 on H3 from 300 to 400: every node that moves goes 100 down', () 
   const data = JSON.parse(fs.readFileSync(path.join(here, 'fixtures', 'H3-C5.json'), 'utf8'));
   const nodes = toEngineNodes(data.nodes).map(n => (n.id === 'C5' ? { ...n, h: 400 } : n));
   const report = {};
-  const patches = layoutSection(nodes, { moverIds: ['C5'], riders: ridersOf(nodes, data.edges), hanging: hangingBelow(nodes, data.edges), report });
+  // - as the webview's resize path calls it
+  const patches = layoutSection(nodes, { moverIds: ['C5'], resized: ['C5'], riders: ridersOf(nodes, data.edges), hanging: hangingBelow(nodes, data.edges), report });
   assert.equal(!!report.capped, false);
   const down = id => ({ x: nodes.find(n => n.id === id).x, y: nodes.find(n => n.id === id).y + 100 });
   const ids = ['N10', 'N11', 'E9', 'C1', 'E10', 'C4', 'E11', 'N16', 'M6', 'N4', 'W1', 'N3', 'E3', 'C2'];
@@ -2056,7 +2057,7 @@ test('resize C5 on H3 from 300 to 400: every node that moves goes 100 down', () 
   const after = apply(nodes, patches);
   const was = new Set(tooClosePairs(nodes));
   assert.deepEqual(tooClosePairs(after).filter(p => !was.has(p)), []);
-  assert.deepEqual(layoutSection(after, { moverIds: ['C5'], riders: ridersOf(after, data.edges), hanging: hangingBelow(after, data.edges) }), {});
+  assert.deepEqual(layoutSection(after, { moverIds: ['C5'], resized: ['C5'], riders: ridersOf(after, data.edges), hanging: hangingBelow(after, data.edges) }), {});
 });
 
 // 126
@@ -2077,5 +2078,19 @@ test('the nodes hanging below a node the user drags down go down by the same amo
   assert.deepEqual(layoutSection(after, { moverIds: ['W'], riders: ridersOf(after, edges), hanging: hangingBelow(after, edges) }), {});
   // - the same drag the other way, from 700 up to 400 with T at 1000: T and U stay
   assert.deepEqual(drag(700, 400).patches, {});
+});
+
+// 127
+test('an output resized by hand pushes the note it grows onto down; a new output there still moves the note column right', () => {
+  // - O, E's output, has just grown from 300 to 500 tall and reaches N. A resize moves N down by the
+  //   overlap, 100. As a new output, O moves column 800 right by 800 + 600 + 100 - 800 = 700. Either
+  //   way E2 packs one gap under E's row, which O now ends at 500.
+  const nodes = [code('E', 0, 0, 300, 'O'), cell('O', 800, 0, 600, 500), note('N', 800, 500, 700, 300), code('E2', 0, 400)];
+  const patches = layoutSection(nodes, { moverIds: ['O'], resized: ['O'] });
+  assert.deepEqual(patches, { N: { x: 800, y: 600 }, E2: { x: 0, y: 600 } });
+  const after = apply(nodes, patches);
+  assert.equal(overlapCount(after), 0);
+  assert.deepEqual(layoutSection(after, { moverIds: ['O'], resized: ['O'] }), {});
+  assert.deepEqual(layoutSection(nodes, { moverIds: ['O'] }), { N: { x: 1500, y: 500 }, E2: { x: 0, y: 600 } });
 });
 

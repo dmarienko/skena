@@ -26,17 +26,19 @@ export interface Pair { column: Column; outputX: number; outputW: number; right:
 //   builds it from the canvas edges with `hangingBelow` below.
 // - `draggedFrom` = where each node the user dragged sat before the drag. The call sees them already
 //   moved, so without it the nodes hanging below a node dragged down would stay where they are.
-export interface LayoutOpts { moverIds?: Iterable<string>; columnX?: number; riders?: Map<string, string>; hanging?: Map<string, string[]>; draggedFrom?: Map<string, { x: number; y: number }>; report?: { capped?: boolean }; maxSteps?: number }
+// - `resized` = the movers the user resized by hand. A resized output is not a moved output (§3.5): it
+//   pushes what it grows onto with the ordinary bumps, and no column moves right to make room for it.
+export interface LayoutOpts { moverIds?: Iterable<string>; columnX?: number; riders?: Map<string, string>; hanging?: Map<string, string[]>; draggedFrom?: Map<string, { x: number; y: number }>; resized?: Iterable<string>; report?: { capped?: boolean }; maxSteps?: number }
 
 // - what a column pack needs from the call around it (§3.5): `held` = the movers, their pair partners
 //   and the riders of the packed columns (a rider goes under these); `noBump` = the nodes no bump
 //   will move in this call; `placed` = the riders this call has already put on their rows;
 //   `headY` = where a column head starts each round, the y it had when these rounds began (none: its
 //   current y); `reflow` = the pack is Reflow's, where no bump runs after it (§3.4); `movedOutputs` =
-//   the output cells among the movers (a new output is one): each goes under a node held to another
-//   cell's row in a packed column, with its code cell; `wentUnder` = the held nodes such a code cell
-//   went under in this call, whose columns keep their x (§3.5); `hanging` = the nodes that move down
-//   with a node (`LayoutOpts.hanging`).
+//   the output cells among the movers, bar the resized ones (a new output is one): each goes under a
+//   node held to another cell's row in a packed column, with its code cell; `wentUnder` = the held
+//   nodes such a code cell went under in this call, whose columns keep their x (§3.5); `hanging` = the
+//   nodes that move down with a node (`LayoutOpts.hanging`).
 interface PackSets { held: Set<string>; noBump: Set<string>; placed: Set<string>; headY?: Map<string, number>; reflow?: boolean; movedOutputs?: Set<string>; wentUnder?: Set<string>; hanging?: Map<string, string[]> }
 
 const byId = (nodes: EngineNode[]) => new Map(nodes.map(n => [n.id, n] as const));
@@ -563,6 +565,7 @@ function layoutCall(input: EngineNode[], opts: LayoutOpts, recheck: boolean): Pa
   const nodes = clone(input);
   const map = byId(nodes);
   const movers = new Set(opts.moverIds ?? []);
+  const resized = new Set(opts.resized ?? []);
   const owners = outputOwners(nodes);
   const riders = opts.riders ?? new Map<string, string>();
   const hanging = opts.hanging ?? new Map<string, string[]>();
@@ -614,7 +617,7 @@ function layoutCall(input: EngineNode[], opts: LayoutOpts, recheck: boolean): Pa
     const outId = map.get(id)!.outputNodeId; if (outId) noBump.add(outId);
   }
   const wentUnder = new Set<string>();
-  const sets: PackSets = { held, noBump, placed: new Set(), movedOutputs: new Set([...movers].filter(id => owners.has(id))), wentUnder, hanging };
+  const sets: PackSets = { held, noBump, placed: new Set(), movedOutputs: new Set([...movers].filter(id => owners.has(id) && !resized.has(id))), wentUnder, hanging };
   const packed = new Set(pairs.filter(p => touched.has(p.column.x)));
   // - an output the operation placed or moved that lands on a member of a packed column at or right of
   //   it, held to no other column's row, moves that column right before it packs, by the overlap rounded
