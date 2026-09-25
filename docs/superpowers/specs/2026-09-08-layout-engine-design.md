@@ -334,7 +334,8 @@ the other one, and a second Reflow with the first map moves nothing.
 A node that is the target of an edge leaving the source's right border and entering the target's
 left border (a side the file leaves out counts as that border), with the source in a column strictly
 left of the target's, is anchored to the source's row: its y is the source's y, the way an output
-takes its code cell's y. The node types do not matter: a note, a file, a knowledge node, a code cell,
+takes its code cell's y. Since 2026-09-25 the edge also has to carry `keepRow: true` (see "Which
+edges hold" at the end of this section). The node types do not matter: a note, a file, a knowledge node, a code cell,
 as the source or as the target. Decided 2026-09-24 on H4, where the text note N27, connected from the
 code cell E18, was packed under E14 instead of taking E18's row; until then both ends had to be code
 cells. The exceptions:
@@ -689,9 +690,10 @@ nodes before and moves none now; on H2's S1 it moves 19 before and after (the sn
 on 192 at 76e4ec4 and 290 at 26cf0ab (the column merge of §3.4); with the snap of option b and the
 head rules on Reflow it is 30.
 
-Removing the edge releases the cell: the webview runs the engine for the target's column at once
-and the cell packs up to the first row it clears (E14 lifts to y 1100, under E15). Adding such an
-edge anchors the target at once (it moves onto the source's row; its old column re-packs).
+Removing an edge that holds its target releases the cell: the webview runs the engine for the
+target's column at once and the cell packs up to the first row it clears (E14 lifts to y 1100, under
+E15). Adding an edge moves nothing since 2026-09-25 ("Which edges hold", below). Before, adding such
+an edge anchored the target at once: it moved onto the source's row and its old column re-packed.
 
 **Bumps.** The engine does not move an anchored node inside the columns the operation packs. Anywhere
 else a bump treats it like any node: it can be pushed off its row (a sideways push takes its whole
@@ -832,14 +834,117 @@ The engine takes the anchoring as an input: `layoutSection(nodes, { riders, hang
 Map<sourceId, targetIds>`, computed by every caller from the canvas edges with the shared pure
 `ridersOf(nodes, edges)` and `hangingBelow(nodes, edges, draggedFrom?)` in `layoutEngine.ts`.
 Callers: the webview (`runEngine`, `runEngineAfterMove`, edge add/remove), the host
-(`layoutAround`), the MCP server (`applyEngine`, `canvas_add_edge`, `canvas_remove_edge`,
-`canvas_update_edge`). Two options come from the webview only: `draggedFrom` from
-`runEngineAfterMove` (a mouse drop or a keyboard step) and `resized` from the resize handler.
-Reflow takes no `hanging`: it packs every column.
+(`layoutAround`), the MCP server (`applyEngine`, `canvas_remove_edge`, `canvas_update_edge`). Two
+options come from the webview only: `draggedFrom` from `runEngineAfterMove` (a mouse drop or a
+keyboard step) and `resized` from the resize handler. Reflow takes no `hanging`: it packs every
+column.
 
-Every edge path that creates or drops an anchor runs the engine for the target: webview `onConnect`,
-`onConnectEnd`, `skena:nodesFromDrop`, keyboard connect/disconnect, edge delete; MCP
-`canvas_add_edge`, `canvas_remove_edge`, `canvas_update_edge`.
+Every edge path that drops a hold runs the engine for the target: webview edge delete, keyboard
+disconnect, a node delete, the input edge `onConnect` and `onConnectEnd` replace; MCP
+`canvas_remove_edge`, and `canvas_update_edge` when the new sides end the hold. A path that creates
+an edge runs no engine call for it (below).
+
+**Which edges hold: `keepRow` on the edge (decided by the user 2026-09-25 on H3).** Connecting two
+nodes never moves anything. A right-to-left edge holds its target on the source's row only when the
+edge carries `keepRow: true`. The field is stored on the edge object in the `.canvas` file
+(`CanvasEdge.keepRow`). `ridersOf` reads the field and the conditions above, nothing else: an edge
+with no `keepRow`, or with `keepRow: false`, holds nothing.
+
+Before, every such edge held its target, and drawing one moved the target onto the source's row at
+once. On H3 the user connected M1 to M6: M6 went from y 3100 to M1's row, 0, and N10 and E9 went
+200 down under it. `tests/fixtures/H3-M1M6.json` holds the four nodes of H3 that still show it
+(test 134). Now the edge gets `keepRow: false` and nothing moves.
+
+When holding moves nothing (`holdsInPlace`): the edges under test are read as `keepRow: true`, every
+other edge as stored. An edge passes when `ridersOf` then picks its source for the target, and a pack
+of the target's column (`layoutSection` with `columnX`, those holds and `hangingBelow` of the same
+edges) leaves the target's y where it is.
+
+On load (`markKeepRowOnLoad`): an edge the file stores with no `keepRow` gets `keepRow: true` when
+holding moves nothing. All such edges of a section are tested at once, so the pack sees every hold
+the engine read before this decision. An edge that has the field, `true` or `false`, is left alone.
+Nothing gets `false` on load: an edge that fails keeps no field and is tested again at the next
+load. No save runs for the marks; they reach the file with the next save.
+- The editor marks when it opens a canvas and when it reloads one from disk (`openedCanvas` in
+  `editor-provider.ts`), so the webview and the host's copy hold the same marks. On a reload, a mark
+  the editor holds and has not saved yet is kept for an edge the file stores without the field.
+- The MCP server marks on every read (`readCanvas` in `mcp/server.ts`). A tool that writes the file
+  writes the marks with it.
+
+At creation (`keepRowOf`): a new edge gets `keepRow: true` when holding moves nothing, the other
+edges read as stored, and `keepRow: false` otherwise. No engine call runs for the new edge. The paths:
+- webview: drag-connect (`onConnect`), a connection dropped on a node (`onConnectEnd`), the `c` key,
+  paste onto a node (`skena:nodesFromDrop`), and every node created with an edge
+  (`skena:addNodeResult`: Shift+hjkl, a connection dropped on empty canvas, a pinned output, a paste
+  beside the focused node, the host's add-node). A node created with its edge is still laid out as
+  the mover, as before; it keeps the source's row only when its edge got `keepRow: true`;
+- MCP: `canvas_add_edge`, and the edge of a `canvas_pin_output` that is not adopted as the cell's
+  output;
+- an input edge of a code cell that `onConnect` or `onConnectEnd` replaces still releases the node
+  it held, as a removed edge does.
+
+When an edge's sides change: MCP `canvas_update_edge` with a new `fromSide` or `toSide` tests the edge
+again, the same way. When the edge stops holding its target, the target's column packs, as when the
+edge is removed; when it starts, nothing moves. The webview has no path that changes an edge's sides.
+
+A held node the user drags far off its row keeps `keepRow: true`. The call after the drag puts it
+back on the source's row, as before (test 138).
+
+Tests 133 to 138 hold the rule. 56 of the 132 tests written before it fail without `keepRow: true`
+on their edges. Every right-to-left edge in them now carries it, and the fixture edges are all read
+as holding (`allHeld`), so they test the engine as before. 45 of the 132 fail when each edge is
+instead marked by the load rule the first time a call reads it. The 38 counted before this decision
+were counted by position alone: the target on the source's row, or one gap under the source's output
+on that row.
+
+Holds the load rule keeps on the fixtures, of those the engine read before: H1 7 of 7, H2 3 of 6,
+H3 8 of 8, H4 13 of 15, H5 3 of 3, H6 1 of 1; 35 of 40. H2 loses C14 held to N1, N4 to N3 and C2 to
+N7; H4 loses N7 held to N24 and N11 to N26 (test 136).
+
+Measured against 59da217, both engines given the same calls. The edges of every generated section and
+every fixture section get the load marks first; the engine at 59da217 reads every edge as holding.
+"Bad" is as above: capped, a new pair closer than a gap, or changed by a second call; the output
+generator also counts two boxes that intersect. "With a hold" = the calls whose section has at least
+one hold before the call, at 59da217 and now.
+
+| Calls | Count | With a hold | Bad at 59da217 | Bad now | Worse | Better |
+|---|---|---|---|---|---|---|
+| H1 to H6, every node as the only mover | 170 | 170 / 168 | 0 | 0 | 0 | 0 |
+| The reviewer's section generator, seeds 1 to 3000 | 7703 | 7703 / 610 | 191 | 71 | 26 | 146 |
+| The same with half the edges bottom to top | 4949 | 4356 / 400 | 125 | 61 | 21 | 85 |
+| Tidy trials, NMAX 6, EMAX 4 | 18589 | 17047 / 16995 | 63 | 59 | 1 | 5 |
+| Tidy trials, NMAX 10, EMAX 7 | 36528 | 34711 / 34600 | 172 | 163 | 4 | 13 |
+| Tidy trials, NMAX 10, EMAX 7, half the edges bottom to top | 25718 | 23377 / 23309 | 105 | 97 | 1 | 9 |
+| One code cell whose output is the only mover, at its slot | 34834 | 30067 / 2700 | 91 | 2 | 0 | 89 |
+| The same, the output dragged | 34834 | 30067 / 2700 | 64 | 2 | 2 | 64 |
+
+On the fixtures 20 of the 170 calls differ: 9 in H2 and 11 in H4, the two with holds lost. Reflow on
+the generator's 3000 sections: 0 leave two boxes intersecting and 0 leave a pair closer than a gap,
+before and after; a second Reflow changes 66 at 59da217 and 0 now. The section generator and the
+output generator put nodes at random rows, and the load rule marks few of their edges: a call there
+has a hold in 610 of 7703 and 2700 of 34834 calls now. The tidy trials start from a Reflow.
+
+Open (2026-09-25), the calls that got worse, none traced:
+- section generator (seed and mover): 328 E4, 328 N7, 404 E1, 404 OE1, 404 N5, 633 OE4, 819 E1,
+  819 OE1, 839 N5, 1027 OE5, 1183 N0, 1550 E0, 1585 N4, 1783 OE0, 1784 E4, 1785 OE5, 1841 E3,
+  2042 E2, 2042 N4, 2413 OE1, 2709 E2, 2762 N0, 2762 E5, 2791 N5, 2884 N4, 2988 E2;
+- the same with bottom-to-top edges: 69 N3, 211 N1, 211 E2, 213 E2, 404 E1, 404 OE1, 404 N5,
+  420 N1, 633 N1, 819 E1, 819 OE1, 947 OE6, 1027 OE5, 1684 N4, 1784 E4, 2084 E4, 2549 N1, 2549 E7,
+  2622 OE4, 2709 E2, 2791 N5;
+- tidy trials (seed, movers, drag): NMAX 6, EMAX 4: 2486, E2 and OE1, 200 right and 200 up. NMAX 10,
+  EMAX 7: 407, OE11 and N1, 900 right and 200 up; 1168, E0 and E9, 100 right and 300 down; 2148, E5
+  and N4, 400 right and 600 up; 2213, N5 and N2, 100 right and 300 down. With bottom-to-top edges:
+  1828, E5 and E1, 800 right and 500 down;
+- the output dragged: seeds 22932 and 106116.
+
+Other open items:
+- whether Obsidian keeps `keepRow` when it saves a canvas is not checked;
+- the load rule writes no `false`, so an edge that fails is tested again at every load and can pass
+  later, once its target sits where holding moves nothing;
+- a new connection that replaces a code cell's input edge still releases the node that edge held,
+  so that connection can move one node;
+- the AI companion's `add_note` in the host writes its edge with no `keepRow`. Read in the code, not
+  run: the reload from disk that follows marks it.
 
 ## 4. Reflow, MCP, undo, phases
 
