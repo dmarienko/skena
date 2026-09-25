@@ -34,7 +34,7 @@ import { NODE_SIZE, OUTPUT_MAX_W, OUTPUT_MAX_H } from '../../shared/constants';
 import { clampToOrigin } from '../../shared/bounds';
 import { applyLaneFit, deriveLanes, outputCellGeom, pinOutputToLane, pruneFoldedIds, sectionByRef, insertLaneAt, foldLane, unfoldLane, sectionTargetHeight, parkFirstLaneAtOrigin, memberCodeCellsInRunOrder, type SectionLane } from '../../shared/sectionLanes';
 import { resolveCellKernel, cellKernelView, kernelById, upstreamCellsForRun, resolveKernelCellsInCanvas, type KernelLike } from '../../shared/kernelBinding';
-import { layoutSection, reflowSection, insertAfter, forkOf, placeOutput, applyPatchesToCanvas, columnsOfDeleted, ridersOf, sectionEngineNodes, sectionMembership, toEngineNodes, codeCellHeight, estimateCodeNeedPx } from '../../shared/layoutEngine';
+import { layoutSection, reflowSection, insertAfter, forkOf, placeOutput, applyPatchesToCanvas, columnsOfDeleted, ridersOf, hangingBelow, sectionEngineNodes, sectionMembership, toEngineNodes, codeCellHeight, estimateCodeNeedPx } from '../../shared/layoutEngine';
 import { resolveKernelConfig, type KernelServerConfig } from '../jupyter/config';
 import { executeCell, startKernel, shutdownKernel } from '../jupyter/client';
 import { renderOutput, hasVisibleOutput } from '../jupyter/output';
@@ -368,8 +368,9 @@ function applyEngine(d: CanvasData, movers: string[], holes: { sectionId: string
 
   for (const job of jobs) {
     const members = toEngineNodes(d.nodes.filter(n => job.members.has(n.id)));
-    // - the cells a sequence edge holds on another cell's row (§3.5), as the webview reads them
-    const patches = layoutSection(members, { moverIds: job.moverIds, columnX: job.columnX, riders: ridersOf(members, d.edges), report });
+    // - the cells a sequence edge holds on another cell's row, and the nodes hanging below another node
+    //   (§3.5), as the webview reads them
+    const patches = layoutSection(members, { moverIds: job.moverIds, columnX: job.columnX, riders: ridersOf(members, d.edges), hanging: hangingBelow(members, d.edges), report });
     if (Object.keys(patches).length === 0) continue;
     d.nodes = applyPatchesToCanvas(d.nodes, patches);
   }

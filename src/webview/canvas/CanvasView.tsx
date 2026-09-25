@@ -64,7 +64,7 @@ import { G_BADGES_ATTR, gChordStep } from './gChord';
 import { SectionRail, type RailKernel } from '../rail/SectionRail';
 import { fmtDateTime } from '../rail/RailSegment';
 import { allFolded, deriveLanes, fitLanes, groupIdsByLane, sortLanes, insertLaneAt, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
-import { applyPatchesToCanvas, codeCellHeight, columnsOfDeleted as columnsOfDeletedIn, forkOf, insertAfter, layoutSection, reflowSection, ridersOf, sectionEngineNodes, sectionMembership, type EngineNode, type LayoutOpts, type Patches } from '../../shared/layoutEngine';
+import { applyPatchesToCanvas, codeCellHeight, columnsOfDeleted as columnsOfDeletedIn, forkOf, hangingBelow, insertAfter, layoutSection, reflowSection, ridersOf, sectionEngineNodes, sectionMembership, type EngineNode, type LayoutOpts, type Patches } from '../../shared/layoutEngine';
 import { useLaneFit, flowGeom } from '../rail/useLaneFit';
 import { connectionLabels, findNearestNode, focusAfterDelete, revealPan, type ConnectionLabel, type EdgeSideContext, type NavDir, type NavNode, type Rect } from './spatialNav';
 import { CanvasSearch } from './CanvasSearch';
@@ -994,9 +994,11 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     // - a section too dense for the bump walk to clear leaves overlaps behind: say so, as the MCP
     //   replies do, rather than leaving the user to find them
     const report: { capped?: boolean } = {};
-    // - the cells a sequence edge holds on another cell's row (§3.5), read off the live edges
+    // - the cells a sequence edge holds on another cell's row, and the nodes hanging below another
+    //   node (§3.5), read off the live edges; the latter as they stood before a drag
     const riders = ridersOf(engineNodes, canvasRef.current.edges);
-    const patches = opts.reflow ? reflowSection(engineNodes, { riders }) : layoutSection(engineNodes, { ...opts, riders, report });
+    const hanging = hangingBelow(engineNodes, canvasRef.current.edges, opts.draggedFrom);
+    const patches = opts.reflow ? reflowSection(engineNodes, { riders }) : layoutSection(engineNodes, { ...opts, riders, hanging, report });
     if (report.capped) {
       const sectionId = anchor.sectionId ?? deriveLanes(canvasRef.current.nodes, canvasRef.current.metadata?.sections ?? [])
         .find(l => anchor.nodeId !== undefined && l.memberIds.includes(anchor.nodeId))?.id ?? '';
@@ -1020,15 +1022,16 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
    * the engine runs in the section their NEW y puts them in: a node moved into another section
    * changes section on purpose, so nothing pins it to the one it left.
    * A moved set spanning two sections runs the engine once per section, each with its own movers.
+   * `from` = where the moved nodes sat before the move: the nodes hanging below one moved down follow it.
    * No history entry here: the drag start / the key press already pushed one for the whole move.
    */
-  const runEngineAfterMove = useCallback((movedIds: Iterable<string>, grabbedId?: string) => {
+  const runEngineAfterMove = useCallback((movedIds: Iterable<string>, from: Map<string, { x: number; y: number }>, grabbedId?: string) => {
     const lanes = deriveLanes(canvasRef.current.nodes, canvasRef.current.metadata?.sections ?? []);
     const groups = groupIdsByLane(lanes, movedIds);
     for (const moverIds of groups.values()) {
       // - the grabbed node names its own section; the other groups are named by any mover in them
       const grabbed = grabbedId !== undefined && moverIds.includes(grabbedId) ? grabbedId : moverIds[0];
-      runEngine({ nodeId: grabbed }, { moverIds });
+      runEngine({ nodeId: grabbed }, { moverIds, draggedFrom: from });
     }
   }, [runEngine]);
 
@@ -1361,7 +1364,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     scheduleSave();
     // - the drop may land on another node: the engine clears the overlap, in the section the drop
     //   position falls in
-    runEngineAfterMove(followers.size === 0 ? moved : new Set([...moved, ...followers.keys()]), node.id);
+    const all = followers.size === 0 ? moved : new Set([...moved, ...followers.keys()]);
+    const from = new Map([...all].flatMap(id => { const was = before.get(id); return was ? [[id, { x: was.x, y: was.y }] as const] : []; }));
+    runEngineAfterMove(all, from, node.id);
   }, [scheduleSave, runEngineAfterMove, setNodes]);
 
   const onNodeDragStart = useCallback(() => {
@@ -2913,6 +2918,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
             const p = at.get(n.id);
             return p ? { ...n, position: p } : n;
           }));
+          const from = new Map(canvasRef.current.nodes.filter(cn => at.has(cn.id)).map(cn => [cn.id, { x: cn.x, y: cn.y }] as const));
           canvasRef.current = {
             ...canvasRef.current,
             nodes: canvasRef.current.nodes.map(cn => {
@@ -2922,7 +2928,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           };
           scheduleSave();
           // - same as a mouse drop: the step may land on another node, and the engine clears it
-          runEngineAfterMove(new Set(at.keys()));
+          runEngineAfterMove(new Set(at.keys()), from);
           return;
         }
 
@@ -3378,7 +3384,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       //   resized free node pushes only what it now covers
       // - a code cell resized by hand keeps the height set here until its text changes again: the
       //   next edit reports what it needs and skena:codeHeight sizes it from that.
-      runEngine({ nodeId: id }, { moverIds: [id] });
+      // - `resized`: an output grown by hand pushes what it lands on down, as any node does (§3.5)
+      runEngine({ nodeId: id }, { moverIds: [id], resized: [id] });
     };
     window.addEventListener('skena:nodeResize', handler);
     return () => window.removeEventListener('skena:nodeResize', handler);
