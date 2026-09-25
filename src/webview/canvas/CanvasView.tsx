@@ -64,7 +64,7 @@ import { G_BADGES_ATTR, gChordStep } from './gChord';
 import { SectionRail, type RailKernel } from '../rail/SectionRail';
 import { fmtDateTime } from '../rail/RailSegment';
 import { allFolded, deriveLanes, fitLanes, groupIdsByLane, sortLanes, insertLaneAt, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
-import { applyPatchesToCanvas, codeCellHeight, columnsOfDeleted as columnsOfDeletedIn, forkOf, hangingBelow, insertAfter, layoutSection, reflowSection, ridersOf, sectionEngineNodes, sectionMembership, type EngineNode, type LayoutOpts, type Patches } from '../../shared/layoutEngine';
+import { applyPatchesToCanvas, codeCellHeight, columnsOfDeleted as columnsOfDeletedIn, forkOf, hangingBelow, insertAfter, keepRowOf, layoutSection, reflowSection, ridersOf, sectionEngineNodes, sectionMembership, toEngineNodes, type EngineNode, type LayoutOpts, type Patches } from '../../shared/layoutEngine';
 import { useLaneFit, flowGeom } from '../rail/useLaneFit';
 import { connectionLabels, findNearestNode, focusAfterDelete, revealPan, type ConnectionLabel, type EdgeSideContext, type NavDir, type NavNode, type Rect } from './spatialNav';
 import { CanvasSearch } from './CanvasSearch';
@@ -1054,6 +1054,17 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     for (const id of ids) runEngine({ nodeId: id }, { moverIds: [id] });
   }, [runEngine]);
 
+  /**
+   * `edge` with the `keepRow` a new edge gets (§3.5): true only where holding its target on the
+   * source's row moves nothing, so connecting two nodes never moves one. `edges` = the canvas's edges
+   * once this one is in. `section` names the section to read when the target is a node just created
+   * from another one; by default it is the target's own.
+   */
+  const withKeepRow = useCallback((edge: CanvasEdge, edges: CanvasEdge[], section?: { nodeId: string; extraIds: string[] }): CanvasEdge => {
+    const nodes = engineNodesOf({ nodeId: section?.nodeId ?? edge.toNode }, section?.extraIds) ?? toEngineNodes(canvasRef.current.nodes);
+    return { ...edge, keepRow: keepRowOf(nodes, edges, edge) };
+  }, [engineNodesOf]);
+
   // - a delete leaves a hole nothing moved into: read, BEFORE the removal, which column of which
   //   section each doomed cell sat in so the engine can close it after
   const columnsOfDeleted = useCallback((deletedIds: Set<string>) =>
@@ -1425,17 +1436,16 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           .map(e => e.id),
       );
     }
-    // - a sequence edge right → left anchors its target on the source's row, and the input edge it
-    //   replaces released one: read both while the old edges are still there (§3.5)
-    const held = anchoredBy([...canvasRef.current.edges.filter(e => staleIds.has(e.id)), newEdge]);
-    setEdges(eds => addEdge(toFlowEdge(newEdge), eds.filter(e => !staleIds.has(e.id))));
-    canvasRef.current = {
-      ...canvasRef.current,
-      edges: [...canvasRef.current.edges.filter(e => !staleIds.has(e.id)), newEdge],
-    };
+    // - the input edge this one replaces may have held a node, which packs up once it is gone: read it
+    //   while the old edge is still there (§3.5). The new edge itself moves nothing.
+    const released = anchoredBy(canvasRef.current.edges.filter(e => staleIds.has(e.id)));
+    const kept = canvasRef.current.edges.filter(e => !staleIds.has(e.id));
+    const edge = withKeepRow(newEdge, [...kept, newEdge]);
+    setEdges(eds => addEdge(toFlowEdge(edge), eds.filter(e => !staleIds.has(e.id))));
+    canvasRef.current = { ...canvasRef.current, edges: [...kept, edge] };
     scheduleSave();
-    runEngineForCells(held);
-  }, [setEdges, scheduleSave, pushHistory, anchoredBy, runEngineForCells]);
+    runEngineForCells(released);
+  }, [setEdges, scheduleSave, pushHistory, anchoredBy, runEngineForCells, withKeepRow]);
 
   // - drop connection on node body (not on a specific handle) → connect to nearest side
   const onConnectEnd: OnConnectEnd = useCallback((event, connectionState) => {
@@ -1512,18 +1522,16 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           .map(e => e.id),
       );
     }
-    // - the same read as onConnect: this edge may anchor its target on the source's row, and the
-    //   input edge it replaces may release one — both read while the old edges are still there (§3.5)
-    const held = anchoredBy([...canvasRef.current.edges.filter(e => staleIds.has(e.id)), newEdge]);
+    // - as in onConnect: the replaced input edge may release a node, the new edge moves nothing (§3.5)
+    const released = anchoredBy(canvasRef.current.edges.filter(e => staleIds.has(e.id)));
+    const kept = canvasRef.current.edges.filter(e => !staleIds.has(e.id));
+    const edge = withKeepRow(newEdge, [...kept, newEdge]);
     pushHistory();
-    setEdges(eds => addEdge(toFlowEdge(newEdge), eds.filter(e => !staleIds.has(e.id))));
-    canvasRef.current = {
-      ...canvasRef.current,
-      edges: [...canvasRef.current.edges.filter(e => !staleIds.has(e.id)), newEdge],
-    };
+    setEdges(eds => addEdge(toFlowEdge(edge), eds.filter(e => !staleIds.has(e.id))));
+    canvasRef.current = { ...canvasRef.current, edges: [...kept, edge] };
     scheduleSave();
-    runEngineForCells(held);
-  }, [setEdges, scheduleSave, pushHistory, screenToFlowPosition, anchoredBy, runEngineForCells]);
+    runEngineForCells(released);
+  }, [setEdges, scheduleSave, pushHistory, screenToFlowPosition, anchoredBy, runEngineForCells, withKeepRow]);
 
   const onNodesDelete = useCallback((deleted: Node[]) => {
     pushHistory();
@@ -1678,27 +1686,23 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       });
       // - paste-to-node: arrow from source node to each new node (skip if source vanished)
       const sourceExists = connectTo && canvasRef.current.nodes.some(n => n.id === connectTo);
-      const newEdges: CanvasEdge[] = sourceExists
-        ? labelled.map((cn, i) => ({
-            id:       `edge-paste-${Date.now()}-${i}`,
-            fromNode: connectTo,
-            fromSide: 'right' as NodeSide,
-            toNode:   cn.id,
-            toSide:   'left' as NodeSide,
-            toEnd:    'arrow' as const,
-          }))
-        : [];
+      const newEdges: CanvasEdge[] = [];
+      if (sourceExists) labelled.forEach((cn, i) => {
+        const e: CanvasEdge = { id: `edge-paste-${Date.now()}-${i}`, fromNode: connectTo, fromSide: 'right', toNode: cn.id, toSide: 'left', toEnd: 'arrow' };
+        newEdges.push(withKeepRow(e, [...canvasRef.current.edges, ...newEdges, e]));
+      });
       if (newEdges.length > 0) {
         setEdges(eds => [...eds, ...newEdges.map(toFlowEdge)]);
         canvasRef.current = { ...canvasRef.current, edges: [...canvasRef.current.edges, ...newEdges] };
       }
       scheduleSave();
-      // - these are right → left edges: one onto a code cell holds it on the source's row (§3.5)
-      runEngineForCells(anchoredBy(newEdges));
+      // - the new nodes are placed by the engine, each as the mover: the ones a right → left edge from
+      //   the source could hold, whether or not it does (§3.5)
+      runEngineForCells(anchoredBy(newEdges.map(e => ({ ...e, keepRow: true }))));
     };
     window.addEventListener('skena:nodesFromDrop', handler);
     return () => window.removeEventListener('skena:nodesFromDrop', handler);
-  }, [setNodes, setEdges, scheduleSave, pushHistory, anchoredBy, runEngineForCells]);
+  }, [setNodes, setEdges, scheduleSave, pushHistory, anchoredBy, runEngineForCells, withKeepRow]);
 
   // ─── keyboard navigation between nodes (hjkl / arrow keys) ──────────────────
 
@@ -3198,11 +3202,10 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
             toSide,
             toEnd:    'arrow',
           };
-          const held = anchoredBy([newEdge]);
-          setEdges(eds => addEdge(toFlowEdge(newEdge), eds));
-          canvasRef.current = { ...canvasRef.current, edges: [...canvasRef.current.edges, newEdge] };
+          const edge = withKeepRow(newEdge, [...canvasRef.current.edges, newEdge]);
+          setEdges(eds => addEdge(toFlowEdge(edge), eds));
+          canvasRef.current = { ...canvasRef.current, edges: [...canvasRef.current.edges, edge] };
           scheduleSave();
-          runEngineForCells(held);
           return;
         }
       }
@@ -3292,7 +3295,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       window.removeEventListener('keydown', handler);
       window.removeEventListener('keydown', panCapture, { capture: true });
     };
-  }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, closeKnowledge, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToRegister, engineNodesOf, runEngineAfterMove, anchoredBy, runEngineForCells, canvasPath, closeG]); // - nodesRef + spaceSelectedRef carry live state
+  }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, closeKnowledge, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToRegister, engineNodesOf, runEngineAfterMove, anchoredBy, runEngineForCells, withKeepRow, canvasPath, closeG]); // - nodesRef + spaceSelectedRef carry live state
 
   // - expose a viewport snapshot for the AI companion (what the user actually sees:
   // - zoom, on-screen node labels, scroll position within the focused node)
@@ -3691,12 +3694,16 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         if (pinnedLanes !== lanes0) commitLanes(pinnedLanes);
       }
 
-      // - add connecting edge if present (Shift+hjkl case)
+      // - add connecting edge if present (Shift+hjkl case), with the `keepRow` a new edge gets, read
+      //   with the new node where it was placed and in the section the engine lays it out in
       if (ce) {
-        setEdges(eds => addEdge(toFlowEdge(ce), eds));
+        const edge = ce.keepRow === undefined
+          ? withKeepRow(ce, [...canvasRef.current.edges, ce], { nodeId: anchor ?? cn.id, extraIds: anchor ? [cn.id] : [] })
+          : ce;
+        setEdges(eds => addEdge(toFlowEdge(edge), eds));
         canvasRef.current = {
           ...canvasRef.current,
-          edges: [...canvasRef.current.edges, ce],
+          edges: [...canvasRef.current.edges, edge],
         };
       }
 
@@ -3722,7 +3729,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
     window.addEventListener('skena:addNodeResult', handler);
     return () => window.removeEventListener('skena:addNodeResult', handler);
-  }, [setNodes, setEdges, scheduleSave, focusNodeById, revealNode, pushHistory, commitLanes, runEngine]);
+  }, [setNodes, setEdges, scheduleSave, focusNodeById, revealNode, pushHistory, commitLanes, runEngine, withKeepRow]);
 
   // ─── helper: place a new CellNode at viewport centre ─────────────────────────
 

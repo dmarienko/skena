@@ -77,7 +77,21 @@ import { parseNodeRef } from '../shared/nodeRef';
 import { MAX_FILE_FULL_BYTES, MAX_FILE_PREVIEW_BYTES, MAX_NOTEBOOK_BYTES, NODE_SIZE } from '../shared/constants';
 import { normalizeCanvasToOrigin } from '../shared/bounds';
 import { migrateSections, memberCodeCellsInRunOrder, applyLaneFit, outputCellGeom, pinOutputToLane } from '../shared/sectionLanes';
-import { layoutSection, placeOutput, applyPatchesToCanvas, ridersOf, hangingBelow, sectionEngineNodes, sectionMembership, type LayoutOpts } from '../shared/layoutEngine';
+import { layoutSection, placeOutput, applyPatchesToCanvas, ridersOf, hangingBelow, sectionEngineNodes, sectionMembership, markKeepRowOnLoad, type LayoutOpts } from '../shared/layoutEngine';
+
+/**
+ * A canvas as the editor opens it from disk: lifted to the origin, sections seeded, and an edge the
+ * file stores with no `keepRow` marked where holding its target moves nothing (§3.5). Nothing is
+ * written here; the marks reach the file with the next save. `was` = the canvas the editor held before
+ * a reload: a mark it holds and has not saved yet stays.
+ */
+function openedCanvas(raw: CanvasData, was?: CanvasData): CanvasData {
+  const canvas = normalizeCanvasToOrigin(migrateSections(raw, Date.now()));
+  const held = new Map((was?.edges ?? []).filter(e => e.keepRow !== undefined).map(e => [e.id, e.keepRow] as const));
+  const stored = held.size ? canvas.edges.map(e => (e.keepRow === undefined && held.has(e.id) ? { ...e, keepRow: held.get(e.id) } : e)) : canvas.edges;
+  const edges = markKeepRowOnLoad(canvas.nodes, canvas.metadata?.sections ?? [], stored);
+  return edges === canvas.edges ? canvas : { ...canvas, edges };
+}
 
 // - where a run's output cell goes: its pair's output column, its code cell's y. The fallback covers
 //   a canvas with no sections; a code cell inside one is always in a column, so it cannot miss there.
@@ -268,7 +282,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
               readCanvas(document.uri.fsPath),
               vscode.env.clipboard.readText(),
             ]);
-            const canvas = normalizeCanvasToOrigin(migrateSections(rawCanvas, Date.now()));
+            const canvas = openedCanvas(rawCanvas);
             document.updateFromDisk(canvas);
             // - knowledge nodes already on the canvas refresh on open, so the providers exist
             //   before the webview has the canvas — not only once the dialog asks for the list.
@@ -646,7 +660,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     // - mounts the one new node (React Flow diffs by id) instead of remounting all.
     const reloadFromDisk = async () => {
       try {
-        const canvas = normalizeCanvasToOrigin(migrateSections(await readCanvas(document.uri.fsPath), Date.now()));
+        const canvas = openedCanvas(await readCanvas(document.uri.fsPath), document.canvas);
         document.updateFromDisk(canvas);
         send({ type: 'canvasLoaded', canvas, canvasPath: document.uri.fsPath });
         // - covers the rare race where a pending cross-canvas focus arrived before this
