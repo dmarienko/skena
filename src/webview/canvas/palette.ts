@@ -42,6 +42,9 @@ export function nodeBorderColor(type: string | undefined, accentColor?: string):
   return accentColor ?? DEFAULT_NODE_BORDER_BY_TYPE[type as keyof typeof DEFAULT_NODE_BORDER_BY_TYPE];
 }
 
+// - a code node's border on a `g` preview card: the default above is too dark on the card background
+export const CARD_CODE_BORDER = '#3fb27f';
+
 // ─── connection handles (the square ports on node edges) ────────────────────────
 export const HANDLE_RGB = '0, 229, 255';   // - cyan; used as bg 0.06 / border 0.75 / glow 0.25
 
