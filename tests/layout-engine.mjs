@@ -2115,3 +2115,51 @@ test('a new output on a member that reaches into the next column moves that memb
   assert.equal(overlapCount(after), 0);
   assert.deepEqual(layoutSection(after, { moverIds: ['O'], riders: ridersOf(after, edges), hanging: hangingBelow(after, edges) }), {});
 });
+
+// 129
+test('which node is held to which is read from where the nodes are now, also after a drag', () => {
+  // - D is dragged from (1600, 1400), in S's column, to (1300, 1800). Now S is held to D's row and D to
+  //   R's, and R sits under T, which hangs below S: T would carry R, R would carry D and S, and S would
+  //   carry T again. The pair S, T is left out, so S only goes to D's row and one gap under D, 2200.
+  //   Before, T and R went 2200 down with S, and a second call moved S and D again.
+  const nodes = [note('S', 1600, 0, 750, 300), note('T', 800, 800, 1500, 500), note('R', 800, 1400, 700, 300), note('D', 1300, 1800, 700, 300)];
+  const edges = [edgeDown('S', 'T'), edgeTo('D', 'S'), edgeTo('R', 'D')];
+  const draggedFrom = new Map([['D', { x: 1600, y: 1400 }]]);
+  assert.deepEqual([...hangingBelow(nodes, edges, draggedFrom)], []);
+  const patches = layoutSection(nodes, { moverIds: ['D'], draggedFrom, riders: ridersOf(nodes, edges), hanging: hangingBelow(nodes, edges, draggedFrom) });
+  assert.deepEqual(patches, { S: { x: 1600, y: 2200 } });
+  const after = apply(nodes, patches);
+  assert.deepEqual(layoutSection(after, { moverIds: ['D'], riders: ridersOf(after, edges), hanging: hangingBelow(after, edges) }), {});
+});
+
+// 130
+test('a node does not pack around what sits under a node hanging below it: those follow it down', () => {
+  // - A grows from 300 to 700, and the pack moves W 400 down, onto U, which sits under T in column 800.
+  //   T and U follow W, 400 down. Before, W packed under U, to 1200, T and U followed it 800 down, and
+  //   a second call moved W back up to 800.
+  const nodes = [code('A', 0, 0, 700), note('W', 0, 400, 1500, 100), note('T', 800, 600, 700, 100), note('U', 800, 800, 700, 300)];
+  settles(nodes, [edgeDown('W', 'T')], ['A'], { W: { x: 0, y: 800 }, T: { x: 800, y: 1000 }, U: { x: 800, y: 1200 } });
+});
+
+// 131
+test('a node held to a node that follows a drag takes the new row of that node in the same call', () => {
+  // - S and H are dragged 200 down together. T hangs below S and follows it, 400 to 600; H is held to
+  //   T's row and keeps 600. Before, the call packed H back on T's old row, 400, and a second call
+  //   moved it to 600.
+  const nodes = [note('S', 800, 200, 700, 100), note('T', 0, 400, 1500, 100), note('H', 1600, 600, 700, 300)];
+  const edges = [edgeDown('S', 'T'), edgeTo('T', 'H')];
+  const draggedFrom = new Map([['S', { x: 800, y: 0 }], ['H', { x: 1600, y: 400 }]]);
+  const patches = layoutSection(nodes, { moverIds: ['S', 'H'], draggedFrom, riders: ridersOf(nodes, edges), hanging: hangingBelow(nodes, edges, draggedFrom) });
+  assert.deepEqual(patches, { T: { x: 0, y: 600 } });
+  const after = apply(nodes, patches);
+  assert.deepEqual(layoutSection(after, { moverIds: ['S', 'H'], riders: ridersOf(after, edges), hanging: hangingBelow(after, edges) }), {});
+});
+
+// 132
+test('the nodes hanging below a node that gives way to a node above it do not follow it down', () => {
+  // - S is held to P's row, 400. X sits above S and across it, so S gives way, 300 down, in every call:
+  //   the pack puts it back on P's row first. T, hanging below S, moves only the 100 it needs to clear
+  //   S. Before, T went 300 down with S in every call.
+  const nodes = [note('P', 0, 400, 700, 300), note('S', 800, 400, 800, 100), note('X', 1000, 300, 700, 300), note('T', 900, 800, 700, 300)];
+  settles(nodes, [edgeTo('P', 'S'), edgeDown('S', 'T')], ['S'], { S: { x: 800, y: 700 }, T: { x: 900, y: 900 } });
+});

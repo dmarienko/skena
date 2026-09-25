@@ -123,14 +123,16 @@ export function ridersOf(nodes: EngineNode[], edges: { fromNode: string; toNode:
  * the chain, to the target or to a node under the target in its column: the source would then follow
  * the target's row while the target follows the source down.
  * `draggedFrom` (the call's `LayoutOpts.draggedFrom`) puts the dragged nodes back where they were, so
- * the map is the one from before the drag: a node dragged down onto or past a node hanging below it
- * still takes that node along.
+ * the edges are read as they stood before the drag: a node dragged down onto or past a node hanging
+ * below it still takes that node along. Which node is held to which stays read from where the nodes
+ * are now, as the call reads it.
  */
 export function hangingBelow(input: EngineNode[], edges: { fromNode: string; toNode: string; fromSide?: string; toSide?: string }[], draggedFrom?: Map<string, { x: number; y: number }>): Map<string, string[]> {
   const nodes = draggedFrom ? input.map(n => { const was = draggedFrom.get(n.id); return was ? { ...n, x: was.x, y: was.y } : n; }) : input;
   const map = byId(nodes);
+  const now = byId(input);
   const owners = outputOwners(nodes);
-  const riders = ridersOf(nodes, edges);
+  const riders = ridersOf(input, edges);
   const out = new Map<string, string[]>();
   for (const e of edges) {
     if (e.fromSide !== 'bottom' || e.toSide !== 'top') continue;
@@ -139,7 +141,8 @@ export function hangingBelow(input: EngineNode[], edges: { fromNode: string; toN
     if (!from || !to || !isMember(to, owners) || to.type === 'group' || from.type === 'kernel' || from.type === 'group') continue;
     if (snapGrid(from.x) === snapGrid(to.x) || to.y < from.y + from.h) continue;
     if (from.x >= to.x + to.w || to.x >= from.x + from.w) continue;
-    const under = nodes.filter(n => isMember(n, owners) && snapGrid(n.x) === snapGrid(to.x) && n.y >= to.y);
+    const at = now.get(to.id)!;
+    const under = input.filter(n => isMember(n, owners) && snapGrid(n.x) === snapGrid(at.x) && n.y >= at.y);
     if (under.some(n => sourceOf(n.id, from.id, riders))) continue;
     const list = out.get(from.id) ?? [];
     if (!list.includes(to.id)) list.push(to.id);
@@ -371,11 +374,16 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
     // - a member clears what no bump will move by a gap on either side, and a plain member packs
     //   around the riders of other packed columns too. A held member does not: those riders go under
     //   it. No member packs around its own rider.
-    // - nor around a node hanging below it (§3.5): that node follows it down, or packs under it in its
-    //   own packed column. One held to another node's row keeps that row, so the member packs around it.
+    // - nor around a node hanging below it, or what sits under that node in its column (§3.5): they
+    //   follow it down, or pack under it in their own packed column. One held to another node's row
+    //   keeps that row, so the member packs around it.
     const isHeld = held.has(cell.id);
-    const below = (sets.hanging?.get(cell.id) ?? []).filter(id => !others.has(id));
-    const keep = (o: EngineNode) => riders.get(o.id) !== cell.id && !below.includes(o.id) && !(isHeld && others.has(o.id));
+    const below = new Set<string>();
+    for (const id of sets.hanging?.get(cell.id) ?? []) {
+      const t = map.get(id);
+      if (t && !others.has(id)) for (const n of bumpGroup(t, nodes, owners, map, true)) if (!others.has(n.id)) below.add(n.id);
+    }
+    const keep = (o: EngineNode) => riders.get(o.id) !== cell.id && !below.has(o.id) && !(isHeld && others.has(o.id));
     // - the head keeps its own y against a node a bump can still move (§3.4), and starts from `headY`
     //   each round, so it comes back up once what it cleared has moved on
     // - on Reflow the head clears obstacles like a stacked member: no bump runs after this pack
@@ -535,7 +543,9 @@ function resolveBumps(nodes: EngineNode[], owners: Map<string, string>, riders: 
     //   takes them, and their outputs, with the source. In a column this call did not pack, such a
     //   node is otherwise a plain node here: a bump can push it off the row it is anchored to.
     if (sideways) for (const n of column) { n.x += dx; active.add(n.id); }
-    else if (yields) for (const n of withRiders(bumpGroup(mover, nodes, owners, map, true), nodes, owners, riders, hanging, map, pinned, other)) { n.y += drop; active.add(n.id); }
+    // - the nodes hanging below a node that yields stay: a pack puts that node back up on its row in the
+    //   next turn or the next call, and they would go down again with every yield
+    else if (yields) for (const n of withRiders(bumpGroup(mover, nodes, owners, map, true), nodes, owners, riders, new Map(), map, pinned, other)) { n.y += drop; active.add(n.id); }
     else {
       const group = bumpGroup(other, nodes, owners, map, true).filter(n => !pinned.has(n.id) && !held.has(n.id));
       for (const n of withRiders(group, nodes, owners, riders, hanging, map, pinned, mover).filter(n => !held.has(n.id))) { n.y += dy; active.add(n.id); }
@@ -724,9 +734,11 @@ function layoutCall(input: EngineNode[], opts: LayoutOpts, recheck: boolean): Pa
   for (let pass = 0; pass < 4 && !settled; pass++) {
     const was = new Map(nodes.map(n => [n.id, (pass === 0 ? opts.draggedFrom?.get(n.id)?.y : undefined) ?? n.y] as const));
     const moved = packRounds();
+    // - read before the follow: a node that follows can be the source of a held node in a packed
+    //   column, which the next turn's packs put back on that source's row
+    const at = positions();
     follow(was, moved);
     if (pass > 0 && Object.keys(moved).length === 0) { settled = true; break; }
-    const at = positions();
     const report: { capped?: boolean } = {};
     resolveBumps(nodes, owners, riders, pinned, placed, held, new Set([...movers, ...Object.keys(moved)]), sets.movedOutputs!, hanging, { report, maxSteps: opts.maxSteps });
     if (report.capped) { if (opts.report) opts.report.capped = true; if (pass === 0) settled = true; break; }
