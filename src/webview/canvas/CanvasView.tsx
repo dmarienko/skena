@@ -1637,8 +1637,11 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
 
-    // - VS Code Explorer drops files as text/uri-list
-    const uriList = e.dataTransfer.getData('text/uri-list');
+    // - VS Code Explorer puts the full drop in application/vnd.code.uri-list (same \r\n-joined
+    // - uri-list format); text/uri-list itself carries only the first entry, a Chromium
+    // - workaround VS Code applies on every drag (src/vs/workbench/browser/dnd.ts). Fall back to
+    // - text/uri-list for a non-VS-Code drag source.
+    const uriList = e.dataTransfer.getData('application/vnd.code.uri-list') || e.dataTransfer.getData('text/uri-list');
     if (!uriList?.trim()) return;
 
     const uris = uriList
