@@ -78,8 +78,9 @@ One algorithm behind every row of §2, run per section:
    **A node above the mover never moves past it** — a column keeps its order:
    it steps aside, or **the mover yields downward** when that is the smaller move (or when there is
    nowhere to step aside), taking what sits under it in its own column; that is the one case where a
-   mover moves, and only a node the operation itself placed yields — a cell the pack has just laid
-   out keeps its place. A sideways move takes the node's whole **column** with it — every node in the
+   mover moves. A node the operation itself placed yields (a mover, or the other half of its pair),
+   and since 2026-09-25 so does a cell pinned only because this call packs its column (below); a held
+   node keeps its place. A sideways move takes the node's whole **column** with it — every node in the
    section that shares its snapped x, outputs riding with their code cells, so columns stay aligned;
    a downward move takes the node and everything below it in its column. Moved nodes are checked
    again, so a bump can cascade, but only through real overlaps and only by overlap amounts — never
@@ -135,6 +136,21 @@ One algorithm behind every row of §2, run per section:
    capped. At 4a9f3db the same walk ran, and a code column that moved sideways took one of its nodes
    out of it.
 
+   **A cell pinned by the pack gives way to a node above it (decided by the user 2026-09-25 on H3).**
+   When a bump would push a node down past the node below it, and that node below is pinned only
+   because this call packs its column — not a mover, not the other half of a mover's pair, not held
+   (§3.5) — the node below gives way instead. It drops by the overlap, with what sits under it in its
+   own column, as a mover does. As for a mover, when the node above can step aside by a smaller move,
+   it steps aside instead. A node that gives way never takes along the node it gives way to,
+   even when that node is held to its row (§3.5): that node would land on it again. Before, only a node
+   the operation placed gave way, and the node above went down past the packed cell. The user chose
+   this over letting every node that is not held give way, pinned or not.
+   Example (test 123, H3 reduced to six nodes): C5, E1's output, grows from 300 to 400 tall and reaches
+   N10 (2300 wide), which goes 100 down, onto E3 at (4100, 1000). E3's column is packed because C3,
+   held to N8 in E1's column, is in it. E3 gives way to 1100 and N10 stays at 900. At 1060d24 N10 went
+   past E3, to 1400. The whole H3 result is under "A node hanging below a node of another column"
+   (§3.5).
+
    **Packs and bumps take turns (2026-09-24).** After the bumps, the packed columns are packed again
    on the new rows, then the bumps run again, until a turn moves nothing, at most 4 turns; a capped
    walk still ends the call. A bump can move a node a pack read: a mover that yields below a node
@@ -178,9 +194,11 @@ One algorithm behind every row of §2, run per section:
    - **no move carries the node doing the bumping**: a column does not slide while that node (or a
      cell the pack just laid out) sits in it, and the group that goes down leaves that node, and its
      pair partner, where they are. Carried along, it would keep the overlap exactly as it was;
-   - the **column the pack just laid out is never bumped** (the pack owns its geometry, so the two
-     cannot fight over a cell), and a **code cell and its own output never bump each other** (they
-     are one row, placed by the pack).
+   - the **column the pack just laid out is never pushed by a bump** (the pack owns its geometry),
+     and a **code cell and its own output never bump each other** (they are one row, placed by the
+     pack). Since 2026-09-25 a cell of that column that is not held can still give way downward to a
+     node above it (above); where the next turn's pack puts it back, the two can fight, and the
+     measurements under §3.5 count those calls.
 
    The walk has a step limit. A section dense enough to exceed it (a diagonal staircase, a tight
    grid) stops before it is clear, and the walk is then UNDONE — the section is left as the pack left
@@ -455,7 +473,9 @@ output of a packed column. That variant kept the result in all 33 calls, but it 
 
 The engine cannot tell a new output from one the user dragged: both are movers. A dragged output
 that lands on an anchored node takes its code cell down the same way. This was shown to the user
-with option A (the scope above), and the user chose A.
+with option A (the scope above), and the user chose A. An output the user resized by hand is told
+apart since 2026-09-25: the resize path names it in `resized`, and the rule does not act for it (see
+"An output resized by hand" below).
 
 Measured on H3 (`tests/fixtures/H3.json` S1, test 103): E4 runs, and its output C6 gets the slot
 (2600, 400), on N8 (2600, 0, 600×700), which is anchored to E7's row. N8 stays at (2600, 0), and C3,
@@ -538,7 +558,11 @@ Where the rule does not apply:
   it (test 108). A node held to the output's own code cell goes one gap under the output (test 104);
 - the column holds a mover, the other half of a mover's pair, or a held node the output's code cell
   went under in this call. The column keeps its x and packs around the output (test 103: N3, in the
-  column of N8, goes under C6).
+  column of N8, goes under C6);
+- the output was resized by hand, not placed or dragged (decided by the user 2026-09-25, below);
+- the member reaches over the next column on its right, or ends less than a gap before it: a member
+  that does not set its column's width (§3.4). It goes down by the ordinary bump; a column whose
+  members stay clear of the next column still moves right (decided by the user 2026-09-25, below).
 
 In a column the call packs, the move is made before the column packs (`makeRoom` in `layoutCall`);
 elsewhere a bump makes it (`resolveBumps`).
@@ -582,7 +606,8 @@ Open (2026-09-25), the calls that got worse, by what the result shows:
   right to left, and the next call reads that edge as holding the node. Given the call's own map, a
   second call moves nothing. With the output at its slot 128 of the 146, dragged 14 of the 21, the
   generator 8 of the 34, the tidy trials 3 of the 28. Seed 1164 (output at its slot): N0 moves from
-  x 1600 to 2300, right of N2 at 1700, and the edge from N2 to N0 then holds N0 on N2's row.
+  x 1600 to 2300, right of N2 at 1700, and the edge from N2 to N0 then holds N0 on N2's row. N0 is
+  1100 wide and reaches over column 1700; since 2026-09-25 it goes down instead (below, test 128).
 - Two columns become one: the column moved right lands on the x of the next column, the ordinary
   bumps move the nodes of that column down rather than right, and the next call packs the two as one
   column. With the output at its slot 18, dragged 7, the tidy trials 24, the generator 6. 3 more in
@@ -601,6 +626,32 @@ Open (2026-09-25), the calls that got worse, by what the result shows:
   column moves right instead, E6 stays at 1000, and the pack of column 3500 puts E1 at 600, where its
   output OE1 (500 tall) reaches 100 px into E6's output OE6. A regular pack does not check a member's
   output against the nodes it packs around.
+
+**An output resized by hand (decided by the user 2026-09-25).** An output the user resizes is a
+mover too, and until this decision an output that grew onto a member of the next column moved that
+column right. The webview's resize handler (`skena:nodeResize`) now names the resized node in
+`resized` (`LayoutOpts`). A resized output is not a moved output: it pushes what it grows onto with
+the ordinary bumps (§3.2). The engine also leaves it out of "A new output on an anchored node": a
+held node it grows onto goes one gap under it, as under any output that is not the mover. That second
+part was not asked about; it follows from how `resized` is built.
+Example (test 127): E at (0, 0) with its output O at (800, 0), grown from 300 to 500 tall; a note N
+at (800, 500) and E2 at (0, 400). N goes 100 down, to (800, 600); before, it went to (1500, 500). E2
+goes to (0, 600) either way, one gap under E's row, which O now ends at 500. The same geometry with O
+as a new output still moves N to (1500, 500).
+A size change the MCP makes (`canvas_update_node`) does not pass `resized`.
+
+**A member that reaches into the next column (decided by the user 2026-09-25).** A new or dragged
+output that lands on a member reaching over the next column on its right, or ending less than a gap
+before it (a member that does not set its column's width, §3.4), no longer moves that member's
+column right. The member goes down by the ordinary bump (§3.2). A member that stays clear of the next
+column still moves its column right: test 118 (J1 and J2 to x 1500) is unchanged. When the output
+lands on both kinds in one column, the column moves right for the one that stays clear and takes the
+other along.
+Example (test 128; the reviewer's generator for one output, seed 1164, output at its slot): N0, 1100
+wide, is the only member of column 1600 and reaches over column 1700. At 1060d24 N0 went to (2300,
+400), right of N2; the edge N2 → N0 then held N0 on N2's row, and a second call moved N0 to (2300,
+1200). Now N1 takes A0's row and pushes N0 100 down, O moves N0 down by the overlap, to 1000, and N0
+goes one gap under N2, to (1600, 1200), as before 0.17.66. A second call returns `{}`.
 
 Test 75 (two nodes anchored to one row; X, 1500 wide, crosses R's column): X is anchored itself, so
 R goes one gap under it, to (1600, 800), and a second call returns `{}`. Measured with a variant in
@@ -679,11 +730,112 @@ settles one gap below that node and stays — measured: an anchored node on row 
 reaching y 800 over it lands at 900, and the next call moves nothing. An anchored node fixes its row
 against the head of its own column: a member that sat above it is packed below it.
 
-The engine takes the anchoring as an input: `layoutSection(nodes, { riders })` /
-`reflowSection(nodes, { riders })` with `riders: Map<targetId, sourceId>`, computed by every caller
-from the canvas edges with one shared pure `ridersOf(nodes, edges)` in `layoutEngine.ts`. Callers:
-the webview (`runEngine`, `runEngineAfterMove`, edge add/remove), the host (`layoutAround`), the
-MCP server (`applyEngine`, `canvas_add_edge`, `canvas_remove_edge`, `canvas_update_edge`).
+**A node hanging below a node of another column moves down with it (decided by the user 2026-09-25
+on H3).** On H3, N10, a note 2300 wide, has edges from its bottom border to the top borders of N11,
+N3 and N4, and N4 has one to W1. When N10 moved down, only N11, in N10's own column, came along. The
+user decided that such nodes move down with the source, by the same amount.
+
+Which pairs count (`hangingBelow(nodes, edges)`, source id → target ids):
+- the edge leaves the source's bottom border and enters the target's top border;
+- the target's top is at or below the source's bottom;
+- the two x-spans cross, and the two are in different columns (a target in the source's own column
+  packs under it anyway);
+- the target is a column member and not a band; the source is not a kernel badge or a band;
+- a pair is left out when the source is held, directly or up the chain, to the target or to a node
+  under the target in its column: the source would follow the target's row while the target
+  follows the source down. Which node is held to which is read from where the nodes are now
+  (test 129).
+
+What moves:
+- when the packs move a source down, its targets and what sits under them in their own column move
+  down by the same amount, in the columns the call does not pack. A target in a packed column is
+  placed by its pack (test 124);
+- when a downward bump moves a source, its targets and what sits under them come along the same
+  way, except when the source is the node that gives way (§3.2): a pack puts that node back up in
+  the next turn or call, and its targets went down again with every yield (test 132);
+- a source does not pack around its targets, nor around what sits under them in their column, since
+  those follow it or pack under it. A target held to another node's row keeps that row, and the
+  source packs around it (tests 124, 130);
+- a turn in which nodes followed runs the packs again, so a node held to one of them takes its new
+  row in the same call (test 131).
+
+**A node the user drags down (decided by the user 2026-09-25).** The engine sees a dragged node
+already moved. So the webview passes where each moved node sat before a mouse drop or a keyboard
+step (`draggedFrom`), the targets follow by the drag's amount, and the pairs are read from the
+positions before the drag: a node dragged onto or past a node hanging below it still takes that node
+along (test 126). Down only: after an upward drag the targets stay. Measured, not built: letting the
+targets follow an upward drag too changes 31 of the 25718 tidy trials with mixed edges (NMAX 10,
+EMAX 7; bad 105 either way) and 17 of 10981 with NMAX 6, EMAX 4 (bad 40 either way).
+
+Measured on H3 (`tests/fixtures/H3-C5.json`: H3 on 2026-09-25 before the user resized C5, E1's
+output, geometry only; the webview's resize path replayed on the same file; test 125):
+- C5 from 300 to 400: N10 and, under it in column 1800, N11, E9, E10, E11 with the outputs C1 and C4;
+  N4, W1, N3, N16 and M6 in column 3300; and E3 with its output C2 all go 100 down. E3 gives way
+  under N10 (§3.2); N4 and N3 hang below N10 and W1 below N4, and N16 and M6 sit under them. At
+  1060d24 N10 and column 1800 went 1200 down, N16 1900 down, N4, W1, N3 and M6 100 down, and E3 and
+  C2 200 up, to 800;
+- C5 to 600 or to 900: the same 12 nodes of columns 1800 and 3300 go 600 down; E3 and C2 go up to
+  800, as they do at 1060d24. At 1060d24 the result at 600 is the one at 400; at 900, N16 went 2400
+  down and the other 11 went 600;
+- in all three, no call is capped, no pair is closer than a gap after the call, and a second call
+  returns `{}`.
+
+Measured against 1060d24 with all the changes of 2026-09-25 made after it: the cell pinned by the
+pack that gives way (§3.2), this rule with the drag, and the two exceptions to "The next column makes
+room for a new output" above (no call below resizes an output). "Bad" is as above: capped, a new pair closer than a gap, or changed by a
+second call; the output generator also counts two boxes that intersect. The tidy trials pass the
+positions before a drag, as the webview does.
+
+| Calls | Count | Bad at 1060d24 | Bad now | Worse | Better |
+|---|---|---|---|---|---|
+| H1 to H6, every node as the only mover | 170 | 1 | 0 | 0 | 1 |
+| The reviewer's section generator, seeds 1 to 3000 | 7703 | 193 | 191 | 24 | 26 |
+| The same with half the edges bottom to top | 4949 | 121 | 125 | 16 | 12 |
+| Tidy trials, NMAX 6, EMAX 4 | 18589 | 70 | 63 | 0 | 7 |
+| Tidy trials, NMAX 10, EMAX 7 | 36528 | 186 | 172 | 0 | 14 |
+| Tidy trials, NMAX 10, EMAX 7, half the edges bottom to top | 25718 | 112 | 105 | 0 | 7 |
+| One code cell whose output is the only mover, at its slot | 34834 | 189 | 91 | 13 | 111 |
+| The same, the output dragged | 34834 | 75 | 64 | 3 | 14 |
+
+On the fixtures 3 calls differ: H1 mover X4 (the cell that gives way; 10 nodes move instead of 5,
+both results clean), H2 mover N3 (this rule; C14 and N10 end 10 px lower) and H2 mover N5 (the cell
+that gives way; at 1060d24 a second call moved 2 nodes, now none). On H1, H4 and H5: capped 0,
+overlap growth 0, not idempotent 0. Reflow is unchanged: on the generator's 3000 sections 0 leave
+two boxes intersecting, 0 leave a pair closer than a gap, and a second Reflow changes 66, before and
+after. With the output at its slot: capped 3 and 13, two boxes intersecting 2 and 8, changed by a
+second call 185 and 73.
+
+Open (2026-09-25), the calls that got worse, by the change that each goes away without:
+- The cell that gives way (§3.2): 21 on the section generator, 15 with bottom-to-top edges (one of
+  them also needs this rule). In 16 of the 21 one node gives way in every turn, the next turn's pack
+  puts it back on its row, and the turns do not settle: the call keeps its first turn and is reported
+  capped, or keeps its last turn with a new close pair. That node is an output in 14 of the 16 (seed
+  1285, mover E1: OE6, the output of E6, which is held to E1's row). In the other 5 the bump walk
+  itself runs out of steps (seed 544, mover N1: N0, packed under N1, gives way
+  under N2, lands on N2's source N4 and pushes it down, N2 follows N4 onto N0, and N0 gives way
+  again, 400 px lower each step). Seeds: 544, 663, 823, 947, 1177, 1285 (four movers), 1600 (two),
+  1608, 1689, 1944, 2106 (two), 2122 (two), 2485, 2809, 2909.
+- A member that reaches into the next column: 13 with the output at its slot, 3 dragged, 3 on the
+  section generator. Of the 13, 5 leave two boxes intersecting (seeds 26178, 83237, 92615, 100254,
+  114269), 3 are capped walks in which the output pushes the member down every step (16529, 30528,
+  39292), 1 more is capped (96651) and 4 are changed by a second call (29540, 46443, 73900,
+  133800). Traced, seed 26178: the output lands on N2, 1100 wide, which sits above it; the output
+  gives way under N2, the next turn's pack puts its code cell E back on its row, and the turns do not
+  settle. The call keeps its last turn, where N0, held to E's row, lies on N1.
+- This rule: 2 with bottom-to-top edges. Seed 2745, mover N2, a section that starts with 11 pairs
+  closer than a gap: N0 hangs below OE6 and N2. In the trace N0 comes along when E6's row is pushed
+  down, lands on N4 and N1, and the bumps among these nodes run until the walk is out of steps.
+  Seed 339, mover N1, needs this rule and the cell that gives way.
+
+The engine takes the anchoring as an input: `layoutSection(nodes, { riders, hanging })` /
+`reflowSection(nodes, { riders })` with `riders: Map<targetId, sourceId>` and `hanging:
+Map<sourceId, targetIds>`, computed by every caller from the canvas edges with the shared pure
+`ridersOf(nodes, edges)` and `hangingBelow(nodes, edges, draggedFrom?)` in `layoutEngine.ts`.
+Callers: the webview (`runEngine`, `runEngineAfterMove`, edge add/remove), the host
+(`layoutAround`), the MCP server (`applyEngine`, `canvas_add_edge`, `canvas_remove_edge`,
+`canvas_update_edge`). Two options come from the webview only: `draggedFrom` from
+`runEngineAfterMove` (a mouse drop or a keyboard step) and `resized` from the resize handler.
+Reflow takes no `hanging`: it packs every column.
 
 Every edge path that creates or drops an anchor runs the engine for the target: webview `onConnect`,
 `onConnectEnd`, `skena:nodesFromDrop`, keyboard connect/disconnect, edge delete; MCP
