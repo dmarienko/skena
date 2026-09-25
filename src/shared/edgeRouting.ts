@@ -162,10 +162,11 @@ interface Attachment { edgeId: string; role: 'source' | 'target'; node: RouteNod
 
 /**
  * Resolves both ends of every edge: the side it leaves or enters by, and its point on that border.
- * The edges of one border are ordered by the position of the node at the other end and spread
- * LANE_STEP apart around the border's middle, so no two of them share a point.
+ * The edges of one border are ordered by `turns` when given (see `turnOrder`, keyed
+ * `<edge id>:source` / `<edge id>:target`), then by the position of the node at the other end, and
+ * spread LANE_STEP apart around the border's middle, so no two of them share a point.
  */
-function resolveEnds(edges: RouteEdge[], byId: Map<string, RouteNode>): Map<string, { source?: BorderEnd; target?: BorderEnd }> {
+function resolveEnds(edges: RouteEdge[], byId: Map<string, RouteNode>, turns?: Map<string, number>): Map<string, { source?: BorderEnd; target?: BorderEnd }> {
   const borders = new Map<string, Attachment[]>();
   const add = (a: Attachment) => {
     const key = `${a.node.id}:${a.side}`;
@@ -182,7 +183,9 @@ function resolveEnds(edges: RouteEdge[], byId: Map<string, RouteNode>): Map<stri
   const ends = new Map<string, { source?: BorderEnd; target?: BorderEnd }>();
   for (const list of borders.values()) {
     const across = isHorizontal(list[0].side);
+    const turn = (a: Attachment) => turns?.get(`${a.edgeId}:${a.role}`) ?? 0;
     list.sort((p, q) =>
+      (turn(p) - turn(q)) ||
       (across ? p.other.y - q.other.y : p.other.x - q.other.x) ||
       (across ? p.other.x - q.other.x : p.other.y - q.other.y) ||
       (p.edgeId < q.edgeId ? -1 : p.edgeId > q.edgeId ? 1 : 0));
@@ -404,6 +407,26 @@ function routeOne(nodes: RouteNode[], g: GapGraph, source: BorderEnd, target: Bo
   return [source.at, ...simplify(path.map(pointAt)), target.at];
 }
 
+/**
+ * Where a route first turns once it has left the border of one of its ends, as a sort key for that
+ * border's slots: a route turning towards slot 0 sorts first, a straight one in the middle, one
+ * turning the other way last, and within each side the sooner a route turns, the nearer the end of
+ * the border it goes. So a route that turns does not cross the routes that run on past its turn.
+ */
+function turnOrder(pts: Point[], atSource: boolean, side: Side): number {
+  const seq = atSource ? pts : [...pts].reverse();
+  const out = OUT_DIR[side];
+  for (let k = 0; k + 1 < seq.length; k++) {
+    if (seq[k][0] === seq[k + 1][0] && seq[k][1] === seq[k + 1][1]) continue;
+    const dir = dirBetween(seq[k], seq[k + 1]);
+    if (dir === out) continue;
+    // - direction codes 1 and 3 run towards slot 0 on both axes
+    const dist = Math.abs(seq[k][0] - seq[0][0]) + Math.abs(seq[k][1] - seq[0][1]);
+    return (dir === 1 || dir === 3 ? -1 : 1) / (1 + dist);
+  }
+  return 0;
+}
+
 /** Drops repeated points and the middle of any three points on one line. */
 function simplify(pts: Point[]): Point[] {
   const out: Point[] = [];
@@ -578,16 +601,32 @@ export function routeSection(nodes: RouteNode[], edges: RouteEdge[], report: Rou
   const byId = new Map(nodes.map(n => [n.id, n] as const));
   const ordered = [...edges].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
   const g = buildGapGraph(nodes);
-  const ends = resolveEnds(ordered, byId);
+  let ends = resolveEnds(ordered, byId);
   const paths = new Map<string, Point[]>();
 
   if (g.capped) report.capped = true;
   else {
+    const route = (id: string) => {
+      const end = ends.get(id);
+      const pts = end?.source && end.target ? routeOne(nodes, g, end.source, end.target) : null;
+      if (pts) paths.set(id, pts); else paths.delete(id);
+    };
+    for (const e of ordered) route(e.id);
+    // - the slots again, now ordered by where the routes turn; only an edge whose end point moved is
+    //   routed a second time
+    const turns = new Map<string, number>();
+    for (const [id, pts] of paths) {
+      const end = ends.get(id);
+      if (!end?.source || !end.target) continue;
+      turns.set(`${id}:source`, turnOrder(pts, true, end.source.side));
+      turns.set(`${id}:target`, turnOrder(pts, false, end.target.side));
+    }
+    const first = ends;
+    ends = resolveEnds(ordered, byId, turns);
+    const same = (a?: BorderEnd, b?: BorderEnd) => a?.at[0] === b?.at[0] && a?.at[1] === b?.at[1];
     for (const e of ordered) {
-      const end = ends.get(e.id);
-      if (!end || !end.source || !end.target) continue;
-      const pts = routeOne(nodes, g, end.source, end.target);
-      if (pts) paths.set(e.id, pts);
+      const was = first.get(e.id), now = ends.get(e.id);
+      if (!same(was?.source, now?.source) || !same(was?.target, now?.target)) route(e.id);
     }
     laneShift(nodes, paths, ordered.map(e => e.id), g, report);
   }

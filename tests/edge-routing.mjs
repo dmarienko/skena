@@ -22,12 +22,12 @@ const routeOf = (routes, id) => routes.find(r => r.id === id);
 const twoColumns = () => [code('E1', 0, 0), code('E2', 0, 400), cell('C1', 800, 0)];
 
 // - measured over the 300 sections of case 10, seed 20260911: how many pairs of runs come out drawn
-//   over each other, and the longest stretch any one pair shares. All 250 are two first or last
-//   runs, 99 of them sharing more than one grid. Each edge searches on the row its own end point
+//   over each other, and the longest stretch any one pair shares. All 255 are two first or last
+//   runs, 108 of them sharing more than one grid. Each edge searches on the row its own end point
 //   stands on, so it reaches the target border in two corners along that row; every node of a row
 //   of this generator has the same height, so the same middle, and two edges ending in one row draw
 //   their last run on one line. Neither can move: a run that ends at a border point is held there.
-const PAIRS = 250, LONGEST = 2460;
+const PAIRS = 255, LONGEST = 2550;
 
 assert.equal(LANE_STEP, 10);
 assert.equal(BEND_COST, GRID);
@@ -427,4 +427,66 @@ test('the H fixtures: every segment of every route is horizontal or vertical', (
     assert.deepEqual(slanted(routes), [], name);
     assert.deepEqual(insideAny(nodes, routes), [], name);
   }
+});
+
+// - H3 as the user's screenshot of 2026-09-25 shows it, M6 moved to (3400, 800): node ids are the
+//   labels the user sees, edge ids are the canvas ids
+const SHOT_H3_NODES = [
+  ['M1', 'file', 0, 0, 700, 700], ['M2', 'file', 0, 800, 700, 700], ['E7', 'code', 1800, 0, 700, 300],
+  ['N8', 'text', 2600, 0, 700, 300], ['N1', 'text', 800, 0, 700, 300],
+  ['N2', 'text', 800, 400, 700, 300], ['M3', 'file', 800, 1200, 700, 700],
+  ['E4', 'code', 4100, 400, 700, 300], ['N6', 'text', 0, 1600, 700, 300],
+  ['M4', 'file', 800, 2000, 700, 900], ['N5', 'text', 0, 2000, 700, 300],
+  ['N7', 'text', 800, 800, 700, 300], ['N10', 'text', 1800, 2200, 2300, 100],
+  ['N11', 'text', 1800, 2400, 700, 300], ['N12', 'text', 0, 3000, 1500, 100],
+  ['M5', 'file', 0, 3200, 700, 1100], ['N13', 'text', 800, 3200, 700, 300],
+  ['E9', 'code', 1800, 2800, 700, 300], ['M6', 'file', 3400, 800, 800, 900],
+  ['N14', 'text', 800, 3600, 700, 300], ['N15', 'text', 800, 4000, 700, 300],
+  ['E10', 'code', 1800, 3200, 700, 300], ['E11', 'code', 1800, 3600, 700, 300],
+  ['N16', 'text', 3400, 3600, 700, 300], ['C3', 'cell', 3400, 0, 600, 200],
+  ['N3', 'text', 2600, 1000, 600, 300], ['N4', 'text', 3400, 1800, 700, 300],
+  ['W1', 'knowledge', 3400, 2400, 700, 400], ['C4', 'cell', 2600, 3200, 600, 300],
+  ['E1', 'code', 2600, 400, 700, 300], ['E2', 'code', 1800, 400, 700, 300],
+  ['C1', 'cell', 2600, 2800, 600, 300], ['C5', 'cell', 3400, 400, 600, 300],
+].map(([id, type, x, y, w, h]) => ({ id, type, x, y, w, h }));
+const SHOT_H3_EDGES = [
+  ['e1', 'M1', 'bottom', 'M2', 'top'], ['e2', 'E7', 'right', 'N8', 'left'],
+  ['e3', 'M1', 'right', 'N1', 'left'], ['e4', 'N1', 'bottom', 'N2', 'top'],
+  ['e5', 'M1', 'right', 'N2', 'left'], ['e6', 'M2', 'bottom', 'N6', 'top'],
+  ['e7', 'N6', 'bottom', 'N5', 'top'], ['e8', 'N2', 'bottom', 'N7', 'top'],
+  ['e9', 'N7', 'bottom', 'M3', 'top'], ['e10', 'M3', 'bottom', 'M4', 'top'],
+  ['e11', 'N10', 'bottom', 'N11', 'top'], ['e12', 'N12', 'bottom', 'M5', 'top'],
+  ['e13', 'M5', 'right', 'N13', 'left'], ['e14', 'N13', 'bottom', 'N14', 'top'],
+  ['e15', 'N14', 'bottom', 'N15', 'top'], ['e16', 'E9', 'bottom', 'E10', 'top'],
+  ['e17', 'E10', 'bottom', 'E11', 'top'], ['e18', 'E11', 'right', 'N16', 'left'],
+  ['e19', 'N8', 'right', 'C3', 'left'], ['e20', 'N10', 'bottom', 'N3', 'top'],
+  ['e21', 'N10', 'bottom', 'N4', 'top'], ['e22', 'M5', 'right', 'N14', 'left'],
+  ['e23', 'M5', 'right', 'N15', 'left'], ['e24', 'E10', 'right', 'C4', 'left'],
+  ['e25', 'E7', 'bottom', 'E4', 'top'], ['e26', 'E7', 'bottom', 'E1', 'top'],
+  ['e27', 'E7', 'bottom', 'E2', 'top'], ['e28', 'N4', 'bottom', 'W1', 'top'],
+  ['e29', 'E9', 'right', 'C1', 'left'], ['e30', 'E1', 'right', 'C5', 'left'],
+  ['e31', 'M1', 'right', 'M6', 'left'],
+].map(([id, source, sourceSide, target, targetSide]) => link(id, source, target, sourceSide, targetSide));
+
+// - two segments cross when each one's ends lie strictly on both sides of the other
+const crossings = (routes, ids) => {
+  const side = (a, b, c) => Math.sign((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]));
+  const segs = routes.filter(r => ids.includes(r.id)).flatMap(r => r.points.slice(1).map((p, i) => ({ id: r.id, a: r.points[i], b: p })));
+  const out = [];
+  for (let i = 0; i < segs.length; i++) for (let j = i + 1; j < segs.length; j++) {
+    const p = segs[i], q = segs[j];
+    if (p.id !== q.id && side(p.a, p.b, q.a) * side(p.a, p.b, q.b) < 0 && side(q.a, q.b, p.a) * side(q.a, q.b, p.b) < 0) out.push([p, q]);
+  }
+  return out;
+};
+
+// 21
+test('H3 with M6 below-right: the exits of M1\'s right border are ordered by where each route turns, so none of them cross', () => {
+  const routes = routeSection(SHOT_H3_NODES, SHOT_H3_EDGES);
+  assert.deepEqual(slanted(routes), []);
+  assert.deepEqual(insideAny(SHOT_H3_NODES, routes), []);
+  // - N1 turns up at the first gap line, N2 turns down there, M6 runs on to x 3350 before it turns
+  //   down: up first, then the route that turns later, then the one that turns down first
+  assert.deepEqual(['e3', 'e31', 'e5'].map(id => routeOf(routes, id).points[0]), [[700, 340], [700, 350], [700, 360]]);
+  assert.deepEqual(crossings(routes, ['e3', 'e5', 'e31']), []);
 });
