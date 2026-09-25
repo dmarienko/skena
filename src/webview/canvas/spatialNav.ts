@@ -91,8 +91,8 @@ export function findNearestNode(from: NavNode, dir: NavDir, ctx: NavContext): st
     const { gap, off, overlap } = boxDelta(from, n, dir);
     // - j / k stay in the column, wired or not: an edge elsewhere is followed with `g`
     if (!horiz && overlap <= 0) continue;
-    // - a wired node qualifies wherever it sits; every other candidate has to be in the cone
-    if (!wired.has(n.id) && (!inDir(gap) || !inCone(gap, off))) continue;
+    // - a wired node still has to sit in the pressed direction; only the cone is waived for it
+    if (!inDir(gap) || (!wired.has(n.id) && !inCone(gap, off))) continue;
     const s = navScore(from, n, dir);
     // - equal scores go to the wider overlap; failing that the first node in canvas order stays
     if (s < bestScore || (s === bestScore && overlap > bestOverlap)) { bestScore = s; bestOverlap = overlap; best = n.id; }

@@ -366,3 +366,22 @@ test('44. a node below one column over, near enough to be roughly aligned, is no
   const near = node('near', 1600, 4800);
   assert.equal(findNearestNode(E11, 'down', h3([near])), null);
 });
+
+// - measured on test/H3.canvas: a wide note with a bottom→top edge to a node that now sits above it
+//   after a layout change, plus an unwired node below that shares its column
+const WIDE = { id: 'WIDE', x: 0, y: 1000, w: 2000, h: 300 };
+const ABOVE = node('ABOVE', 200, 100);
+const BELOW = node('BELOW', 200, 2000);
+const wideCtx = (extra = []) => ({
+  nodes: [WIDE, ABOVE, ...extra],
+  edges: [edge('WIDE', 'ABOVE', 'bottom', 'top')],
+  lanes: [lane('S1', 0)],
+});
+
+test('45. a wired node behind the pressed direction never beats an unwired one ahead', () => {
+  assert.equal(findNearestNode(WIDE, 'down', wideCtx([BELOW])), 'BELOW');
+});
+
+test('46. a wired node behind the pressed direction is not a candidate even alone', () => {
+  assert.equal(findNearestNode(WIDE, 'down', wideCtx()), null);
+});
