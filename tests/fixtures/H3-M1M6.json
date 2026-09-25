@@ -1,0 +1,10 @@
+{
+ "nodes": [
+  {"id":"M1","type":"file","x":0,"y":0,"width":700,"height":700},
+  {"id":"N10","type":"text","x":1800,"y":800,"width":2300,"height":100},
+  {"id":"E9","type":"code","x":1800,"y":1400,"width":700,"height":300},
+  {"id":"M6","type":"file","x":3400,"y":3100,"width":800,"height":900}
+ ],
+ "edges": [],
+ "metadata": {"sections": [{"id":"sec-S1","y":0,"createdAt":1788309720000}]}
+}

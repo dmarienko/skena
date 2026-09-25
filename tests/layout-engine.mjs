@@ -16,6 +16,9 @@ const note = (id, x, y, w, h) => ({ id, type: 'text', x, y, w, h });
 
 const apply = (nodes, patches) => nodes.map(n => (patches[n.id] ? { ...n, ...patches[n.id] } : n));
 
+// - the fixtures were drawn before `keepRow` (§3.5): every edge holds, as the engine read them then
+const allHeld = edges => edges.map(e => ({ ...e, keepRow: true }));
+
 // - the engine's rule: two boxes need a full grid gap on at least one axis
 const tooClose = (a, b) => !(
   a.x + a.w + GRID <= b.x || b.x + b.w + GRID <= a.x ||
@@ -231,7 +234,7 @@ test('reflowSection on copies of the H canvases: no managed overlap, every code 
     for (const lane of deriveLanes(data.nodes, lanes)) {
       const members = toEngineNodes(data.nodes.filter(n => lane.memberIds.includes(n.id)));
       if (!members.some(n => n.type === 'code')) continue;
-      const patches = reflowSection(members, { riders: ridersOf(members, data.edges ?? []) });
+      const patches = reflowSection(members, { riders: ridersOf(members, allHeld(data.edges ?? [])) });
       const after = apply(members, patches);
       const owners = outputOwners(after);
       const managed = after.filter(n => n.type === 'code' || owners.has(n.id));
@@ -244,7 +247,7 @@ test('reflowSection on copies of the H canvases: no managed overlap, every code 
       for (const c of after.filter(n => n.type === 'code')) {
         if (c.x % GRID !== 0 || !columnXs.has(c.x)) failures.push(`${name} ${lane.label}: ${c.id} is on no column`);
       }
-      const second = reflowSection(after, { riders: ridersOf(after, data.edges ?? []) });
+      const second = reflowSection(after, { riders: ridersOf(after, allHeld(data.edges ?? [])) });
       if (Object.keys(second).length > 0) failures.push(`${name} ${lane.label}: a second Reflow moves ${Object.keys(second).length} node(s)`);
       checked++;
     }
@@ -998,7 +1001,7 @@ const seqEdges = () => [
   { id: 'q2', fromNode: 'E3',  fromSide: 'bottom', toNode: 'E15', toSide: 'top' },
   { id: 'q3', fromNode: 'E15', fromSide: 'bottom', toNode: 'E17', toSide: 'top' },
   { id: 'q4', fromNode: 'E17', fromSide: 'bottom', toNode: 'E18', toSide: 'top' },
-  { id: 'q5', fromNode: 'E12', fromSide: 'right',  toNode: 'E14', toSide: 'left' },
+  { id: 'q5', fromNode: 'E12', fromSide: 'right',  toNode: 'E14', toSide: 'left', keepRow: true },
 ];
 const moved14 = () => wideCell().map(n => (n.id === 'E14' ? { ...n, x: 800 } : n));
 
@@ -1050,7 +1053,7 @@ test('a rider follows its source down and is pulled back with it', () => {
 // 60
 test('two riders of one source stack in their current order, the column packing around them', () => {
   const nodes = [...moved14(), code('E16', 800, 2600)];
-  const edges = [...seqEdges(), { id: 'q6', fromNode: 'E12', fromSide: 'right', toNode: 'E16', toSide: 'left' }];
+  const edges = [...seqEdges(), { id: 'q6', fromNode: 'E12', fromSide: 'right', toNode: 'E16', toSide: 'left', keepRow: true }];
   const riders = ridersOf(nodes, edges);
   assert.deepEqual([...riders].sort(), [['E14', 'E12'], ['E16', 'E12']]);
   const patches = layoutSection(nodes, { moverIds: ['E16'], riders });
@@ -1063,7 +1066,7 @@ test('two riders of one source stack in their current order, the column packing 
 // 61
 test('a rider is a fixed row its column packs around', () => {
   const nodes = [code('S1', 0, 600), code('A1', 800, 200), code('R1', 800, 1500), code('B1', 800, 900)];
-  const edges = [{ id: 'q1', fromNode: 'S1', fromSide: 'right', toNode: 'R1', toSide: 'left' }];
+  const edges = [{ id: 'q1', fromNode: 'S1', fromSide: 'right', toNode: 'R1', toSide: 'left', keepRow: true }];
   const riders = ridersOf(nodes, edges);
   const patches = layoutSection(nodes, { moverIds: ['R1'], riders });
   assert.deepEqual(patches, {
@@ -1078,7 +1081,7 @@ test('a rider is a fixed row its column packs around', () => {
 // 62
 test('only a right-to-left edge, left to right, makes a rider', () => {
   const nodes = moved14();
-  const one = (from, to, fromSide, toSide) => [...ridersOf(nodes, [{ id: 'q', fromNode: from, toNode: to, fromSide, toSide }])];
+  const one = (from, to, fromSide, toSide) => [...ridersOf(nodes, [{ id: 'q', fromNode: from, toNode: to, fromSide, toSide, keepRow: true }])];
   assert.deepEqual(one('E12', 'E14', 'bottom', 'top'), []);     // - a bottom → top edge is a drawing
   assert.deepEqual(one('E12', 'E14', 'left', 'right'), []);     // - and so is a left → right one
   assert.deepEqual(one('E14', 'E12', 'right', 'left'), []);     // - the source has to sit LEFT
@@ -1086,9 +1089,9 @@ test('only a right-to-left edge, left to right, makes a rider', () => {
   assert.deepEqual(one('E12', 'E14', undefined, undefined), [['E14', 'E12']]);   // - sides may be absent
   // - the node types do not matter: a note is a target like a code cell
   const note1 = [...nodes, note('T1', 800, 3000, 700, 300)];
-  assert.deepEqual([...ridersOf(note1, [{ id: 'q', fromNode: 'E12', toNode: 'T1', fromSide: 'right', toSide: 'left' }])], [['T1', 'E12']]);
+  assert.deepEqual([...ridersOf(note1, [{ id: 'q', fromNode: 'E12', toNode: 'T1', fromSide: 'right', toSide: 'left', keepRow: true }])], [['T1', 'E12']]);
   // - a source outside the section's nodes is no source at all
-  assert.deepEqual([...ridersOf(nodes, [{ id: 'q', fromNode: 'GONE', toNode: 'E14', fromSide: 'right', toSide: 'left' }])], []);
+  assert.deepEqual([...ridersOf(nodes, [{ id: 'q', fromNode: 'GONE', toNode: 'E14', fromSide: 'right', toSide: 'left', keepRow: true }])], []);
 });
 
 // 63
@@ -1106,7 +1109,7 @@ test('a rider whose source lands in its own column packs as a plain member', () 
   // - Reflow snaps x onto columns before it packs, so S1 and T1 end up in one column; reading S1's y
   //   as T1's fixed row pushed S1 down and did it again on every call
   const nodes = [code('S1', 0, 100), code('S2', 0, 500), { id: 'T1', type: 'code', x: 700, y: 1500, w: 400, h: 300 }];
-  const edges = [{ id: 'q', fromNode: 'S1', fromSide: 'right', toNode: 'T1', toSide: 'left' }];
+  const edges = [{ id: 'q', fromNode: 'S1', fromSide: 'right', toNode: 'T1', toSide: 'left', keepRow: true }];
   const riders = ridersOf(nodes, edges);
   assert.deepEqual([...riders], [['T1', 'S1']]);
   const patches = reflowSection(nodes, { riders });
@@ -1160,7 +1163,7 @@ const s2Anchored = () => [
 
 test('a node dropped on an anchored node in another column settles instead of leaving them overlapping', () => {
   const nodes = [...s2Anchored(), note('N25', 1300, 2000, 700, 300)];
-  const riders = ridersOf(nodes, [{ id: 'q5', fromNode: 'E12', fromSide: 'right', toNode: 'E14', toSide: 'left' }]);
+  const riders = ridersOf(nodes, [{ id: 'q5', fromNode: 'E12', fromSide: 'right', toNode: 'E14', toSide: 'left', keepRow: true }]);
   assert.deepEqual([...riders], [['E14', 'E12']]);
   assert.equal(overlapCount(nodes), 1);   // - the drop left N25 on E14; that is the case under test
   const report = {};
@@ -1178,7 +1181,7 @@ test('a node dropped on an anchored node in another column settles instead of le
 // 68
 test('a bump pushes an anchored node off its row outside the packed columns; the next pack restores it', () => {
   const nodes = [code('S1', 0, 600), code('R1', 800, 600), note('M1', 1300, 400, 700, 300)];
-  const riders = ridersOf(nodes, [{ id: 'q', fromNode: 'S1', fromSide: 'right', toNode: 'R1', toSide: 'left' }]);
+  const riders = ridersOf(nodes, [{ id: 'q', fromNode: 'S1', fromSide: 'right', toNode: 'R1', toSide: 'left', keepRow: true }]);
   assert.deepEqual([...riders], [['R1', 'S1']]);
   // - M1 is dropped from above onto R1 and packs in its own column, 1300, so R1's column is none this
   //   call packs: R1 takes the downward bump and leaves S1's row
@@ -1211,7 +1214,7 @@ const n27Case = () => [
   { id: 'E14', type: 'code', x: 800, y: 1100, w: 600, h: 300 },
   note('N27', 800, 1500, 600, 300),
 ];
-const n27Edge = [{ id: 'q', fromNode: 'E18', fromSide: 'right', toNode: 'N27', toSide: 'left' }];
+const n27Edge = [{ id: 'q', fromNode: 'E18', fromSide: 'right', toNode: 'N27', toSide: 'left', keepRow: true }];
 
 test('a note connected from a code cell on its left takes that cell row, and packs back once the edge goes', () => {
   const nodes = n27Case();
@@ -1236,7 +1239,7 @@ test('a note connected from a code cell on its left takes that cell row, and pac
 // 70
 test('a note connected from a note on its left takes that note row', () => {
   const nodes = [note('A', 0, 300, 700, 300), note('B', 800, 0, 700, 300)];
-  const edges = [{ id: 'q', fromNode: 'A', fromSide: 'right', toNode: 'B', toSide: 'left' }];
+  const edges = [{ id: 'q', fromNode: 'A', fromSide: 'right', toNode: 'B', toSide: 'left', keepRow: true }];
   const riders = ridersOf(nodes, edges);
   assert.deepEqual([...riders], [['B', 'A']]);
   const patches = layoutSection(nodes, { moverIds: ['B'], riders });
@@ -1249,7 +1252,7 @@ test('a note connected from a note on its left takes that note row', () => {
 // 71
 test('an edge from an output cell anchors its target to the row of the output code cell', () => {
   const nodes = [code('S', 0, 300, 300, 'O'), cell('O', 800, 300), note('T', 1600, 0, 700, 300)];
-  const edges = [{ id: 'q', fromNode: 'O', fromSide: 'right', toNode: 'T', toSide: 'left' }];
+  const edges = [{ id: 'q', fromNode: 'O', fromSide: 'right', toNode: 'T', toSide: 'left', keepRow: true }];
   const riders = ridersOf(nodes, edges);
   assert.deepEqual([...riders], [['T', 'S']]);   // - the map names the code cell, whose row the output has
   const patches = layoutSection(nodes, { moverIds: ['T'], riders });
@@ -1270,7 +1273,7 @@ test('an edge from an output cell anchors its target to the row of the output co
 test('a kernel badge or a band anchors nothing, as the source or as the target', () => {
   const kernel = (id, x, y) => ({ id, type: 'kernel', x, y, w: 140, h: 160 });
   const band = (id, x, y) => ({ id, type: 'group', x, y, w: 700, h: 300 });
-  const edge = (from, to) => [{ id: 'q', fromNode: from, fromSide: 'right', toNode: to, toSide: 'left' }];
+  const edge = (from, to) => [{ id: 'q', fromNode: from, fromSide: 'right', toNode: to, toSide: 'left', keepRow: true }];
   const cases = [
     { nodes: [kernel('K', 0, 300), note('T', 800, 0, 700, 300)], from: 'K', to: 'T', mover: 'T' },
     { nodes: [band('G', 0, 300), note('T', 800, 0, 700, 300)], from: 'G', to: 'T', mover: 'T' },
@@ -1290,7 +1293,7 @@ test('a node in the output column of its source takes the first row under that o
   // - H4 S1 N17 under C4: S's row in column 800 is held by its output O, so T packs one gap under O
   //   rather than on top of it — the two are pinned once packed and no bump would part them
   const nodes = [code('S', 0, 300, 300, 'O'), cell('O', 800, 300), note('T', 800, 1200, 700, 300)];
-  const edges = [{ id: 'q', fromNode: 'S', fromSide: 'right', toNode: 'T', toSide: 'left' }];
+  const edges = [{ id: 'q', fromNode: 'S', fromSide: 'right', toNode: 'T', toSide: 'left', keepRow: true }];
   const riders = ridersOf(nodes, edges);
   assert.deepEqual([...riders], [['T', 'S']]);
   for (const mover of ['S', 'T']) {
@@ -1327,10 +1330,10 @@ const h3Case = () => {
 };
 const h3Edges = [
   { id: 'e1', fromNode: 'M1', fromSide: 'bottom', toNode: 'M2', toSide: 'top' },
-  { id: 'e2', fromNode: 'M1', fromSide: 'right', toNode: 'N1', toSide: 'left' },
-  { id: 'e3', fromNode: 'M1', fromSide: 'right', toNode: 'N2', toSide: 'left' },
-  { id: 'e4', fromNode: 'E7', fromSide: 'right', toNode: 'N8', toSide: 'left' },
-  { id: 'e5', fromNode: 'E7', fromSide: 'right', toNode: 'C1', toSide: 'left' },
+  { id: 'e2', fromNode: 'M1', fromSide: 'right', toNode: 'N1', toSide: 'left', keepRow: true },
+  { id: 'e3', fromNode: 'M1', fromSide: 'right', toNode: 'N2', toSide: 'left', keepRow: true },
+  { id: 'e4', fromNode: 'E7', fromSide: 'right', toNode: 'N8', toSide: 'left', keepRow: true },
+  { id: 'e5', fromNode: 'E7', fromSide: 'right', toNode: 'C1', toSide: 'left', keepRow: true },
 ];
 const tooClosePairs = ns => {
   const out = [];
@@ -1365,8 +1368,8 @@ test('a new output on the row of a node held to another cell takes its code cell
 test('two nodes held on one row, the wide one crossing the other column: the second goes under the first', () => {
   const nodes = [code('S', 0, 400), note('X', 800, 0, 1500, 300), note('R', 1600, 1000, 700, 300)];
   const edges = [
-    { id: 'q1', fromNode: 'S', fromSide: 'right', toNode: 'X', toSide: 'left' },
-    { id: 'q2', fromNode: 'S', fromSide: 'right', toNode: 'R', toSide: 'left' },
+    { id: 'q1', fromNode: 'S', fromSide: 'right', toNode: 'X', toSide: 'left', keepRow: true },
+    { id: 'q2', fromNode: 'S', fromSide: 'right', toNode: 'R', toSide: 'left', keepRow: true },
   ];
   const riders = ridersOf(nodes, edges);
   const report = {};
@@ -1386,8 +1389,8 @@ test('a plain wide head of a packed column goes under a rider crossing it, not t
   //   the other: W is a plain member, so W's column packs down under R.
   const nodes = [code('S1', 0, 0), code('S2', 0, 400), note('Y', 800, 0, 700, 300), note('W', 800, 400, 1500, 300), note('R', 1600, 1000, 700, 300)];
   const edges = [
-    { id: 'q1', fromNode: 'S1', fromSide: 'right', toNode: 'Y', toSide: 'left' },
-    { id: 'q2', fromNode: 'S2', fromSide: 'right', toNode: 'R', toSide: 'left' },
+    { id: 'q1', fromNode: 'S1', fromSide: 'right', toNode: 'Y', toSide: 'left', keepRow: true },
+    { id: 'q2', fromNode: 'S2', fromSide: 'right', toNode: 'R', toSide: 'left', keepRow: true },
   ];
   const riders = ridersOf(nodes, edges);
   for (const mover of ['S1', 'S2', 'R']) {
@@ -1406,8 +1409,8 @@ test('two nodes held on one row in one column keep their current order, not the 
   // - B sits above A now; the id order would put A on S's row
   const nodes = [code('S', 0, 400), note('B', 800, 0, 700, 300), note('A', 800, 1200, 700, 300)];
   const edges = [
-    { id: 'q1', fromNode: 'S', fromSide: 'right', toNode: 'A', toSide: 'left' },
-    { id: 'q2', fromNode: 'S', fromSide: 'right', toNode: 'B', toSide: 'left' },
+    { id: 'q1', fromNode: 'S', fromSide: 'right', toNode: 'A', toSide: 'left', keepRow: true },
+    { id: 'q2', fromNode: 'S', fromSide: 'right', toNode: 'B', toSide: 'left', keepRow: true },
   ];
   const riders = ridersOf(nodes, edges);
   const patches = layoutSection(nodes, { moverIds: ['S'], riders });
@@ -1445,7 +1448,7 @@ test('a rider goes under its own source when the source reaches its column, and 
   //   inside the gap before it. Either way R takes the first row under S: 400 + 300 + 100.
   for (const w of [1100, 800]) {
     const nodes = [code('A', 0, 0), { ...code('S', 0, 400), w }, note('R', 800, 0, 700, 100)];
-    const edges = [{ id: 'q', fromNode: 'S', fromSide: 'right', toNode: 'R', toSide: 'left' }];
+    const edges = [{ id: 'q', fromNode: 'S', fromSide: 'right', toNode: 'R', toSide: 'left', keepRow: true }];
     for (const mover of ['A', 'S', 'R']) {
       const report = {};
       const patches = layoutSection(nodes, { moverIds: [mover], riders: ridersOf(nodes, edges), report });
@@ -1463,7 +1466,7 @@ test('a plain member that stops inside the gap before a rider column packs under
   // - M, 800 wide in column 0, ends where column 800 starts. R keeps S's row, 0 to 500, and M packs
   //   under it: 500 + 100. When M is the mover it holds its row and R goes under it instead.
   const nodes = [code('S', 0, 0), note('M', 0, 400, 800, 100), note('R', 800, 600, 600, 500)];
-  const edges = [{ id: 'q', fromNode: 'S', fromSide: 'right', toNode: 'R', toSide: 'left' }];
+  const edges = [{ id: 'q', fromNode: 'S', fromSide: 'right', toNode: 'R', toSide: 'left', keepRow: true }];
   const patches = layoutSection(nodes, { moverIds: ['S'], riders: ridersOf(nodes, edges) });
   assert.deepEqual(patches, { R: { x: 800, y: 0 }, M: { x: 0, y: 600 } });
   const after = apply(nodes, patches);
@@ -1481,7 +1484,7 @@ test('a plain member that stops inside the gap before a rider column packs under
 
 // 81
 test('Reflow packs a plain member around a rider as a regular call does, and a second Reflow changes nothing', () => {
-  const e = (from, to) => ({ id: `${from}-${to}`, fromNode: from, fromSide: 'right', toNode: to, toSide: 'left' });
+  const e = (from, to) => ({ id: `${from}-${to}`, fromNode: from, fromSide: 'right', toNode: to, toSide: 'left', keepRow: true });
   // - test 76's shape: W heads column 800 and crosses column 1600, where R takes S2's row
   const wide = [code('S1', 0, 0), code('S2', 0, 400), note('Y', 800, 0, 700, 300), note('W', 800, 400, 1500, 300), note('R', 1600, 1000, 700, 300)];
   // - test 80's shape: M stops inside the gap before column 800, where R takes S's row. Column 0 has
@@ -1510,7 +1513,7 @@ const settles = (nodes, edges, moverIds, want, label = '') => {
   assert.deepEqual(layoutSection(after, { moverIds, riders: ridersOf(after, edges), hanging: hangingBelow(after, edges) }), {}, label);
   return after;
 };
-const edgeTo = (from, to) => ({ id: `${from}-${to}`, fromNode: from, fromSide: 'right', toNode: to, toSide: 'left' });
+const edgeTo = (from, to) => ({ id: `${from}-${to}`, fromNode: from, fromSide: 'right', toNode: to, toSide: 'left', keepRow: true });
 const edgeDown = (from, to) => ({ id: `${from}v${to}`, fromNode: from, fromSide: 'bottom', toNode: to, toSide: 'top' });
 
 // 82
@@ -1758,7 +1761,7 @@ const h3Fixture = () => {
   const data = JSON.parse(fs.readFileSync(path.join(here, 'fixtures', 'H3.json'), 'utf8'));
   const label = new Map(data.nodes.map(n => [n.id, n.nodeLabel]));
   const nodes = toEngineNodes(data.nodes.map(n => ({ ...n, id: label.get(n.id), ...(n.outputNodeId ? { outputNodeId: label.get(n.outputNodeId) } : {}) })));
-  const edges = data.edges.map(e => ({ ...e, fromNode: label.get(e.fromNode), toNode: label.get(e.toNode) }));
+  const edges = allHeld(data.edges).map(e => ({ ...e, fromNode: label.get(e.fromNode), toNode: label.get(e.toNode) }));
   return { nodes, edges };
 };
 
@@ -1904,7 +1907,7 @@ test('run E1 on H3: the output slot clears E1 by a gap, the column the output la
   assert.deepEqual(slot, { x: 3400, y: 400, width: 600, height: 300 });
   const nodes = [...before.map(n => (n.id === 'E1' ? { ...n, outputNodeId: 'C1' } : n)), cell('C1', slot.x, slot.y, slot.width, slot.height)];
   const report = {};
-  const patches = layoutSection(nodes, { moverIds: ['C1'], riders: ridersOf(nodes, data.edges), report });
+  const patches = layoutSection(nodes, { moverIds: ['C1'], riders: ridersOf(nodes, allHeld(data.edges)), report });
   assert.equal(!!report.capped, false);
   // - C1 lands on E4: column 3400 (C3, E4, W1) moves right by 3400 + 600 + 100 - 3400 = 700. C3 is held
   //   to N8 in E1's column, so the call packs column 3400 too: W1 goes up to one gap under N10, 1000.
@@ -1912,7 +1915,7 @@ test('run E1 on H3: the output slot clears E1 by a gap, the column the output la
   const after = apply(nodes, patches);
   const was = new Set(tooClosePairs(before));
   assert.deepEqual(tooClosePairs(after).filter(p => !was.has(p)), []);
-  assert.deepEqual(layoutSection(after, { moverIds: ['C1'], riders: ridersOf(after, data.edges) }), {});
+  assert.deepEqual(layoutSection(after, { moverIds: ['C1'], riders: ridersOf(after, allHeld(data.edges)) }), {});
 });
 
 // 116
@@ -2049,7 +2052,7 @@ test('resize C5 on H3 from 300 to 400: every node that moves goes 100 down', () 
   const nodes = toEngineNodes(data.nodes).map(n => (n.id === 'C5' ? { ...n, h: 400 } : n));
   const report = {};
   // - as the webview's resize path calls it
-  const patches = layoutSection(nodes, { moverIds: ['C5'], resized: ['C5'], riders: ridersOf(nodes, data.edges), hanging: hangingBelow(nodes, data.edges), report });
+  const patches = layoutSection(nodes, { moverIds: ['C5'], resized: ['C5'], riders: ridersOf(nodes, allHeld(data.edges)), hanging: hangingBelow(nodes, allHeld(data.edges)), report });
   assert.equal(!!report.capped, false);
   const down = id => ({ x: nodes.find(n => n.id === id).x, y: nodes.find(n => n.id === id).y + 100 });
   const ids = ['N10', 'N11', 'E9', 'C1', 'E10', 'C4', 'E11', 'N16', 'M6', 'N4', 'W1', 'N3', 'E3', 'C2'];
@@ -2057,7 +2060,7 @@ test('resize C5 on H3 from 300 to 400: every node that moves goes 100 down', () 
   const after = apply(nodes, patches);
   const was = new Set(tooClosePairs(nodes));
   assert.deepEqual(tooClosePairs(after).filter(p => !was.has(p)), []);
-  assert.deepEqual(layoutSection(after, { moverIds: ['C5'], resized: ['C5'], riders: ridersOf(after, data.edges), hanging: hangingBelow(after, data.edges) }), {});
+  assert.deepEqual(layoutSection(after, { moverIds: ['C5'], resized: ['C5'], riders: ridersOf(after, allHeld(data.edges)), hanging: hangingBelow(after, allHeld(data.edges)) }), {});
 });
 
 // 126
@@ -2162,4 +2165,100 @@ test('the nodes hanging below a node that gives way to a node above it do not fo
   //   S. Before, T went 300 down with S in every call.
   const nodes = [note('P', 0, 400, 700, 300), note('S', 800, 400, 800, 100), note('X', 1000, 300, 700, 300), note('T', 900, 800, 700, 300)];
   settles(nodes, [edgeTo('P', 'S'), edgeDown('S', 'T')], ['S'], { S: { x: 800, y: 700 }, T: { x: 900, y: 900 } });
+});
+
+// - the functions of the stored `keepRow` (§3.5), read off the module so a bundle without them fails
+//   only the tests below
+const withKeepRow = await import('./.build/layoutEngine.mjs');
+const fixture = name => JSON.parse(fs.readFileSync(path.join(here, 'fixtures', `${name}.json`), 'utf8'));
+// - the holds HEAD read before `keepRow`: every edge counted, per section, as `target<source`
+const holdsOf = (data, edges) => deriveLanes(data.nodes, data.metadata?.sections ?? []).flatMap(l =>
+  [...ridersOf(toEngineNodes(data.nodes.filter(n => l.memberIds.includes(n.id))), edges)].map(([t, s]) => `${t}<${s}`));
+
+// 133
+test('an edge holds its target on the source row only when it carries keepRow: true', () => {
+  const nodes = [code('S', 0, 0), note('T', 800, 400, 700, 300)];
+  const e = { id: 'q', fromNode: 'S', fromSide: 'right', toNode: 'T', toSide: 'left' };
+  assert.deepEqual([...ridersOf(nodes, [e])], []);
+  assert.deepEqual([...ridersOf(nodes, [{ ...e, keepRow: false }])], []);
+  assert.deepEqual([...ridersOf(nodes, [{ ...e, keepRow: true }])], [['T', 'S']]);
+});
+
+// 134
+test('connecting M1 to M6 on H3 moves nothing: holding M6 would move it, so the edge gets keepRow false', () => {
+  // - tests/fixtures/H3-M1M6.json: the four nodes of H3 that are left when the user's M1 → M6 still
+  //   moves a code cell. Before, the edge held M6 at once: M6 went from 3100 to M1's row, 0, and N10
+  //   and E9 went 200 down under it.
+  const data = fixture('H3-M1M6');
+  const nodes = sectionEngineNodes(data.nodes, data.metadata.sections, 'M6');
+  const edge = { id: 'q', fromNode: 'M1', fromSide: 'right', toNode: 'M6', toSide: 'left' };
+  const keepRow = withKeepRow.keepRowOf?.(nodes, data.edges, edge);
+  assert.equal(keepRow, false);
+  const edges = [...data.edges, { ...edge, keepRow }];
+  // - the add paths run the engine only for a target the new edge holds: none here
+  assert.deepEqual([...ridersOf(nodes, edges)], []);
+  for (const opts of [{ columnX: 3400 }, { moverIds: ['M1'] }, { moverIds: ['M6'] }]) {
+    assert.deepEqual(layoutSection(nodes, { ...opts, riders: ridersOf(nodes, edges), hanging: hangingBelow(nodes, edges) }), {}, JSON.stringify(opts));
+  }
+});
+
+// 135
+test('connecting a node that sits on its source row: the edge gets keepRow true, and the node follows the source', () => {
+  const nodes = [code('S', 0, 0), note('T', 800, 0, 700, 300)];
+  const edge = { id: 'q', fromNode: 'S', fromSide: 'right', toNode: 'T', toSide: 'left' };
+  const keepRow = withKeepRow.keepRowOf?.(nodes, [], edge);
+  assert.equal(keepRow, true);
+  const edges = [{ ...edge, keepRow }];
+  assert.deepEqual(layoutSection(nodes, { columnX: 800, riders: ridersOf(nodes, edges), hanging: hangingBelow(nodes, edges) }), {});
+  // - S dragged 800 down: T takes its new row
+  const moved = nodes.map(n => (n.id === 'S' ? { ...n, y: 800 } : n));
+  const draggedFrom = new Map([['S', { x: 0, y: 0 }]]);
+  assert.deepEqual(layoutSection(moved, { moverIds: ['S'], draggedFrom, riders: ridersOf(moved, edges), hanging: hangingBelow(moved, edges, draggedFrom) }), { T: { x: 800, y: 800 } });
+});
+
+// 136
+test('on load an edge with no keepRow gets true where holding moves nothing; H3 and H4', () => {
+  const kept = {};
+  for (const name of ['H3', 'H4']) {
+    const data = fixture(name);
+    const marked = withKeepRow.markKeepRowOnLoad(data.nodes, data.metadata.sections, data.edges);
+    assert.ok(marked.every((e, i) => e.keepRow === true || e === data.edges[i]), `${name}: only true is written`);
+    const head = holdsOf(data, data.edges.map(e => ({ ...e, keepRow: true })));
+    const now = holdsOf(data, marked);
+    assert.ok(now.every(h => head.includes(h)), `${name}: no hold HEAD did not read`);
+    kept[name] = `${now.length} of ${head.length}`;
+    // - every edge now carries the field, true or not, so a second load changes nothing
+    const all = marked.map(e => ({ ...e, keepRow: e.keepRow === true }));
+    assert.equal(withKeepRow.markKeepRowOnLoad(data.nodes, data.metadata.sections, all), all);
+  }
+  // - H4 loses N7 held to N24 and N11 held to N26: a pack of their column moves each off that row
+  assert.deepEqual(kept, { H3: '8 of 8', H4: '13 of 15' });
+});
+
+// 137
+test('on load an edge that has keepRow keeps it, true or false', () => {
+  const data = fixture('H4');
+  const marked = withKeepRow.markKeepRowOnLoad(data.nodes, data.metadata.sections, data.edges);
+  const heldIds = new Set(data.edges.filter(e => holdsOf(data, [{ ...e, keepRow: true }]).length).map(e => e.id));
+  const on = marked.find(e => heldIds.has(e.id) && e.keepRow === true);
+  const off = marked.find(e => heldIds.has(e.id) && e.keepRow === undefined);
+  assert.ok(on && off, 'H4 has a hold the load marks and one it does not');
+  const stored = data.edges.map(e => (e.id === on.id ? { ...e, keepRow: false } : e.id === off.id ? { ...e, keepRow: true } : e));
+  const again = withKeepRow.markKeepRowOnLoad(data.nodes, data.metadata.sections, stored);
+  assert.equal(again.find(e => e.id === on.id).keepRow, false);
+  assert.equal(again.find(e => e.id === off.id).keepRow, true);
+  // - a file written by a webview save, read back: the fields are what was saved
+  const saved = JSON.parse(JSON.stringify({ ...data, edges: stored }));
+  assert.deepEqual(withKeepRow.markKeepRowOnLoad(saved.nodes, saved.metadata.sections, saved.edges).map(e => e.keepRow), again.map(e => e.keepRow));
+});
+
+// 138
+test('a held node dragged far off its row keeps the link: the call puts it back, and a load keeps keepRow', () => {
+  const edges = [{ ...edgeTo('S', 'T'), keepRow: true }];
+  const nodes = [code('S', 0, 0), note('T', 800, 2000, 700, 300)];
+  const draggedFrom = new Map([['T', { x: 800, y: 0 }]]);
+  // - a canvas saved right after the drag, before any call, and opened again
+  const reopened = withKeepRow.markKeepRowOnLoad(nodes.map(n => ({ ...n, width: n.w, height: n.h })), [{ id: 's', y: 0, createdAt: 0 }], edges);
+  assert.equal(reopened, edges);
+  assert.deepEqual(layoutSection(nodes, { moverIds: ['T'], draggedFrom, riders: ridersOf(nodes, reopened), hanging: hangingBelow(nodes, reopened, draggedFrom) }), { T: { x: 800, y: 0 } });
 });

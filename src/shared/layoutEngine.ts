@@ -86,9 +86,10 @@ export function outputOwners(nodes: EngineNode[]): Map<string, string> {
 const isMember = (n: EngineNode, owners: Map<string, string>) => !owners.has(n.id) && n.type !== 'kernel';
 
 /**
- * Which nodes keep another node's row (§3.5): target id → source id. An edge counts when it leaves
- * the source's right border and enters the target's left one (a side the file leaves out is that
- * border), and the source's column is strictly left of the target's. Any two node types count, with
+ * Which nodes keep another node's row (§3.5): target id → source id. An edge counts when it carries
+ * `keepRow: true`, leaves the source's right border and enters the target's left one (a side the file
+ * leaves out is that border), and the source's column is strictly left of the target's. An edge with
+ * no `keepRow`, or `keepRow: false`, holds nothing. Any two node types count, with
  * these exceptions: the target is a column member and not a band (a `group` node) — an output cell
  * already takes its code cell's row, a kernel badge is in no column — and the source is not a kernel
  * badge or a band. An output cell as the source stands for its code cell: its row is that cell's
@@ -97,11 +98,12 @@ const isMember = (n: EngineNode, owners: Map<string, string>) => !owners.has(n.i
  * drawing and moves nothing. A target several edges point at takes the leftmost source, ties going
  * to the lower id, so the result does not depend on the edge order in the file.
  */
-export function ridersOf(nodes: EngineNode[], edges: { fromNode: string; toNode: string; fromSide?: string; toSide?: string }[]): Map<string, string> {
+export function ridersOf(nodes: EngineNode[], edges: { fromNode: string; toNode: string; fromSide?: string; toSide?: string; keepRow?: boolean }[]): Map<string, string> {
   const map = byId(nodes);
   const owners = outputOwners(nodes);
   const best = new Map<string, EngineNode>();
   for (const e of edges) {
+    if (e.keepRow !== true) continue;
     if ((e.fromSide ?? 'right') !== 'right' || (e.toSide ?? 'left') !== 'left') continue;
     const from = map.get(e.fromNode);
     const to   = map.get(e.toNode);
@@ -127,7 +129,7 @@ export function ridersOf(nodes: EngineNode[], edges: { fromNode: string; toNode:
  * below it still takes that node along. Which node is held to which stays read from where the nodes
  * are now, as the call reads it.
  */
-export function hangingBelow(input: EngineNode[], edges: { fromNode: string; toNode: string; fromSide?: string; toSide?: string }[], draggedFrom?: Map<string, { x: number; y: number }>): Map<string, string[]> {
+export function hangingBelow(input: EngineNode[], edges: { fromNode: string; toNode: string; fromSide?: string; toSide?: string; keepRow?: boolean }[], draggedFrom?: Map<string, { x: number; y: number }>): Map<string, string[]> {
   const nodes = draggedFrom ? input.map(n => { const was = draggedFrom.get(n.id); return was ? { ...n, x: was.x, y: was.y } : n; }) : input;
   const map = byId(nodes);
   const now = byId(input);
@@ -149,6 +151,63 @@ export function hangingBelow(input: EngineNode[], edges: { fromNode: string; toN
     out.set(from.id, list);
   }
   return out;
+}
+
+/** An edge as `holdsInPlace` reads it: `keepRow` is the field the file stores on the edge (§3.5). */
+export interface HoldEdge { id: string; fromNode: string; toNode: string; fromSide?: string; toSide?: string; keepRow?: boolean }
+
+/**
+ * Which of the edges named in `tested` can hold their target on the source's row without moving it
+ * (§3.5). Every tested edge is read as `keepRow: true`, every other edge as it is stored. A tested edge
+ * passes when `ridersOf` then picks its source for the target, and a pack of the target's column with
+ * those holds leaves the target's y where it is. `nodes` = one section.
+ */
+export function holdsInPlace(nodes: EngineNode[], edges: HoldEdge[], tested: Set<string>): Set<string> {
+  const probe = edges.map(e => (tested.has(e.id) ? { ...e, keepRow: true } : e));
+  const riders = ridersOf(nodes, probe);
+  const hanging = hangingBelow(nodes, probe);
+  const map = byId(nodes);
+  const stays = new Map<string, boolean>();
+  const out = new Set<string>();
+  for (const e of probe) {
+    if (!tested.has(e.id)) continue;
+    const source = ridersOf(nodes, [e]).get(e.toNode);
+    if (source === undefined || riders.get(e.toNode) !== source) continue;
+    let ok = stays.get(e.toNode);
+    if (ok === undefined) {
+      const t = map.get(e.toNode)!;
+      const p = layoutSection(nodes, { columnX: t.x, riders, hanging });
+      ok = !p[t.id] || p[t.id].y === t.y;
+      stays.set(e.toNode, ok);
+    }
+    if (ok) out.add(e.id);
+  }
+  return out;
+}
+
+/**
+ * `keepRow` for an edge being created, or whose sides changed (§3.5): true only when holding its target
+ * moves nothing (`holdsInPlace`), the other edges read as stored. `nodes` = the target's section.
+ */
+export function keepRowOf(nodes: EngineNode[], edges: HoldEdge[], edge: HoldEdge): boolean {
+  return holdsInPlace(nodes, [...edges.filter(e => e.id !== edge.id), edge], new Set([edge.id])).has(edge.id);
+}
+
+/**
+ * The load rule of §3.5, for a canvas as it is opened: an edge the file stores with no `keepRow` gets
+ * `keepRow: true` where holding its target moves nothing, all such edges read as holding at once,
+ * section by section. An edge that has the field keeps it, and nothing gets `false` here. A canvas
+ * with no sections is read as one. Returns `edges` itself when no edge changes.
+ */
+export function markKeepRowOnLoad<E extends HoldEdge>(nodes: CanvasShapedNode[], sections: SectionLane[], edges: E[]): E[] {
+  const tested = new Set(edges.filter(e => e.keepRow === undefined).map(e => e.id));
+  if (tested.size === 0) return edges;
+  const groups = sections.length ? deriveLanes(nodes, sections).map(l => new Set(l.memberIds)) : [new Set(nodes.map(n => n.id))];
+  const keep = new Set<string>();
+  for (const ids of groups) {
+    for (const id of holdsInPlace(toEngineNodes(nodes.filter(n => ids.has(n.id))), edges, tested)) keep.add(id);
+  }
+  return keep.size ? edges.map(e => (keep.has(e.id) ? { ...e, keepRow: true } : e)) : edges;
 }
 
 /**

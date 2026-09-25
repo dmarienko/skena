@@ -185,6 +185,8 @@ export interface CanvasEdge {
   toEnd?: EdgeEnd;
   color?: CanvasColor;
   label?: string;
+  /** - true: a right → left edge keeps its target on the source's row (layout spec §3.5) */
+  keepRow?: boolean;
 }
 
 export interface CanvasViewport {
