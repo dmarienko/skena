@@ -79,6 +79,7 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
 
   const cache      = useRef<Map<string, KnowledgeText>>(new Map());
   const inputRef   = useRef<HTMLInputElement>(null);
+  const listRef    = useRef<HTMLDivElement>(null);
   const searchId   = useRef(0);
   const fetchId    = useRef(0);
   const scopesId   = useRef(0);
@@ -217,6 +218,18 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
     }, 300);
     return () => clearTimeout(timer);
   }, [state.query, state.server, state.scope, state.recency, caps?.tags, facetsKey, knownTags]);
+
+  // - keep the highlighted row inside the list's own scroll range; scrollTop is set by hand
+  // - (not row.scrollIntoView) so a scrollable ancestor outside the list is never touched
+  useEffect(() => {
+    const list = listRef.current;
+    const row  = list?.querySelector<HTMLElement>(`[data-index="${state.highlight}"]`);
+    if (!list || !row) return;
+    const top    = row.offsetTop;
+    const bottom = top + row.offsetHeight;
+    if (top < list.scrollTop) list.scrollTop = top;
+    else if (bottom > list.scrollTop + list.clientHeight) list.scrollTop = bottom - list.clientHeight;
+  }, [state.highlight, state.hits]);
 
   // - the preview follows the highlight once it settles, so walking a list with ↓ fetches once
   const hit = state.hits[state.highlight] as KnowledgeHit | undefined;
@@ -370,10 +383,11 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
         {/* - skena-scrollable is what CanvasView's own wheel-zoom handler checks for (not
              nowheel — see CodeNode.tsx's read-only preview), so this is what actually keeps
              the wheel scrolling the list instead of zooming the canvas underneath */}
-        <div className="nowheel skena-scrollable" style={{ width: '55%', overflowY: 'auto', overflowX: 'hidden' }}>
+        <div ref={listRef} className="nowheel skena-scrollable" style={{ width: '55%', overflowY: 'auto', overflowX: 'hidden' }}>
           {state.hits.map((h, i) => (
             <div
               key={h.uri + i}
+              data-index={i}
               onClick={() => dispatch({ kind: 'highlight', index: i })}
               onDoubleClick={() => pick(h)}
               style={{
