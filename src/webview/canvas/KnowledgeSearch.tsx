@@ -220,7 +220,9 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
   }, [state.query, state.server, state.scope, state.recency, caps?.tags, facetsKey, knownTags]);
 
   // - keep the highlighted row inside the list's own scroll range; scrollTop is set by hand
-  // - (not row.scrollIntoView) so a scrollable ancestor outside the list is never touched
+  // - (not row.scrollIntoView) so a scrollable ancestor outside the list is never touched.
+  // - offsetTop counts from the list's top only because the list is position: relative; without
+  // - it the offsetParent is the dialog, and the search panel's height is added to every row
   useEffect(() => {
     const list = listRef.current;
     const row  = list?.querySelector<HTMLElement>(`[data-index="${state.highlight}"]`);
@@ -383,7 +385,7 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
         {/* - skena-scrollable is what CanvasView's own wheel-zoom handler checks for (not
              nowheel — see CodeNode.tsx's read-only preview), so this is what actually keeps
              the wheel scrolling the list instead of zooming the canvas underneath */}
-        <div ref={listRef} className="nowheel skena-scrollable" style={{ width: '55%', overflowY: 'auto', overflowX: 'hidden' }}>
+        <div ref={listRef} className="nowheel skena-scrollable" style={{ position: 'relative', width: '55%', overflowY: 'auto', overflowX: 'hidden' }}>
           {state.hits.map((h, i) => (
             <div
               key={h.uri + i}
