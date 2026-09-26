@@ -2967,6 +2967,10 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         } else if (current.type === 'noderef') {
           const c = (d.canvas as string) ?? '', l = (d.label as string) ?? '';
           if (c && l) vscodePostMessage({ type: 'openFile', uri: `${c}#${l}` });
+        } else if (current.type === 'knowledge') {
+          // - the node's ↗ button: the host opens the server's web reader in the browser
+          const server = (d.server as string) ?? '', uri = (d.uri as string) ?? '';
+          if (server && uri) vscodePostMessage({ type: 'knowledgeOpen', server, uri });
         }
         return;
       }

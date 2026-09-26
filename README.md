@@ -108,7 +108,7 @@ Navigate the canvas without touching the mouse:
 | `g` then a label key | Focus and reveal the node at the other end of that connection. The first connection of a border is its own vim key (left `h`, top `k`, right `l`, bottom `j`); the rest take `1`–`9` then `a`–`z` minus `g h j k l`, walked left, top, right, bottom |
 | `gg` / `G` | Focus the first / last node of the focused node's section (by y, then x) |
 | `Shift+(` / `Shift+)` | Fold / unfold the current section (same action as the rail chevron) |
-| `Enter` / `Ctrl+Enter` | Open focused file in editor (beside / maximized) |
+| `Enter` / `Ctrl+Enter` | Open focused file in editor (beside / maximized); on a knowledge node, open its source in the server's web reader, as `↗` does |
 | `Alt+X` then `h/j/k/l` | Add node from vault search, connected in direction — in a section the new node takes the column slot beside, below or above the anchor and that column packs, so a slot already taken puts it below the occupant; on a code cell `h` / `l` fork left / right instead |
 | `Ctrl+Shift+H/J/K/L` or arrows | Add connected empty text node in direction and start editing it |
 | `Space` | Pin node for group movement or edge connection |
@@ -178,7 +178,7 @@ A picked result becomes a `knowledge` node:
 - header: `<server> › <title> · <age>`, where `<title>` is the heading the server matched, then its file in brackets, e.g. `2026-09-19 — state (projects/skena.md)`; a result with no heading shows the file alone.
 - `●` before the title while the cached text has changed since you last looked at the node; it clears when you focus the node.
 - `!` after the age when the last refresh failed — hover the header for the reason.
-- `↻` refreshes the node now. `↗` opens the source in the server's web reader.
+- `↻` refreshes the node now. `↗`, or `Enter` on the focused node, opens the source in the server's web reader.
 - the body is the cached text, rendered as markdown, read-only.
 
 On canvas open, every knowledge node older than `refreshAfterHours` is refreshed in the background, three at a time per server, without blocking the canvas. A server that does not answer is skipped for the rest of that run.
