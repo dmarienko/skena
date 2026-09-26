@@ -172,8 +172,10 @@ Configure at least one server in `settings.json` (shared) or `.vscode/settings.l
 | `Esc` | close |
 | `Ctrl+F` | back to the input, from anywhere in the dialog |
 
+Each result row shows the heading it matched (the file's name when there is no heading), then the vault, the file path and the tags on the line below.
+
 A picked result becomes a `knowledge` node:
-- header: `<server> › <title> · <age>`, where `<title>` is the file and heading the server matched, e.g. `skena.md › 2026-09-19 — state`.
+- header: `<server> › <title> · <age>`, where `<title>` is the heading the server matched, then its file in brackets, e.g. `2026-09-19 — state (projects/skena.md)`; a result with no heading shows the file alone.
 - `●` before the title while the cached text has changed since you last looked at the node; it clears when you focus the node.
 - `!` after the age when the last refresh failed — hover the header for the reason.
 - `↻` refreshes the node now. `↗` opens the source in the server's web reader.

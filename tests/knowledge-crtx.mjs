@@ -26,7 +26,15 @@ test('search maps hits and passes filters; full_text is off', async () => {
   const p = createCrtxProvider({ name: 'crtx', kind: 'crtx', url: 'http://h:8788/mcp' }, t);
   const hits = await p.search({ text: 'q', scope: 'crtx', tags: ['a'], recency: true, top: 20 });
   assert.deepEqual(t.calls[0], { name: 'search', args: { query: 'q', vault: 'crtx', tags: ['a'], recency: true, top: 20, full_text: false } });
-  assert.deepEqual(hits, [{ server: 'crtx', uri: 'crtx://crtx/log.md#h', title: 'log.md › h', subtitle: 'crtx', date: '2026-09-19', tags: ['a'], snippet: 'snip' }]);
+  assert.deepEqual(hits, [{ server: 'crtx', uri: 'crtx://crtx/log.md#h', title: 'h', subtitle: 'crtx · log.md', date: '2026-09-19', tags: ['a'], snippet: 'snip' }]);
+});
+
+test('a hit with no heading is titled with the file name; the subtitle keeps the whole path', async () => {
+  const t = fake({ search: [{ vault: 'crtx', file: 'projects/skena.md', heading: '' }] });
+  const p = createCrtxProvider({ name: 'crtx', kind: 'crtx', url: 'http://h:8788/mcp' }, t);
+  const [hit] = await p.search({ text: 'q', top: 5 });
+  assert.equal(hit.title, 'skena.md');
+  assert.equal(hit.subtitle, 'crtx · projects/skena.md');
 });
 
 test('search with scope "all" or undefined sends no vault; a bare array result is accepted', async () => {
@@ -40,9 +48,9 @@ test('fetch reads one section, or the file when the heading is empty; a missing 
   const t = fake({ read_section: 'sec text', read: 'file text' });
   const p = createCrtxProvider({ name: 'crtx', kind: 'crtx', url: 'http://h:8788/mcp' }, t);
   const a = await p.fetch('crtx://crtx/log.md#h');
-  assert.equal(a.text, 'sec text'); assert.equal(a.title, 'log.md › h'); assert.match(a.fetchedAt, /^\d{4}-/);
+  assert.equal(a.text, 'sec text'); assert.equal(a.title, 'h (log.md)'); assert.match(a.fetchedAt, /^\d{4}-/);
   assert.deepEqual(t.calls[0], { name: 'read_section', args: { vault: 'crtx', file: 'log.md', heading: 'h' } });
-  const b = await p.fetch('crtx://crtx/log.md'); assert.equal(b.text, 'file text');
+  const b = await p.fetch('crtx://crtx/log.md'); assert.equal(b.text, 'file text'); assert.equal(b.title, 'log.md');
   const gone = createCrtxProvider({ name: 'crtx', kind: 'crtx', url: 'http://h:8788/mcp' }, fake({ read_section: new Error(`Error executing tool read_section: no section 'x' in log.md; available: ['a', 'b']`) }));
   await assert.rejects(gone.fetch('crtx://crtx/log.md#x'), e => e.name === 'KnowledgeGoneError');
 });

@@ -9,7 +9,13 @@ function unwrap<T>(x: unknown): T {
   return (o && typeof o === 'object' && 'result' in o ? o.result : x) as T;
 }
 
-const titleOf = (r: { file: string; heading: string }) => r.heading ? `${r.file} › ${r.heading}` : r.file;
+// - a search row: the heading, or the file's name for a whole-file hit; the path is on the row's
+//   second line, so sections of one long file differ in the part that is not cut off
+const hitTitleOf = (r: { file: string; heading: string }) => r.heading || r.file.slice(r.file.lastIndexOf('/') + 1);
+
+// - a node header has one line: the heading first, so a narrow node still shows it, then the file.
+//   Brackets, not a dash: crtx headings often hold " — " themselves ("2026-09-19 — state")
+const titleOf = (r: { file: string; heading: string }) => r.heading ? `${r.heading} (${r.file})` : r.file;
 
 // - the transport parses a reply that is JSON, so a section whose whole text is JSON arrives as an
 //   object or an array; String() on one of those reads "[object Object]", so show it as JSON
@@ -131,8 +137,8 @@ export function createCrtxProvider(config: KnowledgeServerConfig, transport: Too
       return hits.map(h => ({
         server: config.name,
         uri: h.uri ?? buildCrtxUri({ vault: h.vault, file: h.file, heading: h.heading ?? '' }),
-        title: titleOf({ file: h.file, heading: h.heading ?? '' }),
-        subtitle: h.vault,
+        title: hitTitleOf({ file: h.file, heading: h.heading ?? '' }),
+        subtitle: `${h.vault} · ${h.file}`,
         date: h.date,
         tags: h.tags ?? [],
         snippet: h.snippet ?? (h.text ?? '').replace(/\s+/g, ' ').slice(0, 200),
