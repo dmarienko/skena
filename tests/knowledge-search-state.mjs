@@ -19,10 +19,10 @@ test('splitTags keeps a # inside a word', () => {
   assert.deepEqual(splitTags('C#'), { text: 'C#', tags: [] });
 });
 
-test('move wraps past the last hit and before the first', () => {
+test('move clamps at the last hit and does not wrap to the first', () => {
   const s = { ...initialState(servers), hits: [hit('a'), hit('b'), hit('c')], highlight: 2 };
-  assert.equal(reduce(s, { kind: 'move', by: 1 }).highlight, 0);
-  assert.equal(reduce({ ...s, highlight: 0 }, { kind: 'move', by: -1 }).highlight, 2);
+  assert.equal(reduce(s, { kind: 'move', by: 1 }).highlight, 2);
+  assert.equal(reduce({ ...s, highlight: 0 }, { kind: 'move', by: -1 }).highlight, 0);
   assert.equal(reduce({ ...s, highlight: 0 }, { kind: 'move', by: 1 }).highlight, 1);
 });
 

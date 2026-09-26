@@ -43,7 +43,8 @@ export function reduce(s: SearchState, a: SearchAction): SearchState {
     case 'type':          return { ...s, query: a.query };
     case 'hits':          return { ...s, hits: a.hits, highlight: 0, status: `${a.hits.length} result${a.hits.length === 1 ? '' : 's'}` };
     case 'error':         return { ...s, hits: [], highlight: 0, status: a.message };
-    case 'move':          return s.hits.length ? { ...s, highlight: (s.highlight + a.by + s.hits.length) % s.hits.length } : s;
+    // - clamps at both ends: no wrap from the last hit to the first or back
+    case 'move':          return s.hits.length ? { ...s, highlight: Math.min(s.hits.length - 1, Math.max(0, s.highlight + a.by)) } : s;
     case 'scopes':        return { ...s, scopes: a.scopes };
     case 'cycleScope':    { const all = ['all', ...s.scopes]; const i = all.indexOf(s.scope); return { ...s, scope: all[(i + 1) % all.length] }; }
     case 'toggleRecency': return { ...s, recency: !s.recency };
