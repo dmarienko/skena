@@ -268,6 +268,9 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
     if (e.key === 'Tab' && caps?.scopes) { e.preventDefault(); dispatch({ kind: 'cycleScope' }); return; }
     if (e.key === 'Enter') {
       e.preventDefault();
+      // - without this the same keydown reaches CanvasView's window listener once the picked
+      // - node is selected, and Enter opens it in the browser right after adding it
+      e.stopPropagation();
       const h = state.hits[state.highlight];
       if (h) pick(h);
       return;
