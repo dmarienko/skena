@@ -1,0 +1,308 @@
+/* - the chat console docked at the bottom centre: the conversation panel on top, inset 18 px on each
+     side, and the input bar below it. The root is fixed and centred by auto margins. */
+.cc-root {
+  --cc-panel:      rgba(14, 20, 18, 0.42);
+  --cc-panel-line: rgba(255, 255, 255, 0.08);
+  --cc-bar:        rgba(20, 26, 24, 0.58);
+  --cc-menu:       rgba(20, 26, 24, 0.86);
+  --cc-accent:     #7fe3b8;
+  --cc-accent-ink: #062016;
+  --cc-done:       #4cc8a0;
+  --cc-running:    #e7a93a;
+  --cc-error:      #e5484d;
+  --cc-ink:        #e3e7ea;
+  --cc-muted:      #8f9aa4;
+  --cc-line:       #262b30;
+  --cc-font:       "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --cc-mono:       "IBM Plex Mono", ui-monospace, Menlo, monospace;
+
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0 auto;
+  padding-bottom: 18px;
+  z-index: 9000;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--cc-font);
+  font-size: 13px;
+  /* - the mock's body line height; the webview's body leaves it at normal */
+  line-height: 1.55;
+  color: var(--cc-ink);
+  /* - the strip under the bar and the panel's side insets let clicks through to the canvas; the root's
+       rect still reaches the bottom edge, so CanvasView's paneArea keeps focused nodes above it */
+  pointer-events: none;
+}
+.cc-root > * { pointer-events: auto; }
+
+.cc-edge { position: absolute; top: 0; bottom: 18px; width: 8px; cursor: ew-resize; z-index: 2; }
+.cc-edge-left  { left: -4px; }
+.cc-edge-right { right: -4px; }
+
+.cc-out {
+  margin: 0 18px;
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--cc-panel);
+  border: 1px solid var(--cc-panel-line);
+  border-bottom: none;
+  border-radius: 14px 14px 0 0;
+  backdrop-filter: blur(10px) saturate(1.15);
+  -webkit-backdrop-filter: blur(10px) saturate(1.15);
+}
+.cc-out-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 8px 14px;
+  font-size: 12.5px;
+  color: var(--cc-muted);
+  user-select: none;
+}
+.cc-out-h .grow { flex: 1; }
+.cc-tokens { font-size: 11px; opacity: 0.8; }
+.cc-hbtn { background: none; border: none; padding: 0 2px; line-height: 1; font-size: 12.5px; color: var(--cc-muted); cursor: pointer; }
+.cc-hbtn:hover { color: var(--cc-ink); }
+.cc-out-b { display: flex; flex-direction: column; gap: 7px; min-height: 0; overflow-y: auto; padding: 0 14px 10px; }
+
+.cc-turn { display: flex; flex-direction: column; gap: 7px; }
+.cc-turn + .cc-turn,
+.cc-turn + .cc-fold-line,
+.cc-fold-line + .cc-turn { border-top: 1px solid var(--cc-line); padding-top: 7px; }
+.cc-fold-line {
+  font-family: var(--cc-mono);
+  font-size: 12.5px;
+  color: var(--cc-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.cc-fold-line:hover { color: var(--cc-ink); }
+.cc-user {
+  font-family: var(--cc-mono);
+  font-size: 12.5px;
+  color: var(--cc-accent);
+  opacity: 0.9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.cc-user::before { content: '› '; color: var(--cc-muted); }
+
+.cc-step { display: flex; flex-direction: column; }
+.cc-tool {
+  display: flex;
+  gap: 8px;
+  padding: 3px 8px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--cc-panel-line);
+  font-family: var(--cc-mono);
+  font-size: 11.5px;
+  color: var(--cc-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cc-tool .ok  { color: var(--cc-done); }
+.cc-tool .run { color: var(--cc-running); }
+.cc-tool .err { color: var(--cc-error); }
+.cc-tool-detail {
+  margin: 3px 0 0 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--cc-mono);
+  font-size: 10.5px;
+  color: var(--cc-muted);
+}
+
+.cc-reply { font-size: 13.5px; line-height: 1.6; user-select: text; word-break: break-word; }
+.cc-reply p { margin: 0 0 6px; }
+.cc-reply code { font-family: var(--cc-mono); font-size: 12px; background: rgba(255, 255, 255, 0.06); padding: 1px 4px; border-radius: 4px; }
+.cc-reply pre { margin: 4px 0; padding: 6px 8px; background: rgba(0, 0, 0, 0.3); border-radius: 6px; overflow: auto; }
+.cc-reply pre code { background: none; padding: 0; }
+.cc-caret { display: inline-block; width: 7px; height: 15px; margin-left: 2px; background: var(--cc-accent); vertical-align: -2px; opacity: 0.85; }
+.cc-dots { font-size: 12px; color: var(--cc-muted); }
+
+.cc-actions { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--cc-muted); }
+.cc-act { background: none; border: none; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+.cc-act:hover { color: var(--cc-ink); }
+.cc-cost { margin-left: auto; font-size: 11px; opacity: 0.8; }
+
+.cc-note { padding: 6px 10px; border-radius: 8px; font-size: 11.5px; background: rgba(127, 227, 184, 0.10); border: 1px solid rgba(127, 227, 184, 0.25); color: var(--cc-accent); }
+.cc-error { padding: 6px 10px; border-radius: 8px; font-size: 11.5px; background: rgba(229, 72, 77, 0.10); border: 1px solid rgba(229, 72, 77, 0.30); color: var(--cc-error); }
+
+.cc-bar {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 7px 7px 7px 10px;
+  background: var(--cc-bar);
+  border: 1px solid var(--cc-panel-line);
+  border-radius: 22px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(12px) saturate(1.15);
+  -webkit-backdrop-filter: blur(12px) saturate(1.15);
+}
+
+.cc-plus-wrap { position: relative; flex-shrink: 0; }
+.cc-plus {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  font-size: 19px;
+  color: var(--cc-ink);
+  cursor: pointer;
+}
+.cc-plus:hover { background: rgba(255, 255, 255, 0.07); }
+
+.cc-menu {
+  position: absolute;
+  left: -4px;
+  bottom: 43px;
+  z-index: 3;
+  min-width: 250px;
+  display: flex;
+  flex-direction: column;
+  padding: 5px;
+  background: var(--cc-menu);
+  border: 1px solid var(--cc-panel-line);
+  border-radius: 12px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  font-size: 13px;
+}
+.cc-menu-item {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: none;
+  border: none;
+  font: inherit;
+  color: var(--cc-ink);
+  text-align: left;
+  cursor: pointer;
+}
+.cc-menu-item:hover { background: rgba(255, 255, 255, 0.07); }
+.cc-menu-item:disabled { opacity: 0.45; cursor: default; }
+.cc-menu-item .k { margin-left: auto; font-family: var(--cc-mono); font-size: 11.5px; color: var(--cc-muted); }
+.cc-menu-hint { padding: 6px 10px; font-size: 12px; color: var(--cc-muted); }
+.cc-paste-target { position: absolute; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+/* - chips sit on the input's first line, before the editor, as in the mock; the editor wraps under them
+     only when less than 160 px is left beside them */
+.cc-field { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 5px 6px; padding: 5px 0; }
+.cc-chips { display: contents; }
+.cc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(127, 227, 184, 0.10);
+  border: 1px solid rgba(127, 227, 184, 0.25);
+  font-family: var(--cc-mono);
+  font-size: 11.5px;
+  line-height: 20px;
+  color: var(--cc-ink);
+}
+.cc-chip button { background: none; border: none; padding: 0; line-height: 1; font-size: 11px; color: var(--cc-muted); cursor: pointer; }
+.cc-chip button:hover { color: var(--cc-ink); }
+
+.cc-editor { position: relative; flex: 1 1 160px; min-width: 0; }
+/* - a chip is 26 px high, the editor's line 20 px: centre the first line on the chips */
+.cc-chips + .cc-editor { margin-top: 3px; }
+/* - Monaco themes are global, so the chat input keeps the node editors' theme and turns see-through here */
+.cc-editor .monaco-editor,
+.cc-editor .monaco-editor .margin,
+.cc-editor .monaco-editor-background,
+.cc-editor .monaco-editor .inputarea.ime-input { background-color: transparent !important; }
+.cc-editor .monaco-editor .cursors-layer .cursor { background-color: var(--cc-accent) !important; border-color: var(--cc-accent) !important; }
+.cc-ph {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 1;
+  font-family: var(--cc-mono);
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--cc-muted);
+  pointer-events: none;
+}
+
+.cc-spin {
+  flex-shrink: 0;
+  align-self: center;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: var(--cc-accent);
+  border-radius: 50%;
+  animation: cc-spin 0.8s linear infinite;
+}
+@keyframes cc-spin { to { transform: rotate(360deg); } }
+
+.cc-model {
+  flex-shrink: 0;
+  display: inline-flex;
+  gap: 4px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: none;
+  border: none;
+  font-family: var(--cc-font);
+  font-size: 12.5px;
+  line-height: inherit;
+  color: var(--cc-ink);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cc-model:hover { background: rgba(255, 255, 255, 0.07); }
+.cc-model i { font-style: normal; color: var(--cc-muted); }
+
+.cc-send {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--cc-accent);
+  color: var(--cc-accent-ink);
+  border: none;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+/* - the mock shows the send button at full colour over an empty input */
+.cc-send:disabled { cursor: default; }
+.cc-stop {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.10);
+  border: none;
+  cursor: pointer;
+}
+.cc-stop i { width: 11px; height: 11px; border-radius: 2px; background: var(--cc-ink); }
