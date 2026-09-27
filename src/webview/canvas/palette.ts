@@ -53,12 +53,6 @@ export const LABEL_TEXT_COLOR       = 'rgba(0, 255, 0, 0.92)';   // - label glyp
 export const LABEL_BG_COLOR         = 'rgba(17, 165, 191, 0.27)';     // - label pill background
 export const LABEL_CREATED_BY_BG    = 'rgba(100, 60, 220, 0.80)'; // - "created by AI" badge bg
 
-// ─── AI chat (FloatingChat message roles + input) ───────────────────────────────
-export const CHAT_USER_RGB      = '16, 170, 16';    // - user message accent (green)
-export const CHAT_ASSISTANT_RGB = '167, 139, 250';  // - assistant accent (purple, #A78BFA)
-export const CHAT_ERROR_RGB     = '248, 113, 113';  // - error text / banner (red, #F87171)
-export const CHAT_ACCENT_RGB    = '56, 189, 248';   // - input glyph + focused-panel glow (blue)
-
 // - per-kernel accent colors — defined in shared/ so the host can use them too
 export { KERNEL_PALETTE, kernelColor, nextKernelColorIndex } from '../../shared/kernelPalette';
 

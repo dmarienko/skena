@@ -34,6 +34,7 @@ import { canvasSessionName } from './llm-adapters/harness';
 import { formatAttachments } from '../shared/chatAttachments';
 import { attachmentBlocks } from './chat-attachments';
 import { EFFORT_LEVELS } from '../shared/aiEffort';
+import { migrateChatUI, type ChatUIState } from '../shared/chatUIState';
 import { buildDroppedNode } from './dropNodes';
 import type { CollectedOutput } from './jupyter/protocol';
 import { renderOutput, hasVisibleOutput } from './jupyter/output';
@@ -318,14 +319,13 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             const historyKey = `skena.chatHistory.${document.uri.toString()}`;
             const uiKey      = `skena.chatUI.${document.uri.toString()}`;
             const savedHistory = this.context.workspaceState.get<unknown[]>(historyKey) ?? [];
-            const savedUI      = this.context.workspaceState.get<{ collapsed?: boolean; pos?: { x: number; y: number }; size?: { w: number; h: number }; inputW?: number }>(uiKey);
+            // - canvases saved before the docked console hold { collapsed, pos, size, inputW }
+            const savedUI      = migrateChatUI(this.context.workspaceState.get<unknown>(uiKey));
             send({
-              type:      'floatingChatHistoryRestored',
-              history:   savedHistory as ChatItem[],
-              collapsed: true,              // - always start collapsed; user opens explicitly
-              pos:       savedUI?.pos,
-              size:      savedUI?.size,
-              inputW:    savedUI?.inputW,
+              type:    'floatingChatHistoryRestored',
+              history: savedHistory as ChatItem[],
+              width:   savedUI.width,
+              folded:  savedUI.folded,
             } satisfies MsgFloatingChatHistoryRestored);
             // - restore canvas marks (vim-style bookmarks) from .vscode/skena-bookmarks.json
             {
@@ -495,12 +495,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         }
         case 'floatingChatSaveUIState': {
           const uiKey = `skena.chatUI.${document.uri.toString()}`;
-          void this.context.workspaceState.update(uiKey, {
-            collapsed: (msg as MsgFloatingChatSaveUIState).collapsed,
-            pos:       (msg as MsgFloatingChatSaveUIState).pos,
-            size:      (msg as MsgFloatingChatSaveUIState).size,
-            inputW:    (msg as MsgFloatingChatSaveUIState).inputW,
-          });
+          const ui: ChatUIState = { width: (msg as MsgFloatingChatSaveUIState).width, folded: (msg as MsgFloatingChatSaveUIState).folded };
+          void this.context.workspaceState.update(uiKey, ui);
           break;
         }
         case 'saveMarks': {

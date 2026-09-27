@@ -406,23 +406,20 @@ export interface MsgFloatingChatResetDone {
   type: 'floatingChatResetDone';
 }
 
-/** Host → Webview: restore chat state from workspaceState on canvas open */
+// - host → webview: this canvas's chat history and console state, on open
 export interface MsgFloatingChatHistoryRestored {
-  type: 'floatingChatHistoryRestored';
-  history:   ChatItem[];
-  collapsed?: boolean;
-  pos?:       { x: number; y: number };
-  size?:      { w: number; h: number };
-  inputW?:    number;
+  type:    'floatingChatHistoryRestored';
+  history: ChatItem[];
+  // - null: nothing saved; the console uses its default width
+  width:   number | null;
+  folded:  boolean;
 }
 
-/** Webview → Host: persist floating chat panel UI state (pos/size/collapsed) */
+// - webview → host: save the console's width and folded state for this canvas
 export interface MsgFloatingChatSaveUIState {
-  type:      'floatingChatSaveUIState';
-  collapsed: boolean;
-  pos:       { x: number; y: number };
-  size:      { w: number; h: number };
-  inputW?:   number;
+  type:   'floatingChatSaveUIState';
+  width:  number;
+  folded: boolean;
 }
 
 /** Host → Webview: AI added a node to the canvas during tool use */

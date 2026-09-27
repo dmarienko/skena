@@ -13,6 +13,7 @@
 import React, { useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react';
 import { CanvasView } from './canvas/CanvasView';
 import { FloatingChat } from './canvas/FloatingChat';
+import type { RestoredChat } from './hooks/useFloatingChat';
 import { useCanvasData } from './hooks/useCanvasData';
 import { HostToWebview, MarkdownConfig, ChatToolEvent, ChatTokenUsage } from '../shared/types';
 import { MarkdownConfigContext, DEFAULT_MARKDOWN_CONFIG } from './context/MarkdownConfigContext';
@@ -85,7 +86,7 @@ export function App(): JSX.Element {
   // - cross-canvas node ref: label the host asked to focus, dispatched once CanvasView is mounted
   const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
   // - current AI model/provider shown in the chat title
-  const [chatModel, setChatModel] = useState<{ model: string; provider: string; sessionName?: string } | null>(null);
+  const [chatModel, setChatModel] = useState<{ model: string; effort?: string; provider: string; sessionName?: string } | null>(null);
 
   // - event buses for FloatingChat incoming messages
   const deltaEvt     = useRef(makeEventTarget<string>());
@@ -95,12 +96,7 @@ export function App(): JSX.Element {
   const nodeAddedEvt    = useRef(makeEventTarget<string>());
   const toolEventEvt = useRef(makeEventTarget<ChatToolEvent>());
   const usageEvt     = useRef(makeEventTarget<ChatTokenUsage>());
-  const historyRestoredEvt = useRef(makeEventTarget<{
-    history:    unknown[];
-    collapsed?: boolean;
-    pos?:       { x: number; y: number };
-    size?:      { w: number; h: number };
-  }>());
+  const historyRestoredEvt = useRef(makeEventTarget<RestoredChat>());
 
   useLayoutEffect(() => installThemeVars(), []);
 
@@ -252,12 +248,10 @@ export function App(): JSX.Element {
           break;
         }
         case 'floatingChatHistoryRestored':
-          historyRestoredEvt.current.emit({
-            history:   msg.history,
-            collapsed: msg.collapsed,
-            pos:       msg.pos,
-            size:      msg.size,
-          });
+          historyRestoredEvt.current.emit({ history: msg.history, width: msg.width, folded: msg.folded });
+          break;
+        case 'floatingChatFilesPicked':
+          window.dispatchEvent(new CustomEvent('skena:chatFilesPicked', { detail: msg.files }));
           break;
         case 'marksRestored':
           window.dispatchEvent(new CustomEvent('skena:marksRestored', { detail: msg.marks }));
@@ -266,7 +260,7 @@ export function App(): JSX.Element {
           window.dispatchEvent(new CustomEvent('skena:panelActivated'));
           break;
         case 'chatModelInfo':
-          setChatModel({ model: msg.model, provider: msg.provider, sessionName: msg.sessionName });
+          setChatModel({ model: msg.model, effort: msg.effort, provider: msg.provider, sessionName: msg.sessionName });
           break;
         case 'focusNode':
           // - buffer, don't dispatch inline: on first open of a closed canvas this arrives right
@@ -327,7 +321,7 @@ export function App(): JSX.Element {
 
   // - FloatingChat is always mounted (outside the ready guard) so its state
   // - survives canvas reloads (canvasChanged → canvasLoaded) without resetting.
-  // - Unmounting it would reset useFloatingChat to collapsed:false every reload.
+  // - Unmounting it would drop the history, width and folded state on every reload.
   return (
     <MarkdownConfigContext.Provider value={mdConfig}>
       {ready ? (
@@ -344,6 +338,7 @@ export function App(): JSX.Element {
       <FloatingChat
         activeNodeId={activeNodeId}
         model={chatModel?.model}
+        effort={chatModel?.effort}
         provider={chatModel?.provider}
         sessionName={chatModel?.sessionName}
         postMessage={postMessage}
