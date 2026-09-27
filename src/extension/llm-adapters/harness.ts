@@ -25,6 +25,7 @@ import { spawn, type ChildProcess } from 'child_process';
 import type { ILLMClient, LLMMessage, LLMTool, LLMCallbacks, LLMContext, LLMUsage } from '../llm-client';
 import { loadKernelServers } from '../jupyter/manager';
 import { runIpc } from '../run-ipc';
+import { effortArgs } from '../../shared/aiEffort';
 
 const FALLBACK_BIN = path.join(os.homedir(), '.local', 'bin', 'claude');
 
@@ -210,6 +211,7 @@ export class HarnessAdapter implements ILLMClient {
       '--verbose',
       '--print',
       '--model', model,
+      ...effortArgs(context?.effort),
       '--permission-mode', permMode,
       '--max-turns', String(maxTurns),
       '--name', sessionName,

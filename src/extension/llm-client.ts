@@ -44,6 +44,8 @@ export interface LLMContext {
   sessionId?:    string | null;
   /** - whether to resume the prior session (skena.ai.session.restore) */
   restoreSession?: boolean;
+  // - per-canvas effort (canvas.metadata.aiEffort); the harness passes it as --effort
+  effort?:       string;
 }
 
 /** - turn cost: session-cumulative + this turn's delta (harness only) */
