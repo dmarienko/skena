@@ -156,6 +156,15 @@ You can use read_node to fetch the full content of any node by its label (e.g. N
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
+// - the first `max` UTF-16 units of `text` plus a truncated mark; a cut that would split a surrogate
+// - pair drops its high half, so the kept text stays valid UTF-16
+export function capText(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const last = text.charCodeAt(max - 1);
+  const end  = last >= 0xD800 && last <= 0xDBFF ? max - 1 : max;
+  return text.slice(0, end) + '\n…[truncated]';
+}
+
 export function nodeTitle(node: CanvasNode): string {
   switch (node.type) {
     case 'file':   return (node as FileNode).file.split('/').pop() ?? (node as FileNode).file;
@@ -221,8 +230,5 @@ export async function nodeContent(
       raw = '';
   }
 
-  if (raw.length > maxChars) {
-    return raw.slice(0, maxChars) + '\n…[truncated]';
-  }
-  return raw;
+  return capText(raw, maxChars);
 }

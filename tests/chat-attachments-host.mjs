@@ -48,3 +48,21 @@ test('an image is named in the text and marked as sent or not sent', async () =>
   assert.equal((await attachmentBlocks([img], canvas, dir, pathMode, true))[0].body, '(sent with this message as an image)');
   assert.equal((await attachmentBlocks([img], canvas, dir, contentMode, false))[0].body, '(not sent: this provider takes text only)');
 });
+
+// - a high surrogate with no low surrogate after it
+const loneHigh = s => /[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(s);
+
+test('a file cut at the cap never ends in half an emoji', async () => {
+  const p = join(dir, 'emoji.txt');
+  writeFileSync(p, 'a'.repeat(11999) + '\u{1F600}' + 'tail');
+  const [b] = await attachmentBlocks([{ kind: 'file', path: p, name: 'emoji.txt' }], canvas, dir, contentMode, false);
+  assert.equal(loneHigh(b.body), false);
+  assert.equal(b.body, 'a'.repeat(11999) + '\n…[truncated]');
+});
+
+test('a node cut at the cap never ends in half an emoji', async () => {
+  const c = { nodes: [{ id: 'e1', type: 'text', text: 'b'.repeat(2999) + '\u{1F600}' + 'tail', x: 0, y: 0, width: 10, height: 10 }], edges: [] };
+  const [b] = await attachmentBlocks([{ kind: 'node', id: 'e1', label: 'N1' }], c, dir, contentMode, false);
+  assert.equal(loneHigh(b.body), false);
+  assert.equal(b.body, 'b'.repeat(2999) + '\n…[truncated]');
+});

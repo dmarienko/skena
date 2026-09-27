@@ -3,7 +3,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { CanvasData } from '../shared/types';
 import { AttachmentBlock, ChatAttachment, looksBinary } from '../shared/chatAttachments';
-import { nodeContent, nodeTitle, SystemPromptOptions } from './context-builder';
+import { capText, nodeContent, nodeTitle, SystemPromptOptions } from './context-builder';
 
 const MAX_NODE_CHARS = 3000;
 const MAX_FILE_CHARS = 12000;
@@ -15,7 +15,7 @@ async function fileText(p: string): Promise<string> {
     if (st.size > MAX_FILE_BYTES) return `[file over 2 MB, not inlined: ${path.basename(p)}]`;
     const raw = await fs.readFile(p, 'utf-8');
     if (looksBinary(raw)) return `[binary file, not inlined: ${path.basename(p)}]`;
-    return raw.length > MAX_FILE_CHARS ? raw.slice(0, MAX_FILE_CHARS) + '\n…[truncated]' : raw;
+    return capText(raw, MAX_FILE_CHARS);
   } catch {
     return '[file not found]';
   }
