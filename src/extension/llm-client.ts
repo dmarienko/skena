@@ -10,6 +10,7 @@
 
 import * as vscode from 'vscode';
 import type { ChatToolEvent, ChatTokenUsage } from '../shared/types';
+import type { ImageInput } from './llm-adapters/userContent';
 
 // ─── shared types ─────────────────────────────────────────────────────────────
 
@@ -46,6 +47,8 @@ export interface LLMContext {
   restoreSession?: boolean;
   // - per-canvas effort (canvas.metadata.aiEffort); the harness passes it as --effort
   effort?:       string;
+  // - images sent with this user message; only the harness sends them
+  images?:       ImageInput[];
 }
 
 /** - turn cost: session-cumulative + this turn's delta (harness only) */

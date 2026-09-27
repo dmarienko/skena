@@ -26,6 +26,7 @@ import type { ILLMClient, LLMMessage, LLMTool, LLMCallbacks, LLMContext, LLMUsag
 import { loadKernelServers } from '../jupyter/manager';
 import { runIpc } from '../run-ipc';
 import { effortArgs } from '../../shared/aiEffort';
+import { buildUserContent, type UserContent } from './userContent';
 
 const FALLBACK_BIN = path.join(os.homedir(), '.local', 'bin', 'claude');
 
@@ -73,7 +74,7 @@ interface HarnessSession {
   sessionId:     string;
   usedResume:    boolean;               // - spawned with --resume (for fallback detection)
   everSucceeded: boolean;               // - got at least one successful result
-  pendingMessage: string;               // - last message (replayed on resume-fail respawn)
+  pendingMessage: UserContent;          // - last message (replayed on resume-fail respawn)
   bin:           string;
   cwd:           string;
   freshArgs:     string[];              // - spawn args WITHOUT --resume (for respawn)
@@ -161,7 +162,7 @@ export class HarnessAdapter implements ILLMClient {
     if (s.cb) { callbacks.onError('Still working on the previous message — please wait or stop it.'); return; }
 
     s.autoContinues = 0;   // - fresh user message: reset the auto-continue budget
-    this.beginTurn(s, message, callbacks);
+    this.beginTurn(s, buildUserContent(message, context?.images), callbacks);
   }
 
   /** - send `/compact` as a turn to summarise the live session (no-op if none) */
@@ -312,7 +313,7 @@ export class HarnessAdapter implements ILLMClient {
     return p;
   }
 
-  private beginTurn(s: HarnessSession, message: string, callbacks: LLMCallbacks): void {
+  private beginTurn(s: HarnessSession, message: UserContent, callbacks: LLMCallbacks): void {
     s.cb = callbacks;
     s.anyText = false; s.lastResultText = ''; s.isError = false; s.aborted = false; s.stderr = '';
     s.pendingMessage = message;
