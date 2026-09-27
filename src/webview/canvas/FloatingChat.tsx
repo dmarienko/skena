@@ -26,14 +26,14 @@
 import { useRef, useEffect, useCallback, useState, memo, type CSSProperties } from 'react';
 import Editor, { OnMount, BeforeMount } from '@monaco-editor/react';
 import type { editor as MonacoEditor } from 'monaco-editor';
-import { initVimMode, VimMode } from 'monaco-vim';
+import { initVimMode } from 'monaco-vim';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 
 import { patchVimLastLine, patchVimVisualCursor, patchVimExternalSelection, patchVimDeleteLastLine } from './nodes/TextNode';
-import { stripForHost, rememberWritten, classifyHostText } from './vimClipboard';
+import { applyVimClipboard, noteChatHostClipboard, patchVimNewlineAndIndent, setChatClipboardCache, vscodePostMessage, writeChatClipboard } from './chat/chatClipboard';
 import { useHostMarkdown } from '../hooks/useHostMarkdown';
 import { useHighlightedHtml } from '../lib/codeHighlight';
 import { ChatItem, ChatMessage, ChatToolEvent, ChatTokenUsage } from '../../shared/types';
@@ -57,157 +57,6 @@ const titleBtnStyle: CSSProperties = {
   lineHeight: 1,
   userSelect: 'none',
 };
-
-// ─── vscode message relay ─────────────────────────────────────────────────────
-
-function vscodePostMessage(msg: unknown) {
-  (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
-}
-
-// ─── clipboard state (module-level, FloatingChat's own cache) ─────────────────
-//
-// Separate from TextNode's module-level cache — they live in different module
-// scopes in the bundle.  Both listen to skena:clipboardContent and update their
-// own cache; the VIM RegisterController uses whichever was last registered
-// (i.e. whichever editor was most recently focused).
-
-type VimRegisterLike = {
-  setText:               (text: string, linewise: boolean, blockwise?: boolean) => void;
-  pushText:              (text: string, linewise: boolean) => void;
-  clear:                 () => void;
-  toString:              () => string;
-  linewise:              boolean;
-  blockwise:             boolean;
-  keyBuffer:             string[];
-  insertModeChanges:     unknown[];
-  searchQueries:         string[];
-  pushInsertModeChanges?:(changes: unknown) => void;
-  pushSearchQuery?:      (query: string)   => void;
-};
-
-type VimSingleton = {
-  defineRegister:        (n: string, r: unknown) => void;
-  getRegisterController: () => { registers: Record<string, VimRegisterLike>; unnamedRegister: VimRegisterLike };
-};
-
-let chatClipboardCache: { text: string; linewise: boolean } = { text: '', linewise: false };
-
-/**
- * Hand text to the host clipboard and record it, so a read-back can be recognised as ours.
- * `full` is the register form; `out` overrides what the host gets for callers that are not
- * writing a register (the Ctrl+C copy sends the line verbatim, trailing newline included).
- */
-function writeChatClipboard(full: string, linewise: boolean, out?: string): void {
-  const sent = out ?? stripForHost(full, linewise);
-  rememberWritten(sent, full, linewise);
-  vscodePostMessage({ type: 'writeClipboard', text: sent });
-}
-
-/** - relay register: routes vim y/p through the extension-host clipboard */
-const chatSysReg: VimRegisterLike = {
-  keyBuffer:         [''],
-  linewise:          false,
-  blockwise:         false,
-  insertModeChanges: [],
-  searchQueries:     [],
-
-  setText(text: string, linewise: boolean, blockwise?: boolean) {
-    const full = text ?? '';
-    this.keyBuffer = [full];
-    this.linewise  = !!linewise;
-    this.blockwise = !!blockwise;
-    chatClipboardCache = { text: full, linewise: !!linewise };
-    writeChatClipboard(full, !!linewise);
-  },
-  pushText(text: string, linewise: boolean) {
-    if (linewise) {
-      if (!this.linewise) this.keyBuffer.push('\n');
-      this.linewise = true;
-    }
-    this.keyBuffer.push(text);
-    const full = this.keyBuffer.join('');
-    chatClipboardCache = { text: full, linewise: this.linewise };
-    writeChatClipboard(full, this.linewise);
-  },
-  clear() {
-    this.keyBuffer         = [];
-    this.linewise          = false;
-    this.blockwise         = false;
-    this.insertModeChanges = [];
-    this.searchQueries     = [];
-  },
-  toString() {
-    return chatClipboardCache.text !== '' ? chatClipboardCache.text : this.keyBuffer.join('');
-  },
-  pushInsertModeChanges(changes: unknown) { this.insertModeChanges.push(changes); },
-  pushSearchQuery(query: string)          { this.searchQueries.push(query); },
-};
-
-/**
- * Take the host clipboard text into the relay register, with the right linewise flag.
- * The record is shared with the text-node register, so a yank made in a cell is recognised
- * here too and keeps its linewise form.
- */
-function noteChatHostClipboard(text: string): void {
-  const got            = classifyHostText(text);
-  chatClipboardCache   = got;
-  chatSysReg.linewise  = got.linewise;
-  chatSysReg.keyBuffer = [got.text];
-}
-
-function getChatVimSingleton(): VimSingleton | undefined {
-  return (VimMode as unknown as Record<string, unknown>).Vim as VimSingleton | undefined;
-}
-
-/**
- * Patch monaco-vim's broken newlineAndIndent command.
- *
- * Root cause: CMAdapter.commands.newlineAndIndent calls
- *   editor.trigger("vim", "editor.action.insertLineAfter")
- * which is deferred by Monaco and doesn't fire reliably from inside a vim
- * key-handler callback — `o` jumps to EOL but inserts no newline.
- *
- * Fix: replace with a synchronous executeEdits('\n') at the current cursor.
- * Patching once is enough (global on VimMode.commands); calling it again is
- * idempotent.  Must be called after every initVimMode() because initVimMode
- * can call resetVimGlobalState which recreates the command table.
- */
-function patchVimNewlineAndIndent(): void {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const CM = VimMode as any;
-  if (!CM?.commands) return;
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  CM.commands.newlineAndIndent = function(cm: any) {
-    const editor = cm.editor as MonacoEditor.IStandaloneCodeEditor;
-    const pos = editor.getPosition();
-    if (!pos) return;
-    editor.executeEdits('vim-o', [{
-      range: {
-        startLineNumber: pos.lineNumber, startColumn: pos.column,
-        endLineNumber:   pos.lineNumber, endColumn:   pos.column,
-      },
-      text: '\n',
-    }]);
-  };
-}
-
-/**
- * Register chatSysReg as the vim clipboard in the VIM singleton.
- * Must be called after initVimMode() and again on every focus so FloatingChat
- * re-owns the register controller whenever TextNode editing has overwritten it.
- */
-function applyVimClipboard(): void {
-  const Vim = getChatVimSingleton();
-  if (!Vim) return;
-  try { Vim.defineRegister('+', chatSysReg); } catch { /* already defined */ }
-  try { Vim.defineRegister('*', chatSysReg); } catch { /* already defined */ }
-  const rc = Vim.getRegisterController();
-  if (rc) {
-    rc.registers['"']  = chatSysReg;
-    rc.unnamedRegister = chatSysReg;
-  }
-}
 
 // ─── props ────────────────────────────────────────────────────────────────────
 
@@ -620,7 +469,7 @@ export function FloatingChat({
           ? model.getLineContent(sel.startLineNumber) + '\n'
           : model.getValueInRange(sel);
         if (text) {
-          chatClipboardCache = { text, linewise: sel.isEmpty() };
+          setChatClipboardCache(text, sel.isEmpty());
           // - a whole-line copy keeps its trailing newline on the host: that is what Ctrl+C
           // - in VS Code puts there too, and the newline rule reads it back as linewise
           writeChatClipboard(text, sel.isEmpty(), text);
