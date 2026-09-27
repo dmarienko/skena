@@ -3351,6 +3351,17 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     return () => { delete (window as unknown as { __skenaGetViewport?: () => ViewportSnapshot }).__skenaGetViewport; };
   }, []);
 
+  // - the chat's + menu reads the nodes picked with Space when it opens
+  useEffect(() => {
+    type Picked = { id: string; label: string };
+    const getPicked = (): Picked[] => [...spaceSelectedRef.current].map(id => {
+      const cn = canvasRef.current.nodes.find(n => n.id === id);
+      return { id, label: cn?.nodeLabel ?? id.slice(0, 6) };
+    });
+    (window as unknown as { __skenaGetPicked?: () => Picked[] }).__skenaGetPicked = getPicked;
+    return () => { delete (window as unknown as { __skenaGetPicked?: () => Picked[] }).__skenaGetPicked; };
+  }, []);
+
   // - handle skena:addNodeTrigger from VS Code ctrl+n command override
   // - compute viewport centre in flow coords, avoid overlaps, send addNodeRequest
   useEffect(() => {
