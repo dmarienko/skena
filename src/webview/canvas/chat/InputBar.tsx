@@ -83,7 +83,7 @@ export function InputBar(p: Props): JSX.Element {
             ))}
           </div>
         )}
-        <ChatInput ref={p.inputRef} scrollTarget={p.scrollTarget} onSend={p.onSend} onEmptyChange={setEmpty} />
+        <ChatInput ref={p.inputRef} scrollTarget={p.scrollTarget} working={p.working} onSend={p.onSend} onEmptyChange={setEmpty} />
       </div>
       {p.working && <span className="cc-spin" />}
       <button className="cc-model" title={modelTitle} onClick={p.onPickModel}>

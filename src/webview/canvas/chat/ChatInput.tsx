@@ -16,6 +16,8 @@ export interface ChatInputHandle {
 interface Props {
   // - the conversation's scroll box; Shift+H/J/K/L scroll it from vim normal mode
   scrollTarget:  RefObject<HTMLDivElement>;
+  // - a turn is running: Ctrl+Enter sends nothing and the text stays; the harness refuses a second prompt
+  working:       boolean;
   onSend:        (text: string) => void;
   onEmptyChange: (empty: boolean) => void;
 }
@@ -37,7 +39,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(p
 
   const submit = useCallback(() => {
     const ed = editorRef.current;
-    if (!ed) return;
+    if (!ed || propsRef.current.working) return;
     const text = ed.getValue().trim();
     if (!text) return;
     propsRef.current.onSend(text);
