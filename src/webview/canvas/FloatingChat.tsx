@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { ChatAttachment } from '../../shared/chatAttachments';
 import { ChatToolEvent, ChatTokenUsage } from '../../shared/types';
-import { useFloatingChat, type RestoredChat } from '../hooks/useFloatingChat';
+import { useFloatingChat, type NodeAdded, type RestoredChat } from '../hooks/useFloatingChat';
 import { ConversationPanel } from './chat/ConversationPanel';
 import { InputBar } from './chat/InputBar';
 import type { ChatInputHandle } from './chat/ChatInput';
@@ -20,7 +20,7 @@ interface Props {
   onDone:            (handler: (usage: { costUsd?: number; deltaUsd?: number }) => void) => () => void;
   onError:           (handler: (msg: string) => void) => () => void;
   onResetDone:       (handler: () => void) => () => void;
-  onNodeAdded:       (handler: (note: string) => void) => () => void;
+  onNodeAdded:       (handler: (added: NodeAdded) => void) => () => void;
   onHistoryRestored: (handler: (payload: RestoredChat) => void) => () => void;
   onToolEvent?:      (cb: (e: ChatToolEvent) => void) => () => void;
   onUsage?:          (cb: (u: ChatTokenUsage) => void) => () => void;
@@ -119,7 +119,7 @@ export function FloatingChat({
         onCompact={() => postMessage({ type: 'floatingChatCompact' })}
         onReset={() => postMessage({ type: 'floatingChatReset' })}
         onCopy={text => postMessage({ type: 'writeClipboard', text })}
-        onAddNote={text => postMessage({ type: 'floatingChatAddNote', content: text, activeNodeId: activeNodeIdRef.current })}
+        onAddNote={(text, turnKey) => postMessage({ type: 'floatingChatAddNote', content: text, activeNodeId: activeNodeIdRef.current, turnKey })}
       />
       <InputBar
         inputRef={inputRef}

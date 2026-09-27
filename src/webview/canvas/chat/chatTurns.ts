@@ -2,33 +2,54 @@
 import { ChatItem } from '../../../shared/types';
 
 export interface ChatTurn {
-  // - `turn-<index of its first item>`; history only grows at the end, so a key never changes
+  // - `turn-<its position among the turns>`: history grows at the end or inside a turn (addToTurn),
+  // - so a key never changes
   key:    string;
+  // - index in the history of the turn's first item
+  start:  number;
   // - null for items logged before the first prompt
   prompt: string | null;
   time:   string;
   items:  ChatItem[];
 }
 
+// - the agent's add_note: this prefix, then the note's text
 export const NODE_ADDED_PREFIX = '📌 *Added to canvas:*';
+const NOTE_ADDED_LINE = /^📌 added \S+ to the canvas$/;
+
+// - the user's ＋ canvas on a turn: one line naming the new node
+export function noteAddedLine(label: string): string {
+  return `📌 added ${label} to the canvas`;
+}
 
 export function groupTurns(history: ChatItem[]): ChatTurn[] {
   const turns: ChatTurn[] = [];
   history.forEach((it, i) => {
     if (it.kind === 'text' && it.role === 'user') {
-      turns.push({ key: `turn-${i}`, prompt: it.content, time: it.timestamp, items: [] });
+      turns.push({ key: `turn-${turns.length}`, start: i, prompt: it.content, time: it.timestamp, items: [] });
       return;
     }
-    if (turns.length === 0) turns.push({ key: `turn-${i}`, prompt: null, time: it.timestamp, items: [] });
+    if (turns.length === 0) turns.push({ key: 'turn-0', start: i, prompt: null, time: it.timestamp, items: [] });
     turns[turns.length - 1].items.push(it);
   });
   return turns;
 }
 
+// - `item` after the last item of the turn `turnKey`; at the end when that turn is the latest or is gone
+export function addToTurn(history: ChatItem[], turnKey: string, item: ChatItem): ChatItem[] {
+  const turns = groupTurns(history);
+  const at    = turns.findIndex(t => t.key === turnKey);
+  if (at < 0 || at === turns.length - 1) return [...history, item];
+  const end = turns[at + 1].start;
+  return [...history.slice(0, end), item, ...history.slice(end)];
+}
+
 export function turnAnswer(turn: ChatTurn): string {
   for (let i = turn.items.length - 1; i >= 0; i--) {
     const it = turn.items[i];
-    if (it.kind === 'text' && it.role === 'assistant' && !it.content.startsWith(NODE_ADDED_PREFIX)) return it.content;
+    if (it.kind !== 'text' || it.role !== 'assistant') continue;
+    if (it.content.startsWith(NODE_ADDED_PREFIX) || NOTE_ADDED_LINE.test(it.content)) continue;
+    return it.content;
   }
   return '';
 }

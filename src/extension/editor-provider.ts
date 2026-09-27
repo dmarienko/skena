@@ -396,7 +396,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           // - same path as the agent's add_note tool: a text node right of the focused node, with an edge
           const added = this.addNoteToCanvas(document, msg.activeNodeId, msg.content);
           if (!added) break;
-          send({ type: 'floatingChatNodeAdded', node: added.node, edge: added.edge });
+          send({ type: 'floatingChatNodeAdded', node: added.node, edge: added.edge, turnKey: msg.turnKey });
           try {
             await writeCanvas(document.uri.fsPath, document.canvas);
           } catch { /* - the webview already holds the node; its next save writes it */ }

@@ -18,7 +18,7 @@ interface TurnListProps {
   working:   boolean;
   onToggle:  (key: string) => void;
   onCopy:    (text: string) => void;
-  onAddNote: (text: string) => void;
+  onAddNote: (text: string, turnKey: string) => void;
 }
 
 export function TurnList({ turns, toggled, streaming, thinking, working, onToggle, onCopy, onAddNote }: TurnListProps): JSX.Element {
@@ -62,7 +62,7 @@ interface OpenTurnProps {
   working:   boolean;
   onToggle:  (key: string) => void;
   onCopy:    (text: string) => void;
-  onAddNote: (text: string) => void;
+  onAddNote: (text: string, turnKey: string) => void;
 }
 
 function OpenTurn({ turn, streaming, thinking, working, onToggle, onCopy, onAddNote }: OpenTurnProps): JSX.Element {
@@ -79,7 +79,7 @@ function OpenTurn({ turn, streaming, thinking, working, onToggle, onCopy, onAddN
       {answer !== '' && (
         <div className="cc-actions">
           <button className="cc-act" title="Copy the answer" onClick={() => onCopy(answer)}>⧉</button>
-          <button className="cc-act" title="Add the answer to the canvas as a note" onClick={() => onAddNote(answer)}>＋ canvas</button>
+          <button className="cc-act" title="Add the answer to the canvas as a note" onClick={() => onAddNote(answer, turn.key)}>＋ canvas</button>
           {cost && (
             <span className="cc-cost">{`Δ $${cost.deltaUsd.toFixed(2)}${cost.costUsd !== undefined ? ` · Σ $${cost.costUsd.toFixed(2)}` : ''}`}</span>
           )}

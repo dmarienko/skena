@@ -427,6 +427,8 @@ export interface MsgFloatingChatNodeAdded {
   type: 'floatingChatNodeAdded';
   node: CanvasNode;
   edge?: CanvasEdge;
+  // - set when the user's ＋ canvas added the node, absent for the agent's add_note
+  turnKey?: string;
 }
 
 // - webview → host: open VS Code's file picker to attach workspace files to the next chat message
@@ -436,7 +438,8 @@ export interface MsgFloatingChatPickFiles { type: 'floatingChatPickFiles'; }
 export interface MsgFloatingChatFilesPicked { type: 'floatingChatFilesPicked'; files: { path: string; name: string }[]; }
 
 // - webview → host: add a turn's answer to the canvas as a note connected to the focused node
-export interface MsgFloatingChatAddNote { type: 'floatingChatAddNote'; content: string; activeNodeId: string | null; }
+// - turnKey: the turn whose ＋ canvas was pressed; the host sends it back with the new node
+export interface MsgFloatingChatAddNote { type: 'floatingChatAddNote'; content: string; activeNodeId: string | null; turnKey: string; }
 
 
 export interface MsgSearchResults {

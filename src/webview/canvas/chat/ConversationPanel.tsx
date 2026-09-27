@@ -18,7 +18,7 @@ interface Props {
   onCompact:    () => void;
   onReset:      () => void;
   onCopy:       (text: string) => void;
-  onAddNote:    (text: string) => void;
+  onAddNote:    (text: string, turnKey: string) => void;
 }
 
 export function ConversationPanel(p: Props): JSX.Element | null {
@@ -37,15 +37,16 @@ export function ConversationPanel(p: Props): JSX.Element | null {
   const busy    = p.working || p.compacting;
   const visible = turns.length > 0 || busy || p.error !== null;
 
-  // - pin to the latest content on unfold, on restored history and while streaming; opening an
-  // - earlier turn changes none of these, so it does not jump
+  // - pin to the latest content on unfold, on restored history, on a new last item and while
+  // - streaming; opening an earlier turn, or a line added inside it, changes none of these, so it does not jump
+  const lastItem = p.history.length ? p.history[p.history.length - 1] : null;
   useEffect(() => {
     if (!visible || p.folded) return;
     const el = scrollRef.current;
     if (!el) return;
     const id = requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
     return () => cancelAnimationFrame(id);
-  }, [visible, p.folded, p.history, p.streaming, scrollRef]);
+  }, [visible, p.folded, lastItem, p.streaming, scrollRef]);
 
   // - a finer wheel step: the native one jumps too far to follow the text; ctrl+wheel is the host's zoom
   useEffect(() => {

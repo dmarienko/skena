@@ -4,8 +4,11 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { ChatItem, ChatToolEvent, ChatTokenUsage, ViewportSnapshot } from '../../shared/types';
 import { ChatAttachment, mergeAttachments, removeAttachment as withoutAttachment } from '../../shared/chatAttachments';
 import { applyToolEvent, flushPendingText, migrateHistory } from '../canvas/chat/chatTimeline';
-import { NODE_ADDED_PREFIX } from '../canvas/chat/chatTurns';
+import { NODE_ADDED_PREFIX, addToTurn, noteAddedLine } from '../canvas/chat/chatTurns';
 import { DEFAULT_CONSOLE_WIDTH } from '../canvas/chat/consoleLayout';
+
+// - a node the agent added (its note's text), or the one the user's ＋ canvas added from a turn
+export type NodeAdded = { note: string } | { turnKey: string; label: string };
 
 export interface RestoredChat {
   history: unknown[];
@@ -163,13 +166,11 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
     }
   }, []);
 
-  const addNodeAdded = useCallback((note: string) => {
-    const next: ChatItem[] = [...historyRef.current, {
-      kind:      'text',
-      role:      'assistant',
-      content:   `${NODE_ADDED_PREFIX}\n\n${note}`,
-      timestamp: new Date().toISOString(),
-    }];
+  const addNodeAdded = useCallback((added: NodeAdded) => {
+    const timestamp = new Date().toISOString();
+    const next: ChatItem[] = 'turnKey' in added
+      ? addToTurn(historyRef.current, added.turnKey, { kind: 'text', role: 'assistant', content: noteAddedLine(added.label), timestamp })
+      : [...historyRef.current, { kind: 'text', role: 'assistant', content: `${NODE_ADDED_PREFIX}\n\n${added.note}`, timestamp }];
     historyRef.current = next;
     setHistory(next);
     persistHistory(next);

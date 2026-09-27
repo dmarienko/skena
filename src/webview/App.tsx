@@ -13,7 +13,7 @@
 import React, { useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react';
 import { CanvasView } from './canvas/CanvasView';
 import { FloatingChat } from './canvas/FloatingChat';
-import type { RestoredChat } from './hooks/useFloatingChat';
+import type { NodeAdded, RestoredChat } from './hooks/useFloatingChat';
 import { useCanvasData } from './hooks/useCanvasData';
 import { HostToWebview, MarkdownConfig, ChatToolEvent, ChatTokenUsage } from '../shared/types';
 import { MarkdownConfigContext, DEFAULT_MARKDOWN_CONFIG } from './context/MarkdownConfigContext';
@@ -93,7 +93,7 @@ export function App(): JSX.Element {
   const doneEvt      = useRef(makeEventTarget<{ costUsd?: number; deltaUsd?: number }>());
   const errorEvt     = useRef(makeEventTarget<string>());
   const resetDoneEvt = useRef(makeEventTarget<void>());
-  const nodeAddedEvt    = useRef(makeEventTarget<string>());
+  const nodeAddedEvt = useRef(makeEventTarget<NodeAdded>());
   const toolEventEvt = useRef(makeEventTarget<ChatToolEvent>());
   const usageEvt     = useRef(makeEventTarget<ChatTokenUsage>());
   const historyRestoredEvt = useRef(makeEventTarget<RestoredChat>());
@@ -240,11 +240,15 @@ export function App(): JSX.Element {
           // - add node to canvas state so it appears immediately
           dispatch({ type: 'ADD_NODE', node: msg.node });
           if (msg.edge) dispatch({ type: 'ADD_EDGE', edge: msg.edge });
-          // - notify FloatingChat so it can display a bubble
-          const noteContent = msg.node.type === 'text'
-            ? (msg.node as { text?: string }).text ?? ''
-            : `[${msg.node.type} node added]`;
-          nodeAddedEvt.current.emit(noteContent);
+          // - the user's ＋ canvas gets one line in its turn; the agent's add_note shows the note's text
+          if (msg.turnKey !== undefined) {
+            nodeAddedEvt.current.emit({ turnKey: msg.turnKey, label: msg.node.nodeLabel ?? msg.node.id });
+          } else {
+            const note = msg.node.type === 'text'
+              ? (msg.node as { text?: string }).text ?? ''
+              : `[${msg.node.type} node added]`;
+            nodeAddedEvt.current.emit({ note });
+          }
           break;
         }
         case 'floatingChatHistoryRestored':
