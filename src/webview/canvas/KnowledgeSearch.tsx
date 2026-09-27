@@ -297,7 +297,8 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
     <div
       className="skena-knowledge-search nowheel"
       style={{
-        position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 1000,
+        // - above the chat console (z-index 9000 in chat-console.css); the two can overlap
+        position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 9500,
         width: 'min(900px, 90%)', maxHeight: '60vh', display: 'flex', flexDirection: 'column',
         background: 'var(--vscode-editorWidget-background, #1e1e1e)',
         border: '1px solid var(--vscode-editorWidget-border, #454545)',

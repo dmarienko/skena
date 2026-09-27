@@ -119,8 +119,13 @@ export function patchVimNewlineAndIndent(): void {
 export function applyVimClipboard(): void {
   const Vim = getChatVimSingleton();
   if (!Vim) return;
-  try { Vim.defineRegister('+', chatSysReg); } catch { /* already defined */ }
-  try { Vim.defineRegister('*', chatSysReg); } catch { /* already defined */ }
+  for (const name of ['+', '*']) {
+    try {
+      Vim.defineRegister(name, chatSysReg);
+    } catch {
+      // - already defined by an earlier call
+    }
+  }
   const rc = Vim.getRegisterController();
   if (rc) {
     rc.registers['"']  = chatSysReg;
