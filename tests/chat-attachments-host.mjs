@@ -66,3 +66,19 @@ test('a node cut at the cap never ends in half an emoji', async () => {
   assert.equal(loneHigh(b.body), false);
   assert.equal(b.body, 'b'.repeat(2999) + '\n…[truncated]');
 });
+
+test('a picked file node over 2 MB is not read, for providers without file tools', async () => {
+  const p = join(dir, 'big.txt');
+  writeFileSync(p, 'x'.repeat(2 * 1024 * 1024 + 1));
+  const c = { nodes: [{ id: 'f1', type: 'file', file: p, x: 0, y: 0, width: 10, height: 10 }], edges: [] };
+  const [b] = await attachmentBlocks([{ kind: 'node', id: 'f1', label: 'N2' }], c, dir, contentMode, false);
+  assert.equal(b.body, '[file over 2 MB, not inlined: big.txt]');
+});
+
+test('a picked binary file node is not inlined, for providers without file tools', async () => {
+  const p = join(dir, 'y.bin');
+  writeFileSync(p, Buffer.from([0x50, 0x4b, 0x00, 0x01]));
+  const c = { nodes: [{ id: 'f2', type: 'file', file: p, x: 0, y: 0, width: 10, height: 10 }], edges: [] };
+  const [b] = await attachmentBlocks([{ kind: 'node', id: 'f2', label: 'N3' }], c, dir, contentMode, false);
+  assert.equal(b.body, '[binary file, not inlined: y.bin]');
+});

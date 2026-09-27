@@ -23,10 +23,12 @@ import {
   LinkNode,
   ViewportSnapshot,
 } from '../shared/types';
+import { looksBinary } from '../shared/chatAttachments';
 
 const MAX_ACTIVE_CONTENT   = 3000;   // - chars shown for the focused node
 const MAX_CONNECTED_CONTENT = 600;   // - chars shown per connected node
 const MAX_CONNECTED_NODES   = 8;     // - max connected nodes to include
+const MAX_FILE_BYTES        = 2 * 1024 * 1024;   // - a larger file is not read
 
 // ─── public API ───────────────────────────────────────────────────────────────
 
@@ -165,6 +167,18 @@ export function capText(text: string, max: number): string {
   return text.slice(0, end) + '\n…[truncated]';
 }
 
+// - a file's text to inline, or one bracketed line saying why it is not inlined
+export async function readFileText(p: string): Promise<string> {
+  try {
+    const st = await fs.stat(p);
+    if (st.size > MAX_FILE_BYTES) return `[file over 2 MB, not inlined: ${path.basename(p)}]`;
+    const raw = await fs.readFile(p, 'utf-8');
+    return looksBinary(raw) ? `[binary file, not inlined: ${path.basename(p)}]` : raw;
+  } catch {
+    return '[file not found]';
+  }
+}
+
 export function nodeTitle(node: CanvasNode): string {
   switch (node.type) {
     case 'file':   return (node as FileNode).file.split('/').pop() ?? (node as FileNode).file;
@@ -219,11 +233,7 @@ export async function nodeContent(
       }
       // - content mode (default): inline the file text
       if (!absPath) { raw = `[external: ${uri}]`; break; }
-      try {
-        raw = await fs.readFile(absPath, 'utf-8');
-      } catch {
-        raw = '[file not found]';
-      }
+      raw = await readFileText(absPath);
       break;
     }
     default:

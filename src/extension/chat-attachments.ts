@@ -1,25 +1,10 @@
 // - one text block per chat attachment; nodes and files follow the focused node's rule in context-builder
-import * as fs from 'fs/promises';
-import * as path from 'path';
 import { CanvasData } from '../shared/types';
-import { AttachmentBlock, ChatAttachment, looksBinary } from '../shared/chatAttachments';
-import { capText, nodeContent, nodeTitle, SystemPromptOptions } from './context-builder';
+import { AttachmentBlock, ChatAttachment } from '../shared/chatAttachments';
+import { capText, nodeContent, nodeTitle, readFileText, SystemPromptOptions } from './context-builder';
 
 const MAX_NODE_CHARS = 3000;
 const MAX_FILE_CHARS = 12000;
-const MAX_FILE_BYTES = 2 * 1024 * 1024;
-
-async function fileText(p: string): Promise<string> {
-  try {
-    const st = await fs.stat(p);
-    if (st.size > MAX_FILE_BYTES) return `[file over 2 MB, not inlined: ${path.basename(p)}]`;
-    const raw = await fs.readFile(p, 'utf-8');
-    if (looksBinary(raw)) return `[binary file, not inlined: ${path.basename(p)}]`;
-    return capText(raw, MAX_FILE_CHARS);
-  } catch {
-    return '[file not found]';
-  }
-}
 
 export async function attachmentBlocks(
   attachments: ChatAttachment[],
@@ -40,7 +25,7 @@ export async function attachmentBlocks(
     if (a.kind === 'file') {
       const body = opts.fileNodeMode === 'path'
         ? `[file on disk — read it yourself if needed: ${a.path}]`
-        : await fileText(a.path);
+        : capText(await readFileText(a.path), MAX_FILE_CHARS);
       return { heading: `file ${a.path}`, body };
     }
     return {
