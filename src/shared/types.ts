@@ -205,6 +205,8 @@ export interface CanvasData {
   metadata?: {
     /** - AI model for this canvas's chat; overrides the global skena.ai.model */
     aiModel?: string;
+    // - claude --effort level for this canvas's chat (harness only); unset = the model's default
+    aiEffort?: string;
     /** - virtual section lanes, sorted by y; geometry is derived, see sectionLanes.ts */
     sections?: SectionLane[];
     /** - kernels without a node; a section's kernelId may name one of these */
@@ -351,7 +353,7 @@ export interface MsgFloatingChatDone {
 export interface MsgPanelActivated { type: 'panelActivated'; }
 
 /** - host → webview: current AI model + provider (for the chat title) */
-export interface MsgChatModelInfo { type: 'chatModelInfo'; model: string; provider: string; sessionName?: string; }
+export interface MsgChatModelInfo { type: 'chatModelInfo'; model: string; effort?: string; provider: string; sessionName?: string; }
 
 /** - host → webview: focus (select + pan to) a node by id */
 export interface MsgFocusNode { type: 'focusNode'; id: string; }
@@ -430,6 +432,15 @@ export interface MsgFloatingChatNodeAdded {
   edge?: CanvasEdge;
 }
 
+// - webview → host: open VS Code's file picker to attach workspace files to the next chat message
+export interface MsgFloatingChatPickFiles { type: 'floatingChatPickFiles'; }
+
+// - host → webview: the files picked for the next chat message
+export interface MsgFloatingChatFilesPicked { type: 'floatingChatFilesPicked'; files: { path: string; name: string }[]; }
+
+// - webview → host: add a turn's answer to the canvas as a note connected to the focused node
+export interface MsgFloatingChatAddNote { type: 'floatingChatAddNote'; content: string; activeNodeId: string | null; }
+
 
 export interface MsgSearchResults {
   type: 'searchResults';
@@ -492,6 +503,7 @@ export type HostToWebview =
   | MsgClipboardContent
   | MsgFloatingChatDelta
   | MsgFloatingChatToolEvent
+  | MsgFloatingChatFilesPicked
   | MsgFloatingChatUsage
   | MsgPanelActivated
   | MsgChatModelInfo
@@ -811,6 +823,8 @@ export type WebviewToHost =
   | MsgFloatingChatPersistHistory
   | MsgFloatingChatReset
   | MsgFloatingChatCompact
+  | MsgFloatingChatPickFiles
+  | MsgFloatingChatAddNote
   | MsgSaveMarks
   | MsgVerifyPath
   | MsgRenderMarkdown

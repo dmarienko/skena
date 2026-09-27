@@ -33,6 +33,7 @@ import { listKernels, startKernel, listKernelSpecs, listSessions } from './jupyt
 import { canvasSessionName } from './llm-adapters/harness';
 import { formatAttachments } from '../shared/chatAttachments';
 import { attachmentBlocks } from './chat-attachments';
+import { EFFORT_LEVELS } from '../shared/aiEffort';
 import { buildDroppedNode } from './dropNodes';
 import type { CollectedOutput } from './jupyter/protocol';
 import { renderOutput, hasVisibleOutput } from './jupyter/output';
@@ -68,6 +69,7 @@ import {
   ChatItem,
   MsgFloatingChatHistoryRestored,
   MsgFloatingChatSaveUIState,
+  MsgChatModelInfo,
   MsgSaveMarks,
   MsgMarksRestored,
   CanvasMark,
@@ -310,9 +312,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             // - so vim paste works before any requestClipboardRead round-trip completes
             send({ type: 'clipboardContent', text: clipboardText });
             send({ type: 'vaultIndex', entries: this.indexer.all() });
-            // - current AI model/provider for the chat title
-            const aiCfg0 = vscode.workspace.getConfiguration('skena.ai');
-            send({ type: 'chatModelInfo', model: document.canvas.metadata?.aiModel || aiCfg0.get<string>('model') || '', provider: aiCfg0.get<string>('provider') ?? '', sessionName: this.sessionNameFor(document) });
+            // - current AI model, effort and provider for the model button
+            send(this.chatModelInfo(document));
             // - restore chat state from workspaceState (survives panel close + rename)
             const historyKey = `skena.chatHistory.${document.uri.toString()}`;
             const uiKey      = `skena.chatUI.${document.uri.toString()}`;
@@ -381,6 +382,26 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         case 'chatMessage':          await this.handleChatMessage(msg, panel); break;
         case 'floatingChatSend':  await this.handleFloatingChatSend(msg, panel, document, canvasDir, resolver); break;
         case 'floatingChatAbort': this._llmClient?.abort(); break;
+        case 'floatingChatPickFiles': {
+          const folder = vscode.workspace.getWorkspaceFolder(document.uri)?.uri ?? vscode.Uri.file(path.dirname(document.uri.fsPath));
+          const uris = await vscode.window.showOpenDialog({
+            canSelectFiles: true, canSelectFolders: false, canSelectMany: true,
+            defaultUri: folder, openLabel: 'Attach', title: 'Attach files to the next chat message',
+          });
+          if (!uris?.length) break;
+          send({ type: 'floatingChatFilesPicked', files: uris.map(u => ({ path: u.fsPath, name: path.basename(u.fsPath) })) });
+          break;
+        }
+        case 'floatingChatAddNote': {
+          // - same path as the agent's add_note tool: a text node right of the focused node, with an edge
+          const added = this.addNoteToCanvas(document, msg.activeNodeId, msg.content);
+          if (!added) break;
+          send({ type: 'floatingChatNodeAdded', node: added.node, edge: added.edge });
+          try {
+            await writeCanvas(document.uri.fsPath, document.canvas);
+          } catch { /* - the webview already holds the node; its next save writes it */ }
+          break;
+        }
         case 'pickModel': {
           const aiCfg = vscode.workspace.getConfiguration('skena.ai');
           const cur   = document.canvas.metadata?.aiModel || aiCfg.get<string>('model') || '';
@@ -407,11 +428,21 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           } else if (pick.label === 'Use global default') {
             chosen = undefined;   // - clear the per-canvas override
           }
-          // - persist in the .canvas file (portable), respawn so the new model takes effect
-          document.canvas.metadata = { ...(document.canvas.metadata ?? {}), aiModel: chosen };
+          let effort = document.canvas.metadata?.aiEffort;
+          if ((aiCfg.get<string>('provider') ?? '') === 'harness') {
+            const effortItems: vscode.QuickPickItem[] = [
+              { label: 'default', description: effort ? 'no --effort; the model decides' : 'no --effort; the model decides · ● current' },
+              ...EFFORT_LEVELS.map(l => ({ label: l, description: l === effort ? '● current' : '' })),
+            ];
+            const ep = await vscode.window.showQuickPick(effortItems, { title: 'Effort for this canvas', placeHolder: `current: ${effort ?? 'default'}` });
+            // - Esc on this step keeps the current effort; the model choice still applies
+            if (ep) effort = ep.label === 'default' ? undefined : ep.label;
+          }
+          // - persist in the .canvas file (portable), respawn so the new model and effort take effect
+          document.canvas.metadata = { ...(document.canvas.metadata ?? {}), aiModel: chosen, aiEffort: effort };
           await writeCanvas(document.uri.fsPath, document.canvas);
           this._llmClient?.resetSession?.(document.uri.fsPath);
-          send({ type: 'chatModelInfo', model: chosen || aiCfg.get<string>('model') || '', provider: aiCfg.get<string>('provider') ?? '', sessionName: this.sessionNameFor(document) });
+          send(this.chatModelInfo(document));
           break;
         }
         case 'floatingChatPersistHistory': {
@@ -752,9 +783,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const cfgDisposable = vscode.workspace.onDidChangeConfiguration(e => {
       if (e.affectsConfiguration('skena.ai')) {
         this._llmClient = null;   // - force re-creation on next chat
-        // - refresh the chat title's model/provider live on settings change
-        const aiCfg = vscode.workspace.getConfiguration('skena.ai');
-        send({ type: 'chatModelInfo', model: document.canvas.metadata?.aiModel || aiCfg.get<string>('model') || '', provider: aiCfg.get<string>('provider') ?? '', sessionName: this.sessionNameFor(document) });
+        // - refresh the model button live on settings change
+        send(this.chatModelInfo(document));
       }
       // - keep this canvas's file resolver current when vaults change, so vault:// nodes
       // - added after a vault is configured resolve without reopening the canvas
@@ -2204,6 +2234,18 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
 
   // ─── Floating chat handlers ──────────────────────────────────────────────────
 
+  // - the model button's text: this canvas's model and effort, else the global model
+  private chatModelInfo(document: SkenaDocument): MsgChatModelInfo {
+    const aiCfg = vscode.workspace.getConfiguration('skena.ai');
+    return {
+      type:        'chatModelInfo',
+      model:       document.canvas.metadata?.aiModel || aiCfg.get<string>('model') || '',
+      effort:      document.canvas.metadata?.aiEffort,
+      provider:    aiCfg.get<string>('provider') ?? '',
+      sessionName: this.sessionNameFor(document),
+    };
+  }
+
   /** Handle a floating chat message: build context, call Claude, stream back. */
   private async handleFloatingChatSend(
     msg:       MsgFloatingChatSend,
@@ -2322,6 +2364,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       sessionId,
       restoreSession,
       model:        document.canvas.metadata?.aiModel,
+      effort:       document.canvas.metadata?.aiEffort,
       images:       harness ? attachments.flatMap(a => (a.kind === 'image' ? [{ mediaType: a.mediaType, data: a.data }] : [])) : [],
     });
   }
