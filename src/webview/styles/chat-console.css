@@ -186,6 +186,7 @@
   -webkit-backdrop-filter: blur(12px);
   font-size: 13px;
 }
+.cc-menu:focus { outline: none; }
 .cc-menu-item {
   display: flex;
   gap: 10px;

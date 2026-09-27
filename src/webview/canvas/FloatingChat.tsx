@@ -92,6 +92,8 @@ export function FloatingChat({
 
   // - keys stop here so CanvasView's handlers (Space, hjkl) never see typing. Alt combos must reach the
   // - window, where VS Code's keybinding forwarder listens; skena's own Alt keys are taken in capture phase.
+  // - A mouse press on a button leaves the focus where it was: a focused button would keep every key
+  // - from the canvas. The + menu takes the focus itself when it opens.
   return (
     <div
       className="cc-root"
@@ -99,6 +101,7 @@ export function FloatingChat({
       style={{ width }}
       onKeyDown={e => { if (!e.altKey) e.stopPropagation(); }}
       onKeyUp={e => { if (!e.altKey) e.stopPropagation(); }}
+      onMouseDown={e => { if ((e.target as HTMLElement).closest('button')) e.preventDefault(); }}
     >
       <div className="cc-edge cc-edge-left" title="Drag to change the width" onMouseDown={onEdgeDown('left')} />
       <div className="cc-edge cc-edge-right" title="Drag to change the width" onMouseDown={onEdgeDown('right')} />

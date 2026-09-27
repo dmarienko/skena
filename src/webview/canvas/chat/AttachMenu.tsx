@@ -1,4 +1,4 @@
-import { useRef, useState, type ClipboardEvent as ReactClipboardEvent } from 'react';
+import { useEffect, useRef, useState, type ClipboardEvent as ReactClipboardEvent } from 'react';
 import { MAX_IMAGE_BASE64, parseImageDataUrl } from '../../../shared/chatAttachments';
 
 export interface PastedImage { id: string; name: string; mediaType: string; data: string }
@@ -15,9 +15,13 @@ interface Props {
 }
 
 export function AttachMenu({ pickedCount, allowImage, imageCount, onPickNodes, onPickFile, onImage, onWarn }: Props): JSX.Element {
+  const menuRef        = useRef<HTMLDivElement>(null);
   const pasteTargetRef = useRef<HTMLTextAreaElement>(null);
   const pastedRef      = useRef(false);
   const [waiting, setWaiting] = useState(false);
+
+  // - the + button does not take the focus on a click, so the menu takes it: Esc and Tab reach it
+  useEffect(() => { menuRef.current?.focus(); }, []);
 
   // - vscode.env.clipboard is text only; an image arrives only in a DOM paste event. Focus a hidden
   // - textarea and try a scripted paste; if the webview refuses it, the user's Ctrl+V lands there instead.
@@ -49,7 +53,7 @@ export function AttachMenu({ pickedCount, allowImage, imageCount, onPickNodes, o
   };
 
   return (
-    <div className="cc-menu" role="menu">
+    <div className="cc-menu" role="menu" tabIndex={-1} ref={menuRef}>
       <button className="cc-menu-item" disabled={pickedCount === 0} onClick={onPickNodes}>
         ◇ Nodes picked with Space <span className="k">{pickedCount} picked</span>
       </button>
