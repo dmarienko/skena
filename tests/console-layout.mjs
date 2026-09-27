@@ -1,7 +1,7 @@
 // - run: npx esbuild src/webview/canvas/chat/consoleLayout.ts --bundle --format=esm --outfile=tests/.build/consoleLayout.mjs && node --test tests/console-layout.mjs
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { INPUT_LINE_H, INPUT_MAX_LINES, MIN_CONSOLE_W, clampConsoleWidth, dragWidth, inputHeight } from './.build/consoleLayout.mjs';
+import { INPUT_LINE_H, INPUT_MAX_LINES, MIN_CONSOLE_W, clampConsoleWidth, dragWidth, focusAreaBottom, inputHeight } from './.build/consoleLayout.mjs';
 
 test('the input starts one line high', () => {
   assert.equal(inputHeight(0), INPUT_LINE_H);
@@ -36,4 +36,19 @@ test('dragging an edge outward widens by twice the distance, since the console s
   assert.equal(dragWidth(760, 50, 'right'), 860);
   assert.equal(dragWidth(760, -50, 'left'), 860);
   assert.equal(dragWidth(760, 50, 'left'), 660);
+});
+
+test('the area a focused node lands in ends at the console top, however tall the conversation is', () => {
+  assert.equal(focusAreaBottom(1000, 930), 930);
+  assert.equal(focusAreaBottom(1000, 500), 500);
+  assert.equal(focusAreaBottom(1000, 300), 300);
+});
+
+test('a console over three quarters of the pane still leaves the top quarter', () => {
+  assert.equal(focusAreaBottom(1000, 100), 250);
+  assert.equal(focusAreaBottom(1000, -20), 250);
+});
+
+test('a console top below the pane leaves the whole pane', () => {
+  assert.equal(focusAreaBottom(1000, 1200), 1000);
 });

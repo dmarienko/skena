@@ -67,6 +67,7 @@ import { allFolded, deriveLanes, fitLanes, groupIdsByLane, sortLanes, insertLane
 import { applyPatchesToCanvas, codeCellHeight, columnsOfDeleted as columnsOfDeletedIn, forkOf, hangingBelow, insertAfter, keepRowOf, layoutSection, reflowSection, ridersOf, sectionEngineNodes, sectionMembership, toEngineNodes, type EngineNode, type LayoutOpts, type Patches } from '../../shared/layoutEngine';
 import { useLaneFit, flowGeom } from '../rail/useLaneFit';
 import { connectionLabels, findNearestNode, focusAfterDelete, revealPan, type ConnectionLabel, type EdgeSideContext, type NavDir, type NavNode, type Rect } from './spatialNav';
+import { focusAreaBottom } from './chat/consoleLayout';
 import { CanvasSearch } from './CanvasSearch';
 import { KnowledgeSearch } from './KnowledgeSearch';
 import { MarksPanel, type SectionEntry } from './MarksPanel';
@@ -114,26 +115,18 @@ const EDGE_TYPES: EdgeTypes = {
 };
 
 /**
- * The area a focused node has to land in, in PANE pixels: the React Flow pane, minus the AI chat
- * panel's strip when the panel is expanded enough to occlude AND docked to an edge (a collapsed,
- * small or mid-floating panel is ignored). The pane sits right of the rail, so it is narrower than
- * the window; the chat's viewport rect is shifted into pane coordinates before the dock test.
+ * The area a focused node has to land in, in PANE pixels: the React Flow pane above the top of the
+ * chat console, which is docked at the bottom. That top is the conversation panel's, or the input
+ * bar's when there is no conversation; a folded conversation keeps its header line. The area keeps
+ * at least a quarter of the pane's height (focusAreaBottom). The pane sits right of the rail, so the
+ * console's viewport rect is shifted into pane coordinates.
  * Takes the pane element: without it there are no pane coordinates, and the caller does not pan.
  */
 function paneArea(el: HTMLElement): Rect {
   const pane = el.getBoundingClientRect();
-  const w = pane.width, h = pane.height;
-  const area: Rect = { left: 0, top: 0, right: w, bottom: h };
+  const area: Rect = { left: 0, top: 0, right: pane.width, bottom: pane.height };
   const chatEl = document.querySelector('[data-skena-chat]') as HTMLElement | null;
-  if (!chatEl) return area;
-  const r = chatEl.getBoundingClientRect();
-  if (r.width <= 40 || r.height <= 60) return area;
-  const left = r.left - pane.left, right  = r.right  - pane.left;
-  const top  = r.top  - pane.top,  bottom = r.bottom - pane.top;
-  if      (right  >= w - 8 && left > w * 0.35) area.right  = left;
-  else if (left   <= 8     && right < w * 0.65) area.left   = right;
-  else if (bottom >= h - 8 && top  > h * 0.35) area.bottom = top;
-  else if (top    <= 8     && bottom < h * 0.65) area.top    = bottom;
+  if (chatEl) area.bottom = focusAreaBottom(pane.height, chatEl.getBoundingClientRect().top - pane.top);
   return area;
 }
 
@@ -2511,7 +2504,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       return { hints, byLabel: new Map(labels.map(c => [c.label, c.nodeId])), cards };
     };
 
-    // - the part of the pane the cards stay inside: the side the floating chat covers is cut off
+    // - the part of the pane the cards stay inside: the part below the chat console's top is cut off
     const shownArea = (): Rect => (wrapperRef.current
       ? paneArea(wrapperRef.current)
       : { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight });

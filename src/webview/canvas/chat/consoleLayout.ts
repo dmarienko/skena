@@ -20,3 +20,11 @@ export function clampConsoleWidth(width: number, viewportW: number): number {
 export function dragWidth(startW: number, dx: number, edge: 'left' | 'right'): number {
   return startW + (edge === 'right' ? 2 * dx : -2 * dx);
 }
+
+// - share of the pane height kept for the focused node when the console is taller than the rest
+export const MIN_FOCUS_AREA_SHARE = 0.25;
+
+// - the bottom edge, in pane pixels, of the area a focused node lands in: the console's top
+export function focusAreaBottom(paneH: number, consoleTop: number): number {
+  return Math.min(paneH, Math.max(consoleTop, paneH * MIN_FOCUS_AREA_SHARE));
+}
