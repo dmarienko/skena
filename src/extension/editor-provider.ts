@@ -33,7 +33,7 @@ import { listKernels, startKernel, listKernelSpecs, listSessions } from './jupyt
 import { canvasSessionName } from './llm-adapters/harness';
 import { formatAttachments } from '../shared/chatAttachments';
 import { attachmentBlocks } from './chat-attachments';
-import { EFFORT_LEVELS } from '../shared/aiEffort';
+import { EFFORT_LEVELS, shownEffort } from '../shared/aiEffort';
 import { migrateChatUI, type ChatUIState } from '../shared/chatUIState';
 import { buildDroppedNode } from './dropNodes';
 import type { CollectedOutput } from './jupyter/protocol';
@@ -2232,12 +2232,13 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
 
   // - the model button's text: this canvas's model and effort, else the global model
   private chatModelInfo(document: SkenaDocument): MsgChatModelInfo {
-    const aiCfg = vscode.workspace.getConfiguration('skena.ai');
+    const aiCfg    = vscode.workspace.getConfiguration('skena.ai');
+    const provider = aiCfg.get<string>('provider') ?? '';
     return {
       type:        'chatModelInfo',
       model:       document.canvas.metadata?.aiModel || aiCfg.get<string>('model') || '',
-      effort:      document.canvas.metadata?.aiEffort,
-      provider:    aiCfg.get<string>('provider') ?? '',
+      effort:      shownEffort(document.canvas.metadata?.aiEffort, provider),
+      provider,
       sessionName: this.sessionNameFor(document),
     };
   }
