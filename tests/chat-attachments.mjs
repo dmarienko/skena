@@ -53,9 +53,26 @@ test('blocks are listed under one heading with their count', () => {
 
 test('a block that would pass the cap is left out with a note; a smaller later block still fits', () => {
   const out = formatAttachments([
-    { heading: 'A', body: 'x'.repeat(8) },
-    { heading: 'B', body: 'y'.repeat(5) },
-    { heading: 'C', body: 'z'.repeat(2) },
-  ], 10);
-  assert.equal(out, 'ATTACHED BY THE USER (3):\n### A\nxxxxxxxx\n\n### B\n[left out: attachments are capped at 10 characters]\n\n### C\nzz');
+    { heading: 'A', body: 'x'.repeat(150) },
+    { heading: 'B', body: 'y'.repeat(140) },
+    { heading: 'C', body: 'z'.repeat(10) },
+  ], 320);
+  assert.equal(out, `ATTACHED BY THE USER (3):\n### A\n${'x'.repeat(150)}\n\n### B\n[left out: attachments are capped at 320 characters]\n\n### C\n${'z'.repeat(10)}`);
+  assert.ok(out.length <= 320);
+});
+
+test('the headings and the left-out notes count toward the cap, not only the bodies', () => {
+  const out = formatAttachments([
+    { heading: 'A', body: 'x'.repeat(150) },
+    { heading: 'B', body: 'y'.repeat(140) },
+  ], 300);
+  assert.equal(out, `ATTACHED BY THE USER (2):\n### A\n${'x'.repeat(150)}\n\n### B\n[left out: attachments are capped at 300 characters]`);
+  assert.ok(out.length <= 300);
+});
+
+test('when not every heading fits, one line counts the attachments left out', () => {
+  const blocks = [1, 2, 3, 4, 5].map(i => ({ heading: `H${i}`, body: 'b'.repeat(10) }));
+  const out = formatAttachments(blocks, 200);
+  assert.equal(out, `ATTACHED BY THE USER (5):\n### H1\n${'b'.repeat(10)}\n\n[4 more attachments left out: attachments are capped at 200 characters]`);
+  assert.ok(out.length <= 200);
 });

@@ -50,13 +50,29 @@ export function looksBinary(text: string): boolean {
   return text.includes('\u0000');
 }
 
+// - the whole text, headings and notes included, stays within `cap`: first as many headings as fit,
+// - each with a left-out note and one line counting the rest; then, in order, every body that still fits
 export function formatAttachments(blocks: AttachmentBlock[], cap: number = MAX_ATTACHMENT_CHARS): string {
-  if (blocks.length === 0) return '';
-  let left = cap;
-  const parts = blocks.map(b => {
-    if (b.body.length > left) return `### ${b.heading}\n[left out: attachments are capped at ${cap} characters]`;
-    left -= b.body.length;
-    return `### ${b.heading}\n${b.body}`;
-  });
-  return `ATTACHED BY THE USER (${blocks.length}):\n${parts.join('\n\n')}`;
+  const n = blocks.length;
+  if (n === 0) return '';
+  const head  = `ATTACHED BY THE USER (${n}):\n`;
+  const whole = blocks.map(b => `### ${b.heading}\n${b.body}`);
+  const short = blocks.map(b => `### ${b.heading}\n[left out: attachments are capped at ${cap} characters]`);
+  const rest  = (k: number) => `[${k} more attachments left out: attachments are capped at ${cap} characters]`;
+  // - a part's size includes the blank line that joins it to the part before; `used` is the exact length
+  const size  = (part: string) => part.length + 2;
+  let listed = n;
+  let used   = head.length - 2 + short.reduce((t, part) => t + size(part), 0);
+  while (listed > 0 && used + (listed < n ? size(rest(n - listed)) : 0) > cap) {
+    listed--;
+    used -= size(short[listed]);
+  }
+  if (listed < n) used += size(rest(n - listed));
+  const parts = short.slice(0, listed);
+  for (let i = 0; i < listed; i++) {
+    const grow = whole[i].length - short[i].length;
+    if (used + grow <= cap) { parts[i] = whole[i]; used += grow; }
+  }
+  if (listed < n) parts.push(rest(n - listed));
+  return head + parts.join('\n\n');
 }
