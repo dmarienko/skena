@@ -31,6 +31,8 @@ import { nextKernelColorIndex } from '../shared/kernelPalette';
 import { KernelManager } from './jupyter/manager';
 import { listKernels, startKernel, listKernelSpecs, listSessions } from './jupyter/client';
 import { canvasSessionName } from './llm-adapters/harness';
+import { formatAttachments } from '../shared/chatAttachments';
+import { attachmentBlocks } from './chat-attachments';
 import { buildDroppedNode } from './dropNodes';
 import type { CollectedOutput } from './jupyter/protocol';
 import { renderOutput, hasVisibleOutput } from './jupyter/output';
@@ -2240,20 +2242,25 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     // - harness: static role is set once at spawn; the live canvas snapshot is
     //   folded into THIS message (the persistent CC process keeps prior turns,
     //   so history is never re-sent). Other adapters: full system + replayed history.
+    const attachments = msg.attachments ?? [];
+    const harness     = provider === 'harness';
     let systemPrompt: string;
     let apiHistory: { role: 'user' | 'assistant'; content: string }[];
     try {
-      if (provider === 'harness') {
+      const attached = formatAttachments(await attachmentBlocks(attachments, document.canvas, canvasDir, {
+        fileNodeMode: harness ? 'path' : 'content', resolveFsPath,
+      }, harness));
+      if (harness) {
         systemPrompt = buildStaticSystemPrompt(path.basename(document.uri.fsPath, '.canvas'));
         const snapshot = await buildCanvasContext(document.uri.fsPath, document.canvas, msg.activeNodeId, {
           fileNodeMode: 'path', resolveFsPath, viewport: msg.viewport,
         });
-        apiHistory = [{ role: 'user', content: `${snapshot}\n\n---\n\n${msg.message}` }];
+        apiHistory = [{ role: 'user', content: [snapshot, attached, `---\n\n${msg.message}`].filter(Boolean).join('\n\n') }];
       } else {
         systemPrompt = await buildSystemPrompt(document.uri.fsPath, document.canvas, msg.activeNodeId, {
           fileNodeMode: 'content', resolveFsPath, viewport: msg.viewport,
         });
-        apiHistory = [...priorHistory, { role: 'user', content: msg.message }];
+        apiHistory = [...priorHistory, { role: 'user', content: attached ? `${attached}\n\n---\n\n${msg.message}` : msg.message }];
       }
     } catch (e) {
       send({ type: 'floatingChatError', message: `Context error: ${(e as Error).message}` });
@@ -2315,6 +2322,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       sessionId,
       restoreSession,
       model:        document.canvas.metadata?.aiModel,
+      images:       harness ? attachments.flatMap(a => (a.kind === 'image' ? [{ mediaType: a.mediaType, data: a.data }] : [])) : [],
     });
   }
 

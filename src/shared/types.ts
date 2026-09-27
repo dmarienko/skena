@@ -7,6 +7,7 @@
 import type { SectionLane } from './sectionLanes';
 import type { KnowledgeCapabilities, KnowledgeHit, KnowledgeQuery, KnowledgeText } from './knowledge/types';
 import type { RefreshOutcome } from './knowledge/refresh';
+import type { ChatAttachment } from './chatAttachments';
 
 // ─── JSON Canvas spec types ───────────────────────────────────────────────────
 
@@ -725,6 +726,8 @@ export interface MsgFloatingChatSend {
   history: ChatItem[];
   /** - what the user currently sees on screen (viewport awareness) */
   viewport?: ViewportSnapshot;
+  // - nodes, files and images attached with the + menu
+  attachments?: ChatAttachment[];
 }
 
 /** - Webview → Host: abort the current streaming request */
