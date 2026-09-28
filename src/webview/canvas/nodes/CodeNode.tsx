@@ -22,7 +22,7 @@ import { useKernels } from '../KernelsContext';
 import { CodeRenderer } from '../../renderers/CodeRenderer';
 import { G_BADGES_ATTR } from '../gChord';
 import { ScrollableContent, setScrollPosition } from '../../components/ScrollableContent';
-import { applyVimClipboard, patchVimNewlineAndIndent, patchVimLastLine, patchVimVisualCursor, patchVimExternalSelection, patchVimDeleteLastLine, patchVimJoin } from './TextNode';
+import { applyVimClipboard, patchVimNewlineAndIndent, patchVimLastLine, patchVimVisualCursor, patchVimExternalSelection, patchVimDeleteLastLine, patchVimJoin, bindSuggestNav } from './TextNode';
 import { ensureKernelCompletion, setActiveCodeCell } from './kernelCompletion';
 
 function vscodePostMessage(msg: unknown) {
@@ -203,16 +203,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     bindRun(monacoInstance.KeyMod.Alt     | monacoInstance.KeyCode.KeyR);
     bindRun(monacoInstance.KeyMod.Alt     | monacoInstance.KeyCode.KeyJ);
 
-    // - Ctrl+J / Ctrl+K navigate the completion dropdown (like ↓/↑) — via onKeyDown, NOT
-    // - addCommand: registering Ctrl+K globally breaks Monaco's Ctrl+K-prefixed chords
-    // - (Ctrl+K Ctrl+C/U = comment/uncomment). Only act while the suggest widget is open;
-    // - otherwise the keys fall through to Monaco's normal handling.
-    editorInstance.onKeyDown(e => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
-      if (!document.querySelector('.suggest-widget.visible')) return;
-      if (e.keyCode === monacoInstance.KeyCode.KeyJ) { e.preventDefault(); e.stopPropagation(); editorInstance.trigger('kb', 'selectNextSuggestion', {}); }
-      else if (e.keyCode === monacoInstance.KeyCode.KeyK) { e.preventDefault(); e.stopPropagation(); editorInstance.trigger('kb', 'selectPrevSuggestion', {}); }
-    });
+    bindSuggestNav(editorInstance, monacoInstance);
     // - vim mode (same editor experience as text nodes); status bar shows the mode
     initVimMode(editorInstance, vimStatusRef.current ?? undefined);
     // - wire vim y/p to the host clipboard relay (webview sandbox blocks navigator.clipboard);

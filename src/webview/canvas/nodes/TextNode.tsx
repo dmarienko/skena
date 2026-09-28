@@ -28,7 +28,7 @@
 
 import React, { useState, useCallback, useRef, useEffect, useLayoutEffect } from 'react';
 import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
-import Editor, { OnMount, BeforeMount } from '@monaco-editor/react';
+import Editor, { OnMount, BeforeMount, Monaco } from '@monaco-editor/react';
 import type { editor as MonacoEditor } from 'monaco-editor';
 import { initVimMode, VimMode } from 'monaco-vim';
 import { TextNode } from '../../../shared/types';
@@ -536,6 +536,25 @@ export function patchVimJoin(
 }
 
 /**
+ * Ctrl+J / Ctrl+K navigate the Monaco completion dropdown (like ↓/↑) — via onKeyDown, NOT
+ * addCommand: registering Ctrl+K globally breaks Monaco's Ctrl+K-prefixed chords (Ctrl+K
+ * Ctrl+C/U = comment/uncomment). Only acts while the suggest widget is open; otherwise the
+ * keys fall through to whatever else the editor or the page around it does with them.
+ * Shared by all three Monaco instances (code cells, text nodes, chat input).
+ */
+export function bindSuggestNav(
+  editorInstance: MonacoEditor.IStandaloneCodeEditor,
+  monacoInstance: Monaco,
+): void {
+  editorInstance.onKeyDown(e => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+    if (!document.querySelector('.suggest-widget.visible')) return;
+    if (e.keyCode === monacoInstance.KeyCode.KeyJ) { e.preventDefault(); e.stopPropagation(); editorInstance.trigger('kb', 'selectNextSuggestion', {}); }
+    else if (e.keyCode === monacoInstance.KeyCode.KeyK) { e.preventDefault(); e.stopPropagation(); editorInstance.trigger('kb', 'selectPrevSuggestion', {}); }
+  });
+}
+
+/**
  * Take the host clipboard text into the relay register, with the right linewise flag.
  * A read fires on every editor focus, so our own yank comes straight back — classifyHostText
  * recognises it and restores the register form, newline and all.
@@ -808,6 +827,7 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
     patchVimExternalSelection();
     patchVimDeleteLastLine();
     patchVimJoin(editorInstance, vimStatusRef.current);
+    bindSuggestNav(editorInstance, monacoInstance);
 
     // ─── vim mode tracking via MutationObserver ──────────────────────────────
     //

@@ -2,7 +2,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import Editor, { type BeforeMount, type OnMount } from '@monaco-editor/react';
 import type { editor as MonacoEditor } from 'monaco-editor';
 import { initVimMode } from 'monaco-vim';
-import { patchVimDeleteLastLine, patchVimExternalSelection, patchVimLastLine, patchVimVisualCursor } from '../nodes/TextNode';
+import { patchVimDeleteLastLine, patchVimExternalSelection, patchVimLastLine, patchVimVisualCursor, bindSuggestNav } from '../nodes/TextNode';
 import {
   applyVimClipboard, noteChatHostClipboard, patchVimNewlineAndIndent, setChatClipboardCache, vscodePostMessage, writeChatClipboard,
 } from './chatClipboard';
@@ -208,6 +208,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(p
     patchVimExternalSelection();
     patchVimDeleteLastLine();
     applyVimClipboard();
+    bindSuggestNav(editor, monaco);
 
     editor.onDidFocusEditorText(() => {
       // - a node editor may have taken the vim registers while it had focus; take them back
