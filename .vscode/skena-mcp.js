@@ -4343,7 +4343,12 @@ function holdsInPlace(nodes, edges, tested) {
   const probe = edges.map((e) => tested.has(e.id) ? { ...e, keepRow: true } : e);
   const riders = ridersOf(nodes, probe);
   const hanging = hangingBelow(nodes, probe);
+  const without = edges.map((e) => tested.has(e.id) ? { ...e, keepRow: false } : e);
+  const stored = ridersOf(nodes, without);
+  const storedHanging = hangingBelow(nodes, without);
   const map = byId(nodes);
+  const yIn = (p, n) => p[n.id]?.y ?? n.y;
+  const bases = /* @__PURE__ */ new Map();
   const stays = /* @__PURE__ */ new Map();
   const out = /* @__PURE__ */ new Set();
   for (const e of probe) {
@@ -4356,7 +4361,14 @@ function holdsInPlace(nodes, edges, tested) {
     if (ok2 === void 0) {
       const t = map.get(e.toNode);
       const p = layoutSection(nodes, { columnX: t.x, riders, hanging });
-      ok2 = !p[t.id] || p[t.id].y === t.y;
+      ok2 = yIn(p, t) === t.y;
+      const x = snapGrid(t.x);
+      const mates = [...stored.keys()].map((id) => map.get(id)).filter((n) => n.id !== t.id && snapGrid(n.x) === x);
+      if (ok2 && mates.length > 0) {
+        const base = bases.get(x) ?? layoutSection(nodes, { columnX: x, riders: stored, hanging: storedHanging });
+        bases.set(x, base);
+        ok2 = mates.every((n) => yIn(p, n) === yIn(base, n));
+      }
       stays.set(e.toNode, ok2);
     }
     if (ok2)
