@@ -235,6 +235,10 @@
 .cc-editor .monaco-editor-background,
 .cc-editor .monaco-editor .inputarea.ime-input { background-color: transparent !important; }
 .cc-editor .monaco-editor .cursors-layer .cursor { background-color: var(--cc-accent) !important; border-color: var(--cc-accent) !important; }
+/* - word wrap sizes the hidden input textarea to the line width, so its default focus outline
+     (--vscode-focusBorder, same mechanism neutralised for code cells in canvas.css) reads as a
+     box around the current line; occurrences/selection highlight stay as Monaco's defaults. */
+.cc-editor { --vscode-focusBorder: transparent; }
 .cc-ph {
   position: absolute;
   left: 0;
