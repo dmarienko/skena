@@ -869,7 +869,8 @@ export interface ChatHistory {
 
 /** - interleaved chat timeline item: assistant/user text, a tool call, or a thinking block */
 export type ChatItem =
-  | { kind: 'text'; role: 'user' | 'assistant'; content: string; timestamp: string; costUsd?: number; deltaUsd?: number }
+  // - nodeRef: set only on the ＋ canvas "added N9" line, the id of the node it names
+  | { kind: 'text'; role: 'user' | 'assistant'; content: string; timestamp: string; costUsd?: number; deltaUsd?: number; nodeRef?: string }
   | { kind: 'tool'; id: string; name: string; input: unknown; status: 'running' | 'ok' | 'error'; resultPreview?: string; timestamp: string }
   | { kind: 'thinking'; content: string; timestamp: string };
 

@@ -15,11 +15,17 @@ export interface ChatTurn {
 
 // - the agent's add_note: this prefix, then the note's text
 export const NODE_ADDED_PREFIX = '📌 *Added to canvas:*';
-const NOTE_ADDED_LINE = /^📌 added \S+ to the canvas$/;
+// - captures the label, so the console can pull it back out to link it
+const NOTE_ADDED_LINE = /^📌 added (\S+) to the canvas$/;
 
 // - the user's ＋ canvas on a turn: one line naming the new node
 export function noteAddedLine(label: string): string {
   return `📌 added ${label} to the canvas`;
+}
+
+// - the label out of a noteAddedLine, for the console to render as a link; null when content isn't that line
+export function noteAddedLabel(content: string): string | null {
+  return NOTE_ADDED_LINE.exec(content)?.[1] ?? null;
 }
 
 export function groupTurns(history: ChatItem[]): ChatTurn[] {

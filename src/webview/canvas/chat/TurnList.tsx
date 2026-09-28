@@ -6,7 +6,7 @@ import rehypeKatex from 'rehype-katex';
 import { ChatItem } from '../../../shared/types';
 import { useHostMarkdown } from '../../hooks/useHostMarkdown';
 import { useHighlightedHtml } from '../../lib/codeHighlight';
-import { ChatTurn, clockTime, firstLine, turnAnswer, turnCost } from './chatTurns';
+import { ChatTurn, clockTime, firstLine, noteAddedLabel, turnAnswer, turnCost } from './chatTurns';
 import { isTurnOpen } from './turnFold';
 import { toolCardView } from './toolCardView';
 
@@ -92,11 +92,42 @@ function OpenTurn({ turn, streaming, thinking, working, onToggle, onCopy, onAddN
 // - memoized: an item object is replaced only when it changes, so the other rows skip re-rendering
 const TurnItem = memo(function TurnItem({ item }: { item: ChatItem }): JSX.Element | null {
   if (item.kind === 'text') {
-    return item.role === 'user' ? <div className="cc-user">{firstLine(item.content)}</div> : <AnswerText content={item.content} />;
+    if (item.role === 'user') return <div className="cc-user">{firstLine(item.content)}</div>;
+    // - the ＋ canvas line only, and only once it carries the node's id (older history has the text
+    // - alone); anything else, including that same line without an id, renders as plain markdown as before
+    const label = item.nodeRef ? noteAddedLabel(item.content) : null;
+    return label ? <NoteAddedLine label={label} nodeId={item.nodeRef as string} /> : <AnswerText content={item.content} />;
   }
   if (item.kind === 'thinking') return <ThinkingStep content={item.content} />;
   return <ToolStep item={item} />;
 });
+
+// - "📌 added <label> to the canvas" with the label as a link; a mousedown preventDefault keeps the
+// - click from taking focus off the canvas, the same way cc-root does it for the console's buttons
+function NoteAddedLine({ label, nodeId }: { label: string; nodeId: string }): JSX.Element {
+  const [hover, setHover] = useState(false);
+  return (
+    <div className="cc-reply">
+      {'📌 added '}
+      <button
+        onMouseDown={e => e.preventDefault()}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        onClick={() => window.dispatchEvent(new CustomEvent('skena:focusNodeRequest', { detail: { id: nodeId } }))}
+        style={{
+          all:            'unset',
+          font:           'inherit',
+          cursor:         'pointer',
+          color:          'var(--cc-accent)',
+          textDecoration: hover ? 'underline' : 'none',
+        }}
+      >
+        {label}
+      </button>
+      {' to the canvas'}
+    </div>
+  );
+}
 
 function ToolStep({ item }: { item: Extract<ChatItem, { kind: 'tool' }> }): JSX.Element | null {
   const [open, setOpen] = useState(false);

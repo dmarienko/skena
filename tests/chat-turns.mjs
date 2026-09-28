@@ -1,7 +1,7 @@
 // - run: npx esbuild src/webview/canvas/chat/chatTurns.ts --bundle --format=esm --outfile=tests/.build/chatTurns.mjs && node --test tests/chat-turns.mjs
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { addToTurn, clockTime, firstLine, groupTurns, noteAddedLine, turnAnswer, turnCost } from './.build/chatTurns.mjs';
+import { addToTurn, clockTime, firstLine, groupTurns, noteAddedLabel, noteAddedLine, turnAnswer, turnCost } from './.build/chatTurns.mjs';
 
 const at    = (h, m) => new Date(2026, 8, 27, h, m).toISOString();
 const user  = (content, ts = at(14, 0)) => ({ kind: 'text', role: 'user', content, timestamp: ts });
@@ -53,6 +53,12 @@ test('the line saying the answer was added to the canvas is short and is not the
   assert.equal(noteAddedLine('N17'), '📌 added N17 to the canvas');
   const [t] = groupTurns([user('a'), reply('Done.'), reply(noteAddedLine('N17'))]);
   assert.equal(turnAnswer(t), 'Done.');
+});
+
+test('the label can be read back out of the added-node line, to link it; anything else is not that line', () => {
+  assert.equal(noteAddedLabel(noteAddedLine('N17')), 'N17');
+  assert.equal(noteAddedLabel('Done.'), null);
+  assert.equal(noteAddedLabel('📌 added N17 to the canvas, mostly'), null);
 });
 
 test('the answer is the last reply of the turn, not the narration before a tool call', () => {

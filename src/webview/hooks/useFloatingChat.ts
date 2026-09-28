@@ -8,7 +8,7 @@ import { NODE_ADDED_PREFIX, addToTurn, noteAddedLine } from '../canvas/chat/chat
 import { DEFAULT_CONSOLE_WIDTH } from '../canvas/chat/consoleLayout';
 
 // - a node the agent added (its note's text), or the one the user's ＋ canvas added from a turn
-export type NodeAdded = { note: string } | { turnKey: string; label: string };
+export type NodeAdded = { note: string } | { turnKey: string; label: string; id: string };
 
 export interface RestoredChat {
   history: unknown[];
@@ -169,7 +169,7 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
   const addNodeAdded = useCallback((added: NodeAdded) => {
     const timestamp = new Date().toISOString();
     const next: ChatItem[] = 'turnKey' in added
-      ? addToTurn(historyRef.current, added.turnKey, { kind: 'text', role: 'assistant', content: noteAddedLine(added.label), timestamp })
+      ? addToTurn(historyRef.current, added.turnKey, { kind: 'text', role: 'assistant', content: noteAddedLine(added.label), timestamp, nodeRef: added.id })
       : [...historyRef.current, { kind: 'text', role: 'assistant', content: `${NODE_ADDED_PREFIX}\n\n${added.note}`, timestamp }];
     historyRef.current = next;
     setHistory(next);

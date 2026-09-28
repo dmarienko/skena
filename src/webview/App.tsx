@@ -242,7 +242,7 @@ export function App(): JSX.Element {
           if (msg.edge) dispatch({ type: 'ADD_EDGE', edge: msg.edge });
           // - the user's ＋ canvas gets one line in its turn; the agent's add_note shows the note's text
           if (msg.turnKey !== undefined) {
-            nodeAddedEvt.current.emit({ turnKey: msg.turnKey, label: msg.node.nodeLabel ?? msg.node.id });
+            nodeAddedEvt.current.emit({ turnKey: msg.turnKey, label: msg.node.nodeLabel ?? msg.node.id, id: msg.node.id });
           } else {
             const note = msg.node.type === 'text'
               ? (msg.node as { text?: string }).text ?? ''
