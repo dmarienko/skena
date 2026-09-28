@@ -155,3 +155,18 @@ export const OUTPUT_DEFAULT_H = 300;
  */
 export const CODE_LINE_H_ESTIMATE = 18;
 export const CODE_CHROME_ESTIMATE = 39;
+
+/**
+ * Estimating what a text note's markdown needs, in px, for a caller with nothing rendered to measure:
+ * the chat's note (`estimateNoteNeedPx` in ./layoutEngine.ts). The note is NODE_SIZE.text.w wide.
+ *   line    = the `factors` markdown theme: 13px text at line-height 1.65 = 21.5px. The default theme
+ *             reads its line-height from --skena-grid (GRID px), so a note there shows fewer lines
+ *             and scrolls.
+ *   chars   = characters per rendered line: 700 minus 20px of padding, at about 7.5px a character.
+ *   math    = lines one display-math block takes, whatever its source spans.
+ *   chrome  = the note's padding above and below the text, 6 + 6 (TextNode's ScrollableContent).
+ */
+export const NOTE_LINE_H_ESTIMATE         = 22;
+export const NOTE_CHARS_PER_LINE_ESTIMATE = 90;
+export const NOTE_MATH_LINES_ESTIMATE     = 3;
+export const NOTE_CHROME_ESTIMATE         = 12;

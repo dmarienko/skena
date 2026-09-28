@@ -82,7 +82,8 @@ import { parseNodeRef } from '../shared/nodeRef';
 import { MAX_FILE_FULL_BYTES, MAX_FILE_PREVIEW_BYTES, MAX_NOTEBOOK_BYTES, NODE_SIZE } from '../shared/constants';
 import { normalizeCanvasToOrigin } from '../shared/bounds';
 import { migrateSections, memberCodeCellsInRunOrder, applyLaneFit, outputCellGeom, pinOutputToLane } from '../shared/sectionLanes';
-import { layoutSection, placeOutput, applyPatchesToCanvas, ridersOf, hangingBelow, sectionEngineNodes, sectionMembership, markKeepRowOnLoad, type LayoutOpts } from '../shared/layoutEngine';
+import { placeOutput, sectionEngineNodes, markKeepRowOnLoad, layoutAround } from '../shared/layoutEngine';
+import { addChatNote } from '../shared/chatNote';
 
 /**
  * A canvas as the editor opens it from disk: lifted to the origin, sections seeded, and an edge the
@@ -105,27 +106,6 @@ function outputGeomFor(canvas: CanvasData, cell: CodeNode, existing?: { width: n
   const around   = sectionEngineNodes(canvas.nodes, sections, cell.id);
   const placed   = around && placeOutput(around, cell.id, existing ? { w: existing.width, h: existing.height } : undefined);
   return placed ?? outputCellGeom(sections, cell);
-}
-
-/**
- * Lay out the section holding `nodeId` and apply what moved. `canvas.nodes` is replaced, `canvas`
- * itself never is: the document holds that reference. Returns the section's membership as it stood
- * BEFORE the engine ran; the caller hands it to `applyLaneFit`, so a cell the pack pushed past the
- * section's bottom edge grows that section instead of moving into the one below.
- * `joining` are nodes the write created from `nodeId` — a run's output cell: they belong to ITS
- * section whatever their y, so a node placed past the bottom edge grows that section too.
- */
-function layoutAround(canvas: CanvasData, nodeId: string, opts: LayoutOpts, joining?: string[]): Map<string, number> {
-  const sections = canvas.metadata?.sections ?? [];
-  const around   = sectionEngineNodes(canvas.nodes, sections, nodeId, joining);
-  if (!around) return new Map();
-  const own = sectionMembership(canvas.nodes, sections, nodeId, joining);
-  // - the cells a sequence edge holds on another cell's row, and the nodes hanging below another node
-  //   (§3.5), as the webview reads them
-  const riders = ridersOf(around, canvas.edges);
-  const hanging = hangingBelow(around, canvas.edges);
-  canvas.nodes = applyPatchesToCanvas(canvas.nodes, layoutSection(around, { ...opts, riders, hanging }));
-  return own;
 }
 
 // ─── bookmarks file helpers ──────────────────────────────────────────────────
@@ -2367,62 +2347,16 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
   }
 
   /**
-   * Create a TextNode and edge connecting it to the active node.
-   * Mutates `document.canvas` in place (same pattern as MCP tools do).
+   * The chat's text note, right of the focused node with an edge from it, laid out by the engine
+   * (`addChatNote`). Mutates `document.canvas` in place; the caller writes it.
    */
   private addNoteToCanvas(
     document:     SkenaDocument,
     activeNodeId: string | null,
     content:      string,
   ): { node: CanvasNode; edge?: CanvasEdge } | null {
-    if (!content.trim()) return null;
-
-    const canvas = document.canvas;
-
-    // - compute position: right of active node (or canvas centre)
-    let x = 200, y = 200;
-    const activeNode = activeNodeId ? canvas.nodes.find(n => n.id === activeNodeId) : null;
-    if (activeNode) {
-      x = activeNode.x + activeNode.width + 60;
-      y = activeNode.y;
-    } else if (canvas.nodes.length > 0) {
-      const last = canvas.nodes[canvas.nodes.length - 1];
-      x = last.x + last.width + 60;
-      y = last.y;
-    }
-
-    // - generate id and label
-    const id = `ai-${Date.now().toString(36)}`;
-
-    const nodeBase: CanvasNode = {
-      id,
-      type:        'text',
-      x,
-      y,
-      width:       340,
-      height:      160,
-      text:        content,
-      createdBy:   'ai',
-      lastTouched: Date.now(),
-    } as TextNode;
-
-    const node = assignLabel(nodeBase, canvas.nodes) as CanvasNode;
-
-    canvas.nodes.push(node);
-
-    // - connect to active node if one exists
-    let edge: CanvasEdge | undefined;
-    if (activeNodeId) {
-      edge = {
-        id:       `e-${id}`,
-        fromNode: activeNodeId,
-        toNode:   id,
-        toEnd:    'arrow',
-      };
-      canvas.edges.push(edge);
-    }
-
-    return { node, edge };
+    const now = Date.now();
+    return addChatNote(document.canvas, activeNodeId, content, `ai-${now.toString(36)}`, now);
   }
 
   private async handleChatMessage(

@@ -1,6 +1,7 @@
-import { GRID, NODE_SIZE, CODE_MAX_H, CODE_H_STEP, CODE_LINE_H_ESTIMATE, CODE_CHROME_ESTIMATE, OUTPUT_MIN_W, OUTPUT_DEFAULT_H } from './constants';
+import { GRID, NODE_SIZE, CODE_MAX_H, CODE_H_STEP, CODE_LINE_H_ESTIMATE, CODE_CHROME_ESTIMATE, OUTPUT_MIN_W, OUTPUT_MAX_H, OUTPUT_DEFAULT_H, NOTE_LINE_H_ESTIMATE, NOTE_CHARS_PER_LINE_ESTIMATE, NOTE_MATH_LINES_ESTIMATE, NOTE_CHROME_ESTIMATE } from './constants';
 import { snapGrid } from './grid';
 import { deriveLanes, type SectionLane } from './sectionLanes';
+import type { CanvasData } from './types';
 
 /**
  * The layout engine of one section (spec 2026-09-08-layout-engine-design.md).
@@ -70,6 +71,38 @@ export function codeCellHeight(neededPx: number): number {
 export function estimateCodeNeedPx(code: string): number {
   const lines = code.split('\n').length;
   return lines * CODE_LINE_H_ESTIMATE + CODE_CHROME_ESTIMATE;
+}
+
+/**
+ * Height of a text note whose markdown needs `neededPx`: rounded up to the grid, no shorter than a new
+ * note (NODE_SIZE.text.h) and no taller than an output cell's cap (OUTPUT_MAX_H). A longer note scrolls.
+ */
+export function noteHeight(neededPx: number): number {
+  return Math.min(OUTPUT_MAX_H, Math.max(NODE_SIZE.text.h, gridUp(neededPx)));
+}
+
+/**
+ * What a text note's markdown needs in px, for a caller with nothing rendered to measure (see
+ * NOTE_LINE_H_ESTIMATE in ./constants.ts). A source line wraps every NOTE_CHARS_PER_LINE_ESTIMATE
+ * characters, a blank line counts half a line (the paragraph margin), and a display-math block —
+ * `$$ … $$`, or typst's `%%` lines — counts NOTE_MATH_LINES_ESTIMATE lines.
+ */
+export function estimateNoteNeedPx(text: string): number {
+  let lines = 0;
+  let closeWith: string | null = null;
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (closeWith !== null) { if (line.endsWith(closeWith)) closeWith = null; continue; }
+    const math = line.startsWith('$$') ? '$$' : line === '%%' ? '%%' : null;
+    if (math) {
+      lines += NOTE_MATH_LINES_ESTIMATE;
+      // - `$$x$$` on one line closes itself
+      if (line.length < 4 || !line.endsWith(math)) closeWith = math;
+      continue;
+    }
+    lines += line ? Math.ceil(line.length / NOTE_CHARS_PER_LINE_ESTIMATE) : 0.5;
+  }
+  return Math.ceil(lines * NOTE_LINE_H_ESTIMATE) + NOTE_CHROME_ESTIMATE;
 }
 
 /** Ids of output cells owned by a code cell (the nodes that ride with a cell instead of a column). */
@@ -907,6 +940,27 @@ export function insertAfter(nodes: EngineNode[], afterId: string): { x: number; 
   return { x: snapGrid(after.x), y: rowBottom(after, map) + GRID };
 }
 
+/**
+ * Where a directional add lands when the anchor is in a section: the column slot beside (L / H) or
+ * above (K) the anchor, snapped to the grid. The engine packs that column from there, so a slot
+ * another node already holds is no reason to look elsewhere. Null when the slot falls outside the
+ * canvas.
+ */
+export function directionSlot(
+  dir:    'H' | 'K' | 'L',
+  anchor: { x: number; y: number; w: number },
+  newW:   number,
+  newH:   number,
+): { x: number; y: number } | null {
+  const x = dir === 'L' ? snapGrid(anchor.x + anchor.w + GRID)
+          : dir === 'H' ? snapGrid(anchor.x - newW - GRID)
+          :               snapGrid(anchor.x);
+  const y = dir === 'K' ? snapGrid(anchor.y - newH - GRID) : snapGrid(anchor.y);
+  // - refused, not clamped to 0: a clamp lands the node on a row that is not free and the pack then
+  //   pushes the whole column down to open one — nodes the user never asked to move.
+  return x < 0 || y < 0 ? null : { x, y };
+}
+
 /** Where a fork of `cellId` starts: a new pair right of its pair, or left of its column; null when refused. */
 export function forkOf(nodes: EngineNode[], cellId: string, side: 'right' | 'left', w: number = NODE_SIZE.code.w): { x: number; y: number } | null {
   const cell = nodes.find(n => n.id === cellId);
@@ -984,6 +1038,27 @@ export function sectionEngineNodes(nodes: CanvasShapedNode[], sections: SectionL
 export function sectionMembership(nodes: CanvasShapedNode[], sections: SectionLane[], anchor: SectionAnchor, extraIds?: Iterable<string>): Map<string, number> {
   const lane = anchorLane(nodes, sections, anchor);
   return new Map(lane ? [...lane.memberIds, ...(extraIds ?? [])].map(id => [id, lane.index] as const) : []);
+}
+
+/**
+ * Lay out the section holding `nodeId` and apply what moved. `canvas.nodes` is replaced, `canvas`
+ * itself never is: the host's document holds that reference. Returns the section's membership as it
+ * stood BEFORE the engine ran; the caller hands it to `applyLaneFit`, so a cell the pack pushed past
+ * the section's bottom edge grows that section instead of moving into the one below.
+ * `joining` are nodes the write created from `nodeId` — a run's output cell: they belong to ITS
+ * section whatever their y, so a node placed past the bottom edge grows that section too.
+ */
+export function layoutAround(canvas: CanvasData, nodeId: string, opts: LayoutOpts, joining?: string[]): Map<string, number> {
+  const sections = canvas.metadata?.sections ?? [];
+  const around   = sectionEngineNodes(canvas.nodes, sections, nodeId, joining);
+  if (!around) return new Map();
+  const own = sectionMembership(canvas.nodes, sections, nodeId, joining);
+  // - the cells a sequence edge holds on another cell's row, and the nodes hanging below another node
+  //   (§3.5), as the webview reads them
+  const riders = ridersOf(around, canvas.edges);
+  const hanging = hangingBelow(around, canvas.edges);
+  canvas.nodes = applyPatchesToCanvas(canvas.nodes, layoutSection(around, { ...opts, riders, hanging }));
+  return own;
 }
 
 /**

@@ -43,7 +43,7 @@ Each row is one engine call, one history entry, section fit after.
 
 | Operation | Engine |
 |---|---|
-| Insert after X (`o`, `Alt+X j`, MCP `after`) / beside or above X (`Alt+X h/k/l`, `Ctrl+Shift+H/K/L`, external paste) | the new node takes a column slot and that column packs, whatever X's type. After: X's column at X.y + X's row height + GRID. Beside / above: the column one gap right of X (or one new-node width + GRID left of it) at X's row, or X's own column one new-node height + GRID above X. A slot another node already holds is not searched past — the new node packs below that occupant, and on an exact y tie the mover wins and the occupant moves down. A slot outside the canvas (left of x 0, above y 0) is refused: nothing is added. Output column untouched. A code cell forks instead on `h` / `l` (next row). |
+| Insert after X (`o`, `Alt+X j`, MCP `after`) / beside or above X (`Alt+X h/k/l`, `Ctrl+Shift+H/K/L`, external paste, the chat's note: `add_note` and ＋ canvas) | the new node takes a column slot and that column packs, whatever X's type. After: X's column at X.y + X's row height + GRID. Beside / above: the column one gap right of X (or one new-node width + GRID left of it) at X's row, or X's own column one new-node height + GRID above X. A slot another node already holds is not searched past — the new node packs below that occupant, and on an exact y tie the mover wins and the occupant moves down. A slot outside the canvas (left of x 0, above y 0) is refused: nothing is added. Output column untouched. A code cell forks instead on `h` / `l` (next row). |
 | Fork right / left of X (`Alt+X l` / `h`, MCP `forkOf`) | new column pair: x = right edge of X's pair + GRID (left: X's column x − pair width − GRID, refused below 0); y = X.y; pairs beyond shift sideways if overlapped |
 | Run → output | output cell at (pair's output x, code y); width from content within `[OUTPUT_MIN_W, OUTPUT_MAX_W]`; whatever it now overlaps is bumped (§3.2); if the output is taller than its code, the column below is pushed |
 | Code height (live, on the user's edits) | h = the text's real need (editor content height + the cell's chrome, measured by the cell) rounded up to `CODE_H_STEP`, min `NODE_SIZE.code.h`, max `CODE_MAX_H`; recomputed on the user's edits only, so a hand-resized cell keeps its height until its text changes; the column below pushed; shrink pulls the column up |
@@ -880,6 +880,9 @@ edges read as stored, and `keepRow: false` otherwise. No engine call runs for th
   the mover, as before; it keeps the source's row only when its edge got `keepRow: true`;
 - MCP: `canvas_add_edge`, and the edge of a `canvas_pin_output` that is not adopted as the cell's
   output;
+- host: the chat's note (`addChatNote` in `src/shared/chatNote.ts`), from the AI companion's
+  `add_note` and the chat's ＋ canvas. The note takes the slot `l` gives beside the focused node and
+  is laid out as the mover;
 - an input edge of a code cell that `onConnect` or `onConnectEnd` replaces still releases the node
   it held, as a removed edge does.
 
@@ -946,9 +949,7 @@ Other open items:
   would move nothing, and no field otherwise; it never gets `false`, so an edge that fails is tested
   again at every load and can pass later, once its target sits where holding moves nothing;
 - a new connection that replaces a code cell's input edge still releases the node that edge held,
-  so that connection can move one node;
-- the AI companion's `add_note` in the host writes its edge with no `keepRow`. Read in the code, not
-  run: the reload from disk that follows marks it.
+  so that connection can move one node.
 
 ## 4. Reflow, MCP, undo, phases
 

@@ -64,7 +64,7 @@ import { G_BADGES_ATTR, gChordStep } from './gChord';
 import { SectionRail, type RailKernel } from '../rail/SectionRail';
 import { fmtDateTime } from '../rail/RailSegment';
 import { allFolded, deriveLanes, fitLanes, groupIdsByLane, sortLanes, insertLaneAt, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
-import { applyPatchesToCanvas, codeCellHeight, columnsOfDeleted as columnsOfDeletedIn, forkOf, hangingBelow, insertAfter, keepRowOf, layoutSection, reflowSection, ridersOf, sectionEngineNodes, sectionMembership, toEngineNodes, type EngineNode, type LayoutOpts, type Patches } from '../../shared/layoutEngine';
+import { applyPatchesToCanvas, codeCellHeight, columnsOfDeleted as columnsOfDeletedIn, directionSlot, forkOf, hangingBelow, insertAfter, keepRowOf, layoutSection, reflowSection, ridersOf, sectionEngineNodes, sectionMembership, toEngineNodes, type EngineNode, type LayoutOpts, type Patches } from '../../shared/layoutEngine';
 import { useLaneFit, flowGeom } from '../rail/useLaneFit';
 import { connectionLabels, findNearestNode, focusAfterDelete, revealPan, type ConnectionLabel, type EdgeSideContext, type NavDir, type NavNode, type Rect } from './spatialNav';
 import { focusAreaBottom } from './chat/consoleLayout';
@@ -433,27 +433,6 @@ function findFreePosition(
   // - still blocked after 40 pushes: a free slot below beats the overlapping one the search reached
   const c = free ? clampToOrigin(x, y) : clampToOrigin(startX, y + newH + gap);
   return { x: Math.round(c.x), y: Math.round(c.y) };
-}
-
-/**
- * Where a directional add lands when the anchor is in a section: the column slot beside (L / H) or
- * above (K) the anchor, snapped to the grid. The engine packs that column from there, so a slot
- * another node already holds is no reason to look elsewhere. Null when the slot falls outside the
- * canvas.
- */
-function directionSlot(
-  dir:    'H' | 'K' | 'L',
-  anchor: { x: number; y: number; w: number },
-  newW:   number,
-  newH:   number,
-): { x: number; y: number } | null {
-  const x = dir === 'L' ? snapGrid(anchor.x + anchor.w + GRID)
-          : dir === 'H' ? snapGrid(anchor.x - newW - GRID)
-          :               snapGrid(anchor.x);
-  const y = dir === 'K' ? snapGrid(anchor.y - newH - GRID) : snapGrid(anchor.y);
-  // - refused, not clamped to 0: a clamp lands the node on a row that is not free and the pack then
-  //   pushes the whole column down to open one — nodes the user never asked to move.
-  return x < 0 || y < 0 ? null : { x, y };
 }
 
 // ─── per-canvas focus memory (survives canvas reloads within a session) ──────
