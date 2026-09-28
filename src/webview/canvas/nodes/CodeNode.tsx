@@ -22,7 +22,7 @@ import { useKernels } from '../KernelsContext';
 import { CodeRenderer } from '../../renderers/CodeRenderer';
 import { G_BADGES_ATTR } from '../gChord';
 import { ScrollableContent, setScrollPosition } from '../../components/ScrollableContent';
-import { applyVimClipboard, patchVimNewlineAndIndent, patchVimLastLine, patchVimVisualCursor, patchVimExternalSelection, patchVimDeleteLastLine, patchVimJoin, bindSuggestNav } from './TextNode';
+import { applyVimClipboard, patchVimNewlineAndIndent, patchVimLastLine, patchVimBlockCursorBlink, patchVimVisualCursor, patchVimExternalSelection, patchVimDeleteLastLine, patchVimJoin, bindSuggestNav } from './TextNode';
 import { ensureKernelCompletion, setActiveCodeCell } from './kernelCompletion';
 
 function vscodePostMessage(msg: unknown) {
@@ -212,6 +212,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     applyVimClipboard();
     patchVimNewlineAndIndent();
     patchVimLastLine();
+    patchVimBlockCursorBlink();
     patchVimVisualCursor();
     patchVimExternalSelection();
     patchVimDeleteLastLine();

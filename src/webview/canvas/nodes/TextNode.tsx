@@ -273,6 +273,42 @@ export function patchVimLastLine(): void {
 }
 
 /**
+ * Blink vim's NORMAL-mode block cursor, the same as the insert-mode line cursor.
+ *
+ * CMAdapter.enterVimMode() — called on every insert→normal transition — sets
+ * `cursorBlinking: "solid"` alongside `cursorStyle: "block"`
+ * (node_modules/monaco-vim/src/cm_adapter.ts:876-880). That leaves the block cursor
+ * always on; the line cursor keeps whatever `cursorBlinking` skena set on the editor.
+ *
+ * Fix: after monaco-vim's own updateOptions call, set `cursorBlinking` back to
+ * "blink". `cursorStyle` is left alone, so the shape is still "block". Monaco's own
+ * blink timer then applies to it exactly as it does to the line cursor (same
+ * ~500 ms on/off cycle, reset to visible on every keystroke), so no separate
+ * animation or timer is needed here.
+ *
+ * Visual mode is unaffected: entering/leaving it doesn't call
+ * enterVimMode()/leaveVimMode() (those only fire on the insert<->normal boundary),
+ * and Monaco's native cursor layer is already hidden there by
+ * `.skena-vim-visual .cursors-layer`, replaced by the solid `.skena-vim-fat-cursor`
+ * decoration from patchVimVisualCursor().
+ */
+export function patchVimBlockCursorBlink(): void {
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const P = (VimMode as any)?.prototype;
+  if (!P || P.__skenaBlockCursorBlink) return;
+
+  const origEnterVimMode = P.enterVimMode;
+  P.enterVimMode = function(this: any, ...args: any[]) {
+    const r = origEnterVimMode.apply(this, args);
+    this.editor.updateOptions({ cursorBlinking: 'blink' });
+    return r;
+  };
+
+  P.__skenaBlockCursorBlink = true;
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+}
+
+/**
  * Draw vim's block cursor on the last SELECTED character in visual mode.
  *
  * monaco-vim keeps cursorStyle "block" in visual mode, and Monaco draws the block at the
@@ -823,6 +859,7 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
     applyVimClipboard();
     patchVimNewlineAndIndent();
     patchVimLastLine();
+    patchVimBlockCursorBlink();
     patchVimVisualCursor();
     patchVimExternalSelection();
     patchVimDeleteLastLine();
