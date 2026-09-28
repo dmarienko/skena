@@ -472,6 +472,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
                 automaticLayout:      true,
                 padding:              { top: 0, bottom: 0 },   // - align top edge with the preview
                 lineDecorationsWidth: 6,
+                cursorWidth:          3,
                 // - render suggest / hover / signature popups at a body-level node so the
                 // - node's overflow:hidden doesn't clip them and React Flow's viewport
                 // - transform doesn't push the position:fixed widgets off-screen

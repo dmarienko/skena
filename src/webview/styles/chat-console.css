@@ -234,7 +234,7 @@
 .cc-editor .monaco-editor .margin,
 .cc-editor .monaco-editor-background,
 .cc-editor .monaco-editor .inputarea.ime-input { background-color: transparent !important; }
-.cc-editor .monaco-editor .cursors-layer .cursor { background-color: var(--cc-accent) !important; border-color: var(--cc-accent) !important; }
+.cc-editor .monaco-editor .cursors-layer .cursor { background-color: #f01010 !important; border-color: #f01010 !important; }
 /* - the box around the current line was never Monaco's line highlight (renderLineHighlight is
      'none' below); it is the browser's own focus ring on Monaco's hidden input element, which
      word wrap sizes to the current line's width instead of 1px. This editor's own background is

@@ -366,10 +366,10 @@ body.vscode-dark, body.vscode-high-contrast {
    - and the cursor's inline `inherit` then inherits hidden. Covers block-mode extra cursors. */
 .skena-vim-visual .cursors-layer { visibility: hidden; }
 .skena-vim-fat-cursor {
-  background: var(--vscode-editorCursor-foreground, #aeafad) !important;
+  background: #f01010 !important;
   color: var(--vscode-editorCursor-background, var(--vscode-editor-background, #1e1e1e)) !important;
 }
 .skena-vim-fat-cursor-eol::after {
   content: '\00a0';
-  background: var(--vscode-editorCursor-foreground, #aeafad) !important;
+  background: #f01010 !important;
 }

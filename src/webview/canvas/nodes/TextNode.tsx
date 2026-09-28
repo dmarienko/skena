@@ -775,6 +775,7 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
         // - kill the line-highlight rectangle visible on single-line edits
         'editor.lineHighlightBackground':  '#00000000',
         'editor.lineHighlightBorderColor': '#00000000',
+        'editorCursor.foreground':         '#f01010',
       },
     });
   }, [isDark]);
@@ -975,6 +976,7 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
                 renderLineHighlight:  'none',
                 scrollbar:            { verticalScrollbarSize: 4, horizontalScrollbarSize: 4 },
                 automaticLayout:      true,
+                cursorWidth:          3,
               }}
             />
           </div>

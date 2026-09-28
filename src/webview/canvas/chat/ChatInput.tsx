@@ -167,6 +167,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(p
         'editor.background':               bg || '#1e1e2e',
         'editor.lineHighlightBackground':  '#00000000',
         'editor.lineHighlightBorderColor': '#00000000',
+        'editorCursor.foreground':         '#f01010',
       },
     });
   }, []);
@@ -252,6 +253,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(p
           parameterHints:      { enabled: false },
           renderLineHighlight: 'none',
           automaticLayout:     true,
+          cursorWidth:         3,
         }}
       />
     </div>
