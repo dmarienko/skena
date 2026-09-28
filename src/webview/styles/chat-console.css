@@ -235,10 +235,32 @@
 .cc-editor .monaco-editor-background,
 .cc-editor .monaco-editor .inputarea.ime-input { background-color: transparent !important; }
 .cc-editor .monaco-editor .cursors-layer .cursor { background-color: var(--cc-accent) !important; border-color: var(--cc-accent) !important; }
-/* - word wrap sizes the hidden input textarea to the line width, so its default focus outline
-     (--vscode-focusBorder, same mechanism neutralised for code cells in canvas.css) reads as a
-     box around the current line; occurrences/selection highlight stay as Monaco's defaults. */
+/* - the box around the current line was never Monaco's line highlight (renderLineHighlight is
+     'none' below); it is the browser's own focus ring on Monaco's hidden input element, which
+     word wrap sizes to the current line's width instead of 1px. This editor's own background is
+     forced transparent above (the see-through console), so that ring, normally hidden behind an
+     opaque editor background, now shows through. The old FloatingChat editor had wordWrap on too
+     but kept an opaque background, which is why it never showed this. Monaco 0.55 picks the input
+     element at runtime: a textarea, or (when the browser exposes the EditContext API, true here)
+     a tabindex=0 .native-edit-context div positioned the same way. Cover both, the same way
+     canvas.css already does for code cells: neutralise --vscode-focusBorder and force every focus
+     state off under .cc-editor. Occurrences/selection highlight and the vim cursor are untouched. */
 .cc-editor { --vscode-focusBorder: transparent; }
+.cc-editor .monaco-editor,
+.cc-editor .monaco-editor.focused,
+.cc-editor .monaco-editor .overflow-guard,
+.cc-editor .monaco-editor .monaco-scrollable-element,
+.cc-editor .monaco-editor textarea,
+.cc-editor .monaco-editor textarea:focus,
+.cc-editor .monaco-editor .native-edit-context,
+.cc-editor .monaco-editor .native-edit-context:focus,
+.cc-editor *:focus,
+.cc-editor *:focus-visible,
+.cc-editor *:focus-within {
+  outline: none !important;
+  box-shadow: none !important;
+  border-color: transparent !important;
+}
 .cc-ph {
   position: absolute;
   left: 0;
