@@ -68,6 +68,7 @@ import { applyPatchesToCanvas, codeCellHeight, columnsOfDeleted as columnsOfDele
 import { useLaneFit, flowGeom } from '../rail/useLaneFit';
 import { connectionLabels, findNearestNode, focusAfterDelete, revealPan, type ConnectionLabel, type EdgeSideContext, type NavDir, type NavNode, type Rect } from './spatialNav';
 import { focusAreaBottom } from './chat/consoleLayout';
+import { setCanvasWords } from './canvasWordCompletion';
 import { CanvasSearch } from './CanvasSearch';
 import { KnowledgeSearch } from './KnowledgeSearch';
 import { MarksPanel, type SectionEntry } from './MarksPanel';
@@ -165,6 +166,9 @@ function toFlowNode(cn: CanvasNode): Node {
 
 // - how long a just-produced run output is protected from being reverted by a stale reload
 const RECENT_OUTPUT_MS = 4000;
+
+// - quiet time after the last canvas change before the completion word list is rebuilt
+const WORDS_REBUILD_MS = 400;
 
 // - the label map of a disarmed chord, so disarming allocates nothing
 const EMPTY_LABELS: ReadonlyMap<string, string> = new Map();
@@ -473,6 +477,11 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const initialNodes = ensureLabels(canvas.nodes);
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes.map(toFlowNode));
   const [edges, setEdges, onEdgesChange] = useEdgesState(canvas.edges.map(toFlowEdge));
+  // - the completion word list of the text-node editor and the chat input; rebuilt once the canvas stops changing
+  useEffect(() => {
+    const t = setTimeout(() => setCanvasWords(nodes.map(n => n.data as unknown as CanvasNode)), WORDS_REBUILD_MS);
+    return () => clearTimeout(t);
+  }, [nodes]);
   const [showMinimap,  setShowMinimap]  = useState(false);
   const [helperLines,  setHelperLines]  = useState<HelperLinesState>({});
   const [contextMenu,  setContextMenu]  = useState<{ screenX: number; screenY: number } | null>(null);

@@ -40,6 +40,7 @@ import { ScrollableContent } from '../../components/ScrollableContent';
 import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
 import { nodeBorderColor } from '../palette';
 import { stripForHost, rememberWritten, classifyHostText } from '../vimClipboard';
+import { ensureCanvasWordCompletion } from '../canvasWordCompletion';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -745,6 +746,7 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
   // - foreground colour), so bold/italic text appears as plain white.  We
   // - override those rules with colours here.
   const beforeMount = useCallback<BeforeMount>((monacoInstance) => {
+    ensureCanvasWordCompletion(monacoInstance);
     const style = getComputedStyle(document.body);
     const bg    = style.getPropertyValue('--vscode-editor-background').trim();
     const dark  = isDark;
@@ -977,6 +979,10 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
                 scrollbar:            { verticalScrollbarSize: 4, horizontalScrollbarSize: 4 },
                 automaticLayout:      true,
                 cursorWidth:          3,
+                // - words from the canvas on Ctrl+Space only. Monaco's built-in word provider never answers:
+                // - it waits on the stub worker in index.tsx, which never replies
+                quickSuggestions:     false,
+                wordBasedSuggestions: 'off',
               }}
             />
           </div>

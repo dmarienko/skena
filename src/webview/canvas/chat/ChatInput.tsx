@@ -7,6 +7,7 @@ import {
   applyVimClipboard, noteChatHostClipboard, patchVimNewlineAndIndent, setChatClipboardCache, vscodePostMessage, writeChatClipboard,
 } from './chatClipboard';
 import { INPUT_LINE_H, inputHeight } from './consoleLayout';
+import { ensureCanvasWordCompletion } from '../canvasWordCompletion';
 
 export interface ChatInputHandle {
   focus:  () => void;
@@ -158,6 +159,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(p
   // - Monaco themes are global: keep the same 'skena-editor' definition the node editors use;
   // - the see-through background comes from chat-console.css
   const handleBeforeMount: BeforeMount = useCallback((monacoInstance) => {
+    ensureCanvasWordCompletion(monacoInstance);
     const bg = getComputedStyle(document.body).getPropertyValue('--vscode-editor-background').trim();
     monacoInstance.editor.defineTheme('skena-editor', {
       base:    'vs-dark',
@@ -249,8 +251,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(p
           fontSize:            13,
           lineHeight:          INPUT_LINE_H,
           fontFamily:          MONO,
-          suggest:             { showWords: false },
           quickSuggestions:    false,
+          // - Monaco's built-in word provider never answers: it waits on the stub worker in index.tsx
+          wordBasedSuggestions: 'off',
           parameterHints:      { enabled: false },
           renderLineHighlight: 'none',
           automaticLayout:     true,
