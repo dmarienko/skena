@@ -185,7 +185,8 @@ export const REVEAL_MARGIN = 24;
 /**
  * The smallest pan that shows `node` — or `pair` (node + output) when that box fits inside `area`
  * at the current zoom — with `margin` px kept clear. Null when nothing has to move. Zoom is kept;
- * a box wider/taller than the area is aligned on the edge it overflows.
+ * a box wider/taller than the area is aligned on its near edge (top, left) instead, so that edge
+ * always lands inside the view even though the far one still overflows.
  * `node`/`pair` are flow coordinates; `area` and the result are pane pixels.
  */
 export function revealPan(node: Box, pair: Box | null, area: Rect, vp: Viewport, margin = REVEAL_MARGIN): { x: number; y: number } | null {
@@ -195,10 +196,15 @@ export function revealPan(node: Box, pair: Box | null, area: Rect, vp: Viewport,
   const box = pair && fits(pair) ? pair : node;
   const sx1 = box.x1 * vp.zoom + vp.x, sy1 = box.y1 * vp.zoom + vp.y;
   const sx2 = box.x2 * vp.zoom + vp.x, sy2 = box.y2 * vp.zoom + vp.y;
+  const fitsW = sx2 - sx1 <= usableW;
+  const fitsH = sy2 - sy1 <= usableH;
   let dx = 0, dy = 0;
-  if (sx1 < area.left + margin) dx = area.left + margin - sx1;
+  // - wider than the area: aligning the far edge would push the near edge out, so the near edge wins
+  if (!fitsW) dx = area.left + margin - sx1;
+  else if (sx1 < area.left + margin) dx = area.left + margin - sx1;
   else if (sx2 > area.right - margin) dx = area.right - margin - sx2;
-  if (sy1 < area.top + margin) dy = area.top + margin - sy1;
+  if (!fitsH) dy = area.top + margin - sy1;
+  else if (sy1 < area.top + margin) dy = area.top + margin - sy1;
   else if (sy2 > area.bottom - margin) dy = area.bottom - margin - sy2;
   if (dx === 0 && dy === 0) return null;
   return { x: vp.x + dx, y: vp.y + dy };

@@ -501,3 +501,32 @@ const gapCtx = { nodes: [gapN3, gapW1], edges: [], lanes: [lane('S1', 0)] };
 test('57. a neighbouring-band node more than one grid gap to the side is not a fallback target', () => {
   assert.equal(findNearestNode(gapN3, 'down', gapCtx), null);
 });
+
+// - revealPan: a box taller or wider than the usable area used to get its overflowing edge (bottom
+//   or right) aligned, which pushed the near edge (top or left) out of view. The near edge should
+//   land at the margin instead, whichever side the box started on.
+const TALL = { x1: 100, y1: 200, x2: 460, y2: 900 };
+const WIDE_BOX = { x1: 200, y1: 100, x2: 1400, y2: 300 };
+const FITS_BELOW = { x1: 100, y1: 1000, x2: 460, y2: 1200 };
+
+test('58. a tall box whose bottom is below the area: the top lands at the margin', () => {
+  const got = revealPan(TALL, null, AREA, { x: 0, y: 0, zoom: 1 });
+  assert.deepEqual(got, { x: 0, y: -176 });
+  assert.equal(TALL.y1 + got.y, AREA.top + 24);
+});
+
+test('59. a tall box whose top is above the area: the same top-aligned result', () => {
+  const got = revealPan(TALL, null, AREA, { x: 0, y: -500, zoom: 1 });
+  assert.deepEqual(got, { x: 0, y: -176 });
+  assert.equal(TALL.y1 + got.y, AREA.top + 24);
+});
+
+test('60. a wide box whose right is past the area: the left edge lands at the margin', () => {
+  const got = revealPan(WIDE_BOX, null, AREA, { x: 0, y: 0, zoom: 1 });
+  assert.deepEqual(got, { x: -176, y: 0 });
+  assert.equal(WIDE_BOX.x1 + got.x, AREA.left + 24);
+});
+
+test('61. a box that fits and lies below still gets the smallest pan, bottom aligned', () => {
+  assert.deepEqual(revealPan(FITS_BELOW, null, AREA, { x: 0, y: 0, zoom: 1 }), { x: 0, y: -624 });
+});
