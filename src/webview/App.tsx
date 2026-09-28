@@ -237,9 +237,9 @@ export function App(): JSX.Element {
           resetDoneEvt.current.emit();
           break;
         case 'floatingChatNodeAdded': {
-          // - add node to canvas state so it appears immediately
-          dispatch({ type: 'ADD_NODE', node: msg.node });
-          if (msg.edge) dispatch({ type: 'ADD_EDGE', edge: msg.edge });
+          // - to CanvasView, which holds the live canvas: this state is the last load, and a change to it
+          //   would put every node back where that load had it
+          window.dispatchEvent(new CustomEvent('skena:chatNodeAdded', { detail: { node: msg.node, edge: msg.edge, moved: msg.moved ?? [], sections: msg.sections } }));
           // - the user's ＋ canvas gets one line in its turn; the agent's add_note shows the note's text
           if (msg.turnKey !== undefined) {
             nodeAddedEvt.current.emit({ turnKey: msg.turnKey, label: msg.node.nodeLabel ?? msg.node.id, id: msg.node.id });

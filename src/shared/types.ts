@@ -429,6 +429,10 @@ export interface MsgFloatingChatNodeAdded {
   edge?: CanvasEdge;
   // - set when the user's ＋ canvas added the node, absent for the agent's add_note
   turnKey?: string;
+  // - the other nodes the host's layout moved, where they now are, and the sections after it: the
+  //   webview applies them to its own copy of the canvas
+  moved?: { id: string; x: number; y: number }[];
+  sections?: SectionLane[];
 }
 
 // - webview → host: open VS Code's file picker to attach workspace files to the next chat message

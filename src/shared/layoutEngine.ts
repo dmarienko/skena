@@ -193,13 +193,21 @@ export interface HoldEdge { id: string; fromNode: string; toNode: string; fromSi
  * Which of the edges named in `tested` can hold their target on the source's row without moving it
  * (§3.5). Every tested edge is read as `keepRow: true`, every other edge as it is stored. A tested edge
  * passes when `ridersOf` then picks its source for the target, and a pack of the target's column with
- * those holds leaves the target's y where it is. `nodes` = one section.
+ * those holds leaves the target's y where it is, and leaves every node of that column the stored edges
+ * hold where the same pack without the tested holds leaves it: a node already held to a row keeps it
+ * against a new hold. `nodes` = one section.
  */
 export function holdsInPlace(nodes: EngineNode[], edges: HoldEdge[], tested: Set<string>): Set<string> {
   const probe = edges.map(e => (tested.has(e.id) ? { ...e, keepRow: true } : e));
   const riders = ridersOf(nodes, probe);
   const hanging = hangingBelow(nodes, probe);
+  const without = edges.map(e => (tested.has(e.id) ? { ...e, keepRow: false } : e));
+  const stored = ridersOf(nodes, without);
+  const storedHanging = hangingBelow(nodes, without);
   const map = byId(nodes);
+  const yIn = (p: Patches, n: EngineNode) => p[n.id]?.y ?? n.y;
+  // - the pack without the tested holds, per column
+  const bases = new Map<number, Patches>();
   const stays = new Map<string, boolean>();
   const out = new Set<string>();
   for (const e of probe) {
@@ -210,7 +218,15 @@ export function holdsInPlace(nodes: EngineNode[], edges: HoldEdge[], tested: Set
     if (ok === undefined) {
       const t = map.get(e.toNode)!;
       const p = layoutSection(nodes, { columnX: t.x, riders, hanging });
-      ok = !p[t.id] || p[t.id].y === t.y;
+      ok = yIn(p, t) === t.y;
+      // - only the target's column: a held node elsewhere also moves when its source does
+      const x = snapGrid(t.x);
+      const mates = [...stored.keys()].map(id => map.get(id)!).filter(n => n.id !== t.id && snapGrid(n.x) === x);
+      if (ok && mates.length > 0) {
+        const base = bases.get(x) ?? layoutSection(nodes, { columnX: x, riders: stored, hanging: storedHanging });
+        bases.set(x, base);
+        ok = mates.every(n => yIn(p, n) === yIn(base, n));
+      }
       stays.set(e.toNode, ok);
     }
     if (ok) out.add(e.id);

@@ -59,6 +59,30 @@ test('the note on an exact row tie keeps the focused node\'s row, and the cell t
   assert.deepEqual(canvas.edges, [edge]);
 });
 
+test('a node already held to the focused node\'s row keeps that row: the note goes under it with keepRow false (H3 W2→C4)', () => {
+  // - C4 was pasted onto W2, so the edge W2→C4 holds it on W2's row; E2 and its output C1 sit under
+  //   it. Live, the note took (2400,800) on top of C4. Both id orders, since the tie must not hang on ids.
+  for (const c4 of ['cell-c4', 'a-c4']) {
+    const canvas = canvasOf([
+      box('W2', 'knowledge', 1600, 800, 700, 300),
+      box(c4, 'cell', 2400, 800, 480, 320),
+      box('E2', 'code', 2400, 1220, 700, 300, { code: '', outputNodeId: 'C1' }),
+      box('C1', 'cell', 3200, 1220, 600, 300),
+    ], [{ id: 'e-c4', fromNode: 'W2', fromSide: 'right', toNode: c4, toSide: 'left', toEnd: 'arrow', keepRow: true }]);
+    const { edge } = addChatNote(canvas, 'W2', LONG, 'ai-n1', 0);
+    assert.deepEqual(at(canvas, c4), [2400, 800], c4);
+    assert.deepEqual(at(canvas, 'ai-n1'), [2400, 800 + 320 + GRID], c4);
+    assert.equal(edge.keepRow, false, c4);
+    assert.deepEqual(closePairs(canvas.nodes), [], c4);
+  }
+});
+
+test('the result lists the other nodes the layout moved, where they now are, for the webview to apply', () => {
+  const canvas = canvasOf([box('W2', 'knowledge', 1600, 800, 700, 300), box('C4', 'cell', 2400, 800, 480, 320)]);
+  const { node, moved } = addChatNote(canvas, 'W2', LONG, 'n1', 0);
+  assert.deepEqual(moved, [{ id: 'C4', x: 2400, y: 800 + node.height + GRID }]);
+});
+
 test('a note whose row an output of another pair blocks gets keepRow false and packs under that output', () => {
   // - E1's output O1 (800,0) 1400x500 crosses the slot right of A (800,400): holding the note on A's
   //   row would move it under O1, so the edge does not hold, and the note goes under O1 as a mover.

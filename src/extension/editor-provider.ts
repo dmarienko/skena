@@ -376,7 +376,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           // - same path as the agent's add_note tool: a text node right of the focused node, with an edge
           const added = this.addNoteToCanvas(document, msg.activeNodeId, msg.content);
           if (!added) break;
-          send({ type: 'floatingChatNodeAdded', node: added.node, edge: added.edge, turnKey: msg.turnKey });
+          send({ type: 'floatingChatNodeAdded', node: added.node, edge: added.edge, turnKey: msg.turnKey, moved: added.moved, sections: document.canvas.metadata?.sections });
           try {
             await writeCanvas(document.uri.fsPath, document.canvas);
           } catch { /* - the webview already holds the node; its next save writes it */ }
@@ -2301,7 +2301,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           const content = (tool.input['content'] as string) ?? '';
           const addResult = this.addNoteToCanvas(document, msg.activeNodeId, content);
           if (addResult) {
-            send({ type: 'floatingChatNodeAdded', node: addResult.node, edge: addResult.edge });
+            send({ type: 'floatingChatNodeAdded', node: addResult.node, edge: addResult.edge, moved: addResult.moved, sections: document.canvas.metadata?.sections });
           }
           // - save canvas to disk
           try {
@@ -2354,7 +2354,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     document:     SkenaDocument,
     activeNodeId: string | null,
     content:      string,
-  ): { node: CanvasNode; edge?: CanvasEdge } | null {
+  ): { node: CanvasNode; edge?: CanvasEdge; moved: { id: string; x: number; y: number }[] } | null {
     const now = Date.now();
     return addChatNote(document.canvas, activeNodeId, content, `ai-${now.toString(36)}`, now);
   }

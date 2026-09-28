@@ -2262,3 +2262,19 @@ test('a held node dragged far off its row keeps the link: the call puts it back,
   assert.equal(reopened, edges);
   assert.deepEqual(layoutSection(nodes, { moverIds: ['T'], draggedFrom, riders: ridersOf(nodes, reopened), hanging: hangingBelow(nodes, reopened, draggedFrom) }), { T: { x: 800, y: 0 } });
 });
+
+// 139
+test('a new edge does not take a row a stored edge already holds a node of the target\'s column on', () => {
+  // - H3: C4 pasted onto W2 is held on W2's row. A note made at the same slot and joined to W2 would
+  //   take that row and push C4 under it, so its edge gets keepRow false. Both id orders: a tie on the
+  //   row must not be settled by the ids.
+  for (const id of ['a-note', 'z-note']) {
+    const nodes = [{ id: 'W2', type: 'knowledge', x: 1600, y: 800, w: 700, h: 300 }, cell('C4', 2400, 800, 480, 320), note(id, 2400, 800, 700, 700)];
+    const stored = [edgeTo('W2', 'C4')];
+    const edge = { id: 'q', fromNode: 'W2', fromSide: 'right', toNode: id, toSide: 'left' };
+    assert.equal(withKeepRow.keepRowOf(nodes, [...stored, edge], edge), false, id);
+    // - C4 held a gap under the note instead, to a node on that row: nothing is taken and the edge holds
+    const clear = [...nodes.map(n => (n.id === 'C4' ? { ...n, y: 1600 } : n)), { id: 'W4', type: 'knowledge', x: 1600, y: 1600, w: 700, h: 300 }];
+    assert.equal(withKeepRow.keepRowOf(clear, [edgeTo('W4', 'C4'), edge], edge), true, id);
+  }
+});

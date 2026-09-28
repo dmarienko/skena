@@ -3720,6 +3720,28 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     return () => window.removeEventListener('skena:addNodeResult', handler);
   }, [setNodes, setEdges, scheduleSave, focusNodeById, revealNode, pushHistory, commitLanes, runEngine, withKeepRow]);
 
+  // - the chat's note, placed and laid out by the host (`addChatNote`): the note, its edge, and the
+  //   other nodes the host's layout moved. The host's write of the file is not relied on to reload this.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { node, edge, moved, sections } = (e as CustomEvent<{ node: CanvasNode; edge?: CanvasEdge; moved: { id: string; x: number; y: number }[]; sections?: SectionLane[] }>).detail;
+      // - a reload of the host's write got here first
+      if (canvasRef.current.nodes.some(n => n.id === node.id)) return;
+      pushHistory();
+      setNodes(nds => [...nds, toFlowNode(node)]);
+      canvasRef.current = { ...canvasRef.current, nodes: [...canvasRef.current.nodes, node] };
+      if (edge) {
+        setEdges(eds => addEdge(toFlowEdge(edge), eds));
+        canvasRef.current = { ...canvasRef.current, edges: [...canvasRef.current.edges, edge] };
+      }
+      applyPatches(Object.fromEntries(moved.map(m => [m.id, { x: m.x, y: m.y }])));
+      if (sections) commitLanes(sections);
+      scheduleSave();
+    };
+    window.addEventListener('skena:chatNodeAdded', handler);
+    return () => window.removeEventListener('skena:chatNodeAdded', handler);
+  }, [setNodes, setEdges, scheduleSave, pushHistory, commitLanes, applyPatches]);
+
   // ─── helper: place a new CellNode at viewport centre ─────────────────────────
 
   const addCellNode = useCallback((

@@ -10,7 +10,8 @@ import { directionSlot, estimateNoteNeedPx, forkOf, keepRowOf, layoutAround, not
  * here. The note goes right of `activeNodeId` the way `l` places a node, joined to it by an edge, and
  * the layout engine lays out its section with the note as the mover. It is NODE_SIZE.text.w wide and
  * as tall as its text needs (`noteHeight`). Mutates `canvas` in place: the host's document holds that
- * reference. Null when `content` is blank.
+ * reference. `moved` = the other nodes the layout moved, where they now are: the webview holds its own
+ * copy of the canvas and applies them. Null when `content` is blank.
  */
 export function addChatNote(
   canvas:       CanvasData,
@@ -18,8 +19,9 @@ export function addChatNote(
   content:      string,
   id:           string,
   now:          number,
-): { node: CanvasNode; edge?: CanvasEdge } | null {
+): { node: CanvasNode; edge?: CanvasEdge; moved: { id: string; x: number; y: number }[] } | null {
   if (!content.trim()) return null;
+  const was = new Map(canvas.nodes.map(n => [n.id, { x: n.x, y: n.y }] as const));
 
   const sections = canvas.metadata?.sections ?? [];
   const w = NODE_SIZE.text.w;
@@ -61,5 +63,6 @@ export function addChatNote(
   const own = layoutAround(canvas, anchor?.id ?? id, { moverIds: [id] }, anchor ? [id] : undefined);
   Object.assign(canvas, applyLaneFit(canvas, now, own));
   // - the engine and the fit replace every node they move
-  return { node: canvas.nodes.find(n => n.id === id) ?? node, edge };
+  const moved = canvas.nodes.flatMap(n => { const b = was.get(n.id); return b && (b.x !== n.x || b.y !== n.y) ? [{ id: n.id, x: n.x, y: n.y }] : []; });
+  return { node: canvas.nodes.find(n => n.id === id) ?? node, edge, moved };
 }
