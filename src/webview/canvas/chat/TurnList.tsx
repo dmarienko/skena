@@ -50,7 +50,7 @@ function FoldedTurn({ turn, onToggle }: { turn: ChatTurn; onToggle: (key: string
   const prompt = turn.prompt === null ? '(no prompt)' : firstLine(turn.prompt);
   return (
     <div className="cc-fold-line" title={turn.prompt ?? undefined} onClick={() => onToggle(turn.key)}>
-      › {prompt} · {clockTime(turn.time)}
+      {prompt} · {clockTime(turn.time)}
     </div>
   );
 }

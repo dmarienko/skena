@@ -86,6 +86,7 @@
 .cc-user {
   font-family: var(--cc-mono);
   font-size: 12.5px;
+  font-weight: 600;
   color: var(--cc-accent);
   opacity: 0.9;
   white-space: nowrap;
@@ -93,7 +94,16 @@
   text-overflow: ellipsis;
   cursor: pointer;
 }
-.cc-user::before { content: '› '; color: var(--cc-muted); }
+/* - folded ▸ and open ▾ sit in the same spot at the same width, so the prompt text does not
+     shift when a turn is folded or opened */
+.cc-fold-line::before,
+.cc-user::before {
+  display: inline-block;
+  width: 14px;
+  color: var(--cc-muted);
+}
+.cc-fold-line::before { content: '▸'; }
+.cc-user::before { content: '▾'; }
 
 .cc-step { display: flex; flex-direction: column; }
 .cc-tool {
