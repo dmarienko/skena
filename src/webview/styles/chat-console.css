@@ -21,7 +21,7 @@
   right: 0;
   bottom: 0;
   margin: 0 auto;
-  padding-bottom: 18px;
+  padding-bottom: 6px;
   z-index: 9000;
   display: flex;
   flex-direction: column;
@@ -36,7 +36,7 @@
 }
 .cc-root > * { pointer-events: auto; }
 
-.cc-edge { position: absolute; top: 0; bottom: 18px; width: 8px; cursor: ew-resize; z-index: 2; }
+.cc-edge { position: absolute; top: 0; bottom: 6px; width: 8px; cursor: ew-resize; z-index: 2; }
 .cc-edge-left  { left: -4px; }
 .cc-edge-right { right: -4px; }
 
