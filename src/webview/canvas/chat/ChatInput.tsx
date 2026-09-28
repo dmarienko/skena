@@ -184,7 +184,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(p
       overviewRulerLanes:   0,
       scrollBeyondLastLine: false,
       wordWrap:             'on',
-      scrollbar:            { vertical: 'auto', horizontal: 'hidden', alwaysConsumeMouseWheel: false, verticalScrollbarSize: 3 },
+      // - useShadows draws an inset shadow on the scrolled-past edge; off, since the bar has no header to shadow under
+      scrollbar:            { vertical: 'auto', horizontal: 'hidden', alwaysConsumeMouseWheel: false, verticalScrollbarSize: 3, useShadows: false },
       // - no padding: the content height is then exactly lines × INPUT_LINE_H
       padding:              { top: 0, bottom: 0 },
     });

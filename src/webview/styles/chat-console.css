@@ -261,6 +261,11 @@
   box-shadow: none !important;
   border-color: transparent !important;
 }
+/* - .native-edit-context is a plain div with no text colour of its own, so its browser caret
+     inherits the ambient foreground and blinks at the div's own start, not the vim cursor's
+     position; the old .inputarea textarea path already loses its caret via its own
+     color: transparent. Vim's block/line cursor is a separate layer, untouched. */
+.cc-editor .monaco-editor .native-edit-context { caret-color: transparent; }
 .cc-ph {
   position: absolute;
   left: 0;
