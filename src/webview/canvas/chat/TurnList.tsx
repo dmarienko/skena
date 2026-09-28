@@ -49,7 +49,7 @@ export function TurnList({ turns, toggled, streaming, thinking, working, onToggl
 function FoldedTurn({ turn, onToggle }: { turn: ChatTurn; onToggle: (key: string) => void }): JSX.Element {
   const prompt = turn.prompt === null ? '(no prompt)' : firstLine(turn.prompt);
   return (
-    <div className="cc-fold-line" title={turn.prompt ?? undefined} onClick={() => onToggle(turn.key)}>
+    <div className="cc-fold-line" data-turn-head={turn.key} title={turn.prompt ?? undefined} onClick={() => onToggle(turn.key)}>
       {prompt} · {clockTime(turn.time)}
     </div>
   );
@@ -71,7 +71,7 @@ function OpenTurn({ turn, streaming, thinking, working, onToggle, onCopy, onAddN
   return (
     <div className="cc-turn">
       {turn.prompt !== null && (
-        <div className="cc-user" title={turn.prompt} onClick={() => onToggle(turn.key)}>{firstLine(turn.prompt)}</div>
+        <div className="cc-user" data-turn-head={turn.key} title={turn.prompt} onClick={() => onToggle(turn.key)}>{firstLine(turn.prompt)}</div>
       )}
       {turn.items.map((it, i) => <TurnItem key={it.kind === 'tool' ? it.id : `${it.kind}-${i}`} item={it} />)}
       {streaming !== '' && <AnswerText content={streaming} streaming />}

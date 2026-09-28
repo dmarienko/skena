@@ -15,3 +15,20 @@ export function toggleTurn(toggled: ReadonlySet<string>, key: string): ReadonlyS
 export function clearFolds(toggled: ReadonlySet<string>, hadTurns: boolean, hasTurns: boolean): ReadonlySet<string> {
   return hadTurns && !hasTurns ? new Set<string>() : toggled;
 }
+
+// - a click on a turn's ▸ or ▾ line: the turn, whether the click opened it, and how far the line sat
+// - below the top of the scroll area just before the click
+export interface TurnClick { key: string; opened: boolean; offset: number }
+
+export type TurnScroll =
+  | { to: 'latest' }
+  | { to: 'turn'; key: string; offset: number }
+  | { to: 'stay' };
+
+// - a click keeps the view on its turn: an opened turn's line goes to the top of the scroll area, a
+// - folded one stays where it was on screen. Without a click, new content (a prompt, streamed text, a
+// - tool step, the panel reopened) pins to the latest; anything else leaves the scroll as it is
+export function turnScroll(click: TurnClick | null, newContent: boolean): TurnScroll {
+  if (click) return { to: 'turn', key: click.key, offset: click.opened ? 0 : click.offset };
+  return newContent ? { to: 'latest' } : { to: 'stay' };
+}

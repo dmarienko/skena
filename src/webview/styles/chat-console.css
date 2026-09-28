@@ -68,6 +68,10 @@
 .cc-hbtn { background: none; border: none; padding: 0 2px; line-height: 1; font-size: 12.5px; color: var(--cc-muted); cursor: pointer; }
 .cc-hbtn:hover { color: var(--cc-ink); }
 .cc-out-b { display: flex; flex-direction: column; gap: 7px; min-height: 0; overflow-y: auto; padding: 0 14px 10px; }
+/* - rows keep their full height and the area scrolls instead: a fold line clips its text (overflow:
+     hidden), and a flex item that clips has a minimum height of 0, so it would shrink to nothing
+     whenever an open turn is taller than the panel */
+.cc-out-b > * { flex-shrink: 0; }
 
 .cc-turn { display: flex; flex-direction: column; gap: 7px; }
 .cc-turn + .cc-turn,

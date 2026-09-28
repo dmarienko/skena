@@ -1,7 +1,7 @@
 // - run: npx esbuild src/webview/canvas/chat/turnFold.ts --bundle --format=esm --outfile=tests/.build/turnFold.mjs && node --test tests/turn-fold.mjs
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { clearFolds, isTurnOpen, toggleTurn } from './.build/turnFold.mjs';
+import { clearFolds, isTurnOpen, toggleTurn, turnScroll } from './.build/turnFold.mjs';
 
 const none = new Set();
 
@@ -40,4 +40,27 @@ test('toggleTurn leaves its input set unchanged', () => {
   const s = new Set(['turn-0']);
   toggleTurn(s, 'turn-0');
   assert.equal(s.has('turn-0'), true);
+});
+
+test('opening a turn by a click puts its line at the top of the scroll area', () => {
+  const move = turnScroll({ key: 'turn-6', opened: true, offset: 150 }, false);
+  assert.deepEqual(move, { to: 'turn', key: 'turn-6', offset: 0 });
+});
+
+test('folding a turn by a click leaves its line where it was on screen', () => {
+  const move = turnScroll({ key: 'turn-2', opened: false, offset: 120 }, false);
+  assert.deepEqual(move, { to: 'turn', key: 'turn-2', offset: 120 });
+});
+
+test('a click is never followed by the pin to the latest, even when content arrived in the same render', () => {
+  assert.equal(turnScroll({ key: 'turn-6', opened: true, offset: 150 }, true).to, 'turn');
+  assert.equal(turnScroll({ key: 'turn-2', opened: false, offset: 120 }, true).to, 'turn');
+});
+
+test('new content with no click pins to the latest', () => {
+  assert.deepEqual(turnScroll(null, true), { to: 'latest' });
+});
+
+test('a render with no click and no new content leaves the scroll where it is', () => {
+  assert.deepEqual(turnScroll(null, false), { to: 'stay' });
 });

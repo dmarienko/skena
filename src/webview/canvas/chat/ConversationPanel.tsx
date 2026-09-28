@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { ChatItem, ChatTokenUsage } from '../../../shared/types';
 import { clockTime, groupTurns } from './chatTurns';
-import { clearFolds, toggleTurn } from './turnFold';
+import { clearFolds, isTurnOpen, toggleTurn, turnScroll, type TurnClick } from './turnFold';
 import { TurnList } from './TurnList';
 
 interface Props {
@@ -39,16 +39,36 @@ export function ConversationPanel(p: Props): JSX.Element | null {
   const busy    = p.working || p.compacting;
   const visible = turns.length > 0 || busy || p.error !== null;
 
-  // - pin to the latest content on unfold, on restored history, on a new last item and while
-  // - streaming; opening an earlier turn, or a line added inside it, changes none of these, so it does not jump
-  const lastItem = p.history.length ? p.history[p.history.length - 1] : null;
-  useEffect(() => {
-    if (!visible || p.folded) return;
+  // - new content is the panel reopened, restored history, a new last item or streamed text; a turn opened
+  // - or folded by a click changes none of these and is reported through clickRef instead
+  const lastItem   = p.history.length ? p.history[p.history.length - 1] : null;
+  const clickRef   = useRef<TurnClick | null>(null);
+  const contentRef = useRef<unknown[] | null>(null);
+  useLayoutEffect(() => {
+    const content = [visible, p.folded, lastItem, p.streaming];
+    const prev    = contentRef.current;
+    contentRef.current = content;
+    const click = clickRef.current;
+    clickRef.current = null;
     const el = scrollRef.current;
-    if (!el) return;
-    const id = requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
-    return () => cancelAnimationFrame(id);
-  }, [visible, p.folded, lastItem, p.streaming, scrollRef]);
+    if (!visible || p.folded || !el) return;
+    const move = turnScroll(click, prev === null || content.some((v, i) => v !== prev[i]));
+    if (move.to === 'latest') {
+      const id = requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
+      return () => cancelAnimationFrame(id);
+    }
+    if (move.to === 'turn') {
+      const head = turnHead(el, move.key);
+      if (head) el.scrollTop += lineOffset(el, head) - move.offset;
+    }
+  }, [visible, p.folded, lastItem, p.streaming, toggled, scrollRef]);
+
+  const onToggle = (key: string) => {
+    const el   = scrollRef.current;
+    const head = el ? turnHead(el, key) : null;
+    clickRef.current = { key, opened: !isTurnOpen(toggled, key), offset: el && head ? lineOffset(el, head) : 0 };
+    setToggled(t => toggleTurn(t, key));
+  };
 
   // - a finer wheel step: the native one jumps too far to follow the text; ctrl+wheel is the host's zoom
   useEffect(() => {
@@ -90,7 +110,7 @@ export function ConversationPanel(p: Props): JSX.Element | null {
           streaming={p.streaming}
           thinking={p.thinking}
           working={p.working}
-          onToggle={key => setToggled(t => toggleTurn(t, key))}
+          onToggle={onToggle}
           onCopy={p.onCopy}
           onAddNote={p.onAddNote}
         />
@@ -99,4 +119,14 @@ export function ConversationPanel(p: Props): JSX.Element | null {
       </div>
     </div>
   );
+}
+
+// - a turn's ▸ or ▾ line, marked by TurnList
+function turnHead(el: HTMLElement, key: string): HTMLElement | null {
+  return el.querySelector<HTMLElement>(`[data-turn-head="${key}"]`);
+}
+
+// - how far a line sits below the top of the scroll area, in pixels
+function lineOffset(el: HTMLElement, line: HTMLElement): number {
+  return line.getBoundingClientRect().top - el.getBoundingClientRect().top;
 }
