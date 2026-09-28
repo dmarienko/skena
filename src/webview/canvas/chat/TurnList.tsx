@@ -27,7 +27,7 @@ export function TurnList({ turns, toggled, streaming, thinking, working, onToggl
     <>
       {turns.map(t => {
         const latest = t.key === latestKey;
-        return isTurnOpen(toggled, t.key, latestKey)
+        return isTurnOpen(toggled, t.key)
           ? (
             <OpenTurn
               key={t.key}

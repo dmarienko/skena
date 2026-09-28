@@ -55,8 +55,10 @@ Taken from the mock:
 
 - Header line: "Latest turn · time" and a fold arrow. The arrow, and Alt+`, fold the conversation to
   this header line; the input bar stays. Folded or open is saved per canvas.
-- Turns form one scrollable list. Each earlier turn is folded to one line: `› prompt · time`. A click
-  opens it. The latest turn is open. A new prompt folds the previous turn.
+- Turns form one scrollable list. A folded turn shows as one line: `› prompt · time`; a click folds or
+  opens it. A turn is open unless the user folded it by clicking — including every turn from history
+  loaded when the canvas opens. A new prompt opens the new turn and leaves every other turn exactly as
+  it was.
 - Inside a turn:
   - the user's prompt is one monospace line starting with `›`, in the accent colour, no bubble;
   - tool steps and thinking are compact one-line entries, as the tool cards and thinking blocks

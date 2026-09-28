@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { ChatItem, ChatTokenUsage } from '../../../shared/types';
 import { clockTime, groupTurns } from './chatTurns';
-import { nextToggled, toggleTurn } from './turnFold';
+import { clearFolds, toggleTurn } from './turnFold';
 import { TurnList } from './TurnList';
 
 interface Props {
@@ -23,16 +23,18 @@ interface Props {
 
 export function ConversationPanel(p: Props): JSX.Element | null {
   const { scrollRef } = p;
-  const turns     = useMemo(() => groupTurns(p.history), [p.history]);
-  const latest    = turns.length ? turns[turns.length - 1] : null;
-  const latestKey = latest?.key ?? null;
+  const turns    = useMemo(() => groupTurns(p.history), [p.history]);
+  const latest   = turns.length ? turns[turns.length - 1] : null;
+  const hasTurns = turns.length > 0;
   const [toggled, setToggled] = useState<ReadonlySet<string>>(() => new Set<string>());
-  const prevLatestRef = useRef<string | null>(latestKey);
+  const hadTurnsRef = useRef(hasTurns);
 
+  // - a new prompt leaves every turn's fold as it was; only clearing the whole history (Reset)
+  // - drops the folds, so a new session's turn-0 does not inherit the last session's fold
   useEffect(() => {
-    setToggled(t => nextToggled(t, prevLatestRef.current, latestKey));
-    prevLatestRef.current = latestKey;
-  }, [latestKey]);
+    setToggled(t => clearFolds(t, hadTurnsRef.current, hasTurns));
+    hadTurnsRef.current = hasTurns;
+  }, [hasTurns]);
 
   const busy    = p.working || p.compacting;
   const visible = turns.length > 0 || busy || p.error !== null;
