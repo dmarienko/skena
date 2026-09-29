@@ -1,7 +1,7 @@
 /**
  * Pure helpers for the code cell's read-only preview, so it draws what the Monaco editor draws
- * when the cell is opened: bracket colours by nesting pair, relative line numbers, and a line-number
- * column of the same width.
+ * when the cell is opened: bracket colours by nesting pair, relative line numbers, a line-number
+ * column of the same width, and each line cut into styled runs.
  *
  * The editor always tokenizes a code cell as python (CodeNode passes language="python"), so the
  * bracket rules follow Monaco 0.55's python grammar (basic-languages/python/python.js) and its
@@ -208,4 +208,57 @@ export function pythonBracketLevels(lines: readonly string[]): BracketMark[] {
   }
   for (const o of open) marks[o.mark].invalid = true;
   return marks;
+}
+
+/** How the editor draws a run of text: its token's colour and font style. */
+export interface RunStyle { color?: string; italic?: boolean; bold?: boolean; underline?: boolean; strikethrough?: boolean }
+
+/** A piece of a line drawn with one style; `magic` marks CodeNode's IPython magic decoration. */
+export interface Run { text: string; style: RunStyle; magic: boolean }
+
+// - an IPython magic / shell line (%name, %%name, !cmd): CodeNode decorates the magic token in the editor
+const MAGIC_RE = /^(\s*)(%{1,2}\s*[A-Za-z_]\w*|!)/;
+
+/** [start, end) of the magic token on `line`, or null. */
+export function magicRange(line: string): [number, number] | null {
+  const m = line.match(MAGIC_RE);
+  return m ? [m[1].length, m[1].length + m[2].length] : null;
+}
+
+/**
+ * `line` cut into runs the way the editor draws it: each token (starting at `offset`) in its own style,
+ * a bracket from `brackets` (column → colour) in its bracket colour over the token's, and the magic
+ * range flagged. Neighbouring pieces with the same look are joined.
+ */
+export function splitRuns(
+  line: string,
+  tokens: readonly { offset: number; style: RunStyle }[],
+  brackets?: ReadonlyMap<number, string>,
+  magic?: readonly [number, number] | null,
+): Run[] {
+  if (line.length === 0) return [];
+  const cuts = new Set<number>([0, line.length]);
+  for (const t of tokens) if (t.offset > 0 && t.offset < line.length) cuts.add(t.offset);
+  brackets?.forEach((_, col) => { cuts.add(col); cuts.add(col + 1); });
+  if (magic) { cuts.add(magic[0]); cuts.add(magic[1]); }
+  const points = [...cuts].filter(c => c >= 0 && c <= line.length).sort((a, b) => a - b);
+  const runs: Run[] = [];
+  let ti = 0;
+  for (let k = 0; k + 1 < points.length; k++) {
+    const start = points[k], end = points[k + 1];
+    while (ti + 1 < tokens.length && tokens[ti + 1].offset <= start) ti++;
+    const base = tokens.length > 0 && tokens[ti].offset <= start ? tokens[ti].style : {};
+    const bracket = end - start === 1 ? brackets?.get(start) : undefined;
+    const style = bracket ? { ...base, color: bracket } : base;
+    const isMagic = !!magic && start >= magic[0] && end <= magic[1];
+    const last = runs[runs.length - 1];
+    if (last && last.magic === isMagic && sameStyle(last.style, style)) last.text += line.slice(start, end);
+    else runs.push({ text: line.slice(start, end), style, magic: isMagic });
+  }
+  return runs;
+}
+
+function sameStyle(a: RunStyle, b: RunStyle): boolean {
+  return a.color === b.color && !!a.italic === !!b.italic && !!a.bold === !!b.bold
+    && !!a.underline === !!b.underline && !!a.strikethrough === !!b.strikethrough;
 }

@@ -2,7 +2,7 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import {
-  pythonBracketLevels, bracketColor, relativeLineNumbers, codeGutter, scaleAlpha,
+  pythonBracketLevels, bracketColor, relativeLineNumbers, codeGutter, scaleAlpha, splitRuns, magicRange,
   BRACKET_COLORS_DARK, BRACKET_COLORS_LIGHT, BRACKET_INVALID_COLOR,
 } from './.build/codeCellView.mjs';
 
@@ -77,4 +77,27 @@ test('12. line-number column: at least three digits wide, rounded like Monaco, p
 test('13. the dimmed final line number is the line-number colour at 0.4 of its alpha', () => {
   assert.equal(scaleAlpha('#90be065c', 0.4), 'rgba(144, 190, 6, 0.14)');
   assert.equal(scaleAlpha('#ffffff', 0.5), 'rgba(255, 255, 255, 0.5)');
+});
+
+test('14. runs: each token keeps its own style, a bracket takes its bracket colour over the token colour', () => {
+  const id = { color: '#c7d1cc' }, delim = { color: '#7c8a84' };
+  const runs = splitRuns('f(a, b)', [{ offset: 0, style: id }, { offset: 1, style: delim }, { offset: 2, style: id }, { offset: 3, style: delim }, { offset: 5, style: id }, { offset: 6, style: delim }],
+    new Map([[1, '#ffd700'], [6, '#ffd700']]));
+  assert.deepEqual(runs.map(r => [r.text, r.style.color]), [['f', '#c7d1cc'], ['(', '#ffd700'], ['a', '#c7d1cc'], [', ', '#7c8a84'], ['b', '#c7d1cc'], [')', '#ffd700']]);
+});
+
+test('15. runs: neighbouring pieces with the same look are joined; no tokens means one plain run', () => {
+  const a = { color: '#111111' };
+  assert.deepEqual(splitRuns('abcd', [{ offset: 0, style: a }, { offset: 2, style: { ...a } }]).map(r => r.text), ['abcd']);
+  assert.deepEqual(splitRuns('x = 1', []), [{ text: 'x = 1', style: {}, magic: false }]);
+  assert.deepEqual(splitRuns('', [{ offset: 0, style: a }]), []);
+});
+
+test('16. IPython magic: the %name / %%name / ! token after the indentation, and nothing on plain lines', () => {
+  assert.deepEqual(magicRange('  %timeit f(x)'), [2, 9]);
+  assert.deepEqual(magicRange('%%time'), [0, 6]);
+  assert.deepEqual(magicRange('!ls -la'), [0, 1]);
+  assert.equal(magicRange('x = 1 % 2'), null);
+  const runs = splitRuns('%time f', [{ offset: 0, style: { color: '#d4d4d4' } }], undefined, magicRange('%time f'));
+  assert.deepEqual(runs.map(r => [r.text, r.magic]), [['%time', true], [' f', false]]);
 });

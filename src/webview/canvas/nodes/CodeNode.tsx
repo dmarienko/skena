@@ -20,13 +20,16 @@ import type { SectionLane } from '../../../shared/sectionLanes';
 import type { KernelRecord } from '../../../shared/types';
 import { useLanes } from '../LanesContext';
 import { useKernels } from '../KernelsContext';
-import { cachedHighlight, highlightCode } from '../../renderers/CodeRenderer';
 import { G_BADGES_ATTR } from '../gChord';
 import { ScrollableContent, setScrollPosition } from '../../components/ScrollableContent';
 import { applyVimClipboard, patchVimNewlineAndIndent, patchVimLastLine, patchVimBlockCursorBlink, patchVimVisualCursor, patchVimExternalSelection, patchVimDeleteLastLine, patchVimJoin, bindSuggestNav } from './TextNode';
 import { ensureKernelCompletion, setActiveCodeCell } from './kernelCompletion';
-import { CodeCellPreview, codeCellLines, firstGlyphRect, previewLineRects, textContentRect, type CodeCellFont } from './CodeCellPreview';
-import { codeGutter, LINE_DECORATIONS_WIDTH, LINE_NUMBERS_MIN_CHARS, LINE_NUMBER_ACTIVE_COLOR, LINE_NUMBER_COLOR } from '../codeCellView';
+import {
+  CodeCellPreview, firstGlyphRect, previewGuides, previewLineRects, textContentRect, whenPythonTokenizerReady,
+  type CodeCellFont, type CodeCellMetrics,
+} from './CodeCellPreview';
+import { codeGutter, magicRange, LINE_DECORATIONS_WIDTH, LINE_NUMBERS_MIN_CHARS } from '../codeCellView';
+import { skenaCodeTheme } from '../codeCellMonaco';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -48,26 +51,28 @@ function cellEditorLayout(font: CodeCellFont): MonacoEditor.IStandaloneEditorCon
   };
 }
 
-// - Monaco's width of the widest digit in the cell font, read once from a throwaway editor so the
-// - preview's line-number column uses the number Monaco lays its own out with, before any cell is opened.
-// - A cell's editor overwrites it with its own reading (rememberDigitWidth), in case fonts loaded since.
-let digitWidthCache: { key: string; width: number } | null = null;
+// - Monaco's widest-digit and space widths for the cell font, read once from a throwaway editor so the
+// - preview's line-number column and guides use the numbers Monaco lays its own out with, before any
+// - cell is opened. A cell's editor overwrites them with its own reading (rememberMetrics), in case
+// - fonts loaded since.
+let metricsCache: { key: string; metrics: CodeCellMetrics } | null = null;
 function fontKey(font: CodeCellFont): string {
   return `${font.family}|${font.size}|${font.lineHeight}`;
 }
-function rememberDigitWidth(font: CodeCellFont, width: number): void {
-  digitWidthCache = { key: fontKey(font), width };
+function rememberMetrics(font: CodeCellFont, info: MonacoEditor.FontInfo): void {
+  metricsCache = { key: fontKey(font), metrics: { maxDigitWidth: info.maxDigitWidth, spaceWidth: info.spaceWidth } };
 }
-function monacoMaxDigitWidth(font: CodeCellFont): number {
+function monacoFontMetrics(font: CodeCellFont): CodeCellMetrics {
   const key = fontKey(font);
-  if (digitWidthCache?.key === key) return digitWidthCache.width;
-  let width = font.size * 0.6;
+  if (metricsCache?.key === key) return metricsCache.metrics;
+  let metrics: CodeCellMetrics = { maxDigitWidth: font.size * 0.6, spaceWidth: font.size * 0.6 };
   const host = document.createElement('div');
   host.style.cssText = 'position:absolute;left:-10000px;top:0;width:200px;height:60px;visibility:hidden';
   document.body.appendChild(host);
   try {
     const ed = monaco.editor.create(host, { ...cellEditorLayout(font), value: '', minimap: { enabled: false } });
-    width = ed.getOption(monaco.editor.EditorOption.fontInfo).maxDigitWidth;
+    const info = ed.getOption(monaco.editor.EditorOption.fontInfo);
+    metrics = { maxDigitWidth: info.maxDigitWidth, spaceWidth: info.spaceWidth };
     const model = ed.getModel();
     ed.dispose();
     model?.dispose();
@@ -75,8 +80,8 @@ function monacoMaxDigitWidth(font: CodeCellFont): number {
     console.warn('[skena] could not measure the code cell font, line numbers may be off by a few px', err);
   }
   host.remove();
-  digitWidthCache = { key, width };
-  return width;
+  metricsCache = { key, metrics };
+  return metrics;
 }
 
 // - flip with localStorage.setItem('skena.debugCodeSwap', '1') in the webview devtools — no rebuild
@@ -84,52 +89,77 @@ function debugCodeSwap(): boolean {
   return localStorage.getItem('skena.debugCodeSwap') === '1';
 }
 
-// - 0-based index of the first line with a non-blank character: the line whose glyph and number are logged
-function firstCodeLine(code: string): number {
-  return Math.max(0, codeCellLines(code).findIndex(l => /\S/.test(l)));
-}
-
-function nearestByTop(root: Element, selector: string, top: number): Element | null {
+function nearestByTop(root: Element, selector: string, top: number, within: number): Element | null {
   let best: Element | null = null;
-  let bestD = Infinity;
+  let bestD = within;
   for (const el of Array.from(root.querySelectorAll(selector))) {
     const d = Math.abs(el.getBoundingClientRect().top - top);
-    if (d < bestD) { bestD = d; best = el; }
+    if (d <= bestD) { bestD = d; best = el; }
   }
   return best;
 }
 
-// - screen rects of the first code glyph and of the line number on 0-based `line` of the editor, and the
-// - canvas zoom (screen px per editor px)
-function editorLineRects(ed: MonacoEditor.IStandaloneCodeEditor, line: number): { glyph: DOMRect | null; number: DOMRect | null; zoom: number } {
+type LineRects = { glyph: DOMRect | null; number: DOMRect | null };
+type GuideRects = { xs: number[]; active: number };
+type ViewRects = { lines: LineRects[]; guides: GuideRects };
+
+// - screen rects of the first non-blank glyph and of the line number on every line of the editor (null
+// - where the line is blank or not rendered), its indentation guides, and the canvas zoom (screen px
+// - per editor px)
+function editorRects(ed: MonacoEditor.IStandaloneCodeEditor): ViewRects & { zoom: number } {
   const dom = ed.getDomNode();
-  const pos = ed.getScrolledVisiblePosition({ lineNumber: line + 1, column: 1 });
-  if (!dom || !pos) return { glyph: null, number: null, zoom: 1 };
+  const lineCount = ed.getModel()?.getLineCount() ?? 0;
+  if (!dom) return { lines: [], guides: { xs: [], active: 0 }, zoom: 1 };
   const box = dom.getBoundingClientRect();
   const zoom = dom.offsetWidth > 0 ? box.width / dom.offsetWidth : 1;
-  const top = box.top + pos.top * zoom;
-  const viewLine = nearestByTop(dom, '.view-lines .view-line', top);
-  const num = nearestByTop(dom, '.margin-view-overlays .line-numbers', top);
-  return { glyph: viewLine ? firstGlyphRect(viewLine) : null, number: num ? textContentRect(num) : null, zoom };
+  const half = ed.getOption(monaco.editor.EditorOption.lineHeight) * zoom / 2;
+  const lines: LineRects[] = [];
+  for (let i = 0; i < lineCount; i++) {
+    const pos = ed.getScrolledVisiblePosition({ lineNumber: i + 1, column: 1 });
+    const top = pos ? box.top + pos.top * zoom : NaN;
+    const viewLine = pos ? nearestByTop(dom, '.view-lines .view-line', top, half) : null;
+    const num = pos ? nearestByTop(dom, '.margin-view-overlays .line-numbers', top, half) : null;
+    lines.push({ glyph: viewLine ? firstGlyphRect(viewLine) : null, number: num ? textContentRect(num) : null });
+  }
+  const guideEls = Array.from(dom.querySelectorAll('.core-guide-indent'));
+  return {
+    lines, zoom,
+    guides: { xs: guideEls.map(el => el.getBoundingClientRect().left), active: guideEls.filter(el => el.classList.contains('indent-active')).length },
+  };
 }
 
-type LineRects = { glyph: DOMRect | null; number: DOMRect | null };
+function previewRects(root: Element | null, lineCount: number): ViewRects {
+  if (!root) return { lines: [], guides: { xs: [], active: 0 } };
+  const lines: LineRects[] = [];
+  for (let i = 0; i < lineCount; i++) lines.push(previewLineRects(root, i));
+  return { lines, guides: previewGuides(root) };
+}
 
-// - enter: measured just before the preview is taken away. leave: the editor measured just before it
-// - goes; the preview is measured once it is back.
+// - enter: both views measured just before the preview is taken away. leave: the editor measured just
+// - before it goes; the preview is measured once it is back.
 type SwapLog =
   | { direction: 'enter'; report: Record<string, unknown> }
-  | { direction: 'leave'; line: number; leftAt: number; zoom: number; editor: LineRects };
+  | { direction: 'leave'; leftAt: number; zoom: number; editor: ViewRects };
 
-function swapReport(preview: LineRects, editor: LineRects): Record<string, unknown> {
-  const pt = (r: DOMRect | null) => r && { x: +r.left.toFixed(2), y: +r.top.toFixed(2) };
-  const d = (a: DOMRect | null, b: DOMRect | null) => a && b ? { dx: +(a.left - b.left).toFixed(2), dy: +(a.top - b.top).toFixed(2) } : null;
+// - editor minus preview per line, in screen px (null where either has nothing to measure), the largest
+// - absolute value of each, and the guides of both
+function swapReport(preview: ViewRects, editor: ViewRects): Record<string, unknown> {
+  const round = (v: number) => +v.toFixed(2);
+  const diff = (pick: (r: LineRects) => DOMRect | null, axis: 'left' | 'top') => editor.lines.map((e, i) => {
+    const a = pick(e), b = preview.lines[i] ? pick(preview.lines[i]) : null;
+    return a && b ? round(a[axis] - b[axis]) : null;
+  });
+  const maxAbs = (vs: (number | null)[]) => vs.reduce<number>((m, v) => v === null ? m : Math.max(m, Math.abs(v)), 0);
+  const glyphDy = diff(r => r.glyph, 'top'), glyphDx = diff(r => r.glyph, 'left');
+  const numberDy = diff(r => r.number, 'top'), numberDx = diff(r => r.number, 'left');
+  const xs = (g: GuideRects) => [...new Set(g.xs.map(round))].sort((a, b) => a - b);
   return {
-    preview: { glyph: pt(preview.glyph), number: pt(preview.number) },
-    editor:  { glyph: pt(editor.glyph),  number: pt(editor.number) },
-    // - editor minus preview, in screen px
-    glyphShift:  d(editor.glyph, preview.glyph),
-    numberShift: d(editor.number, preview.number),
+    maxAbs: { glyphDy: maxAbs(glyphDy), glyphDx: maxAbs(glyphDx), numberDy: maxAbs(numberDy), numberDx: maxAbs(numberDx) },
+    glyphDy, glyphDx, numberDy, numberDx,
+    guides: {
+      preview: { count: preview.guides.xs.length, active: preview.guides.active, xs: xs(preview.guides) },
+      editor:  { count: editor.guides.xs.length,  active: editor.guides.active,  xs: xs(editor.guides) },
+    },
   };
 }
 
@@ -187,10 +217,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     const lineHeight = Math.round(size * 1.3);
     return { family, size, lineHeight };
   }, []);
-  const maxDigitWidth = monacoMaxDigitWidth(editorFont);
-  const language = node.language ?? 'python';
-  const languageRef = useRef(language);
-  useEffect(() => { languageRef.current = language; }, [language]);
+  const metrics = monacoFontMetrics(editorFont);
   // - when the current open started (performance.now()), for the debug log
   const enterAtRef = useRef(0);
   const startEdit = useCallback(() => {
@@ -276,19 +303,20 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   const magicDecoRef = useRef<string[]>([]);
   // - the preview's scroll box: the editor opens at its scroll offset so the text does not move
   const previewElRef = useRef<HTMLDivElement | null>(null);
-  // - bumped by every leave request and by the editor regaining focus; a leave waiting on the
-  // - highlighter goes ahead only if it is still the latest
-  const leaveSeqRef = useRef(0);
+  // - whether the last editor saw a cursor move: Monaco draws the active indentation guide only after
+  // - one, so the preview draws it only then too. Set from the editor's first event, restore included.
+  const cursorMovedRef = useRef(false);
   // - debug log of the current swap, finished in the layout effect below once the swap is committed
   const swapLogRef = useRef<SwapLog | null>(null);
   const onEditorMount = useCallback<OnMount>((editorInstance, monacoInstance) => {
     editorRef.current = editorInstance;
     const mountedAt = performance.now();
-    rememberDigitWidth(editorFont, editorInstance.getOption(monacoInstance.editor.EditorOption.fontInfo).maxDigitWidth);
+    rememberMetrics(editorFont, editorInstance.getOption(monacoInstance.editor.EditorOption.fontInfo));
+    cursorMovedRef.current = false;
+    editorInstance.onDidChangeCursorPosition(() => { cursorMovedRef.current = true; });
     // - the focused cell is the completion target (provider is global per Monaco); also refresh
     // - the clipboard cache from the host so vim `p` / Ctrl+V paste the current system clipboard
     editorInstance.onDidFocusEditorText(() => {
-      leaveSeqRef.current++;
       setActiveCodeCell(id);
       vscodePostMessage({ type: 'requestClipboardRead' });
     });
@@ -300,11 +328,10 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
       if (!model) return;
       const decos: MonacoEditor.IModelDeltaDecoration[] = [];
       for (let ln = 1; ln <= model.getLineCount(); ln++) {
-        const m = model.getLineContent(ln).match(/^(\s*)(%{1,2}\s*[A-Za-z_]\w*|!)/);
+        const m = magicRange(model.getLineContent(ln));
         if (m) {
-          const from = m[1].length + 1;
           decos.push({
-            range: new monacoInstance.Range(ln, from, ln, from + m[2].length),
+            range: new monacoInstance.Range(ln, m[0] + 1, ln, m[1] + 1),
             options: { inlineClassName: 'skena-magic' },
           });
         }
@@ -354,17 +381,15 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
       if (revealed || !editorInstance.getModel()) return;
       revealed = true;
       if (debugCodeSwap()) {
-        const line = firstCodeLine(editorInstance.getValue());
         const lines = editorInstance.getModel()?.getLineCount() ?? 1;
-        const ed = editorLineRects(editorInstance, line);
-        const pv = previewElRef.current ? previewLineRects(previewElRef.current, line) : { glyph: null, number: null };
+        const ed = editorRects(editorInstance);
         swapLogRef.current = {
           direction: 'enter',
           report: {
-            id, direction: 'enter', line, zoom: +ed.zoom.toFixed(4), revealedBy: by,
+            id, direction: 'enter', zoom: +ed.zoom.toFixed(4), revealedBy: by,
             mountMs: Math.round(mountedAt - enterAtRef.current),
-            contentLeft: { preview: codeGutter(lines, monacoMaxDigitWidth(editorFont)).contentLeft, editor: editorInstance.getLayoutInfo().contentLeft },
-            ...swapReport(pv, ed),
+            contentLeft: { preview: codeGutter(lines, monacoFontMetrics(editorFont).maxDigitWidth).contentLeft, editor: editorInstance.getLayoutInfo().contentLeft },
+            ...swapReport(previewRects(previewElRef.current, lines), ed),
           },
         };
       }
@@ -381,11 +406,10 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
       clearTimeout(revealTimer);
       revealOnInput.forEach(d => d.dispose());
     });
-    // - colorize resolves once the python tokenizer is loaded; forceTokenization (TextModel.tokenization,
-    // - not in Monaco's typings) then tokenizes every line now instead of in idle time, and marks the
-    // - model fully tokenized so the bracket colours switch to the token-aware ones. Two frames later
-    // - Monaco has painted them.
-    monacoInstance.editor.colorize('', 'python', {})
+    // - once the python tokenizer is loaded, forceTokenization (TextModel.tokenization, not in Monaco's
+    // - typings) tokenizes every line now instead of in idle time, and marks the model fully tokenized
+    // - so the bracket colours switch to the token-aware ones. Two frames later Monaco has painted them.
+    whenPythonTokenizerReady()
       .then(() => {
         const model = editorInstance.getModel();
         if (model) (model as unknown as { tokenization: { forceTokenization(line: number): void } }).tokenization.forceTokenization(model.getLineCount());
@@ -402,24 +426,13 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
       // - hand the editor's scroll offset to the preview so it keeps the same visible frame
       // - (the preview shares the editor font + line-height, so scrollTop maps 1:1)
       setScrollPosition(`${id}-code`, editorInstance.getScrollTop());
-      const text = editorInstance.getValue();
-      const seq = ++leaveSeqRef.current;
-      const leftAt = performance.now();
-      // - the editor stays on screen until the preview can draw this text highlighted in its first
-      // - frame; the highlighter is capped so a stuck one cannot keep the editor open
-      Promise.race([
-        highlightCode(text, languageRef.current).catch(() => undefined),
-        new Promise(resolve => setTimeout(resolve, 500)),
-      ]).then(() => {
-        if (seq !== leaveSeqRef.current || !editorInstance.getModel()) return;
-        if (debugCodeSwap()) {
-          const line = firstCodeLine(text);
-          const ed = editorLineRects(editorInstance, line);
-          swapLogRef.current = { direction: 'leave', line, leftAt, zoom: +ed.zoom.toFixed(4), editor: ed };
-        }
-        setEditing(false);
-        setEditorShown(false);
-      });
+      // - the preview draws with Monaco's tokenizer, loaded by now, so it is complete in its first frame
+      if (debugCodeSwap()) {
+        const ed = editorRects(editorInstance);
+        swapLogRef.current = { direction: 'leave', leftAt: performance.now(), zoom: +ed.zoom.toFixed(4), editor: ed };
+      }
+      setEditing(false);
+      setEditorShown(false);
     };
     // - click / tab away from the editor → leave edit mode back to the preview. BUT a blur
     // - into the vim command/search prompt (`/`, `?`, `:` — monaco-vim renders it into our
@@ -505,60 +518,10 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   const beforeMount = useCallback<BeforeMount>((monacoInstance) => {
     // - register the kernel-backed completion provider once (idempotent)
     ensureKernelCompletion(monacoInstance);
-    const style = getComputedStyle(document.body);
-    const bg    = style.getPropertyValue('--vscode-editor-background').trim();
-    const dark  = isDark;
-
-    // - match the shiki preview: when the factors markdown theme is active, colour the editor
-    // - tokens with the same factors palette (teal keywords / amber strings / …) so preview
-    // - and edit look like the same theme. Otherwise a VS-Code-Dark+-ish default.
+    const bg = getComputedStyle(document.body).getPropertyValue('--vscode-editor-background').trim();
+    // - the preview draws its tokens with the same theme data (codeCellMonaco.skenaCodeTheme)
     const factors = document.documentElement.dataset.mdTheme === 'factors';
-    const rules = factors
-      ? [
-          { token: 'comment',    foreground: '56635d', fontStyle: 'italic' },
-          { token: 'keyword',    foreground: '4cc8a0' },
-          { token: 'string',     foreground: 'd9a23f' },
-          { token: 'number',     foreground: 'e5707a' },
-          { token: 'type',       foreground: '4cc8a0' },
-          { token: 'identifier', foreground: 'c7d1cc' },
-          { token: 'operator',   foreground: '7c8a84' },
-          { token: 'delimiter',  foreground: '7c8a84' },
-        ]
-      : [
-          { token: 'keyword',    foreground: dark ? '569cd6' : '0070c1'                      },
-          { token: 'comment',    foreground: dark ? '6a9955' : '008000', fontStyle: 'italic' },
-          { token: 'string',     foreground: dark ? 'ce9178' : 'a31515'                      },
-        ];
-
-    monacoInstance.editor.defineTheme('skena-code', {
-      base:    dark ? 'vs-dark' : 'vs',
-      inherit: true,
-      rules,
-      // - VS Code doesn't inject editor colours as CSS vars into webviews, so bake the palette
-      // - here. Not dynamic — edit these to retune the code cell editor look.
-      colors: {
-        'editor.background':                        bg || (dark ? '#1e1e1e' : '#ffffff'),
-        'editorCursor.foreground':                  '#f01010',
-        'editor.lineHighlightBackground':           '#199ce809',
-        'editor.lineHighlightBorder':               '#199ce805',
-        'editor.selectionBackground':               '#212a66f0',
-        'editor.selectionHighlightBackground':      '#ff402030',
-        'editor.inactiveSelectionBackground':       '#29328080',
-        'editor.wordHighlightBackground':           '#60020247',
-        'editor.wordHighlightStrongBackground':     '#ffffff18',
-        'editor.wordHighlightBorder':               '#f67e2220',
-        'editor.wordHighlightStrongBorder':         '#c4854f50',
-        'editorLineNumber.activeForeground':        LINE_NUMBER_ACTIVE_COLOR,
-        'editorLineNumber.foreground':              LINE_NUMBER_COLOR,
-        'editorWidget.border':                      '#000000',
-        'editorBracketPairGuide.activeBackground1': '#00e7495e',
-        'editorBracketPairGuide.activeBackground2': '#fac9285e',
-        'editorBracketPairGuide.activeBackground3': '#057aff5e',
-        'editorBracketPairGuide.activeBackground4': '#c122e95e',
-        'editorBracketPairGuide.activeBackground5': '#f513845e',
-        'editorBracketPairGuide.activeBackground6': '#19f9d85e',
-      },
-    });
+    monacoInstance.editor.defineTheme('skena-code', skenaCodeTheme(isDark, factors, bg));
   }, [isDark]);
 
   // - finish the debug log of a swap in the commit that takes the preview away (enter) or brings it
@@ -571,13 +534,10 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
       console.debug('[skena codeSwap]', { ...log.report, ms: Math.round(performance.now() - enterAtRef.current) });
     } else if (log.direction === 'leave' && !editing) {
       swapLogRef.current = null;
-      const pv = previewElRef.current ? previewLineRects(previewElRef.current, log.line) : { glyph: null, number: null };
       console.debug('[skena codeSwap]', {
-        id, direction: 'leave', line: log.line, zoom: log.zoom,
+        id, direction: 'leave', zoom: log.zoom,
         ms: Math.round(performance.now() - log.leftAt),
-        // - true: the preview drew its colours in this first frame
-        highlightedFromCache: cachedHighlight(code, language) !== undefined,
-        ...swapReport(pv, log.editor),
+        ...swapReport(previewRects(previewElRef.current, log.editor.lines.length), log.editor),
       });
     }
   }, [editing, editorShown]);
@@ -699,7 +659,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
             >
               <div onDoubleClick={startEdit} title="Double-click to edit">
                 {code.trim()
-                  ? <CodeCellPreview code={code} language={language} cursorLine={savedViewState.current?.cursorState[0]?.position.lineNumber ?? 1} font={editorFont} maxDigitWidth={maxDigitWidth} dark={isDark} />
+                  ? <CodeCellPreview code={code} cursorLine={savedViewState.current?.cursorState[0]?.position.lineNumber ?? 1} activeGuide={cursorMovedRef.current} font={editorFont} metrics={metrics} dark={isDark} />
                   : <div style={{ padding: 8, opacity: 0.5, fontSize: 12, fontStyle: 'italic' }}>empty — double-click to edit</div>}
               </div>
             </ScrollableContent>
