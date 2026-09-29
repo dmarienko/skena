@@ -33,8 +33,8 @@ not a member: it rides with the code cell that owns it.
     the record.
 - **Every node is column-managed** — the same pack, the same bumps, whatever its type. "Free" says
   only that a node has no output cell of its own.
-- Constants in `src/shared/constants.ts`: `GRID` 100 (already), `NODE_SIZE.code` 700×300
-  (already), `CODE_MIN_H` 100, `CODE_MAX_H` 900, `OUTPUT_MIN_W` 600, `OUTPUT_MAX_W` 1400, `OUTPUT_MAX_H` 900,
+- Constants in `src/shared/constants.ts`: `GRID` 100 (already), `NODE_SIZE.code` 700×100 (an empty cell, one row)
+  `CODE_MIN_H` 100, `CODE_MAX_H` 900, `OUTPUT_MIN_W` 600, `OUTPUT_MAX_W` 1400, `OUTPUT_MAX_H` 900,
   `CODE_H_STEP` 50.
 
 ## 2. Operations

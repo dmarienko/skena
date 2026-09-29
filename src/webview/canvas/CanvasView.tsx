@@ -2583,7 +2583,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       }
       const { x, y } = slot ?? findFreePosition(nodesRef.current, current.position.x + dx, current.position.y + dy, nw, nh, pushX, pushY);
       const w = slot ? NODE_SIZE.code.w : nw;
-      const h = slot ? NODE_SIZE.code.h : nh;
+      const h = nh;   // - a text note's height; the host gives a code cell its own
       // - go through the host so the "New text note / New URL / vault / workspace" picker opens (choose
       //   what to add); pass width/height so the chosen node gets the directional-add size.
       vscodePostMessage({ type: 'addNodeRequest', position: { x, y }, width: w, height: h, fromNodeId: current.id, fromSide, toSide });

@@ -37,7 +37,7 @@ export const CAMERA_MS = 0;
  */
 export const NODE_SIZE = {
   text:   { w: 700, h: 300 },
-  code:   { w: 700, h: 300 },
+  code:   { w: 700, h: 100 },   // - an empty cell: one grid row, what codeCellHeight gives it
   link:   { w: 300, h: 100 },
   portal: { w: 200, h: 200 },
   kernel: { w: 140, h: 160 },
@@ -50,7 +50,7 @@ export const NODE_SIZE = {
 export const NEW_NODE = { w: 700, h: 300, gap: 100 } as const;
 
 // - a section (except the last) is never shorter than this: room for two default nodes and two gaps
-export const SECTION_MIN_H    = 2 * NODE_SIZE.code.h + 2 * GRID;
+export const SECTION_MIN_H    = 2 * NODE_SIZE.text.h + 2 * GRID;
 // - a folded section's range; keep it a GRID multiple ≥ GRID: targets are snapped up to GRID anyway
 export const SECTION_FOLDED_H = GRID;
 
@@ -126,7 +126,7 @@ export const FILE_TYPE_COLORS: Record<string, string> = {
 //   A code cell is the exception: it steps by CODE_H_STEP (half a grid) so one more line that no
 //   longer fits adds 50px, not a whole 100px row. A code cell sized from its text is never shorter
 //   than CODE_MIN_H, one grid row, which holds up to three lines.
-export const CODE_MIN_H       = 100;
+export const CODE_MIN_H       = NODE_SIZE.code.h;
 export const CODE_MAX_H       = 900;
 export const CODE_H_STEP      = 50;
 export const OUTPUT_MIN_W     = 600;

@@ -294,10 +294,10 @@ test('canvas_add_node after keeps the new cell in the anchor section, which grow
 
   const d = read(p);
   assert.deepEqual(pick(d, 'E2'), [0, 800], 'the new cell takes the slot under E1');
-  assert.deepEqual(lanes(d), [0, 1200], 'S1 grows to hold it and S2 moves down');
+  assert.deepEqual(lanes(d), [0, 1000], 'S1 grows to hold the 100-tall cell and a gap, and S2 moves down');
   assert.deepEqual(deriveMembers(d)[d.metadata.sections[0].id], ['N1', 'E1', 'E2']);
   assert.match(listed, /S1 {2}y=0 .*nodes=3/);
-  assert.match(listed, /S2 {2}y=1200.*nodes=0/);
+  assert.match(listed, /S2 {2}y=1000.*nodes=0/);
 });
 
 test('canvas_add_node forkOf right starts a column pair after the source pair', async () => {
@@ -400,7 +400,7 @@ test('after inserts into a FOLDED section as a hidden member of it', async () =>
   const d = read(p);
   const added = d.nodes.find(n => n.nodeLabel === 'E3');
   assert.equal(added.type, 'code');
-  assert.deepEqual([added.width, added.height], [700, 300], 'an MCP code cell is the webview size');
+  assert.deepEqual([added.width, added.height], [700, 100], 'an MCP code cell is the webview size');
   assert.equal(d.metadata.sections[0].folded.length, 3, 'the new cell is pinned to the folded section');
   assert.ok(d.metadata.sections[0].folded.includes(added.id));
   assert.match(await call('canvas_list', { canvasPath: p }), /S1 {2}y=0.*nodes=3/);

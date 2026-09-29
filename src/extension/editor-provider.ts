@@ -1350,9 +1350,12 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       newNode = { id: nodeId, type: 'text', text: '', x, y, width: w, height: h };
       autoEdit = true;
     } else if (picked.canvasUri === NEW_CODE_NODE) {
-      // - empty code cell — same placement/sizing as a text note; kernel binding is resolved at
-      //   run time (edge-bound node, else the section's kernel), same as any other code cell
-      newNode = { id: nodeId, type: 'code', code: '', language: 'python', x, y, width: w, height: h };
+      // - empty code cell at a text note's slot, but one row tall (the passed h is a text note's);
+      //   placed above its source it keeps the bottom edge the slot gave. Kernel binding is resolved
+      //   at run time (edge-bound node, else the section's kernel), as for any code cell
+      const ch = NODE_SIZE.code.h;
+      const cy = msg.fromSide === 'top' ? y + h - ch : y;
+      newNode = { id: nodeId, type: 'code', code: '', language: 'python', x, y: cy, width: w, height: ch };
       autoEdit = true;
     } else if (picked.canvasUri === NEW_URL) {
       // - prompt for URL, then create a link node
