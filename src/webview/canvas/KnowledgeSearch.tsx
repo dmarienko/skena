@@ -411,7 +411,7 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
                 style={{ padding: '4px 8px 2px', cursor: 'default', fontSize: 12, color: 'var(--vscode-input-foreground, #ccc)' }}
               >
                 <div style={{ display: 'flex', gap: 10, alignItems: 'baseline' }}>
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#4cc8a0', fontWeight: 600, fontSize: 13 }}>{r.name}</span>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#4cc8a0', fontWeight: 600, fontSize: '1.08em' }}>{r.name}</span>
                   <span style={{ fontSize: 10, opacity: 0.6, flexShrink: 0 }}>{r.count} sections</span>
                 </div>
                 {r.subtitle && (
