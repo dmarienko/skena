@@ -1556,10 +1556,11 @@ test('a column head does not move down for a held node that has not yet taken it
 
 // 85
 test('a mover that heads its column does not go under a held node of another column', () => {
-  // - W (moved) heads column 1600; F, held on S1's row, pushes it to 800, onto R's row (R is held
-  //   to S0, 1500 wide, crossing column 1600). W is a mover, so R goes under it: 800 + 300 + 100.
+  // - W (moved) heads column 1600 at 400, on the row of F (held to S1, sitting at 1500). F does not come
+  //   up past W (§3.5): W keeps 400, and R (held to S0, 1500 wide, crossing column 1600) takes S0's row,
+  //   800, clear of W. F goes under R: 800 + 300 + 100.
   const nodes = [code('S1', 0, 400), code('S0', 0, 800), note('R', 800, 0, 1500, 300), note('W', 1600, 400, 700, 300), note('F', 1600, 1500, 700, 300)];
-  settles(nodes, [edgeTo('S0', 'R'), edgeTo('S1', 'F')], ['S0', 'W'], { R: { x: 800, y: 1200 }, W: { x: 1600, y: 800 }, F: { x: 1600, y: 400 } });
+  settles(nodes, [edgeTo('S0', 'R'), edgeTo('S1', 'F')], ['S0', 'W'], { R: { x: 800, y: 800 }, F: { x: 1600, y: 1200 } });
 });
 
 // 86
@@ -1858,13 +1859,13 @@ test('a code cell held to another row still goes under the held node its new out
 // 111
 test('a new output on a node whose source is in its own column moves that node, since it is held to nothing there', () => {
   // - the map holds N to S, but S is a member of N's column, so N is a plain member: O lands on it and
-  //   column 800 moves right to make room, 700 (§3.5). There H takes A's row, 400, and S goes under it.
-  //   E and O stay.
+  //   column 800 moves right to make room, 700 (§3.5). There S sits above H, so H, held to A, goes one gap
+  //   under S, to 800, rather than past it to A's row, 400. E and O stay.
   const nodes = [code('E', 0, 0, 300, 'O'), cell('O', 800, 0), note('A', 0, 400, 700, 300), note('N', 800, 0, 700, 300), note('S', 800, 400, 700, 300), note('H', 800, 1200, 700, 300)];
   const riders = new Map([['N', 'S'], ['H', 'A']]);
   const report = {};
   const patches = layoutSection(nodes, { moverIds: ['O'], riders, report });
-  assert.deepEqual(patches, { N: { x: 1500, y: 0 }, S: { x: 1500, y: 800 }, H: { x: 1500, y: 400 } });
+  assert.deepEqual(patches, { N: { x: 1500, y: 0 }, S: { x: 1500, y: 400 }, H: { x: 1500, y: 800 } });
   assert.equal(!!report.capped, false);
   const after = apply(nodes, patches);
   assert.equal(overlapCount(after), 0);
@@ -2277,4 +2278,51 @@ test('a new edge does not take a row a stored edge already holds a node of the t
     const clear = [...nodes.map(n => (n.id === 'C4' ? { ...n, y: 1600 } : n)), { id: 'W4', type: 'knowledge', x: 1600, y: 1600, w: 700, h: 300 }];
     assert.equal(withKeepRow.keepRowOf(clear, [edgeTo('W4', 'C4'), edge], edge), true, id);
   }
+});
+
+// 140
+// - test/H-test.canvas S1 on 2026-09-29, geometry only
+const hTest = () => [
+  note('N1', 100, 0, 700, 300), note('N2', 100, 400, 700, 300), note('N3', 100, 800, 700, 300),
+  { id: 'M1', type: 'file', x: 900, y: 400, w: 700, h: 300 }, { id: 'M2', type: 'file', x: 1900, y: 200, w: 700, h: 600 },
+];
+const hTestEdges = () => [edgeDown('N1', 'N2'), edgeDown('N2', 'N3'), edgeTo('N2', 'M1'), { ...edgeTo('N1', 'M2'), keepRow: false }];
+const hTestDrop = () => {
+  const nodes = hTest().map(n => (n.id === 'M2' ? { ...n, x: 900, y: 0 } : n));
+  const draggedFrom = new Map([['M2', { x: 1900, y: 200 }]]);
+  const edges = hTestEdges();
+  const report = {};
+  const patches = layoutSection(nodes, { moverIds: ['M2'], draggedFrom, riders: ridersOf(nodes, edges), hanging: hangingBelow(nodes, edges, draggedFrom), report });
+  return { nodes, edges, patches, report };
+};
+test('H-test: M2 dropped above M1, which is held to N2, stays where it was dropped; M1 packs under it', () => {
+  // - the holds a new edge gets (keepRowOf): M1 sits on N2's row, so N2 → M1 holds it; M2 sits 200 below
+  //   N1's row, so N1 → M2 holds nothing
+  const [down1, down2, toM1, toM2] = hTestEdges();
+  assert.equal(withKeepRow.keepRowOf(hTest(), [down1, down2, toM2], { ...toM1, keepRow: undefined }), true);
+  assert.equal(withKeepRow.keepRowOf(hTest(), [down1, down2, toM1], { ...toM2, keepRow: undefined }), false);
+  // - the user drags M2 from (1900, 200) to (900, 0), onto M1. M2 stays; M1 goes one gap under it:
+  //   0 + 600 + 100.
+  const { nodes, patches, report } = hTestDrop();
+  assert.deepEqual(patches, { M1: { x: 900, y: 700 } });
+  assert.equal(!!report.capped, false);
+  assert.equal(overlapCount(apply(nodes, patches)), 0);
+});
+
+// 141
+test('a held node the user dropped a node over keeps its hold, stays under that node, and takes its row once the row is free', () => {
+  const { nodes, edges, patches } = hTestDrop();
+  const after = apply(nodes, patches);
+  assert.deepEqual([...ridersOf(after, edges)], [['M1', 'N2']]);
+  // - the next call that packs M1's column leaves it under M2: N3 dropped in place packs column 100,
+  //   and column 900 with it (M1 is held to N2)
+  const n3 = new Map([['N3', { x: 100, y: 800 }]]);
+  assert.deepEqual(layoutSection(after, { moverIds: ['M2'], riders: ridersOf(after, edges), hanging: hangingBelow(after, edges) }), {});
+  assert.deepEqual(layoutSection(after, { moverIds: ['N3'], draggedFrom: n3, riders: ridersOf(after, edges), hanging: hangingBelow(after, edges, n3) }), {});
+  // - M2 dragged back out: its own drop does not pack column 900; the next call that does puts M1 back on
+  //   N2's row, 400
+  const out = after.map(n => (n.id === 'M2' ? { ...n, x: 1900, y: 200 } : n));
+  const m2 = new Map([['M2', { x: 900, y: 0 }]]);
+  assert.deepEqual(layoutSection(out, { moverIds: ['M2'], draggedFrom: m2, riders: ridersOf(out, edges), hanging: hangingBelow(out, edges, m2) }), {});
+  assert.deepEqual(layoutSection(out, { moverIds: ['N3'], draggedFrom: n3, riders: ridersOf(out, edges), hanging: hangingBelow(out, edges, n3) }), { M1: { x: 900, y: 400 } });
 });

@@ -39,8 +39,9 @@ export interface LayoutOpts { moverIds?: Iterable<string>; columnX?: number; rid
 //   the output cells among the movers, bar the resized ones (a new output is one): each goes under a
 //   node held to another cell's row in a packed column, with its code cell; `wentUnder` = the held
 //   nodes such a code cell went under in this call, whose columns keep their x (§3.5); `hanging` = the
-//   nodes that move down with a node (`LayoutOpts.hanging`).
-interface PackSets { held: Set<string>; noBump: Set<string>; placed: Set<string>; headY?: Map<string, number>; reflow?: boolean; movedOutputs?: Set<string>; wentUnder?: Set<string>; hanging?: Map<string, string[]> }
+//   nodes that move down with a node (`LayoutOpts.hanging`); `movers` = the call's movers, `dropped` = those
+//   the user dropped (`LayoutOpts.draggedFrom`), `startY` = every node's y when the call began.
+interface PackSets { held: Set<string>; noBump: Set<string>; placed: Set<string>; headY?: Map<string, number>; reflow?: boolean; movedOutputs?: Set<string>; wentUnder?: Set<string>; hanging?: Map<string, string[]>; movers?: Set<string>; dropped?: Set<string>; startY?: Map<string, number> }
 
 const byId = (nodes: EngineNode[]) => new Map(nodes.map(n => [n.id, n] as const));
 
@@ -418,10 +419,7 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
   //   this section is no rider: it packs. Nor is one whose source is a member of THIS column: Reflow
   //   snaps columns before it packs and can put the two in one, and reading a column-mate's y as a
   //   fixed row walks the column down.
-  const anchored = members
-    .map((cell, order) => { const s = riders.get(cell.id); return { cell, order, at: s !== undefined && !own.has(s) ? map.get(s)?.y : undefined }; })
-    .filter((a): a is { cell: EngineNode; order: number; at: number } => a.at !== undefined)
-    .sort((a, b) => a.at - b.at || a.order - b.order);
+  const rowOf = (cell: EngineNode) => { const s = riders.get(cell.id); return s !== undefined && !own.has(s) ? map.get(s)?.y : undefined; };
   const byRow = (a: EngineNode, b: EngineNode) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id);
   const around = obstaclesOf(pair, nodes, owners);
   // - a rider goes under an output of another pair, a `held` node and its own source (§3.5). A plain
@@ -455,60 +453,101 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
     if (y > start) for (const n of keep) if (n.y < y && n.x < ox + o.w + GRID && ox < n.x + n.w + GRID) sets.wentUnder?.add(n.id);
     return y;
   };
-  let prevRider: number | null = null;
-  for (const a of anchored) {
-    const source = map.get(riders.get(a.cell.id)!)!;
-    const inWay = (blocking.includes(source) ? blocking : [...blocking, source].sort(byRow)).filter(blocks(a.cell));
-    place(a.cell, belowHeld(a.cell, rowStart(prevRider === null ? a.at : Math.max(a.at, prevRider + GRID), x, a.cell, inWay, noBump), inWay));
-    placed.add(a.cell.id);
-    prevRider = rowBottom(a.cell, map);
-  }
-  // - in y order, and nothing else this pack moves is in the list, so one ordering serves every
-  //   member. The riders join it, with their outputs: fixed rows the rest of the column packs around.
-  const taken = new Set(anchored.map(a => a.cell.id));
-  const fixed = anchored.flatMap(a => [a.cell, map.get(a.cell.outputNodeId ?? '')].filter((n): n is EngineNode => n !== undefined));
-  const obstacles = [...around, ...fixed].sort(byRow);
-  const otherRiders = around.filter(n => riders.has(n.id) && held.has(n.id));
-  const others = new Set(otherRiders.map(n => n.id));
-  // - the head clears only riders this call has put on their rows, not one still at its old y
-  const riderRows = [...fixed, ...otherRiders.filter(n => placed.has(n.id))].sort(byRow);
-  // - what the head clears in a regular call: this column's riders and every node no bump will move
-  //   (§3.4), a rider of another column only once it is on its row. A node a bump can move is left to
-  //   the bumps.
-  const headRows = [...fixed, ...around.filter(n => noBump.has(n.id) && (!others.has(n.id) || placed.has(n.id)))].sort(byRow);
-  let prevBottom: number | null = null;
-  for (const cell of members) {
-    if (taken.has(cell.id)) continue;
-    // - a member clears what no bump will move by a gap on either side, and a plain member packs
-    //   around the riders of other packed columns too. A held member does not: those riders go under
-    //   it. No member packs around its own rider.
-    // - nor around a node hanging below it, or what sits under that node in its column (§3.5): they
-    //   follow it down, or pack under it in their own packed column. One held to another node's row
-    //   keeps that row, so the member packs around it.
-    const isHeld = held.has(cell.id);
-    const below = new Set<string>();
-    for (const id of sets.hanging?.get(cell.id) ?? []) {
-      const t = map.get(id);
-      if (t && !others.has(id)) for (const n of bumpGroup(t, nodes, owners, map, true)) if (!others.has(n.id)) below.add(n.id);
+  // - a held node does not let a plain member above it in the column pass it (§3.5): it takes the first
+  //   row under that member instead, and its own row once nothing above reaches that row. `under` = those
+  //   held nodes; a pack that sends such a member past one is run again with it in `under`. Reflow does
+  //   not apply it: there every held node takes its row.
+  const packOnce = (under: Set<string>) => {
+    const anchored = members
+      .map((cell, order) => ({ cell, order, at: under.has(cell.id) ? undefined : rowOf(cell) }))
+      .filter((a): a is { cell: EngineNode; order: number; at: number } => a.at !== undefined)
+      .sort((a, b) => a.at - b.at || a.order - b.order);
+    let prevRider: number | null = null;
+    for (const a of anchored) {
+      const source = map.get(riders.get(a.cell.id)!)!;
+      const inWay = (blocking.includes(source) ? blocking : [...blocking, source].sort(byRow)).filter(blocks(a.cell));
+      place(a.cell, belowHeld(a.cell, rowStart(prevRider === null ? a.at : Math.max(a.at, prevRider + GRID), x, a.cell, inWay, noBump), inWay));
+      placed.add(a.cell.id);
+      prevRider = rowBottom(a.cell, map);
     }
-    const keep = (o: EngineNode) => riders.get(o.id) !== cell.id && !below.has(o.id) && !(isHeld && others.has(o.id));
-    // - the head keeps its own y against a node a bump can still move (§3.4), and starts from `headY`
-    //   each round, so it comes back up once what it cleared has moved on
-    // - on Reflow the head clears obstacles like a stacked member: no bump runs after this pack
-    const list = (prevBottom === null && !sets.reflow ? headRows : obstacles).filter(keep);
-    let y = prevBottom === null
-      ? rowStart(snapGrid(sets.headY?.get(cell.id) ?? cell.y), x, cell, list, noBump)
-      : rowStart(prevBottom + GRID, x, cell, list, noBump);
-    // - and on Reflow a member's output clears them too, on its slot at the member's row
-    const out = map.get(cell.outputNodeId ?? '');
-    if (sets.reflow && out) for (let guard = 0; guard < 16; guard++) {
-      const oy = rowStart(y, pair.outputX, out, list, noBump);
-      const my = rowStart(oy, x, cell, list, noBump);
-      if (my === y) break;
-      y = my;
+    // - in y order, and nothing else this pack moves is in the list, so one ordering serves every
+    //   member. The riders join it, with their outputs: fixed rows the rest of the column packs around.
+    const taken = new Set(anchored.map(a => a.cell.id));
+    const fixed = anchored.flatMap(a => [a.cell, map.get(a.cell.outputNodeId ?? '')].filter((n): n is EngineNode => n !== undefined));
+    const obstacles = [...around, ...fixed].sort(byRow);
+    const otherRiders = around.filter(n => riders.has(n.id) && held.has(n.id));
+    const others = new Set(otherRiders.map(n => n.id));
+    // - the head clears only riders this call has put on their rows, not one still at its old y
+    const riderRows = [...fixed, ...otherRiders.filter(n => placed.has(n.id))].sort(byRow);
+    // - what the head clears in a regular call: this column's riders and every node no bump will move
+    //   (§3.4), a rider of another column only once it is on its row. A node a bump can move is left to
+    //   the bumps.
+    const headRows = [...fixed, ...around.filter(n => noBump.has(n.id) && (!others.has(n.id) || placed.has(n.id)))].sort(byRow);
+    let prevBottom: number | null = null;
+    for (const cell of members) {
+      if (taken.has(cell.id)) continue;
+      if (under.has(cell.id)) {
+        const source = map.get(riders.get(cell.id)!)!;
+        const inWay = [...new Set([...blocking, source, ...fixed])].sort(byRow).filter(blocks(cell));
+        const start = prevBottom === null ? rowOf(cell)! : Math.max(rowOf(cell)!, prevBottom + GRID);
+        place(cell, belowHeld(cell, rowStart(start, x, cell, inWay, noBump), inWay));
+        placed.add(cell.id);
+        prevBottom = rowBottom(cell, map);
+        continue;
+      }
+      // - a member clears what no bump will move by a gap on either side, and a plain member packs
+      //   around the riders of other packed columns too. A held member does not: those riders go under
+      //   it. No member packs around its own rider.
+      // - nor around a node hanging below it, or what sits under that node in its column (§3.5): they
+      //   follow it down, or pack under it in their own packed column. One held to another node's row
+      //   keeps that row, so the member packs around it.
+      const isHeld = held.has(cell.id);
+      const below = new Set<string>();
+      for (const id of sets.hanging?.get(cell.id) ?? []) {
+        const t = map.get(id);
+        if (t && !others.has(id)) for (const n of bumpGroup(t, nodes, owners, map, true)) if (!others.has(n.id)) below.add(n.id);
+      }
+      const keep = (o: EngineNode) => riders.get(o.id) !== cell.id && !below.has(o.id) && !(isHeld && others.has(o.id));
+      // - the head keeps its own y against a node a bump can still move (§3.4), and starts from `headY`
+      //   each round, so it comes back up once what it cleared has moved on
+      // - on Reflow the head clears obstacles like a stacked member: no bump runs after this pack
+      const list = (prevBottom === null && !sets.reflow ? headRows : obstacles).filter(keep);
+      let y = prevBottom === null
+        ? rowStart(snapGrid(sets.headY?.get(cell.id) ?? cell.y), x, cell, list, noBump)
+        : rowStart(prevBottom + GRID, x, cell, list, noBump);
+      // - and on Reflow a member's output clears them too, on its slot at the member's row
+      const out = map.get(cell.outputNodeId ?? '');
+      if (sets.reflow && out) for (let guard = 0; guard < 16; guard++) {
+        const oy = rowStart(y, pair.outputX, out, list, noBump);
+        const my = rowStart(oy, x, cell, list, noBump);
+        if (my === y) break;
+        y = my;
+      }
+      place(cell, belowHeld(cell, y, list));
+      prevBottom = rowBottom(cell, map);
     }
-    place(cell, belowHeld(cell, y, list));
-    prevBottom = rowBottom(cell, map);
+  };
+  // - except a held node that is a mover, or whose source moved in this call: it takes its row, and the
+  //   member above goes under it
+  const sourceMoved = (r: EngineNode) => { const s = riders.get(r.id)!; return sets.movers?.has(s) === true || map.get(s)!.y !== sets.startY?.get(s); };
+  // - above = higher before the call, or level with it and dropped by the user. A node the operation put
+  //   at the held node's own y (a new node, a paste) goes under it.
+  const startY = (n: EngineNode) => sets.startY?.get(n.id) ?? n.y;
+  const above = (m: EngineNode, r: EngineNode) => startY(m) < startY(r) || (startY(m) === startY(r) && sets.dropped?.has(m.id) === true);
+  const under = new Set<string>();
+  const saved = [...members, ...members.map(m => map.get(m.outputNodeId ?? '')).filter((n): n is EngineNode => n !== undefined)];
+  for (let guard = 0; ; guard++) {
+    const at = saved.map(n => ({ n, x: n.x, y: n.y, p: out?.[n.id] }));
+    const wasPlaced = new Set(placed), wasUnder = new Set(sets.wentUnder ?? []);
+    packOnce(under);
+    if (sets.reflow || guard >= members.length) return;
+    const passed = members.filter((r, i) => !under.has(r.id) && !sets.movers?.has(r.id) && rowOf(r) !== undefined && !sourceMoved(r)
+      && members.slice(0, i).some(m => rowOf(m) === undefined && m.y > r.y && above(m, r)));
+    if (passed.length === 0) return;
+    for (const r of passed) under.add(r.id);
+    for (const b of at) { b.n.x = b.x; b.n.y = b.y; if (out) { if (b.p) out[b.n.id] = b.p; else delete out[b.n.id]; } }
+    placed.clear(); for (const id of wasPlaced) placed.add(id);
+    if (sets.wentUnder) { sets.wentUnder.clear(); for (const id of wasUnder) sets.wentUnder.add(id); }
   }
 }
 
@@ -744,7 +783,7 @@ function layoutCall(input: EngineNode[], opts: LayoutOpts, recheck: boolean): Pa
     const outId = map.get(id)!.outputNodeId; if (outId) noBump.add(outId);
   }
   const wentUnder = new Set<string>();
-  const sets: PackSets = { held, noBump, placed: new Set(), movedOutputs: new Set([...movers].filter(id => owners.has(id) && !resized.has(id))), wentUnder, hanging };
+  const sets: PackSets = { held, noBump, placed: new Set(), movedOutputs: new Set([...movers].filter(id => owners.has(id) && !resized.has(id))), wentUnder, hanging, movers, dropped: new Set([...movers].filter(id => opts.draggedFrom?.has(id))), startY: new Map(input.map(n => [n.id, n.y] as const)) };
   const packed = new Set(pairs.filter(p => touched.has(p.column.x)));
   // - an output the operation placed or moved that lands on a member of a packed column at or right of
   //   it, held to no other column's row and clear of the next column, moves that column right before it
