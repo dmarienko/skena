@@ -531,14 +531,15 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     if (!log) return;
     if (log.direction === 'enter' && editorShown) {
       swapLogRef.current = null;
-      console.debug('[skena codeSwap]', { ...log.report, ms: Math.round(performance.now() - enterAtRef.current) });
+      // - one JSON line, so the whole report can be copied out of the console without expanding it
+      console.debug('[skena codeSwap] ' + JSON.stringify({ ...log.report, ms: Math.round(performance.now() - enterAtRef.current) }));
     } else if (log.direction === 'leave' && !editing) {
       swapLogRef.current = null;
-      console.debug('[skena codeSwap]', {
+      console.debug('[skena codeSwap] ' + JSON.stringify({
         id, direction: 'leave', zoom: log.zoom,
         ms: Math.round(performance.now() - log.leftAt),
         ...swapReport(previewRects(previewElRef.current, log.editor.lines.length), log.editor),
-      });
+      }));
     }
   }, [editing, editorShown]);
 
