@@ -347,6 +347,8 @@ body.vscode-dark, body.vscode-high-contrast {
   outline: none !important;
   font-family: var(--vscode-editor-font-family, monospace) !important;
   font-size: inherit !important;
+  height: 14px !important;
+  padding: 0 !important;
 }
 
 /* - code cell preview uses the SAME VS Code editor font + line-height as the Monaco editor,

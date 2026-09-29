@@ -395,8 +395,10 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
           ...selectedStyle,
         }}
       >
-        {/* - padding clears the corner resize handle (left) and the 34px label badge (right) */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 40px 3px 14px', fontSize: 12, borderBottom: `1px solid ${borderColor}` }}>
+        {/* - padding clears the corner resize handle (left) and the 34px label badge (right).
+            - Fixed height: the status glyphs (◗ ✓ ✗) and the ■ button come from different fonts, and
+              a height taken from their line boxes moved the editor below whenever the status changed */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 40px 3px 14px', fontSize: 12, borderBottom: `1px solid ${borderColor}`, height: 24, boxSizing: 'border-box', flexShrink: 0, overflow: 'hidden' }}>
           <button
             onClick={e => { e.stopPropagation(); run(); }}
             disabled={!bound}
@@ -472,8 +474,9 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
                 overflowWidgetsDomNode: overflowWidgetsRoot(),
               }}
             />
-            {/* - vim mode status bar */}
-            <div ref={vimStatusRef} className="skena-code-vim-status" style={{ fontSize: 10, opacity: 0.6, padding: '0 6px', fontFamily: 'var(--vscode-editor-font-family, monospace)' }} />
+            {/* - vim mode status bar. Fixed height: empty in normal mode, a line of text in insert mode
+                or with a pending `:` command, and each change resized the editor above it */}
+            <div ref={vimStatusRef} className="skena-code-vim-status" style={{ fontSize: 10, opacity: 0.6, padding: '0 6px', fontFamily: 'var(--vscode-editor-font-family, monospace)', height: 14, lineHeight: '14px', flexShrink: 0, overflow: 'hidden', whiteSpace: 'nowrap' }} />
           </div>
         ) : (
           /* - read-only highlighted preview; ScrollableContent gives the wheel-guard so it

@@ -146,10 +146,9 @@ export const OUTPUT_DEFAULT_H = 300;
  *   chrome = what the cell puts around the editor box, from CodeNode's own styles:
  *            6   header padding, '3px 40px 3px 14px'
  *            1   header borderBottom
- *            17  header text line — the tallest item is the 14px status glyph, at the browser's
- *                `normal` line height (~1.2); nothing sets one on the node
- *            12  vim status bar, 10px text at that same `normal` line height, no vertical padding
- *            = 36, taken to 39 as a small margin. The node border is not in it: `.skena-node` is
+ *            17  header content box — the header is a fixed 24px, border-box
+ *            14  vim status bar, a fixed 14px
+ *            = 38, taken to 39 as a small margin. The node border is not in it: `.skena-node` is
  *            content-box, so it sits outside the height reportHeight measures, and its width is
  *            zoom-dependent anyway (useZoomInvariantBorderWidth(1.5) is 1.5 * BORDER_WIDTH_SCALE
  *            1.8 = 2.7 at zoom 1, more zoomed out). Monaco's `padding` option is
