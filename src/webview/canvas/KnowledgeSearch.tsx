@@ -4,15 +4,20 @@
  * knowledgeServers / knowledgeSearch / knowledgeFetch / knowledgeScopes and reads the answers
  * the host sends back, matched by requestId.
  *
+ * Hits of one document are listed together, at the place of its best-ranked hit: a line with the
+ * file's name and how many sections matched, then one row per section. That line is never
+ * highlighted. A document with one hit is a plain row.
+ *
  * Keys while the dialog is open:
- *   ↑ / ↓, Ctrl+J / Ctrl+K   → move the highlight
+ *   ↑ / ↓, Ctrl+J / Ctrl+K   → move the highlight (over hits only, no wrap at either end)
  *   Tab                      → next scope (only when the server has scopes)
  *   Enter                    → add the highlighted hit to the canvas
+ *   Shift+Enter              → add the whole document the highlighted hit belongs to
  *   Esc                      → close
  *   Ctrl+F                   → back to the input
  *
- * ↑ / ↓, Tab and Enter need the input focused. Esc, Ctrl+F and Ctrl+J/K work wherever the focus
- * is: while the dialog is open the canvas forwards those and swallows the rest.
+ * ↑ / ↓, Tab, Enter and Shift+Enter need the input focused. Esc, Ctrl+F and Ctrl+J/K work
+ * wherever the focus is: while the dialog is open the canvas forwards those and swallows the rest.
  *
  * A server with `facets` also answers with its tag names; a `#tag` the server does not have is
  * left out of the search and named in the status line.
@@ -26,7 +31,9 @@ import type {
 } from '../../shared/types';
 import { MarkdownRenderer } from '../renderers/MarkdownRenderer';
 import { useKnowledgeAssets } from './knowledgeAssets';
-import { initialState, queryFor, reduce, showsFilterRow, showsServerSelector } from './knowledgeSearchState';
+import {
+  groupHits, initialState, queryFor, reduce, sectionLabel, showsFilterRow, showsServerSelector, wholeDocumentHit,
+} from './knowledgeSearchState';
 import type { SearchAction, SearchState } from './knowledgeSearchState';
 
 function vscodePostMessage(msg: unknown) {
@@ -219,6 +226,10 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
     return () => clearTimeout(timer);
   }, [state.query, state.server, state.scope, state.recency, caps?.tags, facetsKey, knownTags]);
 
+  const resultRows = useMemo(() => groupHits(state.hits), [state.hits]);
+  const highlighted = resultRows[state.highlight];
+  const hit = highlighted?.kind === 'hit' ? highlighted.hit : undefined;
+
   // - keep the highlighted row inside the list's own scroll range; scrollTop is set by hand
   // - (not row.scrollIntoView) so a scrollable ancestor outside the list is never touched.
   // - offsetTop counts from the list's top only because the list is position: relative; without
@@ -227,14 +238,17 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
     const list = listRef.current;
     const row  = list?.querySelector<HTMLElement>(`[data-index="${state.highlight}"]`);
     if (!list || !row) return;
-    const top    = row.offsetTop;
-    const bottom = top + row.offsetHeight;
+    // - the first section of a document brings its file line into view with it
+    const fileLine = resultRows[state.highlight - 1]?.kind === 'file'
+      ? list.querySelector<HTMLElement>(`[data-index="${state.highlight - 1}"]`)
+      : null;
+    const top    = (fileLine ?? row).offsetTop;
+    const bottom = row.offsetTop + row.offsetHeight;
     if (top < list.scrollTop) list.scrollTop = top;
     else if (bottom > list.scrollTop + list.clientHeight) list.scrollTop = bottom - list.clientHeight;
-  }, [state.highlight, state.hits]);
+  }, [state.highlight, resultRows]);
 
   // - the preview follows the highlight once it settles, so walking a list with ↓ fetches once
-  const hit = state.hits[state.highlight] as KnowledgeHit | undefined;
   useEffect(() => {
     if (!hit) { setPreview({ uri: '', text: null, error: '' }); return; }
     const cached = cache.current.get(hit.uri);
@@ -271,8 +285,7 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
       // - without this the same keydown reaches CanvasView's window listener once the picked
       // - node is selected, and Enter opens it in the browser right after adding it
       e.stopPropagation();
-      const h = state.hits[state.highlight];
-      if (h) pick(h);
+      if (hit) pick(e.shiftKey ? wholeDocumentHit(hit) : hit);
       return;
     }
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === 'f') {
@@ -280,7 +293,7 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
       inputRef.current?.focus();
       inputRef.current?.select();
     }
-  }, [caps?.scopes, state.hits, state.highlight, pick]);
+  }, [caps?.scopes, hit, pick]);
 
   // - the hit count and the message of the moment are two segments, so neither hides the other
   const note   = pending || preview.error || tagNote;
@@ -390,33 +403,55 @@ export function KnowledgeSearch({ onPick, onClose }: Props): JSX.Element {
              nowheel — see CodeNode.tsx's read-only preview), so this is what actually keeps
              the wheel scrolling the list instead of zooming the canvas underneath */}
         <div ref={listRef} className="nowheel skena-scrollable" style={{ position: 'relative', width: '55%', overflowY: 'auto', overflowX: 'hidden' }}>
-          {state.hits.map((h, i) => (
-            <div
-              key={h.uri + i}
-              data-index={i}
-              onClick={() => dispatch({ kind: 'highlight', index: i })}
-              onDoubleClick={() => pick(h)}
-              style={{
-                padding: '4px 8px', cursor: 'pointer', fontSize: 12,
-                borderBottom: '1px solid var(--vscode-editorWidget-border, #454545)',
-                background: i === state.highlight ? 'var(--vscode-list-activeSelectionBackground, #094771)' : 'transparent',
-                color: i === state.highlight
-                  ? 'var(--vscode-list-activeSelectionForeground, #fff)'
-                  : 'var(--vscode-input-foreground, #ccc)',
-              }}
-            >
-              <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.title}</span>
-                {h.date && <span style={{ fontSize: 10, opacity: 0.6, marginLeft: 'auto', flexShrink: 0 }}>{h.date}</span>}
+          {resultRows.map((r, i) => {
+            if (r.kind === 'file') return (
+              <div
+                key={`file ${r.server} ${r.uri}`}
+                data-index={i}
+                style={{ padding: '4px 8px 2px', cursor: 'default', fontSize: 12, color: 'var(--vscode-input-foreground, #ccc)' }}
+              >
+                <div style={{ display: 'flex', gap: 10, alignItems: 'baseline' }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
+                  <span style={{ fontSize: 10, opacity: 0.6, flexShrink: 0 }}>{r.count} sections</span>
+                </div>
+                {r.subtitle && (
+                  <div style={{ fontSize: 10, opacity: 0.6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {r.subtitle}
+                  </div>
+                )}
               </div>
-              <div style={{ fontSize: 10, opacity: 0.6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {h.subtitle}{h.subtitle && h.tags.length > 0 ? ' · ' : ''}{h.tags.map(t => `#${t}`).join(' ')}
+            );
+            const h = r.hit;
+            // - under a file line the path is already shown once, above
+            const subtitle = r.underFile ? '' : h.subtitle;
+            return (
+              <div
+                key={h.uri + i}
+                data-index={i}
+                onClick={() => dispatch({ kind: 'highlight', index: i })}
+                onDoubleClick={() => pick(h)}
+                style={{
+                  padding: r.underFile ? '4px 8px 4px 20px' : '4px 8px', cursor: 'pointer', fontSize: 12,
+                  borderBottom: '1px solid var(--vscode-editorWidget-border, #454545)',
+                  background: i === state.highlight ? 'var(--vscode-list-activeSelectionBackground, #094771)' : 'transparent',
+                  color: i === state.highlight
+                    ? 'var(--vscode-list-activeSelectionForeground, #fff)'
+                    : 'var(--vscode-input-foreground, #ccc)',
+                }}
+              >
+                <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.underFile ? sectionLabel(h) : h.title}</span>
+                  {h.date && <span style={{ fontSize: 10, opacity: 0.6, marginLeft: 'auto', flexShrink: 0 }}>{h.date}</span>}
+                </div>
+                <div style={{ fontSize: 10, opacity: 0.6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {subtitle}{subtitle && h.tags.length > 0 ? ' · ' : ''}{h.tags.map(t => `#${t}`).join(' ')}
+                </div>
+                <div style={{ fontSize: 11, opacity: 0.75, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {h.snippet}
+                </div>
               </div>
-              <div style={{ fontSize: 11, opacity: 0.75, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {h.snippet}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
         <div
           className="nowheel skena-scrollable"

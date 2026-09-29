@@ -169,10 +169,12 @@ Configure at least one server in `settings.json` (shared) or `.vscode/settings.l
 | `↑` / `↓` | move the highlight |
 | `Ctrl+J` / `Ctrl+K` | same as `↓` / `↑` |
 | `Enter` | add the highlighted result — right of the focused node, or centred if nothing is focused — and close |
+| `Shift+Enter` | the same, with the whole document the highlighted result belongs to |
 | `Esc` | close |
 | `Ctrl+F` | back to the input, from anywhere in the dialog |
 
 Each result row shows the heading it matched (the file's name when there is no heading), then the vault, the file path and the tags on the line below.
+When several results come from one file, they are listed together where the best-ranked one was: a line with the file's name and `N sections`, which the highlight skips, then one indented row per section, `› <heading>` (`› whole file` for a result with no heading).
 
 A picked result becomes a `knowledge` node:
 - header: `<server> › <title> · <age>`, where `<title>` is the heading the server matched, then its file in brackets, e.g. `2026-09-19 — state (projects/skena.md)`; a result with no heading shows the file alone.
