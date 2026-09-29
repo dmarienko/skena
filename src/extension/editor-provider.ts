@@ -1155,6 +1155,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
   ): Promise<void> {
     // - sentinel values for special "create" items
     const NEW_TEXT_NOTE = '__skena_new_text_note__';
+    const NEW_CODE_NODE = '__skena_new_code_node__';
     const NEW_URL       = '__skena_new_url__';
 
     // - vault entries
@@ -1184,6 +1185,11 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       label:       '$(edit)  New text note',
       description: 'Inline markdown note (no file)',
       canvasUri:   NEW_TEXT_NOTE,
+    };
+    const newCodeItem: Item = {
+      label:       '$(code)  Code node',
+      description: 'Empty code cell (runs on the section kernel)',
+      canvasUri:   NEW_CODE_NODE,
     };
     const newUrlItem: Item = {
       label:       '$(link)  New URL',
@@ -1217,6 +1223,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const allItems: Item[] = [
       { label: 'Create', kind: vscode.QuickPickItemKind.Separator, canvasUri: '' },
       newTextItem,
+      newCodeItem,
       newUrlItem,
       ...(vaultItems.length ? [
         { label: 'Vault', kind: vscode.QuickPickItemKind.Separator, canvasUri: '' },
@@ -1248,6 +1255,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const scopedItems = (vault: string): Item[] => [
       { label: 'Create', kind: vscode.QuickPickItemKind.Separator, canvasUri: '' },
       newTextItem,
+      newCodeItem,
       newUrlItem,
       { label: `Vault: ${vault}`, kind: vscode.QuickPickItemKind.Separator, canvasUri: '' },
       ...vaultItems.filter(i => i.vaultName === vault),
@@ -1294,6 +1302,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
 
         qp.items = [
           { ...newTextItem, alwaysShow: true as const },
+          { ...newCodeItem, alwaysShow: true as const },
           { ...newUrlItem,  alwaysShow: true as const },
           { label: `Vault: ${vault}`, kind: vscode.QuickPickItemKind.Separator, canvasUri: '' },
           ...filtered,
@@ -1333,12 +1342,17 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const w      = msg.width  ?? NODE_SIZE.text.w;
     const h      = msg.height ?? NODE_SIZE.text.h;
 
-    let newNode: FileNode | TextNode | LinkNode | PortalNode;
+    let newNode: FileNode | TextNode | CodeNode | LinkNode | PortalNode;
     let autoEdit = false;
 
     if (picked.canvasUri === NEW_TEXT_NOTE) {
       // - inline text node — opens Monaco immediately so the user can start typing
       newNode = { id: nodeId, type: 'text', text: '', x, y, width: w, height: h };
+      autoEdit = true;
+    } else if (picked.canvasUri === NEW_CODE_NODE) {
+      // - empty code cell — same placement/sizing as a text note; kernel binding is resolved at
+      //   run time (edge-bound node, else the section's kernel), same as any other code cell
+      newNode = { id: nodeId, type: 'code', code: '', language: 'python', x, y, width: w, height: h };
       autoEdit = true;
     } else if (picked.canvasUri === NEW_URL) {
       // - prompt for URL, then create a link node
