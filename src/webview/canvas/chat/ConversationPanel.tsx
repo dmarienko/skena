@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { ChatItem, ChatTokenUsage } from '../../../shared/types';
 import { clockTime, groupTurns } from './chatTurns';
-import { clearFolds, isTurnOpen, toggleTurn, turnScroll, type TurnClick } from './turnFold';
+import { clearFolds, isAtBottom, isTurnOpen, toggleTurn, turnScroll, type TurnClick } from './turnFold';
 import { TurnList } from './TurnList';
 
 interface Props {
@@ -44,6 +44,19 @@ export function ConversationPanel(p: Props): JSX.Element | null {
   const lastItem   = p.history.length ? p.history[p.history.length - 1] : null;
   const clickRef   = useRef<TurnClick | null>(null);
   const contentRef = useRef<unknown[] | null>(null);
+
+  // - whether the view sat at the bottom just before the render now in progress; a 'scroll' event only
+  // - fires on an actual position change, so this always lags one step behind — exactly the "before"
+  // - reading turnScroll needs, since content growing at the bottom does not itself move scrollTop
+  const atBottomRef = useRef(true);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => { atBottomRef.current = isAtBottom(el.scrollTop, el.scrollHeight, el.clientHeight); };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [scrollRef]);
+
   useLayoutEffect(() => {
     const content = [visible, p.folded, lastItem, p.streaming];
     const prev    = contentRef.current;
@@ -52,7 +65,15 @@ export function ConversationPanel(p: Props): JSX.Element | null {
     clickRef.current = null;
     const el = scrollRef.current;
     if (!visible || p.folded || !el) return;
-    const move = turnScroll(click, prev === null || content.some((v, i) => v !== prev[i]));
+    // - the user's own prompt just landed, not a reply or tool step arriving on its own
+    const ownAction = prev !== null && lastItem !== prev[2]
+      && lastItem !== null && lastItem.kind === 'text' && lastItem.role === 'user';
+    const move = turnScroll(
+      click,
+      prev === null || content.some((v, i) => v !== prev[i]),
+      atBottomRef.current,
+      ownAction,
+    );
     if (move.to === 'latest') {
       const id = requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
       return () => cancelAnimationFrame(id);

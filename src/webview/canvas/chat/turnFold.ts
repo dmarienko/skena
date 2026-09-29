@@ -25,10 +25,21 @@ export type TurnScroll =
   | { to: 'turn'; key: string; offset: number }
   | { to: 'stay' };
 
+// - within this many px of the true bottom counts as "at the bottom"
+const BOTTOM_TOLERANCE = 24;
+
+// - whether the scroll area's visible bottom edge sits at, or within BOTTOM_TOLERANCE px of, its content
+export function isAtBottom(scrollTop: number, scrollHeight: number, clientHeight: number): boolean {
+  return scrollHeight - scrollTop - clientHeight <= BOTTOM_TOLERANCE;
+}
+
 // - a click keeps the view on its turn: an opened turn's line goes to the top of the scroll area, a
-// - folded one stays where it was on screen. Without a click, new content (a prompt, streamed text, a
-// - tool step, the panel reopened) pins to the latest; anything else leaves the scroll as it is
-export function turnScroll(click: TurnClick | null, newContent: boolean): TurnScroll {
+// - folded one stays where it was on screen. Without a click, new content (streamed text, a tool step,
+// - a new answer, the panel reopened) pins to the latest only when the view was already at the bottom
+// - just before that content arrived; `ownAction` (the user's own prompt) pins it regardless of where
+// - the view was. Anything else leaves the scroll as it is
+export function turnScroll(click: TurnClick | null, newContent: boolean, atBottomBefore: boolean, ownAction: boolean): TurnScroll {
   if (click) return { to: 'turn', key: click.key, offset: click.opened ? 0 : click.offset };
-  return newContent ? { to: 'latest' } : { to: 'stay' };
+  if (!newContent) return { to: 'stay' };
+  return atBottomBefore || ownAction ? { to: 'latest' } : { to: 'stay' };
 }

@@ -1,7 +1,7 @@
 // - pure sizes for the docked chat console; no DOM
 export const INPUT_LINE_H          = 20;
 export const INPUT_MAX_LINES       = 8;
-export const DEFAULT_CONSOLE_WIDTH = 760;
+export const DEFAULT_CONSOLE_WIDTH = 900;
 export const MIN_CONSOLE_W         = 420;
 // - free space kept between the console and each side of the window
 export const SIDE_GUTTER           = 16;

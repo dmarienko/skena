@@ -14,8 +14,9 @@ Everything else the chat does today stays; only its layout and look change.
 
 - The console is docked at the bottom centre of the canvas view. It no longer floats, and it is not
   dragged or resized freely.
-- The user sets its width by dragging either side edge. The width is saved per canvas, the way the
-  panel's size and position are saved today (`floatingChatSaveUIState`).
+- The user sets its width by dragging either side edge. Its default, before any drag, is a fixed
+  900 px. The width is saved per canvas, the way the panel's size and position are saved today
+  (`floatingChatSaveUIState`); a canvas with a width already saved keeps that width.
 - Two parts, stacked: the conversation panel on top, the input bar below it. The conversation panel
   is inset 18 px on each side, so the input bar is wider than it.
 - The conversation panel grows with its content up to 60 % of the canvas view's height, then
@@ -66,12 +67,18 @@ Taken from the mock:
   - the answer is rendered markdown, as today.
 - Each turn has two actions under its answer: copy the answer, and add the answer to the canvas as
   a note (connected to the focused node, as the agent's own notes are).
+- Auto-scroll (decided 2026-09-29): new content — streamed text, a tool step, a new answer — scrolls
+  the panel to the bottom only if the view was already within about 24 px of the bottom just before
+  that content arrived. If the user has scrolled up to read, the view stays put while the answer
+  keeps streaming. Sending a prompt is the user's own action, so it always scrolls to the bottom,
+  whether or not the view was there first. Opening or folding a turn by a click is unaffected: an
+  opened turn's line goes to the top, a folded one stays where it was on screen.
 
 ## Unchanged
 
 Alt+I (focus between the input and the canvas), Alt+L, Shift+H/J/K/L scrolling the conversation
-from vim normal mode, the pin-to-latest scroll, streaming, the compacting notice, and the history
-kept per canvas.
+from vim normal mode, streaming itself, the compacting notice, and the history kept per canvas.
+(The scroll the panel makes on new content changed — see Auto-scroll above.)
 
 ## Removed
 
