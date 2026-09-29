@@ -211,27 +211,6 @@ body.vscode-dark, body.vscode-high-contrast {
 @keyframes skena-kernel-blink { 0%, 100% { opacity: 1 } 50% { opacity: 0.25 } }
 .skena-kernel-busy { animation: skena-kernel-blink 0.9s ease-in-out infinite; }
 
-/* - code cell preview: line-number gutter on shiki output, sized to match Monaco's gutter
-   - (3-char number column + lineDecorationsWidth) so preview<->edit doesn't shift horizontally.
-   - Zero padding so the top/left edges align with Monaco (padding:{top:0} + preview padding:0). */
-.skena-code-cell-preview .skena-code { padding: 0; }
-.skena-code-cell-preview .shiki { padding: 0; }
-.skena-code-cell-preview .shiki code { counter-reset: skena-ln; }
-.skena-code-cell-preview .shiki .line { counter-increment: skena-ln; }
-.skena-code-cell-preview .shiki .line::before {
-  content: counter(skena-ln);
-  display: inline-block;
-  /* - width == Monaco getLayoutInfo().contentLeft (set on mount as --skena-code-gutter):
-     - digits right-align inside, the 6px padding == Monaco's lineDecorationsWidth, so the
-     - code glyph starts at exactly the same x as the editor. Fallback ~= 12px font gutter. */
-  width: var(--skena-code-gutter, 33px);
-  padding-right: 6px;
-  box-sizing: border-box;
-  text-align: right;
-  opacity: 0.35;
-  user-select: none;
-}
-
 /* - kill the focus outline/ring VS Code draws inside code-cell editors (the orange
    - inner rectangle that appeared on focus/Esc); the node's own selection ring suffices */
 .skena-node--code .monaco-editor,
@@ -260,16 +239,6 @@ body.vscode-dark, body.vscode-high-contrast {
   box-shadow: none !important;
   border-color: transparent !important;
 }
-
-/* - the orange rectangle: shiki emits <pre tabindex="0"> which shows the browser's
-   - default focus outline. Kill it on the code-cell preview. */
-.skena-code-cell-preview pre,
-.skena-code-cell-preview pre:focus,
-.skena-code-cell-preview pre:focus-visible { outline: none !important; }
-
-/* - code-cell preview: let the node background show through (match the editor look) */
-.skena-code-cell-preview .shiki,
-.skena-code-cell-preview .shiki code { background: transparent !important; }
 
 /* - IPython magic / shell (% %% !) tokens in code cells, colored like a directive */
 .skena-magic { color: #c586c0 !important; font-style: italic; }
@@ -349,16 +318,6 @@ body.vscode-dark, body.vscode-high-contrast {
   font-size: inherit !important;
   height: 14px !important;
   padding: 0 !important;
-}
-
-/* - code cell preview uses the SAME VS Code editor font + line-height as the Monaco editor,
-   - so switching preview<->edit is visually consistent */
-.skena-code-cell-preview .skena-code,
-.skena-code-cell-preview .shiki,
-.skena-code-cell-preview .shiki code {
-  font-family: var(--vscode-editor-font-family, monospace) !important;
-  font-size: var(--vscode-editor-font-size, 12px) !important;
-  line-height: var(--skena-code-lh, 1.3) !important;
 }
 
 /* - vim visual mode block cursor: Monaco draws its own block at the exclusive selection end,
