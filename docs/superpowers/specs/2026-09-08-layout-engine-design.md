@@ -348,8 +348,10 @@ cells. The exceptions:
   code cell (`ridersOf` names the code cell), and the code cell's column has to be strictly left of
   the target's too.
 
-In its own column that row is fixed and the other members pack around it (§3.4 treats it as an
-obstacle of its own column). When the source moves, the anchored node moves with it and its column is
+In its own column the members below the anchored node pack around that row (§3.4 treats it as an
+obstacle of its own column). A plain member above the anchored node keeps its place: the anchored node
+goes one gap under it, and takes its row once nothing above reaches that row (see "A held node does
+not pass a member above it" at the end of this section). When the source moves, the anchored node moves with it and its column is
 re-packed. Two nodes anchored to one row in one column stack in their current order: the one that
 is higher before the call stays on top, and the other goes one gap under it. On a tie of y the
 column's own tie order decides: the mover first, then the id. Decided by the user 2026-09-24
@@ -729,8 +731,10 @@ capped 0, overlap growth 0, non-idempotent 0 under both rules.
 **What the anchor does not promise.** An anchored node the operation itself moved is a mover and can
 yield downward off its source's row when a node above leaves it nowhere to step aside (§3.2); it
 settles one gap below that node and stays — measured: an anchored node on row 600 with a note
-reaching y 800 over it lands at 900, and the next call moves nothing. An anchored node fixes its row
-against the head of its own column: a member that sat above it is packed below it.
+reaching y 800 over it lands at 900, and the next call moves nothing. An anchored node does not pass a
+plain member that sits above it in its own column: it goes one gap under that member. An anchored node
+that is a mover, or whose source moved in the call, takes its row, and that member goes under it (see
+"A held node does not pass a member above it" at the end of this section).
 
 **A node hanging below a node of another column moves down with it (decided by the user 2026-09-25
 on H3).** On H3, N10, a note 2300 wide, has edges from its bottom border to the top borders of N11,
@@ -950,6 +954,79 @@ Other open items:
   again at every load and can pass later, once its target sits where holding moves nothing;
 - a new connection that replaces a code cell's input edge still releases the node that edge held,
   so that connection can move one node.
+
+**A held node does not pass a member above it (decided by the user 2026-09-29 on H-test).** On
+`test/H-test.canvas` the user dragged M2 into the column of M1, above it. M1 is held to N2's row. The
+engine put M2 under M1. The user expected M2 to stay where it was dropped and M1 to move down to make
+room. Two options were measured: (a) M1 keeps its hold and goes under M2; (b) the drop releases M1's
+hold (`keepRow: false`). Both had no call worse. The user chose (a).
+
+The rule: a node held to a source in another column does not let a plain member of its own column
+that sits above it pass it. It goes one gap under that member, and what sits under it packs down with
+it. It keeps `keepRow: true`. It takes its source's row again once nothing above it in the column
+reaches that row: in the first call that packs its column after that member has left.
+- Above means higher before the call. On the same y, only a node the user dropped counts as above (a
+  mover that `draggedFrom` names).
+- A held node that is a mover takes its row, and the member above goes under it (test 61).
+- A held node whose source moved in the call takes its row too: it follows its source (tests 90, 100).
+  The source moved when it is a mover or when a pack or a bump moved it.
+- A node the operation put at the held node's own y without a drop (a new node, a paste, the chat's
+  note) goes under the held node (`tests/chat-note.mjs` test 3, H3 W2 → C4).
+- Reflow does not apply the rule: every held node takes its row there. On H-test after the drop, a
+  Reflow puts M1 back at 400 and M2 at 800.
+
+`packColumn` packs the column as before. When a plain member above a held node ends below it, the
+column is packed again, and that held node takes its place in the column order: at its source's row,
+or one gap under the node above it, whichever is lower.
+
+Measured on H-test (S1, test 140): N1 (100, 0), N2 (100, 400) and N3 (100, 800), each 700×300; M1
+(900, 400) 700×300; M2 700×600, dragged from (1900, 200) to (900, 0). The edge N2 → M1 holds M1:
+`keepRowOf` gives true, since M1 sits on N2's row. The edge N1 → M2 holds nothing: M2 sat 200 below
+N1's row. At d29ec37 the pack put M1 on its row first and M2 went under it, to 800; the bumps took no
+part (a walk of 0 steps gives the same result). Now M2 stays at (900, 0) and M1 goes to (900, 700):
+0 + 600 + 100. A second call returns `{}`. Test 141 holds what follows: a call that packs column 900
+while M2 is above leaves M1 at 700; after M2 is dragged back out, the next call that packs column 900
+puts M1 at 400.
+
+Two tests changed:
+- test 85: W, a mover, heads column 1600 at 400, on the row of F (held to S1, at 1500). W stays at
+  400, R takes S0's row, 800, and F goes under R, to 1200. Before, F took 400, W went to 800 and R to
+  1200;
+- test 111: S, a plain member at 400, sits above H (held to A's row, 400, at 1200). H goes one gap
+  under S, to 800, and S stays at 400. Before, H took 400 and S went to 800.
+
+Two narrower forms of the rule were measured and dropped:
+- without the exception for a moved source, 6 tests failed (85, 86, 90, 100, 111, 139): a held node
+  no longer followed its source up;
+- with only a node the user dropped counting as above, a second call with M2 as the mover moved M1
+  back to 400 and M2 to 800.
+
+Measured against d29ec37, both engines given the same calls. The edges of every generated section
+and every fixture section first get `keepRow: true` where holding moves nothing, as when a canvas is
+opened. "Bad" is as above: capped, a new pair closer than a gap, or changed by a second call with the
+same movers; the output generator also counts two boxes that intersect. A drop passes `draggedFrom`,
+as the webview does.
+
+| Calls | Count | Bad at d29ec37 | Bad now | Worse | Better | Differ |
+|---|---|---|---|---|---|---|
+| H1 to H6, every node as the only mover | 170 | 0 | 0 | 0 | 0 | 0 |
+| The same, each call a drop in place | 170 | 0 | 0 | 0 | 0 | 0 |
+| The reviewer's section generator, seeds 1 to 3000 | 7703 | 71 | 71 | 0 | 0 | 30 |
+| The same, each call a drop in place | 7703 | 71 | 70 | 0 | 1 | 36 |
+| Tidy trials, NMAX 6, EMAX 4 (drags passed as drops) | 18589 | 59 | 59 | 0 | 0 | 36 |
+| Tidy trials, NMAX 10, EMAX 7 (drags passed as drops) | 36528 | 163 | 158 | 0 | 5 | 101 |
+| One code cell whose output is the only mover, at its slot | 34834 | 5 | 4 | 0 | 1 | 69 |
+| The same, the output dragged | 34834 | 2 | 2 | 0 | 0 | 45 |
+
+No call is worse. The output generator at its slot counts 5 bad at d29ec37 here, against 2 in the
+table of "Which edges hold": this harness also passes `hanging` to both calls; not traced. When a
+canvas is opened, 89 edges of the generator's 3000 sections get `keepRow: true`, against 94 at
+d29ec37 (18 sections differ); on the fixtures the counts are the same.
+
+Open (2026-09-29):
+- Reflow puts a held node back on its row under a member the user placed above it (H-test: M1 to 400,
+  M2 to 800);
+- a held node whose source moves takes its row past a member the user placed above it.
 
 ## 4. Reflow, MCP, undo, phases
 
