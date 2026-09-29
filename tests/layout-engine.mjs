@@ -26,8 +26,10 @@ const tooClose = (a, b) => !(
 );
 
 // 1
-test('codeCellHeight steps by 50px from the default height up to the cap', () => {
-  assert.equal(codeCellHeight(200), 300);    // - well inside the default 300, so it stays there
+test('codeCellHeight steps by 50px from one grid row up to the cap', () => {
+  assert.equal(codeCellHeight(75), 100);     // - two lines of code sit on the 100 floor
+  assert.equal(codeCellHeight(101), 150);    // - one line past what 100 holds
+  assert.equal(codeCellHeight(200), 200);    // - a 300 default is not a floor
   assert.equal(codeCellHeight(301), 350);    // - one line past what 300 holds
   assert.equal(codeCellHeight(349), 350);
   assert.equal(codeCellHeight(350), 350);    // - an exact step stays on it
@@ -696,9 +698,9 @@ test('a kernel badge is no column member: the code cell under it keeps its y', (
 
 // 40
 test('codeCellHeight shrinks back down the same 50px steps', () => {
-  assert.equal(codeCellHeight(120), 300);   // - a short cell sits on the floor, not under it
+  assert.equal(codeCellHeight(120), 150);   // - a cell the user dragged to 300 comes back to 150
   assert.equal(codeCellHeight(320), 350);   // - a cell the user dragged to 500 comes back to 350
-  assert.equal(codeCellHeight(0), 300);
+  assert.equal(codeCellHeight(0), 100);     // - a short cell sits on the floor, not under it
 });
 
 // 41
@@ -807,11 +809,13 @@ test('estimateCodeNeedPx counts the lines plus the chrome, a trailing newline be
 });
 
 // 46
-test('a cell sized from its text stays at the default height for a few lines and hits the cap past 47', () => {
+test('a cell sized from its text is one grid row for up to three lines and hits the cap past 47', () => {
   const lines = n => Array.from({ length: n }, (_, i) => `l${i}`).join('\n');
   const from = n => codeCellHeight(estimateCodeNeedPx(lines(n)));
-  assert.equal(from(1), 300);
-  assert.equal(from(12), 300);     // - 12*18 + 39 = 255, still inside the default
+  assert.equal(from(1), 100);
+  assert.equal(from(3), 100);      // - 3*18 + 39 = 93
+  assert.equal(from(4), 150);      // - 111: one step up
+  assert.equal(from(12), 300);     // - 255
   assert.equal(from(14), 300);     // - 291: the last line that fits
   assert.equal(from(15), 350);     // - 309: one step up
   assert.equal(from(40), 800);     // - 759 → 800

@@ -431,9 +431,9 @@ test('a second canvas_pin_output on the same cell does not land on the first', a
 });
 
 // - mirrors src/shared/constants.ts (CODE_LINE_H_ESTIMATE 18, CODE_CHROME_ESTIMATE 39,
-//   CODE_H_STEP 50, NODE_SIZE.code.h 300, CODE_MAX_H 900); this probe talks to the built server,
+//   CODE_H_STEP 50, CODE_MIN_H 100, CODE_MAX_H 900); this probe talks to the built server,
 //   not to a bundle it could import the real ones from
-const codeHeightFor = text => Math.min(900, Math.max(300, Math.ceil((text.split('\n').length * 18 + 39) / 50) * 50));
+const codeHeightFor = text => Math.min(900, Math.max(100, Math.ceil((text.split('\n').length * 18 + 39) / 50) * 50));
 const lines = n => Array.from({ length: n }, (_, i) => `x${i} = ${i}`).join('\n');
 
 test('an MCP code cell is as tall as its text needs, and its column re-packs when the text changes', async () => {
@@ -450,8 +450,8 @@ test('an MCP code cell is as tall as its text needs, and its column re-packs whe
 
   const out = await call('canvas_update_node', { canvasPath: p, ref: 'E1', content: 'a = 1\nb = 2' });
   console.log(`--- canvas_update_node, new code content ---\n${out}\n---`);
-  assert.equal(read(p).nodes.find(n => n.nodeLabel === 'E1').height, 300, 'two lines shrink the cell back');
-  assert.deepEqual(pick(read(p), 'E2'), [0, 400], 'the column pulls up behind the shrunk cell');
+  assert.equal(read(p).nodes.find(n => n.nodeLabel === 'E1').height, 100, 'two lines shrink the cell back to one row');
+  assert.deepEqual(pick(read(p), 'E2'), [0, 200], 'the column pulls up behind the shrunk cell');
   assert.match(out, /moved E2/);
 });
 
@@ -467,7 +467,7 @@ test('re-sending a code cell the same text re-sizes nothing, so a height set by 
   const p = fresh('codeheight-same');
   await call('canvas_add_node', { canvasPath: p, type: 'code', content: 'x = 1', x: 0, y: 0 });
   await call('canvas_add_node', { canvasPath: p, after: 'E1' });
-  assert.equal(read(p).nodes.find(n => n.nodeLabel === 'E1').height, 300);
+  assert.equal(read(p).nodes.find(n => n.nodeLabel === 'E1').height, 100);
 
   await call('canvas_update_node', { canvasPath: p, ref: 'E1', height: 600 });
   assert.equal(read(p).nodes.find(n => n.nodeLabel === 'E1').height, 600);
@@ -636,11 +636,11 @@ test('canvas_add_edge from a code cell to a note on its row gets keepRow true: t
   assert.equal(added.includes('moved'), false, added);
   assert.equal(read(p).edges[0].keepRow, true);
 
-  // - a cell inserted under E4 pushes E5 and E6 400 down, and N1 with them
+  // - a one-line cell (100 tall) inserted under E4 pushes E5 and E6 200 down, and N1 with them
   const inserted = await call('canvas_add_node', { canvasPath: p, type: 'code', content: 'y', after: 'E4' });
   console.log(`--- canvas_add_node after E4 ---\n${inserted}\n---`);
-  assert.deepEqual(pick(read(p), 'E6'), [0, 2300]);
-  assert.deepEqual(pick(read(p), 'N1'), [800, 2300], 'N1 keeps E6 row');
+  assert.deepEqual(pick(read(p), 'E6'), [0, 2100]);
+  assert.deepEqual(pick(read(p), 'N1'), [800, 2100], 'N1 keeps E6 row');
 
   const removed = await call('canvas_remove_edge', { canvasPath: p, ref: read(p).edges[0].id });
   console.log(`--- canvas_remove_edge code → note ---\n${removed}\n---`);

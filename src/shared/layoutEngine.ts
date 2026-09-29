@@ -1,4 +1,4 @@
-import { GRID, NODE_SIZE, CODE_MAX_H, CODE_H_STEP, CODE_LINE_H_ESTIMATE, CODE_CHROME_ESTIMATE, OUTPUT_MIN_W, OUTPUT_MAX_H, OUTPUT_DEFAULT_H, NOTE_LINE_H_ESTIMATE, NOTE_CHARS_PER_LINE_ESTIMATE, NOTE_MATH_LINES_ESTIMATE, NOTE_CHROME_ESTIMATE } from './constants';
+import { GRID, NODE_SIZE, CODE_MIN_H, CODE_MAX_H, CODE_H_STEP, CODE_LINE_H_ESTIMATE, CODE_CHROME_ESTIMATE, OUTPUT_MIN_W, OUTPUT_MAX_H, OUTPUT_DEFAULT_H, NOTE_LINE_H_ESTIMATE, NOTE_CHARS_PER_LINE_ESTIMATE, NOTE_MATH_LINES_ESTIMATE, NOTE_CHROME_ESTIMATE } from './constants';
 import { snapGrid } from './grid';
 import { deriveLanes, type SectionLane } from './sectionLanes';
 import type { CanvasData } from './types';
@@ -52,13 +52,13 @@ const gridUp = (v: number) => Math.ceil(v / GRID) * GRID;
 
 /**
  * Height of a code cell whose content needs `neededPx` (the editor's content height plus the
- * header, border and status bar around it): CODE_H_STEP steps from NODE_SIZE.code.h up to
+ * header, border and status bar around it): CODE_H_STEP steps from CODE_MIN_H up to
  * CODE_MAX_H. The caller measures the need, so the cell only grows once the text really no
  * longer fits, and by 50px rather than a whole grid row.
  */
 export function codeCellHeight(neededPx: number): number {
   const raw = Math.ceil(Math.max(0, neededPx) / CODE_H_STEP) * CODE_H_STEP;
-  return Math.min(CODE_MAX_H, Math.max(NODE_SIZE.code.h, raw));
+  return Math.min(CODE_MAX_H, Math.max(CODE_MIN_H, raw));
 }
 
 /**

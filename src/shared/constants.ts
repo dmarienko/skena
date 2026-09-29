@@ -124,7 +124,9 @@ export const FILE_TYPE_COLORS: Record<string, string> = {
 
 // - layout engine (spec 2026-09-08-layout-engine-design.md §1): the box sizes are grid multiples.
 //   A code cell is the exception: it steps by CODE_H_STEP (half a grid) so one more line that no
-//   longer fits adds 50px, not a whole 100px row.
+//   longer fits adds 50px, not a whole 100px row. A code cell sized from its text is never shorter
+//   than CODE_MIN_H, one grid row, which holds up to three lines.
+export const CODE_MIN_H       = 100;
 export const CODE_MAX_H       = 900;
 export const CODE_H_STEP      = 50;
 export const OUTPUT_MIN_W     = 600;
