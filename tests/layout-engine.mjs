@@ -2453,13 +2453,10 @@ const factorsRunEdges = () => [...factorsEdges(), edgeDown('E2', 'E3')];
 test('factors: a held cell\'s new output that would sit on the output of the cell over it goes under that output; the cell keeps its row', () => {
   // - E2 runs for the first time: its output C2 gets the slot on E2's row, (3200, 800), inside C1. E2 keeps
   //   N2's row, E3 and C1 stay, and C2 alone goes one gap under C1, 600 + 700 + 100 (decided by the user
-  //   2026-09-30). A new cell under E2 goes one gap under C2, 1400 + 300 + 100.
+  //   2026-09-30).
   const before = factorsRun().filter(n => n.id !== 'C2').map(n => (n.id === 'E2' ? { ...n, outputNodeId: undefined } : n));
   assert.deepEqual(placeOutput(before, 'E2'), { x: 3200, y: 800, width: 600, height: 300 });
   const after = settles(factorsRun(), factorsRunEdges(), ['C2'], { C2: { x: 3200, y: 1400 } });
-  assert.deepEqual(insertAfter(after, 'E2'), { x: 2400, y: 1800 });
-  const fresh = [...after, code('E9', 2400, 1800, 100)];
-  settles(fresh, [...factorsRunEdges(), edgeDown('E2', 'E9')], ['E9'], {});
   // - once C1 no longer reaches E2's row, C2 goes back onto it
   const shrunk = after.map(n => (n.id === 'C1' ? { ...n, h: 100 } : n));
   assert.deepEqual(layoutSection(shrunk, { moverIds: ['C1'], resized: ['C1'], riders: ridersOf(shrunk, factorsRunEdges()), hanging: hangingBelow(shrunk, factorsRunEdges()) }), { C2: { x: 3200, y: 800 } });
@@ -2519,4 +2516,25 @@ test('factors: from the file with C2 inside C1, a drag of E2\'s source or of E2,
     const { draggedFrom, ...again } = opts;
     assert.deepEqual(layoutSection(after, { ...again, riders: ridersOf(after, edges), hanging: hangingBelow(after, edges) }), {}, label);
   }
+});
+
+// 153
+test('factors: a cell inserted under a held cell whose output sits below its row goes one gap under the rows above, and stays', () => {
+  // - E2 at 800 with C2 moved under C1, to 1400 (test 149). E2's row ends at E2's own bottom, 1150, but
+  //   E3's row, over E2, ends at C1's bottom, 1300: vim o in E2 gives 1300 + 100, beside C2, and the pack
+  //   leaves the new cell there (decided by the user 2026-09-30).
+  const state = factorsRun().map(n => (n.id === 'C2' ? { ...n, y: 1400 } : n));
+  const edges = [...factorsRunEdges(), edgeDown('E2', 'E9')];
+  assert.deepEqual(insertAfter(state, 'E2'), { x: 2400, y: 1400 });
+  const inserted = settles([...state, code('E9', 2400, 1400, 100)], edges, ['E9'], {});
+  // - E9 runs: its output C9 gets (3200, 1400), on C2, and clears it with E9, 1400 + 300 + 100
+  assert.deepEqual(placeOutput(inserted, 'E9'), { x: 3200, y: 1400, width: 600, height: 300 });
+  const run = [...inserted.map(n => (n.id === 'E9' ? { ...n, outputNodeId: 'C9' } : n)), cell('C9', 3200, 1400)];
+  const ran = settles(run, edges, ['C9'], { E9: { x: 2400, y: 1800 }, C9: { x: 3200, y: 1800 } });
+  assert.deepEqual(layoutSection(ran, { columnX: 2400, riders: ridersOf(ran, edges), hanging: hangingBelow(ran, edges) }), {});
+  // - C1 shrinks to 100: C2 goes back onto E2's row, and E9 packs up to one gap under E2, 800 + 350 + 100,
+  //   with its output when it has run
+  const shrink = ns => ns.map(n => (n.id === 'C1' ? { ...n, h: 100 } : n));
+  settles(shrink(inserted), edges, ['C1'], { C2: { x: 3200, y: 800 }, E9: { x: 2400, y: 1250 } });
+  settles(shrink(ran), edges, ['C1'], { C2: { x: 3200, y: 800 }, E9: { x: 2400, y: 1250 }, C9: { x: 3200, y: 1250 } });
 });

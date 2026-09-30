@@ -1086,9 +1086,18 @@ column 2400 (test 151). This replaces "the held pair goes under" for that case.
 - The output is placed again by every call that packs the column, as every output of a packed column
   is: once nothing above reaches the cell's row, it goes back onto the row (test 149: C1 shrunk to 100
   tall puts C2 back at 800). A call that does not pack the column leaves it where it is.
-- The cell's row now ends at the bottom of its output where the output sits, so a member under the held
-  cell goes one gap under the moved output: `insertAfter` E2 gives (2400, 1800), 1400 + 300 + 100, and
-  the pack leaves the new cell there (test 149).
+- An output that sits below its cell's row is not part of that row: a member under the held cell stacks
+  one gap under the cell itself, and under the row of the member before it in the column, as any member
+  does. **Insert under a held cell whose output sits below its row (decided by the user 2026-09-30).**
+  `insertAfter` reads the rows of the column's members at or above the cell as the pack stacks them, and
+  takes one gap under the lowest. On the factors state (E2 at 800, C2 at 1400, E3's row ending at C1's
+  bottom, 1300), vim o in E2 gives (2400, 1400), beside C2, and the pack leaves the new cell there. The
+  user saw three places to scale: 1250 (one gap under E2 itself, which needs a new way to stack a
+  column), 1400, and 1800 (one gap under C2, as built at 0cd331d), and chose 1400. Then (test 153): the
+  new cell's first run puts its output at (3200, 1400), on C2, and the cell and its output go one gap
+  under C2, to 1800; a pack of the column moves nothing; when C1 shrinks, C2 goes back onto E2's row and
+  the new cell, with its output if it has run, packs up to 1250. On the fixtures (209 nodes), `insertAfter`
+  gives another slot than at 0cd331d for one node only, E2 of `factors-S1`: 1250 → 1400.
 - Reflow does not apply it: there the member above goes under the held node, as before.
 - Edges are not changed: E2 → C2 stays right → left.
 
@@ -1126,8 +1135,8 @@ column; the second call packs E2 under N5, from 1300 to 1100, and N1, held to E2
 and E4, under N1, to 1900. At dca614d the first call put E4 over N1 and E2 at 1700, and a second call
 moved nothing. Against e63d61e 4 calls differ (one in each of the section generator, its drops and
 the two sets of tidy trials), against e6415b4 (the engine of 0d44759) 2 calls of the tidy trials
-(NMAX 10, EMAX 7) differ, and against 943428c 2 calls of the same set differ; every count of bad calls
-is the same. Reflow on the section generator's 3000 sections, every edge
+(NMAX 10, EMAX 7) differ, against 943428c 2 calls of the same set differ, and against 0cd331d 1 call of
+the same set differs; every count of bad calls is the same. Reflow on the section generator's 3000 sections, every edge
 holding, and on the fixture sections (H1 to H6 and H-test, 3009 sections in all) gives the same result
 before and after.
 

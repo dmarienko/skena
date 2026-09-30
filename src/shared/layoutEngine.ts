@@ -327,12 +327,12 @@ export function derivePairs(nodes: EngineNode[], columns: Column[]): Pair[] {
   });
 }
 
-// - bottom of a column member's row = where the node or its output ends, whichever is further down (a
-//   note has none). An output sits on its cell's row, bar that of a held cell that went under the output
-//   above it (§3.5).
+// - bottom of a column member's row = the taller of the node and its output (a note has none). An output
+//   below its cell's row is left out: a held cell's output that went under the output above it (§3.5)
+//   does not push the cells under that cell down.
 function rowBottom(cell: EngineNode, map: Map<string, EngineNode>): number {
   const out = map.get(cell.outputNodeId ?? '');
-  return Math.max(cell.y + cell.h, out ? out.y + out.h : 0);
+  return cell.y + Math.max(cell.h, out && out.y <= cell.y ? out.h : 0);
 }
 
 // - two boxes need a full grid gap between them on at least one axis
@@ -1023,12 +1023,19 @@ export function reflowSection(input: EngineNode[], opts: { riders?: Map<string, 
   return diff(input, nodes);
 }
 
-/** Where a new node goes after `afterId`: its column, one gap below its row. Null when there is no such node. */
+/**
+ * Where a new node goes after `afterId`: its column, one gap below its row and below the row of every
+ * member of the column at or above it, as the pack stacks the new node. Null when there is no such node.
+ */
 export function insertAfter(nodes: EngineNode[], afterId: string): { x: number; y: number } | null {
   const after = nodes.find(n => n.id === afterId);
   if (!after) return null;
   const map = byId(nodes);
-  return { x: snapGrid(after.x), y: rowBottom(after, map) + GRID };
+  const owners = outputOwners(nodes);
+  const x = snapGrid(after.x);
+  // - a member above whose output reaches past a held cell's row (§3.5) ends the row lower than that cell
+  const above = isMember(after, owners) ? nodes.filter(n => isMember(n, owners) && snapGrid(n.x) === x && n.y <= after.y) : [];
+  return { x, y: Math.max(rowBottom(after, map), ...above.map(n => rowBottom(n, map))) + GRID };
 }
 
 /**
