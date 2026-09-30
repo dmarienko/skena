@@ -517,3 +517,19 @@ test('H-test E2→E3: the run through the gap between E2 and W4 keeps at least a
   assert.ok(w4.y - y >= LANE_STEP, `run at y ${y}, ${w4.y - y} px above W4's top: ${JSON.stringify(r.points)}`);
   assert.ok(y - (e2.y + e2.h) >= LANE_STEP, `run at y ${y}, ${y - (e2.y + e2.h)} px below E2's bottom: ${JSON.stringify(r.points)}`);
 });
+
+// - the corners of a route: every point where it changes direction
+const cornersOf = pts => pts.slice(1, -1).filter((b, i) => {
+  const a = pts[i], c = pts[i + 2];
+  return !((a[0] === b[0] && b[0] === c[0]) || (a[1] === b[1] && b[1] === c[1]));
+}).length;
+
+// 23
+test('H4 E5→M1: room from a border never costs a corner, so the route keeps its two', () => {
+  // - M1's entry point is 5 px below C2's bottom border. With two corners the route has to reach
+  //   that row west of C2 and run under C2's whole width; with room it takes four.
+  const section = fixtureSections('H4').find(s => s.edges.some(e => e.id === 'e5'));
+  const r = routeOf(routeSection(section.nodes, section.edges), 'e5');
+  assert.equal(r.fallback, false);
+  assert.ok(cornersOf(r.points) <= 2, `more than two corners: ${JSON.stringify(r.points)}`);
+});

@@ -253,19 +253,22 @@ function adopt(end: BorderEnd, off: number): void {
   end.at = borderPoint(end.node, end.side, off);
 }
 
-// - a small binary heap: Dijkstra runs over 4 states per crossing, far too many to scan
+// - a small binary heap: Dijkstra runs over 4 states per crossing, far too many to scan. An item is
+//   ordered by its cost, then its corners, then its length along node borders.
 class MinHeap {
   private cost: number[] = [];
+  private corners: number[] = [];
+  private near: number[] = [];
   private item: number[] = [];
 
   get size(): number { return this.item.length; }
 
-  push(cost: number, item: number): void {
-    this.cost.push(cost); this.item.push(item);
+  push(cost: number, corners: number, near: number, item: number): void {
+    this.cost.push(cost); this.corners.push(corners); this.near.push(near); this.item.push(item);
     let i = this.item.length - 1;
     while (i > 0) {
       const p = (i - 1) >> 1;
-      if (this.cost[p] <= this.cost[i]) break;
+      if (!this.less(i, p)) break;
       this.swap(p, i); i = p;
     }
   }
@@ -274,24 +277,42 @@ class MinHeap {
   pop(): number {
     const top = this.item[0];
     const last = this.item.length - 1;
-    this.cost[0] = this.cost[last]; this.item[0] = this.item[last];
-    this.cost.length = last; this.item.length = last;
+    this.move(last, 0);
+    this.cost.length = last; this.corners.length = last; this.near.length = last; this.item.length = last;
     for (let i = 0; ;) {
       const l = i * 2 + 1, r = l + 1;
       let m = i;
-      if (l < last && this.cost[l] < this.cost[m]) m = l;
-      if (r < last && this.cost[r] < this.cost[m]) m = r;
+      if (l < last && this.less(l, m)) m = l;
+      if (r < last && this.less(r, m)) m = r;
       if (m === i) break;
       this.swap(m, i); i = m;
     }
     return top;
   }
 
+  private less(a: number, b: number): boolean {
+    const ca = this.cost[a], cb = this.cost[b];
+    if (ca !== cb) return ca < cb;
+    const ka = this.corners[a], kb = this.corners[b];
+    return ka !== kb ? ka < kb : this.near[a] < this.near[b];
+  }
+
+  private move(from: number, to: number): void {
+    this.cost[to] = this.cost[from]; this.corners[to] = this.corners[from];
+    this.near[to] = this.near[from]; this.item[to] = this.item[from];
+  }
+
   private swap(a: number, b: number): void {
-    [this.cost[a], this.cost[b]] = [this.cost[b], this.cost[a]];
-    [this.item[a], this.item[b]] = [this.item[b], this.item[a]];
+    const { cost, corners, near, item } = this;
+    let t = cost[a]; cost[a] = cost[b]; cost[b] = t;
+    t = corners[a]; corners[a] = corners[b]; corners[b] = t;
+    t = near[a]; near[a] = near[b]; near[b] = t;
+    t = item[a]; item[a] = item[b]; item[b] = t;
   }
 }
+
+const lexLess = (c1: number, k1: number, n1: number, c2: number, k2: number, n2: number): boolean =>
+  c1 < c2 || (c1 === c2 && (k1 < k2 || (k1 === k2 && n1 < n2)));
 
 // - direction codes: 0 = +x, 1 = -x, 2 = +y, 3 = -y
 const dirBetween = (a: Point, b: Point): number => b[0] > a[0] ? 0 : b[0] < a[0] ? 1 : b[1] > a[1] ? 2 : 3;
@@ -301,49 +322,69 @@ const OUT_DIR: Record<Side, number> = { right: 0, left: 1, bottom: 2, top: 3 };
  * Shortest orthogonal path from `start` to `goal` over the `count` vertices: the section's crossings
  * and, past them, the vertices this edge added, whose links are in `extra`. Cost = length + BEND_COST
  * per change of direction, counting the corner where the route leaves the exit segment and the one
- * where it meets the entry segment. A stretch that runs along a node border, closer than one lane
- * step to it (`nearBorder`), counts its length twice: between two lines of equal length the search
- * takes the one with room, and it keeps to a border only when every other way is longer by more than
- * that.
+ * where it meets the entry segment. With `ties`, a route of equal cost with fewer corners wins, and
+ * then one with less length closer than a lane step to a node border it runs along (`nearBorder`), so
+ * room from a border is taken only where it costs no length and no corner. Without, equal costs are
+ * settled by the order the heap gives them.
  */
 function shortestPath(
   g: GapGraph, extra: Map<number, number[]>, at: (i: number) => Point, count: number,
-  start: number, startDir: number, goal: number, goalDir: number,
+  start: number, startDir: number, goal: number, goalDir: number, ties: boolean,
 ): number[] | null {
   const dist = new Float64Array(count * 4).fill(Infinity);
+  const corners = new Float64Array(count * 4).fill(Infinity);
+  const near = new Float64Array(count * 4).fill(Infinity);
   const prev = new Int32Array(count * 4).fill(-1);
   const done = new Uint8Array(count * 4);
   const heap = new MinHeap();
-  dist[start * 4 + startDir] = 0;
-  heap.push(0, start * 4 + startDir);
+  const first = start * 4 + startDir;
+  dist[first] = 0; corners[first] = 0; near[first] = 0;
+  heap.push(0, 0, 0, first);
+  // - without `ties` every state keeps 0 corners and 0 length along borders, so only the cost counts
+  const corner = ties ? 1 : 0;
 
-  let best = Infinity;
+  // - the best finished goal so far, the corner onto the entry segment included
+  let bestCost = Infinity, bestCorners = Infinity, bestNear = Infinity;
   while (heap.size > 0) {
     const state = heap.pop();
     if (done[state]) continue;
     done[state] = 1;
-    // - the popped cost is the smallest still in play, so nothing left can beat a finished goal
-    if (dist[state] >= best) break;
-    if ((state >> 2) === goal) best = Math.min(best, dist[state] + ((state & 3) === goalDir ? 0 : BEND_COST));
+    // - states come off the heap in order, so nothing left can beat a finished goal
+    if (!lexLess(dist[state], corners[state], near[state], bestCost, bestCorners, bestNear)) break;
     const v = state >> 2, dir = state & 3;
+    if (v === goal) {
+      const turn = dir === goalDir ? 0 : 1;
+      if (lexLess(dist[state] + turn * BEND_COST, corners[state] + turn * corner, near[state], bestCost, bestCorners, bestNear)) {
+        bestCost = dist[state] + turn * BEND_COST; bestCorners = corners[state] + turn * corner; bestNear = near[state];
+      }
+    }
     const base = v < g.nbrs.length ? g.nbrs[v] : [];
     const here = at(v);
     for (const w of [...base, ...(extra.get(v) ?? [])]) {
       const there = at(w);
       const step = dirBetween(here, there);
       const next = w * 4 + step;
-      let cost = dist[state] + Math.abs(there[0] - here[0]) + Math.abs(there[1] - here[1]) + (step === dir ? 0 : BEND_COST);
-      // - the border test is only paid for a step that could still improve on the best cost so far
-      if (cost >= dist[next]) continue;
-      cost += g.nearBorder(here, there);
-      if (cost < dist[next]) { dist[next] = cost; prev[next] = state; heap.push(cost, next); }
+      const turn = step === dir ? 0 : 1;
+      const cost = dist[state] + Math.abs(there[0] - here[0]) + Math.abs(there[1] - here[1]) + turn * BEND_COST;
+      if (cost > dist[next]) continue;
+      const k = corners[state] + turn * corner;
+      if (cost === dist[next] && k > corners[next]) continue;
+      // - the border test is only paid for a step that is not already beaten on cost and corners
+      const n = ties ? near[state] + g.nearBorder(here, there) : 0;
+      if (cost < dist[next] || k < corners[next] || n < near[next]) {
+        dist[next] = cost; corners[next] = k; near[next] = n; prev[next] = state;
+        heap.push(cost, k, n, next);
+      }
     }
   }
 
-  let bestState = -1, bestCost = Infinity;
+  let bestState = -1;
+  bestCost = bestCorners = bestNear = Infinity;
   for (let d = 0; d < 4; d++) {
-    const total = dist[goal * 4 + d] + (d === goalDir ? 0 : BEND_COST);
-    if (total < bestCost) { bestCost = total; bestState = goal * 4 + d; }
+    const s = goal * 4 + d, turn = d === goalDir ? 0 : 1;
+    if (lexLess(dist[s] + turn * BEND_COST, corners[s] + turn * corner, near[s], bestCost, bestCorners, bestNear)) {
+      bestCost = dist[s] + turn * BEND_COST; bestCorners = corners[s] + turn * corner; bestNear = near[s]; bestState = s;
+    }
   }
   if (bestState < 0 || !Number.isFinite(bestCost)) return null;
 
@@ -447,8 +488,14 @@ function routeOne(nodes: RouteNode[], g: GapGraph, source: BorderEnd, target: Bo
   if (from === null || to === null) return null;
 
   // - the route meets the entry segment head on, so the goal direction is the target side reversed
-  const path = shortestPath(g, extra, pointAt, size + added.length, from, OUT_DIR[source.side], to, OUT_DIR[target.side] ^ 1);
-  if (!path) return null;
+  const search = (ties: boolean) =>
+    shortestPath(g, extra, pointAt, size + added.length, from, OUT_DIR[source.side], to, OUT_DIR[target.side] ^ 1, ties);
+  const plain = search(false);
+  if (!plain) return null;
+  // - only a route with a stretch along a node border is searched again with its ties settled, so
+  //   every other route keeps the one the plain search picks among equals
+  const along = plain.some((v, k) => k > 0 && g.nearBorder(pointAt(plain[k - 1]), pointAt(v)) > 0);
+  const path = along ? search(true) ?? plain : plain;
   return [source.at, ...simplify(path.map(pointAt)), target.at];
 }
 
