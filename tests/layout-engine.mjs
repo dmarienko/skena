@@ -2450,12 +2450,19 @@ const factorsRun = () => [
   code('E3', 2400, 600, 100, 'C1'), cell('C1', 3200, 600, 1000, 700), cell('C2', 3200, 800),
 ];
 const factorsRunEdges = () => [...factorsEdges(), edgeDown('E2', 'E3')];
-test('factors: a held cell\'s new output that would sit on the output of the cell over it goes under that cell\'s row', () => {
-  // - E2 runs for the first time: its output C2 gets the slot on E2's row, (3200, 800). E3 and C1 stay; E2
-  //   and C2 go one gap under E3's row, 600 + 700 + 100 (decided by the user 2026-09-30).
+test('factors: a held cell\'s new output that would sit on the output of the cell over it goes under that output; the cell keeps its row', () => {
+  // - E2 runs for the first time: its output C2 gets the slot on E2's row, (3200, 800), inside C1. E2 keeps
+  //   N2's row, E3 and C1 stay, and C2 alone goes one gap under C1, 600 + 700 + 100 (decided by the user
+  //   2026-09-30). A new cell under E2 goes one gap under C2, 1400 + 300 + 100.
   const before = factorsRun().filter(n => n.id !== 'C2').map(n => (n.id === 'E2' ? { ...n, outputNodeId: undefined } : n));
   assert.deepEqual(placeOutput(before, 'E2'), { x: 3200, y: 800, width: 600, height: 300 });
-  settles(factorsRun(), factorsRunEdges(), ['C2'], { E2: { x: 2400, y: 1400 }, C2: { x: 3200, y: 1400 } });
+  const after = settles(factorsRun(), factorsRunEdges(), ['C2'], { C2: { x: 3200, y: 1400 } });
+  assert.deepEqual(insertAfter(after, 'E2'), { x: 2400, y: 1800 });
+  const fresh = [...after, code('E9', 2400, 1800, 100)];
+  settles(fresh, [...factorsRunEdges(), edgeDown('E2', 'E9')], ['E9'], {});
+  // - once C1 no longer reaches E2's row, C2 goes back onto it
+  const shrunk = after.map(n => (n.id === 'C1' ? { ...n, h: 100 } : n));
+  assert.deepEqual(layoutSection(shrunk, { moverIds: ['C1'], resized: ['C1'], riders: ridersOf(shrunk, factorsRunEdges()), hanging: hangingBelow(shrunk, factorsRunEdges()) }), { C2: { x: 3200, y: 800 } });
 });
 
 // 150
@@ -2468,17 +2475,16 @@ test('a node under a held code cell stays under it when the cell gets a tall out
 });
 
 // 151
-test('the pair over a held pair never goes down for it: the held pair goes under its row, whatever the call moved', () => {
+test('the pair over a held pair never goes down for it: the held cell\'s output goes under, whatever the call moved', () => {
   // - C1 new (E3 ran), C1 grown by hand, E3 dropped where it is, and a call that only packs column 2400:
-  //   E3 and C1 stay, and E2, held to N2's row, goes one gap under E3's row with C2, 600 + 700 + 100, as
-  //   in test 149 (decided by the user 2026-09-30).
+  //   E3 and C1 stay, E2 keeps N2's row, and C2 goes one gap under C1, 600 + 700 + 100, as in test 149.
   const nodes = factorsRun();
   const edges = factorsRunEdges();
   const e3 = new Map([['E3', { x: 2400, y: 600 }]]);
   for (const opts of [{ moverIds: ['C1'] }, { moverIds: ['C1'], resized: ['C1'] }, { moverIds: ['E3'], draggedFrom: e3 }, { columnX: 2400 }]) {
     const label = JSON.stringify({ ...opts, draggedFrom: undefined });
     const patches = layoutSection(nodes, { ...opts, riders: ridersOf(nodes, edges), hanging: hangingBelow(nodes, edges, opts.draggedFrom) });
-    assert.deepEqual(patches, { E2: { x: 2400, y: 1400 }, C2: { x: 3200, y: 1400 } }, label);
+    assert.deepEqual(patches, { C2: { x: 3200, y: 1400 } }, label);
     const after = apply(nodes, patches);
     assert.equal(overlapCount(after), 0, label);
     const { draggedFrom, ...again } = opts;
@@ -2487,25 +2493,26 @@ test('the pair over a held pair never goes down for it: the held pair goes under
 });
 
 // 152
-test('factors: from the file with C2 inside C1, a drag of E2\'s source or of E2 sends E2 and C2 under C1, not E3', () => {
+test('factors: from the file with C2 inside C1, a drag of E2\'s source or of E2, or a pack, sends C2 alone under C1', () => {
   // - tests/fixtures/factors-S1.json: S1 of research/review/factors-essentials.canvas on 2026-09-30, geometry
   //   only. E2 is held to N2's row, 800; E3's output C1 (3200, 600) 1000×700 covers E2's output C2, parked
-  //   at (3300, 800). E3 and C1 never go down for E2 (§3.5): E2 goes one gap under E3's row with C2,
-  //   600 + 700 + 100, also when N2 moved (dragged down 100) or E2 is the mover (dropped where it is).
+  //   at (3300, 800). E3 and C1 stay (§3.5), and C2 goes one gap under C1, 600 + 700 + 100. N2 dragged 100
+  //   down: E2 takes N2's new row, 900. E2 dropped where it is: the call moved E2 and C2 is off its row, so
+  //   C2 goes back to its slot, x 3200.
   const data = fixture('factors-S1');
   const nodes = sectionEngineNodes(data.nodes, data.metadata.sections, 'E2');
   const edges = data.edges;
   assert.deepEqual([...ridersOf(nodes, edges)].sort(), [['E2', 'N2'], ['N1', 'W1']]);
   const n2 = nodes.map(n => (n.id === 'N2' ? { ...n, y: 900 } : n));
-  for (const [ns, opts] of [
-    [n2, { moverIds: ['N2'], draggedFrom: new Map([['N2', { x: 800, y: 800 }]]) }],
-    [nodes, { moverIds: ['E2'], draggedFrom: new Map([['E2', { x: 2400, y: 800 }]]) }],
-    [nodes, { columnX: 2400 }],
+  for (const [ns, opts, e2, c2] of [
+    [n2, { moverIds: ['N2'], draggedFrom: new Map([['N2', { x: 800, y: 800 }]]) }, { x: 2400, y: 900 }, { x: 3300, y: 1400 }],
+    [nodes, { moverIds: ['E2'], draggedFrom: new Map([['E2', { x: 2400, y: 800 }]]) }, undefined, { x: 3200, y: 1400 }],
+    [nodes, { columnX: 2400 }, undefined, { x: 3300, y: 1400 }],
   ]) {
     const label = JSON.stringify(opts.moverIds ?? opts.columnX);
     const patches = layoutSection(ns, { ...opts, riders: ridersOf(ns, edges), hanging: hangingBelow(ns, edges, opts.draggedFrom) });
-    assert.deepEqual(patches.E2, { x: 2400, y: 1400 }, label);
-    assert.deepEqual(patches.C2, { x: 3300, y: 1400 }, label);
+    assert.deepEqual(patches.E2, e2, label);
+    assert.deepEqual(patches.C2, c2, label);
     for (const id of ['E1', 'E3', 'C1']) assert.equal(patches[id], undefined, `${label} ${id} moved`);
     const after = apply(ns, patches);
     assert.equal(overlapCount(after), 0, label);

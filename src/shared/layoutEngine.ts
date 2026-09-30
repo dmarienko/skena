@@ -327,10 +327,12 @@ export function derivePairs(nodes: EngineNode[], columns: Column[]): Pair[] {
   });
 }
 
-// - bottom of a column member's row = the taller of the node and its output (a note has none)
+// - bottom of a column member's row = where the node or its output ends, whichever is further down (a
+//   note has none). An output sits on its cell's row, bar that of a held cell that went under the output
+//   above it (§3.5).
 function rowBottom(cell: EngineNode, map: Map<string, EngineNode>): number {
   const out = map.get(cell.outputNodeId ?? '');
-  return cell.y + Math.max(cell.h, out ? out.h : 0);
+  return Math.max(cell.y + cell.h, out ? out.y + out.h : 0);
 }
 
 // - two boxes need a full grid gap between them on at least one axis
@@ -405,12 +407,14 @@ function keepsRowAgainst(node: EngineNode, cellId: string, riders: Map<string, s
 function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode>, riders: Map<string, string>, owners: Map<string, string>, out?: Patches, toSlot: (cellId: string, output: EngineNode, wasY: number) => boolean = () => true, sets: PackSets = { held: new Set(), noBump: new Set(), placed: new Set() }): void {
   const { held, noBump, placed } = sets;
   const x = pair.column.x;
-  const place = (cell: EngineNode, y: number) => {
+  const outX = (cell: EngineNode, o: EngineNode, wasY: number) => (toSlot(cell.id, o, wasY) ? pair.outputX : Math.max(o.x, pair.outputX));
+  // - `oy` = the output's y, the cell's row unless the output goes under the output above it (§3.5)
+  const place = (cell: EngineNode, y: number, oy = y) => {
     const wasY = cell.y;
     if (x !== cell.x || y !== cell.y) { if (out) out[cell.id] = { x, y }; cell.x = x; cell.y = y; }
     const o = map.get(cell.outputNodeId ?? '');
-    const ox = o ? (toSlot(cell.id, o, wasY) ? pair.outputX : Math.max(o.x, pair.outputX)) : 0;
-    if (o && (o.x !== ox || o.y !== y)) { if (out) out[o.id] = { x: ox, y }; o.x = ox; o.y = y; }
+    const ox = o ? outX(cell, o, wasY) : 0;
+    if (o && (o.x !== ox || o.y !== oy)) { if (out) out[o.id] = { x: ox, y: oy }; o.x = ox; o.y = oy; }
   };
   const members = pair.column.cellIds.map(id => map.get(id)!);
   const own = new Set(pair.column.cellIds);
@@ -469,11 +473,23 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
       .map((cell, order) => ({ cell, order, at: under.has(cell.id) ? undefined : rowOf(cell) }))
       .filter((a): a is { cell: EngineNode; order: number; at: number } => a.at !== undefined)
       .sort((a, b) => a.at - b.at || a.order - b.order);
+    const anchoredIds = new Set(anchored.map(a => a.cell.id));
+    // - in a regular call the output of a held cell goes one gap under the outputs of the members above
+    //   the cell that it would sit on, and the cell keeps its row (§3.5): the pair above never goes down
+    //   for it. Those members are read where they are now; the next round reads them again.
+    const outputRow = (cell: EngineNode, y: number): number => {
+      const o = map.get(cell.outputNodeId ?? '');
+      if (!o || sets.reflow) return y;
+      const over = members.filter(m => !anchoredIds.has(m.id) && above(m, cell) && m.y < y)
+        .map(m => map.get(m.outputNodeId ?? '')).filter((n): n is EngineNode => n !== undefined).sort(byRow);
+      return rowStart(y, outX(cell, o, cell.y), o, over, noBump);
+    };
     let prevRider: number | null = null;
     for (const a of anchored) {
       const source = map.get(riders.get(a.cell.id)!)!;
       const inWay = (blocking.includes(source) ? blocking : [...blocking, source].sort(byRow)).filter(blocks(a.cell));
-      place(a.cell, belowHeld(a.cell, rowStart(prevRider === null ? a.at : Math.max(a.at, prevRider + GRID), x, a.cell, inWay, noBump), inWay));
+      const y = belowHeld(a.cell, rowStart(prevRider === null ? a.at : Math.max(a.at, prevRider + GRID), x, a.cell, inWay, noBump), inWay);
+      place(a.cell, y, outputRow(a.cell, y));
       placed.add(a.cell.id);
       prevRider = rowBottom(a.cell, map);
     }
@@ -531,10 +547,12 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
       //   all of them, in a regular call the held rows of this column, since no bump parts two nodes of
       //   a packed column
       const out = map.get(cell.outputNodeId ?? '');
-      const outRows = sets.reflow ? list : fixed.filter(keep);
+      // - not the output of a held cell below this member: that output goes under this one's instead
+      const theirs = new Set(anchored.filter(a => above(cell, a.cell)).map(a => a.cell.outputNodeId ?? ''));
+      const outRows = sets.reflow ? list : fixed.filter(keep).filter(n => !theirs.has(n.id));
       boxY.set(cell.id, y);
       if (out && outRows.length > 0) {
-        const ox = toSlot(cell.id, out, cell.y) ? pair.outputX : Math.max(out.x, pair.outputX);
+        const ox = outX(cell, out, cell.y);
         for (let guard = 0; guard < 16; guard++) {
           const oy = rowStart(y, ox, out, outRows, noBump);
           const my = rowStart(oy, x, cell, list, noBump);
