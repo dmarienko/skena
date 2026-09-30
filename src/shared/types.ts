@@ -312,6 +312,8 @@ export interface MsgVaultIndex {
 export interface MsgFileChanged {
   type: 'fileChanged';
   uri: string;
+  /** - the file's absolute path, for a node that stores the file by its full path */
+  fsPath?: string;
 }
 
 export interface MsgCanvasChanged {

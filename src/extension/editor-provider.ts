@@ -719,7 +719,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
 
     // - watch vault file changes (chokidar, already running)
     const unsubscribe = this.watcher.onFileChanged(fsPath => {
-      send({ type: 'fileChanged', uri: toCanvasUri(fsPath) });
+      send({ type: 'fileChanged', uri: toCanvasUri(fsPath), fsPath });
     });
 
     // - onDidSaveTextDocument fires whenever any file is saved in the VS Code editor
@@ -727,13 +727,13 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const saveDisposable = vscode.workspace.onDidSaveTextDocument(doc => {
       const uri = toCanvasUri(doc.uri.fsPath);
       console.log(`[Skena] file saved: ${doc.uri.fsPath} → canvas URI: ${uri}`);
-      send({ type: 'fileChanged', uri });
+      send({ type: 'fileChanged', uri, fsPath: doc.uri.fsPath });
     });
 
     // - file system watcher covers external changes (git pull, Obsidian, other editors)
     const workspaceWatcher = vscode.workspace.createFileSystemWatcher('**/*.{md,ipynb,py,yaml,yml}');
     workspaceWatcher.onDidChange(uri => {
-      send({ type: 'fileChanged', uri: toCanvasUri(uri.fsPath) });
+      send({ type: 'fileChanged', uri: toCanvasUri(uri.fsPath), fsPath: uri.fsPath });
     });
 
     // - track the most-recently-focused canvas panel for the skena.addNode command

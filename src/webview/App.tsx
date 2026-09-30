@@ -159,6 +159,8 @@ export function App(): JSX.Element {
         case 'fileChanged':
           dispatch({ type: 'FILE_CHANGED', uri: msg.uri });
           window.dispatchEvent(new CustomEvent('skena:fileInvalidated', { detail: msg.uri }));
+          // - a node may store the file by its full path (the MCP accepts one), which the relative uri never matches
+          if (msg.fsPath && msg.fsPath !== msg.uri) window.dispatchEvent(new CustomEvent('skena:fileInvalidated', { detail: msg.fsPath }));
           break;
         case 'searchResults':
           window.dispatchEvent(new CustomEvent('skena:searchResults', { detail: msg }));
