@@ -1749,6 +1749,17 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     rfRef.current.setViewport({ x: cMin.x, y: cMin.y, zoom }, { duration: CAMERA_MS });
   }, [clampCam]); // - nodesRef / rfRef / wrapperRef are always current
 
+  /** Pan, keeping the zoom, by the smallest move that shows the whole box (flow coordinates). */
+  const revealBox = useCallback((b: { x1: number; y1: number; x2: number; y2: number }) => {
+    if (!wrapperRef.current) return;
+    const area = paneArea(wrapperRef.current);
+    const { x: vx, y: vy, zoom } = rfRef.current.getViewport();
+    const p = revealPan(b, null, area, { x: vx, y: vy, zoom });
+    if (!p) return;
+    const c = clampCam(p.x, p.y, zoom);
+    rfRef.current.setViewport({ x: c.x, y: c.y, zoom }, { duration: CAMERA_MS });
+  }, [clampCam]);
+
   /**
    * Stores the node focus is leaving in the `` ` `` register, so `` ` ` `` goes back to it.
    * Called by every focus change; re-focusing the same node is not one.
@@ -2920,6 +2931,12 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
           scheduleSave();
           // - same as a mouse drop: the step may land on another node, and the engine clears it
           runEngineAfterMove(new Set(at.keys()), from);
+          // - keep the moved nodes on screen, where the engine left them
+          const placed = canvasRef.current.nodes.filter(cn => at.has(cn.id));
+          if (placed.length) revealBox({
+            x1: Math.min(...placed.map(cn => cn.x)), y1: Math.min(...placed.map(cn => cn.y)),
+            x2: Math.max(...placed.map(cn => cn.x + cn.width)), y2: Math.max(...placed.map(cn => cn.y + cn.height)),
+          });
           return;
         }
 
@@ -3282,7 +3299,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       window.removeEventListener('keydown', handler);
       window.removeEventListener('keydown', panCapture, { capture: true });
     };
-  }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, closeKnowledge, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToRegister, engineNodesOf, runEngineAfterMove, anchoredBy, runEngineForCells, withKeepRow, canvasPath, closeG]); // - nodesRef + spaceSelectedRef carry live state
+  }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, closeKnowledge, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToRegister, engineNodesOf, runEngineAfterMove, anchoredBy, runEngineForCells, withKeepRow, canvasPath, closeG, revealBox]); // - nodesRef + spaceSelectedRef carry live state
 
   // - expose a viewport snapshot for the AI companion (what the user actually sees:
   // - zoom, on-screen node labels, scroll position within the focused node)
