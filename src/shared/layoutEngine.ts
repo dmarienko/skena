@@ -1017,12 +1017,14 @@ export function directionSlot(
 }
 
 /**
- * Where a fork of `cellId` starts, always on the cell's row (its snapped y); null when refused.
+ * Where a fork of `cellId` starts; a row is the cell's snapped y. Null when refused.
  * Right: the first column, left to right, that starts at or past the output column of the cell's pair
- * (`Pair.outputX`) and holds at least one code cell. With no such column, a new pair one gap right of
- * the cell's pair (`Pair.right`). A slot another node already holds is left to the engine's pack, as
- * for any placed node.
- * Left: a new pair left of the cell's column, refused when it would start before x 0.
+ * (`Pair.outputX`) and holds at least one code cell. When a new code cell (`w` × NODE_SIZE.code.h) on
+ * the cell's row there would overlap the cell's own output, the slot is one gap under that output
+ * instead, rounded up to the grid. With no such column, a new pair one gap right of the cell's pair
+ * (`Pair.right`), on the cell's row. A slot another node already holds is left to the engine's pack,
+ * as for any placed node.
+ * Left: a new pair left of the cell's column, on the cell's row, refused when it would start before x 0.
  */
 export function forkOf(nodes: EngineNode[], cellId: string, side: 'right' | 'left', w: number = NODE_SIZE.code.w): { x: number; y: number } | null {
   const cell = nodes.find(n => n.id === cellId);
@@ -1035,7 +1037,12 @@ export function forkOf(nodes: EngineNode[], cellId: string, side: 'right' | 'lef
     //   sit on the cell itself
     const map = byId(nodes);
     const next = pairs.find(p => p.column.x >= pair.outputX && p.column.cellIds.some(id => map.get(id)?.type === 'code'));
-    return { x: next ? next.column.x : gridUp(pair.right + GRID), y: snapGrid(cell.y) };
+    if (!next) return { x: gridUp(pair.right + GRID), y: snapGrid(cell.y) };
+    // - that column can be the cell's own output column: the fork goes under the output rather than
+    //   onto it, which would push the cell and its whole column down
+    const out = map.get(cell.outputNodeId ?? '');
+    const slot = { x: next.column.x, y: snapGrid(cell.y), w, h: NODE_SIZE.code.h };
+    return out && overlaps(slot, out) ? { x: slot.x, y: gridUp(out.y + out.h + GRID) } : { x: slot.x, y: slot.y };
   }
   // - down, not up: the left fork keeps its full gap from the column it forks off
   const x = Math.floor((pair.column.x - GRID - (w + GRID + OUTPUT_MIN_W)) / GRID) * GRID;

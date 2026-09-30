@@ -2379,3 +2379,34 @@ test('a right fork whose slot an earlier fork holds packs under it, and nothing 
   // - without F1 no column right of E1 holds a code cell: the new pair starts past C2, 800 + 600 + 100
   assert.deepEqual(forkOf(nodes.filter(n => n.id !== 'F1'), 'E1', 'right'), { x: 1500, y: 0 });
 });
+
+// 145
+test('H-test: Alt+X l on E3 goes one gap under its own output C1, and E3 and C1 stay', () => {
+  // - column 2500 is both E4's column and the output column of column 1700: on E3's row the fork would
+  //   sit on C1, and the engine would move E3 and the column under it 200 down. Under C1: 800 + 300 + 100.
+  const data = fixture('H-test');
+  const nodes = sectionEngineNodes(data.nodes, data.metadata.sections, 'E3');
+  assert.deepEqual(forkOf(nodes, 'E3', 'right'), { x: 2500, y: 1200 });
+  const fresh = [...nodes, { id: 'E9', type: 'code', x: 2500, y: 1200, w: 700, h: 100 }];
+  const edge = { id: 'E3-E9', fromNode: 'E3', fromSide: 'right', toNode: 'E9', toSide: 'left' };
+  const edges = [...data.edges, { ...edge, keepRow: withKeepRow.keepRowOf(fresh, data.edges, edge) }];
+  const opts = ns => ({ moverIds: ['E9'], riders: ridersOf(ns, edges), hanging: hangingBelow(ns, edges) });
+  const patches = layoutSection(fresh, opts(fresh));
+  for (const id of ['E9', 'E3', 'C1']) assert.equal(patches[id], undefined, `${id} moved`);
+  const after = apply(fresh, patches);
+  assert.equal(overlapCount(after), 0);
+  assert.deepEqual(layoutSection(after, opts(after)), {});
+  // - E4's output C4 sits in column 3300, where E5 is: E4's fork goes under C4, 200 + 700 + 100
+  assert.deepEqual(forkOf(nodes, 'E4', 'right'), { x: 3300, y: 1000 });
+});
+
+// 146
+test('a right fork into the cell\'s own output column goes one gap under the output, on the grid', () => {
+  // - F1 makes column 800 a code column; it is also E2's output column. C2 is 250 tall: 400 + 250 + 100
+  //   = 750, up to 800.
+  const nodes = [code('E1', 0, 0, 100), code('E2', 0, 400, 100, 'C2'), cell('C2', 800, 400, 600, 250), code('F1', 800, 0, 100)];
+  assert.deepEqual(forkOf(nodes, 'E2', 'right'), { x: 800, y: 800 });
+  // - an output parked clear of the cell's row leaves the slot on that row
+  const parked = nodes.map(n => (n.id === 'C2' ? { ...n, y: 1000 } : n));
+  assert.deepEqual(forkOf(parked, 'E2', 'right'), { x: 800, y: 400 });
+});
