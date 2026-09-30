@@ -453,10 +453,15 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
     if (y > start) for (const n of keep) if (n.y < y && n.x < ox + o.w + GRID && ox < n.x + n.w + GRID) sets.wentUnder?.add(n.id);
     return y;
   };
+  // - above = higher before the call, or level with it and dropped by the user. A node the operation put
+  //   at the held node's own y (a new node, a paste) goes under it.
+  const startY = (n: EngineNode) => sets.startY?.get(n.id) ?? n.y;
+  const above = (m: EngineNode, r: EngineNode) => startY(m) < startY(r) || (startY(m) === startY(r) && sets.dropped?.has(m.id) === true);
   // - a held node does not let a plain member above it in the column pass it (§3.5): it takes the first
   //   row under that member instead, and its own row once nothing above reaches that row. `under` = those
-  //   held nodes; a pack that sends such a member past one is run again with it in `under`. Reflow does
-  //   not apply it: there every held node takes its row.
+  //   held nodes; a pack that sends such a member past one is run again with it in `under`. Nor does a
+  //   plain member below a held node pass it upward: it packs no higher than one gap under that node's
+  //   row. Reflow applies neither: there every held node takes its row.
   const packOnce = (under: Set<string>) => {
     const anchored = members
       .map((cell, order) => ({ cell, order, at: under.has(cell.id) ? undefined : rowOf(cell) }))
@@ -472,8 +477,10 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
     }
     // - in y order, and nothing else this pack moves is in the list, so one ordering serves every
     //   member. The riders join it, with their outputs: fixed rows the rest of the column packs around.
+    //   In a regular call a rider reaches down to the bottom of its row, as a stacked member's row does,
+    //   so no member packs in beside the rider's output.
     const taken = new Set(anchored.map(a => a.cell.id));
-    const fixed = anchored.flatMap(a => [a.cell, map.get(a.cell.outputNodeId ?? '')].filter((n): n is EngineNode => n !== undefined));
+    const fixed = anchored.flatMap(a => [sets.reflow ? a.cell : { ...a.cell, h: rowBottom(a.cell, map) - a.cell.y }, map.get(a.cell.outputNodeId ?? '')].filter((n): n is EngineNode => n !== undefined));
     const obstacles = [...around, ...fixed].sort(byRow);
     const otherRiders = around.filter(n => riders.has(n.id) && held.has(n.id));
     const others = new Set(otherRiders.map(n => n.id));
@@ -512,16 +519,25 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
       //   each round, so it comes back up once what it cleared has moved on
       // - on Reflow the head clears obstacles like a stacked member: no bump runs after this pack
       const list = (prevBottom === null && !sets.reflow ? headRows : obstacles).filter(keep);
+      // - the member stays under every held node it sat under, even one that is a mover or whose source
+      //   moved: it goes down with that node as with a plain member over it
+      const floor = sets.reflow ? -Infinity : Math.max(...anchored.filter(a => !above(cell, a.cell)).map(a => rowBottom(a.cell, map) + GRID));
       let y = prevBottom === null
-        ? rowStart(snapGrid(sets.headY?.get(cell.id) ?? cell.y), x, cell, list, noBump)
-        : rowStart(prevBottom + GRID, x, cell, list, noBump);
-      // - and on Reflow a member's output clears them too, on its slot at the member's row
+        ? rowStart(Math.max(snapGrid(sets.headY?.get(cell.id) ?? cell.y), floor), x, cell, list, noBump)
+        : rowStart(Math.max(prevBottom + GRID, floor), x, cell, list, noBump);
+      // - a member's output clears them too, at the member's row and the x `place` gives it: on Reflow
+      //   all of them, in a regular call the held rows of this column, since no bump parts two nodes of
+      //   a packed column
       const out = map.get(cell.outputNodeId ?? '');
-      if (sets.reflow && out) for (let guard = 0; guard < 16; guard++) {
-        const oy = rowStart(y, pair.outputX, out, list, noBump);
-        const my = rowStart(oy, x, cell, list, noBump);
-        if (my === y) break;
-        y = my;
+      const outRows = sets.reflow ? list : fixed.filter(keep);
+      if (out && outRows.length > 0) {
+        const ox = toSlot(cell.id, out, cell.y) ? pair.outputX : Math.max(out.x, pair.outputX);
+        for (let guard = 0; guard < 16; guard++) {
+          const oy = rowStart(y, ox, out, outRows, noBump);
+          const my = rowStart(oy, x, cell, list, noBump);
+          if (my === y) break;
+          y = my;
+        }
       }
       place(cell, belowHeld(cell, y, list));
       prevBottom = rowBottom(cell, map);
@@ -530,10 +546,6 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
   // - except a held node that is a mover, or whose source moved in this call: it takes its row, and the
   //   member above goes under it
   const sourceMoved = (r: EngineNode) => { const s = riders.get(r.id)!; return sets.movers?.has(s) === true || map.get(s)!.y !== sets.startY?.get(s); };
-  // - above = higher before the call, or level with it and dropped by the user. A node the operation put
-  //   at the held node's own y (a new node, a paste) goes under it.
-  const startY = (n: EngineNode) => sets.startY?.get(n.id) ?? n.y;
-  const above = (m: EngineNode, r: EngineNode) => startY(m) < startY(r) || (startY(m) === startY(r) && sets.dropped?.has(m.id) === true);
   const under = new Set<string>();
   const saved = [...members, ...members.map(m => map.get(m.outputNodeId ?? '')).filter((n): n is EngineNode => n !== undefined)];
   for (let guard = 0; ; guard++) {

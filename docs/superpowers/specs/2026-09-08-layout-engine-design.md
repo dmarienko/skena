@@ -349,7 +349,8 @@ cells. The exceptions:
   the target's too.
 
 In its own column the members below the anchored node pack around that row (§3.4 treats it as an
-obstacle of its own column). A plain member above the anchored node keeps its place: the anchored node
+obstacle of its own column), and do not pass it upward (see "A member under a held node does not pass
+it either" at the end of this section). A plain member above the anchored node keeps its place: the anchored node
 goes one gap under it, and takes its row once nothing above reaches that row (see "A held node does
 not pass a member above it" at the end of this section). When the source moves, the anchored node moves with it and its column is
 re-packed. Two nodes anchored to one row in one column stack in their current order: the one that
@@ -1027,6 +1028,83 @@ Open (2026-09-29):
 - Reflow puts a held node back on its row under a member the user placed above it (H-test: M1 to 400,
   M2 to 800);
 - a held node whose source moves takes its row past a member the user placed above it.
+
+**A member under a held node does not pass it either (asked for by the user 2026-09-30 on the
+factors canvas).** On `research/review/factors-essentials.canvas`, S1, E2 (2400, 800) 700×350 is held
+to N2's row, 800, and sits 300 under E1 (2400, 100) 700×400. The user added a code cell under E2 (vim
+`o` in E2, or Alt+X j → Code node). `insertAfter` gave (2400, 1250), and the first call moved the new
+cell to (2400, 600), into the gap between E1 and E2, over E2. The user expected it to stay under E2.
+
+The rule, in a regular call: a plain member of a held node's column that sits under the held node
+before the call stays under it. It packs up to one gap under the held node's row and no higher. Under
+means lower before the call, or on the same y and not dropped there by the user (a new node, a paste),
+the other side of "above" in the rule before. The rule also holds when the held node is a mover and
+when its source moved: the member then goes down with the held node, as it goes down with a plain
+member over it. Reflow does not apply it.
+
+A held node's row, in a regular call, ends at the bottom of the taller of the node and its output, as
+the row of any member stacked in the column does. A plain member that packs under a held node goes one
+gap under its output when the output is taller, and no longer packs in beside that output. Two
+narrower forms were measured and dropped:
+- the rule on the bottom of the whole row, while members still packed around the held node itself
+  (measured without the output change below): in the tidy trials (NMAX 10, EMAX 7) 20 calls got worse,
+  all not idempotent. In the three traced (seeds 350, 400 and 1488), the first call packed a member one
+  gap under the held node, beside its taller output, and the second moved it under the output;
+- the rule and the packing both on the held node itself: none of those (the one call below only), but
+  a code cell inserted under
+  a held code cell 350 tall with an output 700 tall moved from `insertAfter`'s (2400, 1600) up to
+  (2400, 1250), beside the output; and test 150 settled only once the pack rounds stopped taking the
+  column heads back to their start (8 rounds), S at 1200, after E went under R and back each round.
+
+**A member's output and a held row.** In a regular call a plain member's output also clears the held
+rows of its own column (a held node's row, and its output), on the member's row. Before, only the member
+itself did, so its output could end on a held node's output, both in a packed column, where no bump
+parts them. Measured on the same canvas after the call above had put the new cell, E3 (2400, 600)
+700×100, over E2, with its output C1 (3200, 600) 1000×700 reaching 1300. E2 ran for the first time:
+`placeOutput` gave C2 (3200, 800), and the call left C2 inside C1; a second call moved nothing. Now C1
+would sit on C2, so E3 goes under E2; E3 was above E2 before the call, so E2 does not pass it ("A held
+node does not pass a member above it"): E2 and C2 go one gap under E3's row, to (2400, 1400) and
+(3200, 1400), 600 + 700 + 100. E3 and C1 stay (test 149). A held node that is a mover, or whose source
+moved, keeps its row, and the member goes under it.
+
+Tests changed: test 110 had S, a plain member, under E, a code cell held to T's row. E's new output O
+(700 tall) landed on R, held to S; E went under R, to 800, past S, which stayed at 400. Now S stays
+under E: it goes to 800, under O, R follows it, and E keeps T's row (test 150). Test 110 now has S over
+E, and still checks that a held code cell goes under the held node its new output lands on: E and O
+go to 600.
+
+Measured against dca614d, as in the table of "A held node does not pass a member above it". A call
+that moves a node the pack would not have moved before counts in "Differ".
+
+| Calls | Count | Bad at dca614d | Bad now | Worse | Better | Differ |
+|---|---|---|---|---|---|---|
+| H1 to H6, every node as the only mover | 170 | 0 | 0 | 0 | 0 | 0 |
+| The same, each call a drop in place | 170 | 0 | 0 | 0 | 0 | 0 |
+| The reviewer's section generator, seeds 1 to 3000 | 7703 | 66 | 66 | 0 | 0 | 16 |
+| The same, each call a drop in place | 7703 | 65 | 65 | 0 | 0 | 16 |
+| Tidy trials, NMAX 6, EMAX 4 (drags passed as drops) | 18589 | 59 | 49 | 0 | 10 | 287 |
+| Tidy trials, NMAX 10, EMAX 7 (drags passed as drops) | 36528 | 158 | 94 | 1 | 65 | 871 |
+| One code cell whose output is the only mover, at its slot | 34834 | 4 | 2 | 0 | 2 | 1 |
+| The same, the output dragged | 34834 | 3 | 3 | 0 | 0 | 0 |
+
+The call that got worse (tidy trials NMAX 10, EMAX 7, seed 2299, E3 and E2 dragged 200 right and 200
+down) is not idempotent. In the first call a bump moves N5, 800 wide, from x 1500 to 1700, into E2's
+column; the second call packs E2 under N5, from 1300 to 1100, and N1, held to E2, follows it to 1700,
+and E4, under N1, to 1900. At dca614d the first call put E4 over N1 and E2 at 1700, and a second call
+moved nothing. Reflow on the section generator's 3000 sections, every edge holding, and on the fixture
+sections (H1 to H6 and H-test, 3009 sections in all) gives the same result before and after.
+
+Open (2026-09-30):
+- Reflow still lets a member under a held node pass it: on the factors canvas right after the insert,
+  Reflow puts the new cell at (2200, 600), over E2 (the column moves to 2200), before and after;
+- for E2's first run above, the other result follows the older rule that a held node takes its row and
+  the member above goes under it: E2 and C2 stay at 800, E3 and C1 go to 1250 (800 + 350 + 100). Reflow
+  gives that one here (E3 (2200, 1250), C1 (3000, 1250), C2 (3000, 800)). The engine follows "A held
+  node does not pass a member above it"; the user has not chosen between the two;
+- when a held node's source moves far down, the members that were under the held node now go down with
+  it rather than stay where they are. Seen in the tidy trials, NMAX 10, EMAX 7, seed 297 (E6 and E5
+  dragged 200 left and 400 up): E7, held to E6, goes from 0 to 3100, and E2 and N8, under E7, go to 3700
+  and 4300; at dca614d they stayed at 600 and 1200.
 
 ## 4. Reflow, MCP, undo, phases
 

@@ -1854,10 +1854,10 @@ test('a held node that comes back to its row in this call keeps it against a new
 
 // 110
 test('a code cell held to another row still goes under the held node its new output lands on', () => {
-  // - E is held to T's row, 0; its new output O, 700 tall, lands on R, held to S at 400. E leaves T's
-  //   row and goes under R with O, 400 + 300 + 100.
-  const nodes = [note('T', 0, 0, 700, 300), code('E', 800, 0, 300, 'O'), note('S', 800, 400, 700, 300), cell('O', 1600, 0, 600, 700), note('R', 1600, 400, 600, 300)];
-  settles(nodes, [edgeTo('T', 'E'), edgeTo('S', 'R')], ['O'], { E: { x: 800, y: 800 }, O: { x: 1600, y: 800 } });
+  // - E is held to T's row, 400; its new output O lands on R (500 tall), held to S at 0, which sits above
+  //   E in its column. E leaves T's row and goes under R with O, 0 + 500 + 100. Test 150 has S under E.
+  const nodes = [note('S', 800, 0, 700, 300), note('T', 0, 400, 700, 300), code('E', 800, 400, 300, 'O'), cell('O', 1600, 400), note('R', 1600, 0, 600, 500)];
+  settles(nodes, [edgeTo('T', 'E'), edgeTo('S', 'R')], ['O'], { E: { x: 800, y: 600 }, O: { x: 1600, y: 600 } });
 });
 
 // 111
@@ -2409,4 +2409,55 @@ test('a right fork into the cell\'s own output column goes one gap under the out
   // - an output parked clear of the cell's row leaves the slot on that row
   const parked = nodes.map(n => (n.id === 'C2' ? { ...n, y: 1000 } : n));
   assert.deepEqual(forkOf(parked, 'E2', 'right'), { x: 800, y: 400 });
+});
+
+// 147
+// - research/review/factors-essentials.canvas S1 on 2026-09-30, the nodes around E2, geometry only: E2 is
+//   held to N2's row, 800, and sits 300 under E1
+const factors = () => [note('N1', 800, 100, 600, 600), note('N2', 800, 800, 600, 300), code('E1', 2400, 100, 400), code('E2', 2400, 800, 350)];
+const factorsEdges = () => [edgeDown('N1', 'N2'), edgeTo('N2', 'E2'), edgeDown('E1', 'E2')];
+test('factors: a cell inserted under a held node stays under it, not in the gap over it', () => {
+  const nodes = factors();
+  const edges = factorsEdges();
+  assert.deepEqual([...ridersOf(nodes, edges)], [['E2', 'N2']]);
+  // - vim o in E2: one gap under E2, 800 + 350 + 100. The new cell E3 fits the gap between E1 and E2, but
+  //   it sits under E2 and does not pass it (§3.5).
+  assert.deepEqual(insertAfter(nodes, 'E2'), { x: 2400, y: 1250 });
+  const all = [...edges, edgeDown('E2', 'E3')];
+  const opts = ns => ({ moverIds: ['E3'], riders: ridersOf(ns, all), hanging: hangingBelow(ns, all) });
+  const fresh = [...nodes, code('E3', 2400, 1250, 100)];
+  assert.deepEqual(layoutSection(fresh, opts(fresh)), {});
+  // - E2 with an output taller than it: the new cell goes under the output, 800 + 700 + 100, and stays there
+  const tall = [...nodes.map(n => (n.id === 'E2' ? { ...n, outputNodeId: 'C2' } : n)), cell('C2', 3200, 800, 600, 700)];
+  assert.deepEqual(insertAfter(tall, 'E2'), { x: 2400, y: 1600 });
+  const freshTall = [...tall, code('E3', 2400, 1600, 100)];
+  assert.deepEqual(layoutSection(freshTall, opts(freshTall)), {});
+});
+
+// 148
+test('a member over a held node still packs up into the gap over it, and a member under it packs up to one gap under it', () => {
+  // - E1 shrinks to 200: X, over E2, packs up to 300 + 100. E3, far under E2, packs up to 800 + 350 + 100.
+  //   E2 keeps N2's row.
+  const nodes = [...factors().map(n => (n.id === 'E1' ? { ...n, h: 200 } : n)), note('X', 2400, 600, 700, 100), code('E3', 2400, 1600, 100)];
+  settles(nodes, factorsEdges(), ['E1'], { X: { x: 2400, y: 400 }, E3: { x: 2400, y: 1250 } });
+});
+
+// 149
+test('factors: a held cell whose new output would sit on the output of the cell over it goes one gap under that output', () => {
+  // - E3 (100 tall) sits over E2, and its output C1 reaches 600 + 700 = 1300, past E2's row. E2 runs for
+  //   the first time: its output C2 gets the slot on E2's row, (3200, 800), inside C1. E2 does not pass E3
+  //   (§3.5): E2 and C2 go one gap under E3's row, 1300 + 100. E3 and C1 stay.
+  const before = [...factors(), code('E3', 2400, 600, 100, 'C1'), cell('C1', 3200, 600, 1000, 700)];
+  assert.deepEqual(placeOutput(before, 'E2'), { x: 3200, y: 800, width: 600, height: 300 });
+  const nodes = [...before.map(n => (n.id === 'E2' ? { ...n, outputNodeId: 'C2' } : n)), cell('C2', 3200, 800)];
+  settles(nodes, [...factorsEdges(), edgeDown('E2', 'E3')], ['C2'], { E2: { x: 2400, y: 1400 }, C2: { x: 3200, y: 1400 } });
+});
+
+// 150
+test('a node under a held code cell stays under it when the cell gets a tall output, and a node held to it follows', () => {
+  // - E is held to T's row, 0; its new output O is 700 tall. S sits under E in column 800 and stays under
+  //   it (§3.5): E's row now ends at O's bottom, so S goes to 0 + 700 + 100, and R, held to S, follows.
+  //   O does not reach R there, so E keeps T's row.
+  const nodes = [note('T', 0, 0, 700, 300), code('E', 800, 0, 300, 'O'), note('S', 800, 400, 700, 300), cell('O', 1600, 0, 600, 700), note('R', 1600, 400, 600, 300)];
+  settles(nodes, [edgeTo('T', 'E'), edgeTo('S', 'R')], ['O'], { S: { x: 800, y: 800 }, R: { x: 1600, y: 800 } });
 });
