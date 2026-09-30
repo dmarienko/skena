@@ -28,7 +28,7 @@ export function addChatNote(
   const h = noteHeight(estimateNoteNeedPx(content));
   const anchor = activeNodeId ? canvas.nodes.find(n => n.id === activeNodeId) : undefined;
 
-  // - as `l` does: off a code cell a new column right of its pair, off anything else the column slot
+  // - as `l` does: off a code cell the slot `forkOf` gives, off anything else the column slot
   //   one gap right of it, on its row. The pack below sorts the note into whatever that column holds.
   let at: { x: number; y: number } | null = null;
   if (anchor) {

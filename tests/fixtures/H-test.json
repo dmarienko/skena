@@ -1,0 +1,411 @@
+{
+ "nodes": [
+  {
+   "id": "N1",
+   "type": "text",
+   "x": 100,
+   "y": 0,
+   "width": 700,
+   "height": 300
+  },
+  {
+   "id": "N2",
+   "type": "text",
+   "x": 100,
+   "y": 400,
+   "width": 700,
+   "height": 300
+  },
+  {
+   "id": "N3",
+   "type": "text",
+   "x": 100,
+   "y": 800,
+   "width": 700,
+   "height": 300
+  },
+  {
+   "id": "M1",
+   "type": "markdown",
+   "x": 900,
+   "y": 1000,
+   "width": 700,
+   "height": 700
+  },
+  {
+   "id": "M2",
+   "type": "markdown",
+   "x": 900,
+   "y": 0,
+   "width": 700,
+   "height": 900
+  },
+  {
+   "id": "E1",
+   "type": "code",
+   "x": 1700,
+   "y": 0,
+   "width": 700,
+   "height": 100
+  },
+  {
+   "id": "E2",
+   "type": "code",
+   "x": 1700,
+   "y": 200,
+   "width": 700,
+   "height": 100
+  },
+  {
+   "id": "E3",
+   "type": "code",
+   "x": 1700,
+   "y": 800,
+   "width": 700,
+   "height": 150,
+   "outputNodeId": "C1"
+  },
+  {
+   "id": "W1",
+   "type": "knowledge",
+   "x": 3300,
+   "y": 1200,
+   "width": 700,
+   "height": 800
+  },
+  {
+   "id": "W2",
+   "type": "knowledge",
+   "x": 4100,
+   "y": 1800,
+   "width": 700,
+   "height": 900
+  },
+  {
+   "id": "W3",
+   "type": "knowledge",
+   "x": 4100,
+   "y": 1200,
+   "width": 700,
+   "height": 500
+  },
+  {
+   "id": "E4",
+   "type": "code",
+   "x": 2500,
+   "y": 200,
+   "width": 700,
+   "height": 150,
+   "outputNodeId": "C4"
+  },
+  {
+   "id": "C4",
+   "type": "cell",
+   "x": 3300,
+   "y": 200,
+   "width": 900,
+   "height": 700
+  },
+  {
+   "id": "W4",
+   "type": "knowledge",
+   "x": 1700,
+   "y": 400,
+   "width": 700,
+   "height": 300
+  },
+  {
+   "id": "E5",
+   "type": "code",
+   "x": 3300,
+   "y": 1000,
+   "width": 700,
+   "height": 100
+  },
+  {
+   "id": "E6",
+   "type": "code",
+   "x": 1700,
+   "y": 1200,
+   "width": 700,
+   "height": 300,
+   "outputNodeId": "C2"
+  },
+  {
+   "id": "C1",
+   "type": "cell",
+   "x": 2500,
+   "y": 800,
+   "width": 600,
+   "height": 300
+  },
+  {
+   "id": "E7",
+   "type": "code",
+   "x": 1700,
+   "y": 1600,
+   "width": 700,
+   "height": 100,
+   "outputNodeId": "C3"
+  },
+  {
+   "id": "C3",
+   "type": "cell",
+   "x": 2500,
+   "y": 1600,
+   "width": 600,
+   "height": 300
+  },
+  {
+   "id": "C2",
+   "type": "cell",
+   "x": 2500,
+   "y": 1200,
+   "width": 600,
+   "height": 300
+  },
+  {
+   "id": "C5",
+   "type": "cell",
+   "x": 1700,
+   "y": 2000,
+   "width": 480,
+   "height": 320
+  },
+  {
+   "id": "C6",
+   "type": "cell",
+   "x": 2300,
+   "y": 2100,
+   "width": 480,
+   "height": 320
+  },
+  {
+   "id": "E8",
+   "type": "code",
+   "x": 1700,
+   "y": 2520,
+   "width": 700,
+   "height": 500
+  },
+  {
+   "id": "W5",
+   "type": "knowledge",
+   "x": 4100,
+   "y": 2800,
+   "width": 700,
+   "height": 300
+  },
+  {
+   "id": "C7",
+   "type": "cell",
+   "x": 2500,
+   "y": 2520,
+   "width": 480,
+   "height": 320
+  }
+ ],
+ "edges": [
+  {
+   "id": "N1-N2",
+   "fromNode": "N1",
+   "toNode": "N2",
+   "fromSide": "bottom",
+   "toSide": "top",
+   "keepRow": false
+  },
+  {
+   "id": "N1-M2",
+   "fromNode": "N1",
+   "toNode": "M2",
+   "fromSide": "right",
+   "toSide": "left",
+   "keepRow": true
+  },
+  {
+   "id": "N2-N3",
+   "fromNode": "N2",
+   "toNode": "N3",
+   "fromSide": "bottom",
+   "toSide": "top",
+   "keepRow": false
+  },
+  {
+   "id": "N2-M1",
+   "fromNode": "N2",
+   "toNode": "M1",
+   "fromSide": "right",
+   "toSide": "left",
+   "keepRow": true
+  },
+  {
+   "id": "N3-M1",
+   "fromNode": "N3",
+   "toNode": "M1",
+   "fromSide": "right",
+   "toSide": "left",
+   "keepRow": false
+  },
+  {
+   "id": "E1-E2",
+   "fromNode": "E1",
+   "toNode": "E2",
+   "fromSide": "bottom",
+   "toSide": "top",
+   "keepRow": false
+  },
+  {
+   "id": "E2-E3",
+   "fromNode": "E2",
+   "toNode": "E3",
+   "fromSide": "bottom",
+   "toSide": "top",
+   "keepRow": false
+  },
+  {
+   "id": "E2-E4",
+   "fromNode": "E2",
+   "toNode": "E4",
+   "fromSide": "right",
+   "toSide": "left",
+   "keepRow": true
+  },
+  {
+   "id": "E2-W4",
+   "fromNode": "E2",
+   "toNode": "W4",
+   "fromSide": "bottom",
+   "toSide": "top",
+   "keepRow": false
+  },
+  {
+   "id": "E3-E6",
+   "fromNode": "E3",
+   "toNode": "E6",
+   "fromSide": "bottom",
+   "toSide": "top",
+   "keepRow": false
+  },
+  {
+   "id": "E3-C1",
+   "fromNode": "E3",
+   "toNode": "C1",
+   "fromSide": "right",
+   "toSide": "left",
+   "keepRow": false
+  },
+  {
+   "id": "W1-W3",
+   "fromNode": "W1",
+   "toNode": "W3",
+   "fromSide": "right",
+   "toSide": "left",
+   "keepRow": true
+  },
+  {
+   "id": "W1-W2",
+   "fromNode": "W1",
+   "toNode": "W2",
+   "fromSide": "right",
+   "toSide": "left",
+   "keepRow": true
+  },
+  {
+   "id": "W2-W3",
+   "fromNode": "W2",
+   "toNode": "W3",
+   "fromSide": "top",
+   "toSide": "bottom",
+   "keepRow": false
+  },
+  {
+   "id": "W2-W5",
+   "fromNode": "W2",
+   "toNode": "W5",
+   "fromSide": "bottom",
+   "toSide": "top",
+   "keepRow": false
+  },
+  {
+   "id": "E4-C4",
+   "fromNode": "E4",
+   "toNode": "C4",
+   "fromSide": "right",
+   "toSide": "left",
+   "keepRow": false
+  },
+  {
+   "id": "E4-E5",
+   "fromNode": "E4",
+   "toNode": "E5",
+   "fromSide": "bottom",
+   "toSide": "top",
+   "keepRow": false
+  },
+  {
+   "id": "E6-E7",
+   "fromNode": "E6",
+   "toNode": "E7",
+   "fromSide": "bottom",
+   "toSide": "top",
+   "keepRow": false
+  },
+  {
+   "id": "E6-C2",
+   "fromNode": "E6",
+   "toNode": "C2",
+   "fromSide": "right",
+   "toSide": "left",
+   "keepRow": false
+  },
+  {
+   "id": "E7-C3",
+   "fromNode": "E7",
+   "toNode": "C3",
+   "fromSide": "right",
+   "toSide": "left",
+   "keepRow": false
+  },
+  {
+   "id": "E7-C5",
+   "fromNode": "E7",
+   "toNode": "C5",
+   "fromSide": "right",
+   "toSide": "left",
+   "keepRow": false
+  },
+  {
+   "id": "E7-E8",
+   "fromNode": "E7",
+   "toNode": "E8",
+   "fromSide": "bottom",
+   "toSide": "top",
+   "keepRow": false
+  },
+  {
+   "id": "C5-C6",
+   "fromNode": "C5",
+   "toNode": "C6",
+   "fromSide": "right",
+   "toSide": "left",
+   "keepRow": false
+  },
+  {
+   "id": "E8-C7",
+   "fromNode": "E8",
+   "toNode": "C7",
+   "fromSide": "right",
+   "toSide": "left",
+   "keepRow": true
+  }
+ ],
+ "metadata": {
+  "sections": [
+   {
+    "id": "S1",
+    "y": 0,
+    "createdAt": 0
+   }
+  ]
+ }
+}

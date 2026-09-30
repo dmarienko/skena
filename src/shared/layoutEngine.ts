@@ -1016,14 +1016,27 @@ export function directionSlot(
   return x < 0 || y < 0 ? null : { x, y };
 }
 
-/** Where a fork of `cellId` starts: a new pair right of its pair, or left of its column; null when refused. */
+/**
+ * Where a fork of `cellId` starts, always on the cell's row (its snapped y); null when refused.
+ * Right: the first column, left to right, that starts at or past the output column of the cell's pair
+ * (`Pair.outputX`) and holds at least one code cell. With no such column, a new pair one gap right of
+ * the cell's pair (`Pair.right`). A slot another node already holds is left to the engine's pack, as
+ * for any placed node.
+ * Left: a new pair left of the cell's column, refused when it would start before x 0.
+ */
 export function forkOf(nodes: EngineNode[], cellId: string, side: 'right' | 'left', w: number = NODE_SIZE.code.w): { x: number; y: number } | null {
   const cell = nodes.find(n => n.id === cellId);
   if (!cell || cell.type !== 'code') return null;
   const pairs = derivePairs(nodes, deriveColumns(nodes));
   const pair = pairs.find(p => p.column.cellIds.includes(cellId));
   if (!pair) return null;
-  if (side === 'right') return { x: gridUp(pair.right + GRID), y: snapGrid(cell.y) };
+  if (side === 'right') {
+    // - a column that starts before `outputX` reaches over the cell's own column: a fork there would
+    //   sit on the cell itself
+    const map = byId(nodes);
+    const next = pairs.find(p => p.column.x >= pair.outputX && p.column.cellIds.some(id => map.get(id)?.type === 'code'));
+    return { x: next ? next.column.x : gridUp(pair.right + GRID), y: snapGrid(cell.y) };
+  }
   // - down, not up: the left fork keeps its full gap from the column it forks off
   const x = Math.floor((pair.column.x - GRID - (w + GRID + OUTPUT_MIN_W)) / GRID) * GRID;
   return x < 0 ? null : { x, y: snapGrid(cell.y) };

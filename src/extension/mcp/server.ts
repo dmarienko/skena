@@ -685,9 +685,9 @@ async function canvasAddNode(args: Record<string, unknown>): Promise<string> {
   return withFileLock(p, async () => {
   const d    = await readCanvasOrEmpty(p);   // - create-on-first-add: empty canvas if the file is new
   // - `after` and `forkOf` both let the engine place the new node, so a supplied x/y is ignored (the
-  //   reply says so). `after` takes any node; `forkOf` names a code cell, since it opens a new pair
-  //   and only a code cell has an output column. Without an explicit `type`, a node made off a code
-  //   cell is a code cell and anything else gets a note.
+  //   reply says so). `after` takes any node; `forkOf` names a code cell, since its slot is read off
+  //   the cell's output column and only a code cell has one. Without an explicit `type`, a node made
+  //   off a code cell is a code cell and anything else gets a note.
   const anchorRef = (args.after as string | undefined) ?? (args.forkOf as string | undefined);
   const anchor    = anchorRef !== undefined ? findNode(d, anchorRef) : undefined;
   if (anchorRef !== undefined && !anchor) return `Node not found: ${anchorRef}`;
@@ -1718,7 +1718,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_add_node',
-    description: 'Add a new node to the canvas. The node is automatically marked as AI-created (🤖 badge) and assigned a label. Position defaults to the right of all existing nodes. `after` puts the new node under any node, in that node\'s own column (the type defaults to code under a code cell, else to a text note); `forkOf` names a code cell and starts a new column pair beside its pair; both ignore x/y. Whatever the placement, the layout engine then packs the column the node landed in and pushes the column pairs to its right and the notes it covers out of the way — never across a section boundary. Sections fit their content: a node placed past its section\'s bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Supplied coordinates are snapped to the grid and clamped to the canvas origin.',
+    description: 'Add a new node to the canvas. The node is automatically marked as AI-created (🤖 badge) and assigned a label. Position defaults to the right of all existing nodes. `after` puts the new node under any node, in that node\'s own column (the type defaults to code under a code cell, else to a text note); `forkOf` names a code cell: on side right the new node goes on that cell\'s row in the nearest column past its output column that holds a code cell, else it starts a new column pair right of the cell\'s pair; on side left it starts a new column pair left of the cell\'s column; both ignore x/y. Whatever the placement, the layout engine then packs the column the node landed in and pushes the column pairs to its right and the notes it covers out of the way — never across a section boundary. Sections fit their content: a node placed past its section\'s bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Supplied coordinates are snapped to the grid and clamped to the canvas origin.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1736,7 +1736,7 @@ const TOOLS = [
         width:      { type: 'number', description: 'Width in canvas units (default: type-dependent)' },
         height:     { type: 'number', description: 'Height in canvas units (default: type-dependent; a code cell with content is sized to the lines it holds, between 300 and 900)' },
         after:      { type: 'string', description: 'Label or id of any node: place the new node one gap below it in the same column (type defaults to code under a code cell, else text)' },
-        forkOf:     { type: 'string', description: 'Label or id of a code cell: start a new column pair beside its pair (type defaults to code)' },
+        forkOf:     { type: 'string', description: 'Label or id of a code cell: the new node goes on its row beside it (see the tool description; type defaults to code)' },
         side:       { type: 'string', description: 'forkOf side: right (default) or left; a left fork that would start before the canvas origin is refused' },
       },
       required: ['canvasPath'],

@@ -2330,3 +2330,52 @@ test('a held node the user dropped a node over keeps its hold, stays under that 
   assert.deepEqual(layoutSection(out, { moverIds: ['M2'], draggedFrom: m2, riders: ridersOf(out, edges), hanging: hangingBelow(out, edges, m2) }), {});
   assert.deepEqual(layoutSection(out, { moverIds: ['N3'], draggedFrom: n3, riders: ridersOf(out, edges), hanging: hangingBelow(out, edges, n3) }), { M1: { x: 900, y: 400 } });
 });
+
+// 142
+test('H-test: Alt+X l on E1 puts the new cell in the column E4 already sits in, on E1\'s row, and nothing moves', () => {
+  // - tests/fixtures/H-test.json: section S1 of test/H-test.canvas as read over MCP on 2026-09-30, without
+  //   the E9 the old rule made at (3200, 0): right of C1, the widest output of column 1700 (2500 + 600 + 100).
+  //   `keepRow` as the load marks it: the MCP does not show the stored field.
+  const data = fixture('H-test');
+  const nodes = sectionEngineNodes(data.nodes, data.metadata.sections, 'E1');
+  assert.deepEqual(forkOf(nodes, 'E1', 'right'), { x: 2500, y: 0 });
+  // - as the webview adds it: a 700 × 100 code cell at the slot, with its edge from E1
+  const fresh = [...nodes, { id: 'E9', type: 'code', x: 2500, y: 0, w: 700, h: 100 }];
+  const edge = { id: 'E1-E9', fromNode: 'E1', fromSide: 'right', toNode: 'E9', toSide: 'left' };
+  const edges = [...data.edges, { ...edge, keepRow: withKeepRow.keepRowOf(fresh, data.edges, edge) }];
+  assert.equal(edges.at(-1).keepRow, true);
+  const report = {};
+  assert.deepEqual(layoutSection(fresh, { moverIds: ['E9'], riders: ridersOf(fresh, edges), hanging: hangingBelow(fresh, edges), report }), {});
+  assert.equal(!!report.capped, false);
+  assert.equal(overlapCount(fresh), 0);
+});
+
+// 143
+test('a right fork with no code cell in a column at or past the output column opens a new pair past the cell\'s pair', () => {
+  // - A is a code column left of E1. G is a code cell in column 2000, which starts before E1's output
+  //   column (2300): a fork there would sit on E1. J1's column holds a note only.
+  const nodes = [code('A', 0, 0), code('E1', 1500, 0, 100, 'C1'), cell('C1', 2300, 0), code('G', 2000, 1000), note('J1', 4000, 0, 700, 300)];
+  assert.deepEqual(forkOf(nodes, 'E1', 'right'), { x: 3000, y: 0 });   // - 2300 + 600 + 100
+  // - H-test: right of E5's column (3300) there are only notes, in column 4100
+  const data = fixture('H-test');
+  assert.deepEqual(forkOf(sectionEngineNodes(data.nodes, data.metadata.sections, 'E5'), 'E5', 'right'), { x: 4800, y: 1000 });   // - 4100 + 600 + 100
+});
+
+// 144
+test('a right fork whose slot an earlier fork holds packs under it, and nothing else moves', () => {
+  // - F1 is an earlier fork of E1, held on E1's row, in column 800: E1's output column, where E2's output
+  //   C2 sits. The new fork of E1 takes F1's slot and goes one gap under F1: 0 + 100 + 100.
+  const nodes = [code('E1', 0, 0, 100), code('E2', 0, 400, 100, 'C2'), cell('C2', 800, 400), code('F1', 800, 0, 100)];
+  const edges = [edgeTo('E1', 'F1')];
+  assert.deepEqual(forkOf(nodes, 'E1', 'right'), { x: 800, y: 0 });
+  const fresh = [...nodes, code('F2', 800, 0, 100)];
+  const edge = { id: 'E1-F2', fromNode: 'E1', fromSide: 'right', toNode: 'F2', toSide: 'left' };
+  const all = [...edges, { ...edge, keepRow: withKeepRow.keepRowOf(fresh, edges, edge) }];
+  const patches = layoutSection(fresh, { moverIds: ['F2'], riders: ridersOf(fresh, all), hanging: hangingBelow(fresh, all) });
+  assert.deepEqual(patches, { F2: { x: 800, y: 200 } });
+  const after = apply(fresh, patches);
+  assert.equal(overlapCount(after), 0);
+  assert.deepEqual(layoutSection(after, { moverIds: ['F2'], riders: ridersOf(after, all), hanging: hangingBelow(after, all) }), {});
+  // - without F1 no column right of E1 holds a code cell: the new pair starts past C2, 800 + 600 + 100
+  assert.deepEqual(forkOf(nodes.filter(n => n.id !== 'F1'), 'E1', 'right'), { x: 1500, y: 0 });
+});

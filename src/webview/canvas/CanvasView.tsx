@@ -2576,11 +2576,13 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       };
       const { dx, dy, pushX, pushY, fromSide, toSide } = dirMap[key];
       // - in a section the engine owns the spot: J is the next member of the anchor's own column,
-      //   whatever the anchor is; L / H off a code cell open a new column pair right / left of its
-      //   pair. Everything else takes the column slot beside or above the anchor and lets the pack
-      //   sort it out — a slot another node holds puts the new node under that occupant, and on an
-      //   exact y tie the mover wins and the occupant moves down. No room before the origin (a left
-      //   fork, H off the first column, K off the first row) is refused: nothing is added.
+      //   whatever the anchor is; L / H off a code cell take the slot `forkOf` gives (L: the nearest
+      //   column past its output column that holds a code cell, else a new pair right of its pair; H: a
+      //   new pair left of its column). Everything else takes the column slot beside or above the
+      //   anchor and lets the pack sort it out — a slot another node holds puts the new node under
+      //   that occupant, and on an exact y tie the mover wins and the occupant moves down. No room
+      //   before the origin (a left fork, H off the first column, K off the first row) is refused:
+      //   nothing is added.
       //   No section: the free-slot search, as before.
       const section = engineNodesOf({ nodeId: current.id });
       let slot: { x: number; y: number } | null = null;
