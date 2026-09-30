@@ -104,6 +104,9 @@ export interface GapGraph {
   free: (xi: number, yi: number) => boolean;
   clearH: (yi: number, xa: number, xb: number) => boolean;
   clearV: (xi: number, ya: number, yb: number) => boolean;
+  /** - how much of the straight run from one point to another lies closer than one lane step outside
+      a node border running the same way (see `nearBorder`) */
+  nearBorder: (a: Point, b: Point) => number;
   /** - the crossings each crossing reaches in one straight run */
   nbrs: number[][];
 }
@@ -114,6 +117,41 @@ function clearSeg(nodes: RouteNode[], x1: number, y1: number, x2: number, y2: nu
   const xa = Math.min(x1, x2), xb = Math.max(x1, x2);
   const ya = Math.min(y1, y2), yb = Math.max(y1, y2);
   return !nodes.some(n => xb > n.x && xa < n.x + n.w && yb > n.y && ya < n.y + n.h);
+}
+
+/**
+ * The length of a straight run that lies less than one lane step outside a node border parallel to
+ * it, the border itself included. A node's own lines sit half a grid off its borders, but a line from
+ * one node can fall on, or next to, the border of another: the line under a node ending at y 350 is
+ * y 400, the top border of a node at y 400 in the next column. One lane step is the room the
+ * outermost lane of a one-grid gap keeps from each border.
+ */
+function nearBorder(nodes: RouteNode[]): (a: Point, b: Point) => number {
+  // - the node extents that lie along each line, per axis, found once per line
+  const along = [new Map<number, Span[]>(), new Map<number, Span[]>()];
+  const spansOn = (vertical: boolean, c: number): Span[] => {
+    const memo = along[vertical ? 1 : 0];
+    const have = memo.get(c);
+    if (have) return have;
+    const list: Span[] = [];
+    for (const n of nodes) {
+      const lo = vertical ? n.x : n.y, hi = lo + (vertical ? n.w : n.h);
+      if ((c > lo - LANE_STEP && c <= lo) || (c >= hi && c < hi + LANE_STEP))
+        list.push(vertical ? { a: n.y, b: n.y + n.h } : { a: n.x, b: n.x + n.w });
+    }
+    memo.set(c, list);
+    return list;
+  };
+  return (p, q) => {
+    const vertical = p[0] === q[0];
+    const spans = spansOn(vertical, vertical ? p[0] : p[1]);
+    if (spans.length === 0) return 0;
+    const lo = vertical ? Math.min(p[1], q[1]) : Math.min(p[0], q[0]);
+    const hi = vertical ? Math.max(p[1], q[1]) : Math.max(p[0], q[0]);
+    let len = 0;
+    for (const s of spans) len += Math.max(0, Math.min(hi, s.b) - Math.max(lo, s.a));
+    return len;
+  };
 }
 
 export function buildGapGraph(nodes: RouteNode[]): GapGraph {
@@ -129,8 +167,9 @@ export function buildGapGraph(nodes: RouteNode[]): GapGraph {
   const free = (xi: number, yi: number) => clearSeg(nodes, xs[xi], ys[yi], xs[xi], ys[yi]);
   const clearH = (yi: number, xa: number, xb: number) => clearSeg(nodes, xs[xa], ys[yi], xs[xb], ys[yi]);
   const clearV = (xi: number, ya: number, yb: number) => clearSeg(nodes, xs[xi], ys[ya], xs[xi], ys[yb]);
+  const near = nearBorder(nodes);
   const nbrs: number[][] = [];
-  if (xs.length * ys.length > MAX_CROSSINGS) return { xs, ys, capped: true, free, clearH, clearV, nbrs };
+  if (xs.length * ys.length > MAX_CROSSINGS) return { xs, ys, capped: true, free, clearH, clearV, nearBorder: near, nbrs };
 
   const nx = xs.length, ny = ys.length;
   const open: boolean[] = [];
@@ -143,7 +182,7 @@ export function buildGapGraph(nodes: RouteNode[]): GapGraph {
     const down = i + 1;
     if (yi + 1 < ny && open[down] && clearV(xi, yi, yi + 1)) { nbrs[i].push(down); nbrs[down].push(i); }
   }
-  return { xs, ys, capped: false, free, clearH, clearV, nbrs };
+  return { xs, ys, capped: false, free, clearH, clearV, nearBorder: near, nbrs };
 }
 
 /** Point on `side` of `n`, `off` px from the middle of that border. */
@@ -262,7 +301,10 @@ const OUT_DIR: Record<Side, number> = { right: 0, left: 1, bottom: 2, top: 3 };
  * Shortest orthogonal path from `start` to `goal` over the `count` vertices: the section's crossings
  * and, past them, the vertices this edge added, whose links are in `extra`. Cost = length + BEND_COST
  * per change of direction, counting the corner where the route leaves the exit segment and the one
- * where it meets the entry segment.
+ * where it meets the entry segment. A stretch that runs along a node border, closer than one lane
+ * step to it (`nearBorder`), counts its length twice: between two lines of equal length the search
+ * takes the one with room, and it keeps to a border only when every other way is longer by more than
+ * that.
  */
 function shortestPath(
   g: GapGraph, extra: Map<number, number[]>, at: (i: number) => Point, count: number,
@@ -289,8 +331,11 @@ function shortestPath(
     for (const w of [...base, ...(extra.get(v) ?? [])]) {
       const there = at(w);
       const step = dirBetween(here, there);
-      const cost = dist[state] + Math.abs(there[0] - here[0]) + Math.abs(there[1] - here[1]) + (step === dir ? 0 : BEND_COST);
       const next = w * 4 + step;
+      let cost = dist[state] + Math.abs(there[0] - here[0]) + Math.abs(there[1] - here[1]) + (step === dir ? 0 : BEND_COST);
+      // - the border test is only paid for a step that could still improve on the best cost so far
+      if (cost >= dist[next]) continue;
+      cost += g.nearBorder(here, there);
       if (cost < dist[next]) { dist[next] = cost; prev[next] = state; heap.push(cost, next); }
     }
   }

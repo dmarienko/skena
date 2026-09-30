@@ -490,3 +490,30 @@ test('H3 with M6 below-right: the exits of M1\'s right border are ordered by whe
   assert.deepEqual(['e3', 'e31', 'e5'].map(id => routeOf(routes, id).points[0]), [[700, 340], [700, 350], [700, 360]]);
   assert.deepEqual(crossings(routes, ['e3', 'e5', 'e31']), []);
 });
+
+// - H-test on 2026-09-30, reduced to E2's three edges and the nodes that shape them. E4 is 150 px
+//   tall, so the line under it is y 400, which is W4's top border.
+const shotHTestNodes = () => [
+  code('E2', 1700, 200, 700, 100), know('W4', 1700, 400, 700, 300), code('E3', 1700, 800, 700, 150),
+  code('E4', 2500, 200, 700, 150), cell('C1', 2500, 800, 600, 300), cell('C4', 3300, 200, 900, 700),
+];
+
+// 22
+test('H-test E2→E3: the run through the gap between E2 and W4 keeps at least a lane step from both borders', () => {
+  const nodes = shotHTestNodes();
+  const routes = routeSection(nodes, [
+    link('E2->E3', 'E2', 'E3', 'bottom', 'top'), link('E2->W4', 'E2', 'W4', 'bottom', 'top'),
+    link('E2->E4', 'E2', 'E4', 'right', 'left'),
+  ]);
+  assert.deepEqual(slanted(routes), []);
+  assert.deepEqual(insideAny(nodes, routes), []);
+  const r = routeOf(routes, 'E2->E3');
+  assert.equal(r.fallback, false);
+  const map = byId(nodes), e2 = map.get('E2'), w4 = map.get('W4');
+  // - the route leaves E2's bottom and has to get round W4 to reach E3 below it
+  const inGap = segmentsOf([r]).filter(s => !s.vertical && s.coord >= e2.y + e2.h && s.coord <= w4.y);
+  assert.equal(inGap.length, 1, JSON.stringify(r.points));
+  const y = inGap[0].coord;
+  assert.ok(w4.y - y >= LANE_STEP, `run at y ${y}, ${w4.y - y} px above W4's top: ${JSON.stringify(r.points)}`);
+  assert.ok(y - (e2.y + e2.h) >= LANE_STEP, `run at y ${y}, ${y - (e2.y + e2.h)} px below E2's bottom: ${JSON.stringify(r.points)}`);
+});
