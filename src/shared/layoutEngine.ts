@@ -543,8 +543,9 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
       prevBottom = rowBottom(cell, map);
     }
   };
-  // - except a held node that is a mover, or whose source moved in this call: it takes its row, and the
-  //   member above goes under it
+  // - except a held node the operation moved, itself or through its output (a new output, a dragged
+  //   one), or whose source moved in this call: it takes its row, and the member above goes under it
+  const moved = (r: EngineNode) => sets.movers?.has(r.id) === true || sets.movers?.has(r.outputNodeId ?? '') === true;
   const sourceMoved = (r: EngineNode) => { const s = riders.get(r.id)!; return sets.movers?.has(s) === true || map.get(s)!.y !== sets.startY?.get(s); };
   const under = new Set<string>();
   const saved = [...members, ...members.map(m => map.get(m.outputNodeId ?? '')).filter((n): n is EngineNode => n !== undefined)];
@@ -553,7 +554,7 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
     const wasPlaced = new Set(placed), wasUnder = new Set(sets.wentUnder ?? []);
     packOnce(under);
     if (sets.reflow || guard >= members.length) return;
-    const passed = members.filter((r, i) => !under.has(r.id) && !sets.movers?.has(r.id) && rowOf(r) !== undefined && !sourceMoved(r)
+    const passed = members.filter((r, i) => !under.has(r.id) && !moved(r) && rowOf(r) !== undefined && !sourceMoved(r)
       && members.slice(0, i).some(m => rowOf(m) === undefined && m.y > r.y && above(m, r)));
     if (passed.length === 0) return;
     for (const r of passed) under.add(r.id);

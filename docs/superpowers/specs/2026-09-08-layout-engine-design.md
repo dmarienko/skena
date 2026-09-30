@@ -968,7 +968,9 @@ it. It keeps `keepRow: true`. It takes its source's row again once nothing above
 reaches that row: in the first call that packs its column after that member has left.
 - Above means higher before the call. On the same y, only a node the user dropped counts as above (a
   mover that `draggedFrom` names).
-- A held node that is a mover takes its row, and the member above goes under it (test 61).
+- A held node that is a mover takes its row, and the member above goes under it (test 61). Since
+  2026-09-30 so does a held node whose output is a mover (a new output, a dragged one): see "Which pair
+  goes under when a held pair's output meets the output of the pair above it" below.
 - A held node whose source moved in the call takes its row too: it follows its source (tests 90, 100).
   The source moved when it is a mover or when a pack or a bump moved it.
 - A node the operation put at the held node's own y without a drop (a new node, a paste, the chat's
@@ -1061,11 +1063,31 @@ rows of its own column (a held node's row, and its output), on the member's row.
 itself did, so its output could end on a held node's output, both in a packed column, where no bump
 parts them. Measured on the same canvas after the call above had put the new cell, E3 (2400, 600)
 700×100, over E2, with its output C1 (3200, 600) 1000×700 reaching 1300. E2 ran for the first time:
-`placeOutput` gave C2 (3200, 800), and the call left C2 inside C1; a second call moved nothing. Now C1
-would sit on C2, so E3 goes under E2; E3 was above E2 before the call, so E2 does not pass it ("A held
-node does not pass a member above it"): E2 and C2 go one gap under E3's row, to (2400, 1400) and
-(3200, 1400), 600 + 700 + 100. E3 and C1 stay (test 149). A held node that is a mover, or whose source
-moved, keeps its row, and the member goes under it.
+`placeOutput` gave C2 (3200, 800), and the call left C2 inside C1; a second call moved nothing. Now one
+of the two pairs goes one gap under the other's row; which one is the next decision. In this call E2
+and C2 stay, and E3 and C1 go to (2400, 1250) and (3200, 1250) (test 149).
+
+**Which pair goes under when a held pair's output meets the output of the pair above it (decided by
+the user 2026-09-30 on the factors canvas).** Two results for E2's first run above were shown to
+scale: (a) E2 and C2 go one gap under E3's row, to (2400, 1400) and (3200, 1400), 600 + 700 + 100, as
+built at 0d44759 under "A held node does not pass a member above it"; (b) E2 and C2 keep N2's row, and
+E3 and C1 go one gap under E2's row, to (2400, 1250) and (3200, 1250): E2 ends at 1150 and C2 at 1100,
+so 1150 + 100. The user chose (b).
+
+The rule that gives both this and the H-test drop: of a held node and a plain member above it in its
+column, the one the operation moved keeps its place. A held node counts as moved when it is a mover or
+its output is one (a new output, a dragged one); it then takes its row, and the member above goes under
+it. On H-test the user dropped M2, a plain member, so M1, the held node, goes under M2 (test 140). When
+neither was moved (a call that only packs the column, or one that moves a node elsewhere), the held
+node goes under the member above, as before: that is what keeps M1 under M2 in the calls after the
+drop (test 141). A held node whose source moved takes its row, as before, whatever else moved. Test 151
+holds the other two calls on the factors state with C2 inside C1: C1 as the mover (E3 ran) sends E2 and
+C2 under E3's row, to 1400; a call that only packs column 2400 does the same.
+
+Open (2026-09-30): "A new output on an anchored node" (2026-09-24) sends the code cell of a new output
+under the anchored node the output lands on. With C1 as the mover the engine does the opposite: the
+held E2 goes under E3's row. The two rules do not both apply to one call: that rule looks for anchored
+nodes outside the code cell's column, and C2 is the output of a node in E3's own column.
 
 Tests changed: test 110 had S, a plain member, under E, a code cell held to T's row. E's new output O
 (700 tall) landed on R, held to S; E went under R, to 800, past S, which stayed at 400. Now S stays
@@ -1073,8 +1095,8 @@ under E: it goes to 800, under O, R follows it, and E keeps T's row (test 150). 
 E, and still checks that a held code cell goes under the held node its new output lands on: E and O
 go to 600.
 
-Measured against dca614d, as in the table of "A held node does not pass a member above it". A call
-that moves a node the pack would not have moved before counts in "Differ".
+Measured against dca614d, with the decision on which pair goes under, as in the table of "A held node
+does not pass a member above it". A call that gives any other result counts in "Differ".
 
 | Calls | Count | Bad at dca614d | Bad now | Worse | Better | Differ |
 |---|---|---|---|---|---|---|
@@ -1082,8 +1104,8 @@ that moves a node the pack would not have moved before counts in "Differ".
 | The same, each call a drop in place | 170 | 0 | 0 | 0 | 0 | 0 |
 | The reviewer's section generator, seeds 1 to 3000 | 7703 | 66 | 66 | 0 | 0 | 16 |
 | The same, each call a drop in place | 7703 | 65 | 65 | 0 | 0 | 16 |
-| Tidy trials, NMAX 6, EMAX 4 (drags passed as drops) | 18589 | 59 | 49 | 0 | 10 | 287 |
-| Tidy trials, NMAX 10, EMAX 7 (drags passed as drops) | 36528 | 158 | 94 | 1 | 65 | 871 |
+| Tidy trials, NMAX 6, EMAX 4 (drags passed as drops) | 18589 | 59 | 49 | 0 | 10 | 288 |
+| Tidy trials, NMAX 10, EMAX 7 (drags passed as drops) | 36528 | 158 | 94 | 1 | 65 | 872 |
 | One code cell whose output is the only mover, at its slot | 34834 | 4 | 2 | 0 | 2 | 1 |
 | The same, the output dragged | 34834 | 3 | 3 | 0 | 0 | 0 |
 
@@ -1091,16 +1113,14 @@ The call that got worse (tidy trials NMAX 10, EMAX 7, seed 2299, E3 and E2 dragg
 down) is not idempotent. In the first call a bump moves N5, 800 wide, from x 1500 to 1700, into E2's
 column; the second call packs E2 under N5, from 1300 to 1100, and N1, held to E2, follows it to 1700,
 and E4, under N1, to 1900. At dca614d the first call put E4 over N1 and E2 at 1700, and a second call
-moved nothing. Reflow on the section generator's 3000 sections, every edge holding, and on the fixture
-sections (H1 to H6 and H-test, 3009 sections in all) gives the same result before and after.
+moved nothing. Against 0d44759 (pair (a) above) 2 calls differ, one in each set of tidy trials, and
+every count of bad calls is the same. Reflow on the section generator's 3000 sections, every edge
+holding, and on the fixture sections (H1 to H6 and H-test, 3009 sections in all) gives the same result
+before and after.
 
 Open (2026-09-30):
 - Reflow still lets a member under a held node pass it: on the factors canvas right after the insert,
   Reflow puts the new cell at (2200, 600), over E2 (the column moves to 2200), before and after;
-- for E2's first run above, the other result follows the older rule that a held node takes its row and
-  the member above goes under it: E2 and C2 stay at 800, E3 and C1 go to 1250 (800 + 350 + 100). Reflow
-  gives that one here (E3 (2200, 1250), C1 (3000, 1250), C2 (3000, 800)). The engine follows "A held
-  node does not pass a member above it"; the user has not chosen between the two;
 - when a held node's source moves far down, the members that were under the held node now go down with
   it rather than stay where they are. Seen in the tidy trials, NMAX 10, EMAX 7, seed 297 (E6 and E5
   dragged 200 left and 400 up): E7, held to E6, goes from 0 to 3100, and E2 and N8, under E7, go to 3700

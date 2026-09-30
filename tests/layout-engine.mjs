@@ -2443,14 +2443,19 @@ test('a member over a held node still packs up into the gap over it, and a membe
 });
 
 // 149
-test('factors: a held cell whose new output would sit on the output of the cell over it goes one gap under that output', () => {
-  // - E3 (100 tall) sits over E2, and its output C1 reaches 600 + 700 = 1300, past E2's row. E2 runs for
-  //   the first time: its output C2 gets the slot on E2's row, (3200, 800), inside C1. E2 does not pass E3
-  //   (§3.5): E2 and C2 go one gap under E3's row, 1300 + 100. E3 and C1 stay.
-  const before = [...factors(), code('E3', 2400, 600, 100, 'C1'), cell('C1', 3200, 600, 1000, 700)];
+// - E3 (100 tall) sits over E2, held to N2's row, 800, and E3's output C1 reaches 600 + 700 = 1300, past
+//   E2's row; E2 has run, and its output C2 sits on its row, inside C1
+const factorsRun = () => [
+  ...factors().map(n => (n.id === 'E2' ? { ...n, outputNodeId: 'C2' } : n)),
+  code('E3', 2400, 600, 100, 'C1'), cell('C1', 3200, 600, 1000, 700), cell('C2', 3200, 800),
+];
+const factorsRunEdges = () => [...factorsEdges(), edgeDown('E2', 'E3')];
+test('factors: a held cell\'s new output that would sit on the output of the cell over it keeps its row; that cell goes under it', () => {
+  // - E2 runs for the first time: its output C2 gets the slot on E2's row, (3200, 800). E2 and C2 keep N2's
+  //   row, and E3 and C1 go one gap under E2's row, 800 + 350 + 100 (decided by the user 2026-09-30).
+  const before = factorsRun().filter(n => n.id !== 'C2').map(n => (n.id === 'E2' ? { ...n, outputNodeId: undefined } : n));
   assert.deepEqual(placeOutput(before, 'E2'), { x: 3200, y: 800, width: 600, height: 300 });
-  const nodes = [...before.map(n => (n.id === 'E2' ? { ...n, outputNodeId: 'C2' } : n)), cell('C2', 3200, 800)];
-  settles(nodes, [...factorsEdges(), edgeDown('E2', 'E3')], ['C2'], { E2: { x: 2400, y: 1400 }, C2: { x: 3200, y: 1400 } });
+  settles(factorsRun(), factorsRunEdges(), ['C2'], { E3: { x: 2400, y: 1250 }, C1: { x: 3200, y: 1250 } });
 });
 
 // 150
@@ -2460,4 +2465,19 @@ test('a node under a held code cell stays under it when the cell gets a tall out
   //   O does not reach R there, so E keeps T's row.
   const nodes = [note('T', 0, 0, 700, 300), code('E', 800, 0, 300, 'O'), note('S', 800, 400, 700, 300), cell('O', 1600, 0, 600, 700), note('R', 1600, 400, 600, 300)];
   settles(nodes, [edgeTo('T', 'E'), edgeTo('S', 'R')], ['O'], { S: { x: 800, y: 800 }, R: { x: 1600, y: 800 } });
+});
+
+// 151
+test('of a held pair and the pair over it whose outputs meet, the one the call moved keeps its row', () => {
+  // - C2 moved (test 149): E3 and C1 go under E2's row, 1250. C1 moved (E3 ran): E3 keeps its place, and
+  //   E2, held to N2's row, goes one gap under E3's row, 600 + 700 + 100, with C2. Neither moved (a call
+  //   that only packs the column): E2 goes under E3's row too, as M1 stays under M2 in test 141.
+  const nodes = factorsRun();
+  const edges = factorsRunEdges();
+  settles(nodes, edges, ['C1'], { E2: { x: 2400, y: 1400 }, C2: { x: 3200, y: 1400 } });
+  const patches = layoutSection(nodes, { columnX: 2400, riders: ridersOf(nodes, edges), hanging: hangingBelow(nodes, edges) });
+  assert.deepEqual(patches, { E2: { x: 2400, y: 1400 }, C2: { x: 3200, y: 1400 } });
+  const after = apply(nodes, patches);
+  assert.equal(overlapCount(after), 0);
+  assert.deepEqual(layoutSection(after, { columnX: 2400, riders: ridersOf(after, edges), hanging: hangingBelow(after, edges) }), {});
 });
