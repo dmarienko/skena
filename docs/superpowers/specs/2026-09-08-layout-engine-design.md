@@ -1097,8 +1097,9 @@ The rules together, for a held node and a plain member above it in its column wh
 An output resized by hand counts as not moved, as "An output resized by hand" (2026-09-25) has it: a
 held node the output grows onto goes one gap under it. On the factors state with C1 grown by hand onto
 C2 (movers C1, `resized` C1), E2 and C2 go to (2400, 1400) and (3200, 1400) (test 151). Counted as a
-new output instead, E3 and C1 would go to (2400, 1250) and (3200, 1250). The user has not been asked
-about this case.
+new output instead, E3 and C1 would go to (2400, 1250) and (3200, 1250). Decided by the user on
+2026-09-30: the first result stands. The output grown by hand and its code cell keep their place, and
+the held pair it grows onto goes under it.
 
 Tests changed: test 110 had S, a plain member, under E, a code cell held to T's row. E's new output O
 (700 tall) landed on R, held to S; E went under R, to 800, past S, which stayed at 400. Now S stays
