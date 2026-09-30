@@ -462,6 +462,8 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
   //   held nodes; a pack that sends such a member past one is run again with it in `under`. Nor does a
   //   plain member below a held node pass it upward: it packs no higher than one gap under that node's
   //   row. Reflow applies neither: there every held node takes its row.
+  // - where each plain member's own box put it in the last pack, before its output cleared the held rows
+  const boxY = new Map<string, number>();
   const packOnce = (under: Set<string>) => {
     const anchored = members
       .map((cell, order) => ({ cell, order, at: under.has(cell.id) ? undefined : rowOf(cell) }))
@@ -530,6 +532,7 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
       //   a packed column
       const out = map.get(cell.outputNodeId ?? '');
       const outRows = sets.reflow ? list : fixed.filter(keep);
+      boxY.set(cell.id, y);
       if (out && outRows.length > 0) {
         const ox = toSlot(cell.id, out, cell.y) ? pair.outputX : Math.max(out.x, pair.outputX);
         for (let guard = 0; guard < 16; guard++) {
@@ -553,8 +556,11 @@ function packColumn(pair: Pair, nodes: EngineNode[], map: Map<string, EngineNode
     const wasPlaced = new Set(placed), wasUnder = new Set(sets.wentUnder ?? []);
     packOnce(under);
     if (sets.reflow || guard >= members.length) return;
-    const passed = members.filter((r, i) => !under.has(r.id) && !sets.movers?.has(r.id) && rowOf(r) !== undefined && !sourceMoved(r)
-      && members.slice(0, i).some(m => rowOf(m) === undefined && m.y > r.y && above(m, r)));
+    // - a member that passes a held node only because its output meets the held row sends that node under
+    //   it even when the node or its source moved: the pair above never goes down for a held pair (§3.5)
+    const passed = members.filter((r, i) => !under.has(r.id) && rowOf(r) !== undefined
+      && members.slice(0, i).some(m => rowOf(m) === undefined && m.y > r.y && above(m, r)
+        && ((boxY.get(m.id) ?? m.y) < r.y || (!sets.movers?.has(r.id) && !sourceMoved(r)))));
     if (passed.length === 0) return;
     for (const r of passed) under.add(r.id);
     for (const b of at) { b.n.x = b.x; b.n.y = b.y; if (out) { if (b.p) out[b.n.id] = b.p; else delete out[b.n.id]; } }

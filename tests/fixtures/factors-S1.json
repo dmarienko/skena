@@ -1,0 +1,222 @@
+{
+  "nodes": [
+    {
+      "id": "W1",
+      "type": "knowledge",
+      "x": 0,
+      "y": 100,
+      "width": 700,
+      "height": 1200
+    },
+    {
+      "id": "N1",
+      "type": "text",
+      "x": 800,
+      "y": 100,
+      "width": 600,
+      "height": 600
+    },
+    {
+      "id": "N2",
+      "type": "text",
+      "x": 800,
+      "y": 800,
+      "width": 600,
+      "height": 300
+    },
+    {
+      "id": "N3",
+      "type": "text",
+      "x": 800,
+      "y": 1200,
+      "width": 600,
+      "height": 400
+    },
+    {
+      "id": "N4",
+      "type": "text",
+      "x": 1500,
+      "y": 1300,
+      "width": 600,
+      "height": 400
+    },
+    {
+      "id": "N5",
+      "type": "text",
+      "x": 800,
+      "y": 1700,
+      "width": 600,
+      "height": 300
+    },
+    {
+      "id": "N6",
+      "type": "text",
+      "x": 800,
+      "y": 2100,
+      "width": 600,
+      "height": 300
+    },
+    {
+      "id": "N7",
+      "type": "text",
+      "x": 800,
+      "y": 2500,
+      "width": 600,
+      "height": 300
+    },
+    {
+      "id": "N8",
+      "type": "text",
+      "x": 800,
+      "y": 2900,
+      "width": 600,
+      "height": 300
+    },
+    {
+      "id": "E1",
+      "type": "code",
+      "x": 2400,
+      "y": 100,
+      "width": 700,
+      "height": 400
+    },
+    {
+      "id": "E2",
+      "type": "code",
+      "x": 2400,
+      "y": 800,
+      "width": 700,
+      "height": 350,
+      "outputNodeId": "C2"
+    },
+    {
+      "id": "E3",
+      "type": "code",
+      "x": 2400,
+      "y": 600,
+      "width": 700,
+      "height": 100,
+      "outputNodeId": "C1"
+    },
+    {
+      "id": "C1",
+      "type": "cell",
+      "x": 3200,
+      "y": 600,
+      "width": 1000,
+      "height": 700
+    },
+    {
+      "id": "C2",
+      "type": "cell",
+      "x": 3300,
+      "y": 800,
+      "width": 600,
+      "height": 300
+    }
+  ],
+  "edges": [
+    {
+      "id": "W1-N1",
+      "fromNode": "W1",
+      "toNode": "N1",
+      "fromSide": "right",
+      "toSide": "left",
+      "keepRow": true
+    },
+    {
+      "id": "N1-N2",
+      "fromNode": "N1",
+      "toNode": "N2",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "N2-N3",
+      "fromNode": "N2",
+      "toNode": "N3",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "N2-E2",
+      "fromNode": "N2",
+      "toNode": "E2",
+      "fromSide": "right",
+      "toSide": "left",
+      "keepRow": true
+    },
+    {
+      "id": "N3-N4",
+      "fromNode": "N3",
+      "toNode": "N4",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "N3-N5",
+      "fromNode": "N3",
+      "toNode": "N5",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "N5-N6",
+      "fromNode": "N5",
+      "toNode": "N6",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "N6-N7",
+      "fromNode": "N6",
+      "toNode": "N7",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "N7-N8",
+      "fromNode": "N7",
+      "toNode": "N8",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "E1-E2",
+      "fromNode": "E1",
+      "toNode": "E2",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "E2-E3",
+      "fromNode": "E2",
+      "toNode": "E3",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "E2-C2",
+      "fromNode": "E2",
+      "toNode": "C2",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "E3-C1",
+      "fromNode": "E3",
+      "toNode": "C1",
+      "fromSide": "right",
+      "toSide": "left"
+    }
+  ],
+  "metadata": {
+    "sections": [
+      {
+        "id": "S1",
+        "y": 0,
+        "createdAt": 0
+      }
+    ]
+  }
+}

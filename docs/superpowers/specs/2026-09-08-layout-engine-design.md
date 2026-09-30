@@ -1078,10 +1078,20 @@ run (C1 new), C1 grown by hand, E3 dropped where it is, and a call that only pac
 E3 and C1 go to 1250), built in f9342f3 and e63d61e, and reversed it after seeing the case of C1 grown
 by hand.
 
-Two calls still send the pair above down, by the older exceptions of "A held node does not pass a
-member above it", which this decision did not reach: E2 itself as the mover (dropped where it is), and
-N2, E2's source, as the mover. In both, E2 and C2 keep N2's row and E3 and C1 go to (2400, 1250) and
-(3200, 1250).
+This holds against the older exceptions of "A held node does not pass a member above it" too, when
+the member's own box would stay above the held node and only its output meets the held row: the held
+node goes under the member even when it is a mover itself or its source moved. When the member's box
+itself meets the held node, those exceptions stand (tests 61, 85, 86, 90, 100, 111, 139).
+Measured from S1 of the user's file on 2026-09-30 (`tests/fixtures/factors-S1.json`, test 152): E2
+held to N2's row, 800, and its output C2 parked at (3300, 800), inside C1. N2 dragged 100 down, E2
+dropped where it is, and a call that packs column 2400 each put E2 at (2400, 1400) and C2 at
+(3300, 1400); E3 and C1 stay. Before, the first two sent E3 and C1 down, to 1350 and 1250.
+
+A call that does not pack column 2400 leaves C2 inside C1, as it leaves any overlap it does not reach
+(§3.2). One such call: N2 dragged while N2 → E2 holds nothing. When a canvas is opened, that edge gets
+`keepRow: true` only if holding E2 moves nothing (see "Which edges hold"). In this state holding it
+moves E2 under C1, so an edge saved without the field gets no hold, and N2's drag does not reach E2.
+The dump of the file used here has no `keepRow` fields, so whether its N2 → E2 edge held is not known.
 
 Tests changed: test 110 had S, a plain member, under E, a code cell held to T's row. E's new output O
 (700 tall) landed on R, held to S; E went under R, to 800, past S, which stayed at 400. Now S stays
@@ -1107,9 +1117,9 @@ The call that got worse (tidy trials NMAX 10, EMAX 7, seed 2299, E3 and E2 dragg
 down) is not idempotent. In the first call a bump moves N5, 800 wide, from x 1500 to 1700, into E2's
 column; the second call packs E2 under N5, from 1300 to 1100, and N1, held to E2, follows it to 1700,
 and E4, under N1, to 1900. At dca614d the first call put E4 over N1 and E2 at 1700, and a second call
-moved nothing. The engine is the one of 0d44759; against e63d61e 4 calls differ (one in each of the
-section generator, its drops and the two sets of tidy trials), and every count of bad calls is the
-same. Reflow on the section generator's 3000 sections, every edge
+moved nothing. Against e63d61e 4 calls differ (one in each of the section generator, its drops and
+the two sets of tidy trials), and against e6415b4 (the engine of 0d44759) 2 calls of the tidy trials
+(NMAX 10, EMAX 7) differ; every count of bad calls is the same. Reflow on the section generator's 3000 sections, every edge
 holding, and on the fixture sections (H1 to H6 and H-test, 3009 sections in all) gives the same result
 before and after.
 
