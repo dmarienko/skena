@@ -166,7 +166,7 @@ Configure at least one server in `settings.json` (shared) or `.vscode/settings.l
 ```jsonc
 {
   "skena.knowledge.servers": [
-    { "name": "crtx", "kind": "crtx", "url": "http://aurora-1:8788/mcp", "token": "…" }
+    { "name": "crtx", "kind": "crtx", "url": "http://localhost:8788/mcp", "token": "…" }
   ],
   "skena.knowledge.refreshAfterHours": 24   // - default; how old a cached copy gets before it's refreshed on open
 }
