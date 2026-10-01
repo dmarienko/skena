@@ -842,11 +842,28 @@ test('canvas_add_node makes a noderef with the fields the webview reads, its can
   assert.match(await call('canvas_list', { canvasPath: p }), /^ {2}D1 +noderef +→ notes\/plan\.canvas#N3 "the plan"/m);
   assert.match(await call('canvas_read', { canvasPath: p, ref: 'D1' }), /\nReference: notes\/plan\.canvas#N3\nTitle: the plan\n/);
 
-  const refused = 'error: a noderef needs canvas (a path ending in .canvas) and label (the target node\'s label, e.g. N3), or canvas as path.canvas#N3';
+  const refused = 'error: a noderef needs canvas (a path ending in .canvas) and label (the target node\'s label, e.g. N3, or a section\'s label, e.g. S3), or canvas as path.canvas#N3';
   assert.equal(await call('canvas_add_node', { canvasPath: p, type: 'noderef', canvas: 'notes/plan.canvas', label: 'n3' }), refused);
   assert.equal(await call('canvas_add_node', { canvasPath: p, type: 'noderef', canvas: 'notes/plan.md', label: 'N3' }), refused);
   assert.equal(await call('canvas_add_node', { canvasPath: p, type: 'noderef', canvas: 'notes/plan.canvas' }), refused);
   assert.equal(read(p).nodes.length, 3, 'a refused noderef writes nothing');
+});
+
+test('canvas_add_node makes a noderef to a section, in both forms, and canvas_list / canvas_read say it names a section', async () => {
+  const ws = join(DIR, 'secref-ws');
+  mkdirSync(join(ws, '.vscode'), { recursive: true });
+  const p = join(ws, 'here.cvs.json');
+  await call('canvas_add_node', { canvasPath: p, type: 'noderef', canvas: 'notes/plan.canvas', label: 'S3', title: 'Lesson 3', x: 0, y: 0 });
+  await call('canvas_add_node', { canvasPath: p, type: 'noderef', canvas: join(ws, 'notes', 'plan.canvas#S12'), x: 400, y: 0 });
+
+  const d = read(p);
+  const ref = l => { const { type, canvas, label, title } = d.nodes.find(n => n.nodeLabel === l); return { type, canvas, label, title }; };
+  assert.deepEqual(ref('D1'), { type: 'noderef', canvas: 'notes/plan.canvas', label: 'S3', title: 'Lesson 3' });
+  assert.deepEqual(ref('D2'), { type: 'noderef', canvas: 'notes/plan.canvas', label: 'S12', title: undefined }, 'a whole absolute reference is split and made workspace-relative');
+  const list = await call('canvas_list', { canvasPath: p });
+  assert.match(list, /^ {2}D1 +noderef +→ notes\/plan\.canvas#S3 \(section\) "Lesson 3"/m);
+  assert.match(list, /^ {2}D2 +noderef +→ notes\/plan\.canvas#S12 \(section\) 🤖$/m);
+  assert.match(await call('canvas_read', { canvasPath: p, ref: 'D1' }), /\nReference: notes\/plan\.canvas#S3 \(section\)\nTitle: Lesson 3\n/);
 });
 
 test('canvas_add_node makes a group as a backdrop: label and geometry stored, nothing it covers moves', async () => {

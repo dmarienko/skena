@@ -97,12 +97,12 @@ export interface PortalNode extends CanvasNodeBase {
   label?: string;
 }
 
-/** Reference (diamond) to a labelled node in another .canvas file */
+/** Reference (diamond) to a labelled node or a section in another .canvas file */
 export interface NoderefNode extends CanvasNodeBase {
   type:   'noderef';
   /** - workspace-relative path to the target .canvas */
   canvas: string;
-  /** - target node's nodeLabel (e.g. N2) */
+  /** - target node's nodeLabel (e.g. N2), or a section's label (S3) */
   label:  string;
   /** - display hint captured at create time */
   title?: string;
@@ -271,6 +271,8 @@ export interface MsgCanvasLoaded {
   canvas: CanvasData;
   /** - absolute fs path of the .canvas file (for relative path resolution) */
   canvasPath: string;
+  /** - this canvas's path as a copied reference writes it (`c c`, Copy reference) */
+  refPath?: string;
 }
 
 export interface MsgFileContent {
@@ -359,6 +361,8 @@ export interface MsgChatModelInfo { type: 'chatModelInfo'; model: string; effort
 
 /** - host → webview: focus (select + pan to) a node by id */
 export interface MsgFocusNode { type: 'focusNode'; id: string; }
+/** - host → webview: a reference named a section (S3): unfold it and focus its first node */
+export interface MsgFocusSection { type: 'focusSection'; label: string; }
 /** - webview → host: user clicked the chat title to change this canvas's model */
 export interface MsgPickModel { type: 'pickModel'; }
 export interface MsgRunCell   { type: 'runCell'; cellNodeId: string; code: string; }
@@ -514,6 +518,7 @@ export type HostToWebview =
   | MsgPanelActivated
   | MsgChatModelInfo
   | MsgFocusNode
+  | MsgFocusSection
   | MsgFloatingChatCompacting
   | MsgRenderMarkdownResult
   | MsgFloatingChatDone

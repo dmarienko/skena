@@ -75,10 +75,11 @@ import {
   MsgMarksRestored,
   CanvasMark,
   MsgFocusNode,
+  MsgFocusSection,
   AgentRunPersist,
   AgentRunPersistResult,
 } from '../shared/types';
-import { parseNodeRef } from '../shared/nodeRef';
+import { parseNodeRef, formatNodeRef, findRefTarget } from '../shared/nodeRef';
 import { MAX_FILE_FULL_BYTES, MAX_FILE_PREVIEW_BYTES, MAX_NOTEBOOK_BYTES, NODE_SIZE } from '../shared/constants';
 import { normalizeCanvasToOrigin } from '../shared/bounds';
 import { migrateSections, memberCodeCellsInRunOrder, applyLaneFit, outputCellGeom, pinOutputToLane } from '../shared/sectionLanes';
@@ -278,15 +279,13 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             } catch {
               this.knowledge.configure([]);
             }
-            send({ type: 'canvasLoaded', canvas, canvasPath: document.uri.fsPath });
-            // - a cross-canvas node reference opened this canvas — focus the referenced node now
-            // - that the webview has parsed it (document.canvas isn't ready any earlier than this)
+            send({ type: 'canvasLoaded', canvas, canvasPath: document.uri.fsPath, refPath: this.refPathFor(document) });
+            // - a cross-canvas reference opened this canvas — focus its target now that the webview
+            // - has parsed it (document.canvas isn't ready any earlier than this)
             {
               const wantLabel = this.pendingFocus.get(document.uri.fsPath);
               if (wantLabel) {
-                const target = document.canvas.nodes.find(n => n.nodeLabel === wantLabel);
-                if (target) send({ type: 'focusNode', id: target.id } satisfies MsgFocusNode);
-                else vscode.window.showWarningMessage(`Skena: ${wantLabel} not found in ${path.basename(document.uri.fsPath)}`);
+                this.focusRefTarget(document.canvas, wantLabel, document.uri.fsPath, send);
                 this.pendingFocus.delete(document.uri.fsPath);
               }
             }
@@ -613,8 +612,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           break;
         }
         case 'copyNodeReference': {
-          const rel = `${this.sessionNameFor(document)}.canvas`;   // - sessionNameFor strips .canvas; re-add it
-          await vscode.env.clipboard.writeText(`${rel}#${msg.label}`);
+          await vscode.env.clipboard.writeText(formatNodeRef(this.refPathFor(document), msg.label));
           vscode.window.setStatusBarMessage(`Skena: copied reference ${msg.label}`, 2000);
           break;
         }
@@ -676,14 +674,12 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       try {
         const canvas = openedCanvas(await readCanvas(document.uri.fsPath), document.canvas);
         document.updateFromDisk(canvas);
-        send({ type: 'canvasLoaded', canvas, canvasPath: document.uri.fsPath });
+        send({ type: 'canvasLoaded', canvas, canvasPath: document.uri.fsPath, refPath: this.refPathFor(document) });
         // - covers the rare race where a pending cross-canvas focus arrived before this
         // - panel was registered in panelsByPath (see the webviewReady canvasLoaded above)
         const wantLabel = this.pendingFocus.get(document.uri.fsPath);
         if (wantLabel) {
-          const target = document.canvas.nodes.find(n => n.nodeLabel === wantLabel);
-          if (target) send({ type: 'focusNode', id: target.id } satisfies MsgFocusNode);
-          else vscode.window.showWarningMessage(`Skena: ${wantLabel} not found in ${path.basename(document.uri.fsPath)}`);
+          this.focusRefTarget(document.canvas, wantLabel, document.uri.fsPath, send);
           this.pendingFocus.delete(document.uri.fsPath);
         }
       } catch { /* ignore parse errors during in-progress external edits */ }
@@ -996,7 +992,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       return;
     }
 
-    // - cross-canvas node reference: <path>.canvas#<Label> → open that canvas and focus the node
+    // - cross-canvas reference: <path>.canvas#<Label> → open that canvas and focus the node or section
     const ref = parseNodeRef(msg.uri);
     if (ref) {
       const resolvedPath = this.resolveCanvasRefPath(ref.canvas, canvasDir, resolver);
@@ -1078,8 +1074,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     return null;
   }
 
-  // - if the target canvas already has a live panel, resolve its pending label→node id and
-  // - focus it now. A freshly-opened panel hasn't sent canvasLoaded yet at this point — that
+  // - if the target canvas already has a live panel, resolve its pending label and focus the
+  // - target now. A freshly-opened panel hasn't sent canvasLoaded yet at this point — that
   // - path is covered by the canvasLoaded hook in resolveCustomEditor instead.
   private async tryFocusPending(fsPath: string): Promise<void> {
     const label = this.pendingFocus.get(fsPath);
@@ -1087,16 +1083,28 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const panel = SkenaEditorProvider.panelsByPath.get(fsPath);
     if (!panel) return;
     try {
-      const canvas = await readCanvas(fsPath);
-      const node = canvas.nodes.find(n => n.nodeLabel === label);
-      if (node) {
-        panel.webview.postMessage({ type: 'focusNode', id: node.id } satisfies MsgFocusNode);
-      } else {
-        vscode.window.showWarningMessage(`Skena: ${label} not found in ${path.basename(fsPath)}`);
-      }
+      // - seeded as on open: a file that stores no section still shows S1 in the panel
+      const canvas = migrateSections(await readCanvas(fsPath), Date.now());
+      this.focusRefTarget(canvas, label, fsPath, m => { void panel.webview.postMessage(m); });
     } finally {
       this.pendingFocus.delete(fsPath);
     }
+  }
+
+  // - a node label is sent as the node's id; a section label as the label itself, which the webview
+  //   reads against its own stack order. Neither found: the same warning for both.
+  private focusRefTarget(canvas: CanvasData, label: string, fsPath: string, post: (m: MsgFocusNode | MsgFocusSection) => void): void {
+    const target = findRefTarget(canvas, label);
+    if (!target) {
+      vscode.window.showWarningMessage(`Skena: ${label} not found in ${path.basename(fsPath)}`);
+      return;
+    }
+    post(target.kind === 'node' ? { type: 'focusNode', id: target.id } : { type: 'focusSection', label: target.label });
+  }
+
+  // - this canvas's path in a copied reference: relative to its workspace folder, `.canvas` kept
+  private refPathFor(document: { uri: vscode.Uri }): string {
+    return `${this.sessionNameFor(document)}.canvas`;   // - sessionNameFor strips .canvas; re-add it
   }
 
   // - the CC session --name for this canvas (matches what the harness spawns), shown in the chat title

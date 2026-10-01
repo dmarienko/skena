@@ -33,7 +33,7 @@ import { resolveCellKernel, cellKernelView, kernelById, upstreamCellsForRun, res
 import { layoutSection, reflowSection, insertAfter, forkOf, placeOutput, applyPatchesToCanvas, columnsOfDeleted, ridersOf, hangingBelow, sectionEngineNodes, sectionMembership, toEngineNodes, codeCellHeight, estimateCodeNeedPx, keepRowOf, markKeepRowOnLoad } from '../../shared/layoutEngine';
 import { pickKernelServers, unknownServerText, type KernelServerConfig, type KernelLookup, type SettingsRead } from '../jupyter/config';
 import { parseSettingsJson } from '../settingsJson';
-import { parseNodeRef } from '../../shared/nodeRef';
+import { parseNodeRef, isSectionLabel } from '../../shared/nodeRef';
 import { youtubeId, YOUTUBE_NODE } from '../../shared/youtube';
 import { executeCell, startKernel, shutdownKernel } from '../jupyter/client';
 import { renderOutput, hasVisibleOutput } from '../jupyter/output';
@@ -290,7 +290,7 @@ function nodeSnippet(node: CanvasNode): string {
     case 'kernel':  return `kernel: ${node.displayName ?? node.server}${node.kernelId ? ' (live)' : ''}`;
     case 'chat':    return `${node.agent}: ${node.title}`;
     case 'portal':  return `→ ${node.canvas}`;
-    case 'noderef': return `→ ${node.canvas}#${node.label}${node.title ? ` "${node.title}"` : ''}`;
+    case 'noderef': return `→ ${node.canvas}#${node.label}${isSectionLabel(node.label) ? ' (section)' : ''}${node.title ? ` "${node.title}"` : ''}`;
     case 'knowledge': return truncate(node.title, 80);
     default:        return '(unknown)';
   }
@@ -616,7 +616,7 @@ async function canvasRead(args: Record<string, unknown>): Promise<string> {
     case 'kernel': content = `Kernel: ${n.displayName ?? 'kernel'}  Server: ${n.server}  ${n.kernelId ? `Live id: ${n.kernelId}` : '(not started)'}`; break;
     case 'chat':   content = `Agent: ${n.agent}  Model: ${n.model ?? 'default'}\nTitle: ${n.title}`; break;
     case 'portal': content = `Sub-canvas: ${n.canvas}`; break;
-    case 'noderef': content = `Reference: ${n.canvas}#${n.label}${n.title ? `\nTitle: ${n.title}` : ''}`; break;
+    case 'noderef': content = `Reference: ${n.canvas}#${n.label}${isSectionLabel(n.label) ? ' (section)' : ''}${n.title ? `\nTitle: ${n.title}` : ''}`; break;
     case 'knowledge': content = `Format: knowledge\nServer: ${n.server}\nSource: ${n.uri}\nFetched: ${n.fetchedAt}${n.error ? `\nLast refresh failed: ${n.error}` : ''}\n\n${n.text}`; break;
   }
 
@@ -723,7 +723,7 @@ async function canvasAddNode(args: Record<string, unknown>): Promise<string> {
   const ref = args.type === 'noderef'
     ? parseNodeRef(args.label === undefined ? String(args.canvas ?? '') : `${String(args.canvas ?? '')}#${String(args.label)}`)
     : null;
-  if (args.type === 'noderef' && !ref) return 'error: a noderef needs canvas (a path ending in .canvas) and label (the target node\'s label, e.g. N3), or canvas as path.canvas#N3';
+  if (args.type === 'noderef' && !ref) return 'error: a noderef needs canvas (a path ending in .canvas) and label (the target node\'s label, e.g. N3, or a section\'s label, e.g. S3), or canvas as path.canvas#N3';
   if (args.type === 'group') {
     if (args.after !== undefined || args.forkOf !== undefined) return 'error: a group is a backdrop placed by x/y, not by after or forkOf';
     if (args.width === undefined || args.height === undefined) return 'error: a group needs width and height';
@@ -1785,7 +1785,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_add_node',
-    description: `Add a new node to the canvas: text (default), code, cell, file, link, portal, noderef or group; any other type is refused with an error. The node is marked as AI-created (🤖 badge) and assigned a label. Default sizes are the ones the canvas UI gives a new node: text ${NODE_SIZE.text.w}×${NODE_SIZE.text.h}, code ${NODE_SIZE.code.w}×${NODE_SIZE.code.h} (a code cell with content is as tall as its lines need, ${CODE_HEIGHT_RANGE}), cell ${CELL_SIZE.w}×${CELL_SIZE.h}, file ${NODE_SIZE.file.w}×${NODE_SIZE.file.h}, link ${NODE_SIZE.link.w}×${NODE_SIZE.link.h} (a link to a YouTube video ${YOUTUBE_NODE.w}×${YOUTUBE_NODE.h}, room for its thumbnail), portal ${NODE_SIZE.portal.w}×${NODE_SIZE.portal.h}, noderef ${NODEREF_SIZE.w}×${NODEREF_SIZE.h}; a supplied width or height is snapped to the grid. A noderef points at a node in another canvas: canvas (the target .canvas file) and label (the target node's label, e.g. N3), or canvas alone as path.canvas#N3, plus an optional title. A group is a backdrop drawn behind other nodes, with label as the text on it; it needs width and height, is placed by x/y only (after and forkOf are refused), and the layout engine does not run for it, so it moves none of the nodes it covers. Position defaults to the right of all existing nodes. after puts the new node under any node, in that node's own column (the type defaults to code under a code cell, else to a text note); forkOf names a code cell: on side right the new node goes on that cell's row in the nearest column past its output column that holds a code cell (under the cell's own output when it would overlap it), else it starts a new column pair right of the cell's pair; on side left it starts a new column pair left of the cell's column; both ignore x/y. Whatever the placement (a group aside), the layout engine then packs the column the node landed in and pushes the column pairs to its right and the notes it covers out of the way — never across a section boundary. Sections fit their content: a node placed past its section's bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Supplied coordinates are snapped to the grid and clamped to the canvas origin.`,
+    description: `Add a new node to the canvas: text (default), code, cell, file, link, portal, noderef or group; any other type is refused with an error. The node is marked as AI-created (🤖 badge) and assigned a label. Default sizes are the ones the canvas UI gives a new node: text ${NODE_SIZE.text.w}×${NODE_SIZE.text.h}, code ${NODE_SIZE.code.w}×${NODE_SIZE.code.h} (a code cell with content is as tall as its lines need, ${CODE_HEIGHT_RANGE}), cell ${CELL_SIZE.w}×${CELL_SIZE.h}, file ${NODE_SIZE.file.w}×${NODE_SIZE.file.h}, link ${NODE_SIZE.link.w}×${NODE_SIZE.link.h} (a link to a YouTube video ${YOUTUBE_NODE.w}×${YOUTUBE_NODE.h}, room for its thumbnail), portal ${NODE_SIZE.portal.w}×${NODE_SIZE.portal.h}, noderef ${NODEREF_SIZE.w}×${NODEREF_SIZE.h}; a supplied width or height is snapped to the grid. A noderef points at a node or a section in another canvas: canvas (the target .canvas file) and label (the target node's label, e.g. N3, or a section's label, e.g. S3 — S followed by digits always names a section), or canvas alone as path.canvas#N3, plus an optional title. Opening a section reference unfolds that section and focuses its first node. A group is a backdrop drawn behind other nodes, with label as the text on it; it needs width and height, is placed by x/y only (after and forkOf are refused), and the layout engine does not run for it, so it moves none of the nodes it covers. Position defaults to the right of all existing nodes. after puts the new node under any node, in that node's own column (the type defaults to code under a code cell, else to a text note); forkOf names a code cell: on side right the new node goes on that cell's row in the nearest column past its output column that holds a code cell (under the cell's own output when it would overlap it), else it starts a new column pair right of the cell's pair; on side left it starts a new column pair left of the cell's column; both ignore x/y. Whatever the placement (a group aside), the layout engine then packs the column the node landed in and pushes the column pairs to its right and the notes it covers out of the way — never across a section boundary. Sections fit their content: a node placed past its section's bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Supplied coordinates are snapped to the grid and clamped to the canvas origin.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -1796,7 +1796,7 @@ const TOOLS = [
         file:       { type: 'string', description: 'File path for file nodes (vault:// URI, or a path; an absolute one under the canvas folder is stored relative to it)' },
         url:        { type: 'string', description: 'URL for link nodes' },
         canvas:     { type: 'string', description: 'portal: path of the target canvas relative to this canvas\'s folder, stored as given. noderef: the target .canvas — absolute (stored relative to the workspace folder, as Copy node reference writes it) or relative to the workspace folder — or the whole reference path.canvas#N3' },
-        label:      { type: 'string', description: 'noderef: the target node\'s label (N3, E10). group: the text shown on the backdrop' },
+        label:      { type: 'string', description: 'noderef: the target node\'s label (N3, E10) or a section\'s label (S3). group: the text shown on the backdrop' },
         title:      { type: 'string', description: 'noderef: optional text shown under the reference' },
         tags:       { type: 'array',  items: { type: 'string' }, description: 'Optional tags for search/organisation' },
         color:      { type: 'string', description: 'Node accent color: 1=red, 2=orange, 3=yellow, 4=green, 5=cyan, 6=purple' },

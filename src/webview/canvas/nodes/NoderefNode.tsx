@@ -1,7 +1,7 @@
 /**
- * NoderefNode — a diamond that references a labelled node in another canvas.
- * Click (or Enter while focused — handled centrally in CanvasView) opens that canvas
- * and focuses the referenced node. The host resolves canvas#label.
+ * NoderefNode — a diamond that references a labelled node, or a section (S3), in another canvas.
+ * Click (or Enter while focused — handled centrally in CanvasView) opens that canvas and focuses
+ * the referenced node, or unfolds the section and focuses its first node. The host resolves canvas#label.
  */
 
 import React, { useCallback } from 'react';

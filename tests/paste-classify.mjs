@@ -145,3 +145,13 @@ test('plain multi-line text -> text node, empty -> none', () => {
   assert.equal(classifyClipboard(base).kind, 'none');
   assert.equal(classifyClipboard({ ...base, text: '   ' }).kind, 'none');
 });
+
+test('a single-line reference to a node or a section -> noderef with the same canvas path and label', () => {
+  assert.deepEqual(classifyClipboard({ ...base, text: 'notes/plan.canvas#N3' }), { kind: 'noderef', canvas: 'notes/plan.canvas', label: 'N3' });
+  assert.deepEqual(classifyClipboard({ ...base, text: ' notes/plan.canvas#S3\n' }), { kind: 'noderef', canvas: 'notes/plan.canvas', label: 'S3' });
+});
+
+test('a reference inside more text, or with a line anchor, is not a noderef', () => {
+  assert.equal(classifyClipboard({ ...base, text: 'see notes/plan.canvas#S3\nand more' }).kind, 'text');
+  assert.equal(classifyClipboard({ ...base, text: 'notes/plan.canvas#12' }).kind, 'text');
+});

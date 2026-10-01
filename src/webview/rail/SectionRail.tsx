@@ -25,7 +25,7 @@ export function laneColor(lane: { kernelId?: string; index: number }, kernels: R
   return { color: kernelColor(k ? k.colorIndex : lane.index), kernel: k };
 }
 
-export function SectionRail({ lanes, kernels, selectedNodeId, onFold, onRun, onReflow, onDelete, onBindKernel, onRename, onNewSection, onNewKernel, onRemoveKernel, onKernelAction }: {
+export function SectionRail({ lanes, kernels, selectedNodeId, onFold, onRun, onReflow, onDelete, onBindKernel, onRename, onNewSection, onNewKernel, onRemoveKernel, onKernelAction, onCopyReference }: {
   lanes: DerivedLane[];
   kernels: RailKernel[];
   selectedNodeId: string | null;
@@ -39,6 +39,7 @@ export function SectionRail({ lanes, kernels, selectedNodeId, onFold, onRun, onR
   onNewKernel: (laneId: string) => void;
   onRemoveKernel: (kernelRef: string) => void;
   onKernelAction: (laneId: string, action: 'start' | 'interrupt' | 'restart' | 'shutdown') => void;
+  onCopyReference: (laneId: string) => void;
 }): JSX.Element {
   const ty = useStore(s => s.transform[1]);
   const zoom = useStore(s => s.transform[2]);
@@ -101,6 +102,7 @@ export function SectionRail({ lanes, kernels, selectedNodeId, onFold, onRun, onR
           onKernel={() => setPop({ kind: 'kernel', laneId: popLane.id, anchor: pop.anchor })}
           onKernelAction={a => onKernelAction(popLane.id, a)}
           onRename={() => setPop({ kind: 'title', laneId: popLane.id, anchor: pop.anchor })}
+          onCopyReference={() => onCopyReference(popLane.id)}
           onDelete={() => onDelete(popLane.id)} onClose={closePop} />
       )}
     </div>

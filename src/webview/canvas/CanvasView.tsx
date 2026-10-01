@@ -63,6 +63,7 @@ import { loadedFileText } from '../hooks/useFileContent';
 import { G_BADGES_ATTR, gChordStep } from './gChord';
 import { SectionRail, type RailKernel } from '../rail/SectionRail';
 import { fmtDateTime } from '../rail/RailSegment';
+import { refTitle } from '../../shared/nodeRef';
 import { allFolded, deriveLanes, fitLanes, groupIdsByLane, sortLanes, insertLaneAt, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
 import { applyPatchesToCanvas, codeCellHeight, columnsOfDeleted as columnsOfDeletedIn, directionSlot, forkOf, hangingBelow, insertAfter, keepRowOf, layoutSection, reflowSection, ridersOf, sectionEngineNodes, sectionMembership, toEngineNodes, type EngineNode, type LayoutOpts, type Patches } from '../../shared/layoutEngine';
 import { youtubeId, YOUTUBE_NODE } from '../../shared/youtube';
@@ -467,13 +468,15 @@ let clipboard: { nodes: CanvasNode[]; edges: CanvasEdge[] } | null = null;
 interface CanvasViewProps {
   canvas:     CanvasData;
   canvasPath: string;
+  /** - this canvas's path as a copied reference writes it; a pasted reference to it gets a title */
+  refPath?:   string;
   /** - called when the keyboard-focused node changes; used by FloatingChat for context */
   onActiveNodeChange?: (nodeId: string | null, label: string | null) => void;
 }
 
 // ─── inner component (needs ReactFlowProvider context) ────────────────────────
 
-function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewProps): JSX.Element {
+function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: CanvasViewProps): JSX.Element {
   // - ensure every node has a reference label (N1, M3, J2 …); save if any were missing
   const initialNodes = ensureLabels(canvas.nodes);
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes.map(toFlowNode));
@@ -509,6 +512,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   // - node id a cross-canvas reference asked to focus; the reload effect honors it (force-center)
   // - so the just-opened canvas jumps to the target instead of restoring its last focus
   const pendingCrossFocusRef = useRef<string | null>(null);
+  // - id of an empty section a cross-canvas reference asked for; the reload effect pans to its top
+  const pendingCrossLaneRef = useRef<string | null>(null);
   // - true only while a real user drag is in progress, so grid-snap applies to drags (and their
   // - drop) but never to programmatic position changes (which would move nodes on their own)
   const draggingRef = useRef(false);
@@ -782,6 +787,12 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       if (cross && nodesRef.current.some(n => n.id === cross)) {
         pendingCrossFocusRef.current = null;
         focusNodeById(cross, true);
+        return;
+      }
+      const crossLane = pendingCrossLaneRef.current;
+      if (crossLane && derivedLanesRef.current.some(l => l.id === crossLane)) {
+        pendingCrossLaneRef.current = null;
+        revealLaneTopRef.current(crossLane);
         return;
       }
       const stored  = lastFocusedNodeId.get(canvasPath);
@@ -1888,29 +1899,46 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     count: laneFocusableCounts.get(l.id) ?? 0, folded: !!l.folded,
   })), [derivedLanes, laneFocusableCounts]);
 
+  // - pan so a section's top sits at the top of the view; x and zoom are kept
+  const revealLaneTop = useCallback((id: string) => {
+    const lane = derivedLanesRef.current.find(l => l.id === id);
+    if (!lane || !rfRef.current) return;
+    const { x, zoom } = rfRef.current.getViewport();
+    const c = clampCam(x, -lane.top * zoom, zoom);
+    rfRef.current.setViewport({ x: c.x, y: c.y, zoom }, { duration: CAMERA_MS });
+  }, [clampCam]);
+  const revealLaneTopRef = useRef(revealLaneTop);
+  useEffect(() => { revealLaneTopRef.current = revealLaneTop; });
+
   /**
-   * Go to a section from the marks panel: unfold it when folded, then focus its first node (by y,
-   * then x). An empty section only unfolds, and the camera pans to its top instead. The focus waits
-   * a frame because the unfold moves the nodes below in this tick.
+   * Go to a section: unfold it when folded, then focus its first node (by y, then x), the node `gg`
+   * goes to once the section is open. An empty section only unfolds, and the camera pans to its top
+   * instead. The focus waits a frame because the unfold moves the nodes below in this tick. Returns
+   * the node it focuses, or null for an empty or unknown section.
    */
-  const handlePickSection = useCallback((id: string) => {
-    setMarksOpen(false);
+  const goToSection = useCallback((id: string, forceCenter = false): string | null => {
     const lane = derivedLanes.find(l => l.id === id);
-    if (!lane) return;
+    if (!lane) return null;
     if (lane.folded) foldLaneRef.current(id);   // - the same action unfolds
     const members = new Set(lane.memberIds);
     const first = nodes
       .filter(n => members.has(n.id) && !isBandType(n.type))
       .sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x)[0];
     if (first) {
-      requestAnimationFrame(() => focusNodeById(first.id));
-      return;
+      requestAnimationFrame(() => focusNodeById(first.id, forceCenter));
+      return first.id;
     }
-    if (!rfRef.current) return;
-    const { x, zoom } = rfRef.current.getViewport();
-    const c = clampCam(x, -lane.top * zoom, zoom);
-    rfRef.current.setViewport({ x: c.x, y: c.y, zoom }, { duration: CAMERA_MS });
-  }, [derivedLanes, nodes, focusNodeById, clampCam]);
+    revealLaneTop(id);
+    return null;
+  }, [derivedLanes, nodes, focusNodeById, revealLaneTop]);
+  const goToSectionRef = useRef(goToSection);
+  useEffect(() => { goToSectionRef.current = goToSection; });
+
+  // - the marks panel's section rows
+  const handlePickSection = useCallback((id: string) => {
+    setMarksOpen(false);
+    goToSection(id);
+  }, [goToSection]);
 
   // ─── add text node in direction (shared by keyboard and VS Code command paths) ─
 
@@ -2069,6 +2097,12 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     const focused = nodesRef.current.find(n => n.selected && !isBandType(n.type));
     const label = focused ? (focused.data as Record<string, unknown>).nodeLabel as string | undefined : undefined;
     if (focused && label) vscodePostMessage({ type: 'copyNodeReference', label });
+  }, []);
+
+  // - the rail menu's Copy reference: the host writes the section label exactly as a node's
+  const handleCopySectionReference = useCallback((id: string) => {
+    const lane = derivedLanesRef.current.find(l => l.id === id);
+    if (lane) vscodePostMessage({ type: 'copyNodeReference', label: lane.label });
   }, []);
 
   // - paste the internal node clipboard (filled by yy/copy); inline nodes+edges with fresh ids
@@ -4027,11 +4061,13 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
         case 'internal':
           pasteInternalClipboard();
           return;
-        case 'noderef':
-          // - title is a display hint only (label drives activation) — resolving it needs a
-          // - host round trip to read the target canvas; skip it rather than block the paste
-          insertPastedNode({ type: 'noderef', canvas: action.canvas, label: action.label });
+        case 'noderef': {
+          // - the title is a display hint only (the label drives the jump). Another canvas would need
+          //   a host round trip to read, so only a reference to this canvas gets one
+          const title = refPath && action.canvas === refPath ? refTitle(canvasRef.current, action.label) : undefined;
+          insertPastedNode({ type: 'noderef', canvas: action.canvas, label: action.label, ...(title ? { title } : {}) });
           return;
+        }
         case 'link':
           insertPastedNode({ type: 'link', url: action.url });
           return;
@@ -4064,7 +4100,7 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
       document.removeEventListener('paste', onPaste);
       verifyTimeouts.forEach(clearTimeout);
     };
-  }, [insertPastedNode, pasteInternalClipboard, addCellNode]);
+  }, [insertPastedNode, pasteInternalClipboard, addCellNode, refPath]);
 
   // - handle sub-canvas extraction result from host
   useEffect(() => {
@@ -4123,6 +4159,23 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     return () => window.removeEventListener('skena:focusNodeRequest', handler);
   }, [focusNodeById]);
 
+  // - the same for a reference to a section (S3): the host found the label; it is read here against
+  //   the live stack order. Marked pending like a node, so a first open does not restore its last focus
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { label } = (e as CustomEvent<{ label: string }>).detail;
+      const lane = derivedLanesRef.current.find(l => l.label === label);
+      if (!lane) return;
+      const first = goToSectionRef.current(lane.id, true);
+      const pending = first === null ? pendingCrossLaneRef : pendingCrossFocusRef;
+      const key = first ?? lane.id;
+      pending.current = key;
+      window.setTimeout(() => { if (pending.current === key) pending.current = null; }, 1500);
+    };
+    window.addEventListener('skena:focusSectionRequest', handler);
+    return () => window.removeEventListener('skena:focusSectionRequest', handler);
+  }, []);
+
   return (
     <ZoomLevelProvider>
     <LanesContext.Provider value={lanes}>
@@ -4132,7 +4185,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     <SectionRail lanes={derivedLanes} kernels={railKernels} selectedNodeId={selectedNodeId}
       onFold={handleFoldLane} onRun={handleRunLane} onReflow={handleReflowLane} onDelete={handleDeleteLane}
       onBindKernel={handleBindKernel} onRename={handleRenameLane} onNewSection={handleNewSectionClick}
-      onNewKernel={handleNewKernel} onRemoveKernel={handleRemoveKernel} onKernelAction={handleKernelActionForLane} />
+      onNewKernel={handleNewKernel} onRemoveKernel={handleRemoveKernel} onKernelAction={handleKernelActionForLane}
+      onCopyReference={handleCopySectionReference} />
     <div ref={wrapperRef} style={{ flex: '1 1 auto', minWidth: 0, position: 'relative' }} onContextMenu={handleContextMenu}>
       <ReactFlow
         proOptions={{ hideAttribution: true }}

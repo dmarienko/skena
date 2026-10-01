@@ -76,15 +76,16 @@ function makeEventTarget<T>(): {
 // ─── App ─────────────────────────────────────────────────────────────────────
 
 export function App(): JSX.Element {
-  const { canvas, canvasPath, dispatch } = useCanvasData();
+  const { canvas, canvasPath, refPath, dispatch } = useCanvasData();
   const [ready,    setReady]    = useState(false);
   const [mdConfig, setMdConfig] = useState<MarkdownConfig>(DEFAULT_MARKDOWN_CONFIG);
   const styleUrlsRef = useRef<string[]>([]);
 
   // - active node id exposed to FloatingChat (updated by CanvasView via callback)
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
-  // - cross-canvas node ref: label the host asked to focus, dispatched once CanvasView is mounted
-  const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
+  // - a cross-canvas jump the host asked for, dispatched once CanvasView is mounted: a node by id,
+  // - or a section by its label (S3)
+  const [pendingFocus, setPendingFocus] = useState<{ id: string } | { section: string } | null>(null);
   // - current AI model/provider shown in the chat title
   const [chatModel, setChatModel] = useState<{ model: string; effort?: string; provider: string; sessionName?: string } | null>(null);
 
@@ -126,7 +127,7 @@ export function App(): JSX.Element {
       const msg = event.data;
       switch (msg.type) {
         case 'canvasLoaded':
-          dispatch({ type: 'SET_CANVAS', canvas: msg.canvas, canvasPath: msg.canvasPath });
+          dispatch({ type: 'SET_CANVAS', canvas: msg.canvas, canvasPath: msg.canvasPath, refPath: msg.refPath });
           setReady(true);
           break;
         case 'canvasChanged':
@@ -274,7 +275,10 @@ export function App(): JSX.Element {
           // - skena:focusNodeRequest listener — an inline dispatch would be dropped. The effect
           // - below fires it once ready. (skena:focusNode is a DIFFERENT event focusNodeById
           // - broadcasts AFTER centering, for TextNode DOM focus — reusing it would recurse.)
-          setPendingFocusId(msg.id);
+          setPendingFocus({ id: msg.id });
+          break;
+        case 'focusSection':
+          setPendingFocus({ section: msg.label });
           break;
         case 'floatingChatCompacting':
           window.dispatchEvent(new CustomEvent('skena:compacting', { detail: msg.active }));
@@ -308,14 +312,15 @@ export function App(): JSX.Element {
   // - dispatch a buffered cross-canvas focus once CanvasView is mounted (ready) and its
   // - listener is live. rAF lets the canvas lay out so setCenter targets real node positions.
   useEffect(() => {
-    if (!ready || !pendingFocusId) return;
-    const id = pendingFocusId;
+    if (!ready || !pendingFocus) return;
+    const p = pendingFocus;
     const raf = requestAnimationFrame(() => {
-      window.dispatchEvent(new CustomEvent('skena:focusNodeRequest', { detail: { id } }));
-      setPendingFocusId(null);
+      if ('id' in p) window.dispatchEvent(new CustomEvent('skena:focusNodeRequest', { detail: { id: p.id } }));
+      else window.dispatchEvent(new CustomEvent('skena:focusSectionRequest', { detail: { label: p.section } }));
+      setPendingFocus(null);
     });
     return () => cancelAnimationFrame(raf);
-  }, [ready, pendingFocusId]);
+  }, [ready, pendingFocus]);
 
   // ─── active node callback from CanvasView ──────────────────────────────
 
@@ -334,6 +339,7 @@ export function App(): JSX.Element {
         <CanvasView
           canvas={canvas}
           canvasPath={canvasPath}
+          refPath={refPath}
           onActiveNodeChange={handleActiveNodeChange}
         />
       ) : (
