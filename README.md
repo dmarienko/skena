@@ -46,7 +46,7 @@ It runs wherever VS Code runs, including over Remote SSH on headless servers, an
 ### AI companion — chat that lives on your canvas
 A chat console docked at the bottom of the canvas itself, not in a side panel. It sees what you see and acts on the canvas directly.
 
-- **Canvas-aware context** — the companion receives the focused node's content, its 1-hop connections, and your current viewport: zoom level, on-screen node labels, and the verbatim text visible in the focused node.
+- **Canvas-aware context** — the companion receives the focused node's content, its 1-hop connections, and your current viewport: zoom level, on-screen node labels, and the verbatim text visible in the focused node. A code cell comes as its language and source, cut at the same lengths as other nodes: 3000 characters for the focused or an attached node, 600 for a connected one.
 - **Acts on the canvas** — it can add notes, read and update nodes through Skena's bundled MCP tools. New notes land next to the node you're focused on.
 - **Three providers** (`skena.ai.provider`):
 
@@ -72,9 +72,9 @@ A chat console docked at the bottom of the canvas itself, not in a side panel. I
 | `Shift+H/J/K/L` | Scroll the conversation from vim normal mode in the input |
 
 ### Paste and drop anything
-`Ctrl+V` on the canvas turns the clipboard into the right node: screenshots and notebook chart/table outputs become cell nodes, copied files become file nodes (a copied `.canvas` file becomes a portal; a pasted path *string* stays a file node), URLs become link nodes, a `path/to/x.canvas#N3` reference becomes a diamond that opens that canvas on node `N3`, text becomes a text node — all connected to the focused node with an edge. `yy` then `Ctrl+V` still duplicates canvas nodes.
+`Ctrl+V` on the canvas turns the clipboard into the right node: screenshots and notebook chart/table outputs become cell nodes, copied files become file nodes (a copied `.canvas` file becomes a portal; a pasted path *string* stays a file node), URLs become link nodes, a `path/to/x.canvas#N3` reference becomes a diamond that opens that canvas on node `N3` (`#S3` names section S3: the canvas opens with that section unfolded and its first node focused), text becomes a text node — all connected to the focused node with an edge. `yy` then `Ctrl+V` still duplicates canvas nodes.
 
-Drag files from the VS Code Explorer onto the canvas — several at once work (they land 24 px apart and are not laid out), and a `.canvas` file becomes a portal. A file node refreshes when its file changes on disk.
+Drag files from the VS Code Explorer onto the canvas; a `.canvas` file becomes a portal. Dropped files are placed as a paste is: with a node focused, in the column slot right of it (outside a section, the first free place right of it), one gap apart, each connected to the focused node; with nothing focused, at the drop point. Several files are added one at a time, as several pasted URLs are, so they stay together and the nodes already in that column move down under them. Each file is one undo step. A file node refreshes when its file changes on disk.
 
 ### Interactive plotly charts
 Plotly figures render live in cell nodes — from notebook outputs (`go.Figure`), via the `Alt+P` pin, or by pasting `fig.to_json()` output onto the canvas. Pan, zoom, and hover work inside the node. (Jupyter `FigureWidget` outputs carry no offline figure data, so use `go.Figure` or paste the figure JSON.)
@@ -91,11 +91,13 @@ Plotly figures render live in cell nodes — from notebook outputs (`go.Figure`)
 ### Run code on a Jupyter kernel
 Turn code nodes into a live notebook. Run **Skena: Add Kernel** to drop a kernel node (configure servers in `skena.jupyter.kernels` as `{name, hubUrl, token}`), connect a code node to it with an edge, and execute.
 
+- **Where the servers come from** — the first non-empty list wins: `skena.jupyter.kernels` in `.vscode/settings.local.json` (the one nearest above the canvas, then the workspace folder's; VS Code does not read this file, so a token can stay out of `settings.json`), then `skena.jupyter.kernels` in VS Code's settings, then `JUPYTER_SERVER_URL` + `JUPYTER_API_TOKEN` from the environment as a server named `default`. With none found, the warning lists the places looked in.
+
 - **Run** — `Shift+Enter`, `Ctrl+Enter`, `Alt+R`, or `Alt+J` inside the editor, or the ▶ button in the node header (disabled until the cell is connected to a kernel node or its section has a kernel bound). Running a cell first runs any unrun upstream cells it's wired to, in dependency order.
 - **Live output** — stdout, `tqdm` progress bars, and a subset of `ipywidgets` stream into a connected output node as the cell runs.
 - **Interrupt** — `Ctrl`/`Cmd+C` (with confirm), the ■ stop button, or right-click while a cell is running.
 - **Restart / shutdown** from the kernel node — cell run-flags reset so they re-run cleanly against the fresh namespace.
-- **Agent runs too** — with the `harness` provider, the AI companion can execute cells over MCP and you see the same live output. An agent that reaches skena's MCP server any other way gets no Jupyter servers, so it cannot run cells.
+- **Agent runs too** — an agent runs cells over MCP and you see the same live output. The AI companion (`harness`) hands its server list to the MCP server; any other agent that starts the server from the workspace `.mcp.json` finds the servers in the workspace settings or the environment (see **MCP server** below).
 - **New code cell** — pick **Code node** in the `Ctrl+N` or `Alt+X` menu, or press `o` on a code cell for a new one under it in the same column.
 - **Height follows the code** — a cell is 100 px tall for up to three lines and grows in 50 px steps as you type, up to 900 px; fewer lines shrink it again.
 - **Preview looks like the editor** — out of edit mode the cell is drawn with the editor's own highlighter and colours, bracket pairs in matching colours, relative line numbers and indent guides, so entering and leaving edit mode does not move or recolour the text.
@@ -152,7 +154,8 @@ Navigate the canvas without touching the mouse:
 Sections are horizontal lanes running down the canvas — a node belongs to the lane whose range holds its top edge. The **rail** is the vertical strip on the left: one segment per section, in that section's colour, carrying its label and title.
 
 - **Segment controls** — the chevron folds / unfolds the section (folded members are hidden, not moved), ▶ runs its code cells in order, the dot binds a Jupyter kernel (hollow ring = none bound), ✕ deletes the section and its nodes after a confirm. Double-click the title to rename it.
-- **Right-click a segment** for the full menu: **Fold** / **Unfold**, **Run section**, **Reflow section**, **Kernel…**, **Rename…**, **Delete section** — plus **Start / Interrupt / Restart / Shutdown kernel** when a kernel is bound.
+- **Right-click a segment** for the full menu: **Fold** / **Unfold**, **Run section**, **Reflow section**, **Kernel…**, **Rename…**, **Copy reference**, **Delete section** — plus **Start / Interrupt / Restart / Shutdown kernel** when a kernel is bound.
+- **Copy reference** copies `path/to/x.canvas#S3`. Pasted on a canvas it makes a diamond that opens that canvas with the section unfolded and its first node focused (an empty section: the view moves to its top). Pasted into the same canvas, the diamond shows the section's title.
 - **Reflow section** puts every node into a column: code cells first, then the rest, each joining the nearest column that reaches it or starting its own; then it closes the holes in each column, sits the column pairs one gap apart left to right, and moves the notes a cell covers down out of the way. It is the only whole-section move — every other edit touches one column.
 - **`+`** at the bottom of the rail adds a new section under the last one.
 - Sections fit their content: a node placed past a section's bottom edge grows that section, slack shrinks it (never below the minimum), and the sections and nodes below move by the same amount.
@@ -221,6 +224,10 @@ Zoom runs from 0.05 to 1 (`z` / `Z`, the wheel, `Alt+Shift+C` for 1). Below zoom
 ### MCP server
 On activation, Skena auto-deploys a local MCP server to `.vscode/skena-mcp.js` and adds a `skena` entry to the workspace's `.mcp.json`, so Claude Code and other AI tools can read and write canvas nodes programmatically.
 
+- `canvas_add_node` makes text, code, cell, file, link, portal and noderef nodes; any other type is refused with an error that lists these. A new node gets the size the canvas UI gives that type; a code cell with content is as tall as its lines need.
+- A `noderef` points at a node (`N3`) or a section (`S3`) in another canvas: `canvas` plus `label`, or `canvas` as `path.canvas#N3`.
+- Jupyter servers for `canvas_run_cell` and the kernel tools are looked up on every call, and the first non-empty list wins: `SKENA_JUPYTER_KERNELS` (set when the AI companion starts the server); then `skena.jupyter.kernels` in `.vscode/settings.local.json`, then in `.vscode/settings.json`, of the nearest folder above the canvas that has a `.vscode` directory, then of the one above the server's working directory; then `JUPYTER_SERVER_URL` + `JUPYTER_API_TOKEN`. An unknown server name is answered with the names found, or with every place looked in.
+
 ### VS Code Remote SSH compatible
 All processing runs in the extension host on the remote machine. No local toolchain needed.
 
@@ -266,14 +273,11 @@ Then press ``Alt+` `` on any canvas to open the chat.
   // Directories to scan in each vault
   "skena.vaultDirectories": ["alpha", "knowledge", "logs", "inbox"],
 
-  // Auto-save debounce (ms)
-  "skena.autoSaveDelay": 500,
-
   // Rendered-markdown theme (nodes + chat)
   "skena.markdownTheme": "vscode",         // vscode | factors
   "skena.markdownMaxWidth": 0,             // max chars per line in md nodes (0 = unlimited; try ~88)
 
-  // Jupyter servers for kernel nodes
+  // Jupyter servers for kernel nodes (the same key in .vscode/settings.local.json comes first)
   "skena.jupyter.kernels": [
     { "name": "local", "hubUrl": "http://localhost:8888", "token": "…" }
   ],
@@ -312,9 +316,9 @@ Then press ``Alt+` `` on any canvas to open the chat.
 
 Skena reads and writes [JSON Canvas 1.0](https://jsoncanvas.org/spec/1.0/) with its own node types added. Files are plain JSON, version-control friendly, and diffable.
 
-**Supported node types**: `file`, `text`, `group`, `link`, `code` (code cell), `cell` (output or standalone cell), `kernel` (Jupyter kernel), `knowledge` (knowledge-search result with its cached text), `noderef` (reference to a node in another canvas), `portal` (link to another canvas), `chat` (AI terminal, UI only)
+**Supported node types**: `file`, `text`, `link`, `code` (code cell), `cell` (output or standalone cell), `kernel` (Jupyter kernel), `knowledge` (knowledge-search result with its cached text), `noderef` (reference to a node or a section in another canvas), `portal` (link to another canvas), `chat` (AI terminal, UI only)
 
-The node types past `link` are skena's own additions to the format.
+The node types past `link` are skena's own additions to the format. A `group` node, written by another JSON Canvas editor, is kept in the file as it is but not shown, laid out or counted in a section; sections do that job here.
 
 ---
 
