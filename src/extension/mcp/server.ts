@@ -6,21 +6,17 @@
  *
  * Protocol: MCP stdio transport (JSON-RPC 2.0, newline-delimited).
  *
- * Tools:
- *   canvas_list         list all nodes + edges on a canvas
- *   canvas_read         full content of a node by label or id
- *   canvas_search       text search across all nodes
- *   canvas_edges        connections for a specific node
- *   canvas_follow       resolve file/portal node to a filesystem path
- *   canvas_add_node     create a new node (marked createdBy:'ai')
- *   canvas_update_node  edit content/tags/color of an existing node
- *   canvas_remove_node  delete one or more nodes (and their edges)
- *   canvas_add_edge     connect two nodes
- *   canvas_pin_output   create a CellNode linked back to a source node
- *   canvas_run_cell     run a code node on a bound kernel, write output to a cell node
+ * Tools: the TOOLS list below; `dispatch` routes each name to its handler.
+ *
+ * Jupyter servers for the run and kernel tools, first non-empty source wins (`loadKernelServers`):
+ * SKENA_JUPYTER_KERNELS (set by the AI companion), then `skena.jupyter.kernels` in
+ * .vscode/settings.local.json and then .vscode/settings.json of the nearest folder above the canvas
+ * that has a .vscode directory, then of the one above this process's working directory, then
+ * JUPYTER_SERVER_URL + JUPYTER_API_TOKEN as a server named `default`.
  */
 
 import * as fs       from 'fs/promises';
+import * as fsSync   from 'fs';
 import * as path     from 'path';
 import * as os       from 'os';
 import * as readline from 'readline';
@@ -30,12 +26,15 @@ import { CanvasData, CanvasNode, CanvasEdge, CanvasNodeBase, CellNode, CodeNode,
 import { nextKernelColorIndex } from '../../shared/kernelPalette';
 import { assignLabel, ensureLabels } from '../../shared/nodeLabels';
 import { snapGrid } from '../../shared/grid';
-import { NODE_SIZE, OUTPUT_MAX_W, OUTPUT_MAX_H } from '../../shared/constants';
+import { NODE_SIZE, OUTPUT_MAX_W, OUTPUT_MAX_H, CODE_MIN_H, CODE_MAX_H, CODE_H_STEP } from '../../shared/constants';
 import { clampToOrigin } from '../../shared/bounds';
 import { applyLaneFit, deriveLanes, outputCellGeom, pinOutputToLane, pruneFoldedIds, sectionByRef, insertLaneAt, foldLane, unfoldLane, sectionTargetHeight, parkFirstLaneAtOrigin, memberCodeCellsInRunOrder, type SectionLane } from '../../shared/sectionLanes';
 import { resolveCellKernel, cellKernelView, kernelById, upstreamCellsForRun, resolveKernelCellsInCanvas, type KernelLike } from '../../shared/kernelBinding';
 import { layoutSection, reflowSection, insertAfter, forkOf, placeOutput, applyPatchesToCanvas, columnsOfDeleted, ridersOf, hangingBelow, sectionEngineNodes, sectionMembership, toEngineNodes, codeCellHeight, estimateCodeNeedPx, keepRowOf, markKeepRowOnLoad } from '../../shared/layoutEngine';
-import { resolveKernelConfig, type KernelServerConfig } from '../jupyter/config';
+import { pickKernelServers, unknownServerText, type KernelServerConfig, type KernelLookup, type SettingsRead } from '../jupyter/config';
+import { parseSettingsJson } from '../settingsJson';
+import { parseNodeRef } from '../../shared/nodeRef';
+import { youtubeId, YOUTUBE_NODE } from '../../shared/youtube';
 import { executeCell, startKernel, shutdownKernel } from '../jupyter/client';
 import { renderOutput, hasVisibleOutput } from '../jupyter/output';
 import type { CollectedOutput } from '../jupyter/protocol';
@@ -88,20 +87,11 @@ interface VaultConfig { name: string; path: string; directories?: string[] }
 // - cache: workspace root → vault list (avoid re-reading settings for every call)
 const vaultCache = new Map<string, VaultConfig[]>();
 
-/** Parse VS Code's relaxed JSON (comments + trailing commas allowed). */
-function parseRelaxedJson(raw: string): Record<string, unknown> {
-  const stripped = raw
-    .replace(/\/\/[^\n]*/g, '')
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/,(\s*[}\]])/g, '$1');          // - trailing commas
-  return JSON.parse(stripped) as Record<string, unknown>;
-}
-
 /** Read a settings file and return its parsed content, or null on failure. */
 async function readSettingsFile(filePath: string): Promise<Record<string, unknown> | null> {
   try {
     const raw = await fs.readFile(filePath, 'utf-8');
-    return parseRelaxedJson(raw);
+    return parseSettingsJson(raw);
   } catch {
     return null;
   }
@@ -175,6 +165,32 @@ function normalizeFileUri(fileUri: string, canvasPath: string): string {
   // - path.relative returns something starting with ".." when outside canvasDir
   if (rel.startsWith('..')) return fileUri; // - keep absolute, it's outside the project
   return rel.startsWith('./') ? rel : `./${rel}`;
+}
+
+// - the nearest folder at or above `start` that has a .vscode directory: the workspace folder the
+//   extension deploys this script into, as near as a process outside VS Code can tell
+function workspaceDirAbove(start: string): string | null {
+  let dir = path.resolve(start);
+  for (;;) {
+    try { if (fsSync.statSync(path.join(dir, '.vscode')).isDirectory()) return dir; } catch { /* - keep walking */ }
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+/**
+ * A noderef's target canvas as the webview stores one: relative to the workspace folder, the way
+ * "Copy node reference" writes it. An absolute path outside that folder stays absolute; a relative
+ * one is taken as already workspace-relative. The host tries the holding canvas's folder first,
+ * then each workspace folder, so all three resolve.
+ */
+function noderefCanvasPath(target: string, canvasPath: string): string {
+  const abs = expandHome(target);
+  if (!path.isAbsolute(abs)) return target;
+  const root = workspaceDirAbove(path.dirname(canvasPath));
+  const rel  = root ? path.relative(root, abs) : '';
+  return rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel.split(path.sep).join('/') : abs;
 }
 
 // ─── per-file async lock ───────────────────────────────────────────────────────
@@ -274,6 +290,7 @@ function nodeSnippet(node: CanvasNode): string {
     case 'kernel':  return `kernel: ${node.displayName ?? node.server}${node.kernelId ? ' (live)' : ''}`;
     case 'chat':    return `${node.agent}: ${node.title}`;
     case 'portal':  return `→ ${node.canvas}`;
+    case 'noderef': return `→ ${node.canvas}#${node.label}${node.title ? ` "${node.title}"` : ''}`;
     case 'knowledge': return truncate(node.title, 80);
     default:        return '(unknown)';
   }
@@ -398,17 +415,31 @@ function movedLabels(d: CanvasData, before: Map<string, string>, exclude: string
     .map(n => n.nodeLabel ?? n.id);
 }
 
-// - default dimensions per node type
-function defaultDims(type: string): { w: number; h: number } {
-  const map: Record<string, { w: number; h: number }> = {
-    text:   { w: 400, h: 300 },
-    cell:   { w: 480, h: 320 },
-    code:   { w: NODE_SIZE.code.w, h: NODE_SIZE.code.h },   // - the size the webview gives a code cell, so both build the same column
-    file:   { w: 400, h: 400 },
-    link:   { w: 240, h: 80  },
-    portal: { w: 200, h: 120 },
-  };
-  return map[type] ?? { w: 400, h: 300 };
+// - no NODE_SIZE entry for these two: the webview's pin (`addCellNode`) and paste of a reference
+//   (`insertPastedNode`) write these numbers
+const CELL_SIZE    = { w: 480, h: 320 } as const;
+const NODEREF_SIZE = { w: 200, h: 120 } as const;
+
+// - the height a code cell with content gets (`codeCellHeight`), for the tool descriptions
+const CODE_HEIGHT_RANGE = `${CODE_MIN_H} to ${CODE_MAX_H} px in ${CODE_H_STEP} px steps`;
+
+const KERNEL_SERVERS_TEXT = 'Jupyter servers are looked up on every call, and the first non-empty list wins: SKENA_JUPYTER_KERNELS (set when the canvas AI companion starts this server); then skena.jupyter.kernels in .vscode/settings.local.json and then .vscode/settings.json of the nearest folder above the canvas that has a .vscode directory, then of the one above this server\'s working directory; then JUPYTER_SERVER_URL + JUPYTER_API_TOKEN from the environment, as a server named "default". An unknown server name is answered with the names found and where they came from, or with every place looked in.';
+
+// - the types canvas_add_node makes; a kernel node and a knowledge node have tools of their own
+const ADD_NODE_TYPES = ['text', 'code', 'cell', 'file', 'link', 'portal', 'noderef', 'group'];
+
+// - the size the webview gives a new node of this type, so a node the agent adds lays out as one the
+//   user adds. A group has none: nothing in the UI creates one, so the caller gives its size.
+function defaultDims(type: string, url?: string): { w: number; h: number } {
+  switch (type) {
+    case 'code':    return NODE_SIZE.code;
+    case 'cell':    return CELL_SIZE;
+    case 'file':    return NODE_SIZE.file;
+    case 'link':    return url && youtubeId(url) ? YOUTUBE_NODE : NODE_SIZE.link;
+    case 'portal':  return NODE_SIZE.portal;
+    case 'noderef': return NODEREF_SIZE;
+    default:        return NODE_SIZE.text;
+  }
 }
 
 // ─── file node content reader ─────────────────────────────────────────────────
@@ -585,6 +616,7 @@ async function canvasRead(args: Record<string, unknown>): Promise<string> {
     case 'kernel': content = `Kernel: ${n.displayName ?? 'kernel'}  Server: ${n.server}  ${n.kernelId ? `Live id: ${n.kernelId}` : '(not started)'}`; break;
     case 'chat':   content = `Agent: ${n.agent}  Model: ${n.model ?? 'default'}\nTitle: ${n.title}`; break;
     case 'portal': content = `Sub-canvas: ${n.canvas}`; break;
+    case 'noderef': content = `Reference: ${n.canvas}#${n.label}${n.title ? `\nTitle: ${n.title}` : ''}`; break;
     case 'knowledge': content = `Format: knowledge\nServer: ${n.server}\nSource: ${n.uri}\nFetched: ${n.fetchedAt}${n.error ? `\nLast refresh failed: ${n.error}` : ''}\n\n${n.text}`; break;
   }
 
@@ -682,6 +714,20 @@ async function canvasFollow(args: Record<string, unknown>): Promise<string> {
 
 async function canvasAddNode(args: Record<string, unknown>): Promise<string> {
   const p = resolvePath(args.canvasPath as string);
+  if (args.type !== undefined && !ADD_NODE_TYPES.includes(args.type as string)) {
+    const elsewhere = args.type === 'knowledge' ? ' (a knowledge node: canvas_add_knowledge)'
+      : args.type === 'kernel' ? ' (a kernel: canvas_add_kernel adds a kernel record)' : '';
+    return `error: unknown node type "${String(args.type)}" — canvas_add_node makes ${ADD_NODE_TYPES.join(', ')}${elsewhere}`;
+  }
+  // - a reference is `<path>.canvas#<LABEL>` whether it comes in one piece or as canvas + label
+  const ref = args.type === 'noderef'
+    ? parseNodeRef(args.label === undefined ? String(args.canvas ?? '') : `${String(args.canvas ?? '')}#${String(args.label)}`)
+    : null;
+  if (args.type === 'noderef' && !ref) return 'error: a noderef needs canvas (a path ending in .canvas) and label (the target node\'s label, e.g. N3), or canvas as path.canvas#N3';
+  if (args.type === 'group') {
+    if (args.after !== undefined || args.forkOf !== undefined) return 'error: a group is a backdrop placed by x/y, not by after or forkOf';
+    if (args.width === undefined || args.height === undefined) return 'error: a group needs width and height';
+  }
   return withFileLock(p, async () => {
   const d    = await readCanvasOrEmpty(p);   // - create-on-first-add: empty canvas if the file is new
   // - `after` and `forkOf` both let the engine place the new node, so a supplied x/y is ignored (the
@@ -693,13 +739,14 @@ async function canvasAddNode(args: Record<string, unknown>): Promise<string> {
   if (anchorRef !== undefined && !anchor) return `Node not found: ${anchorRef}`;
 
   const type = (args.type as string | undefined) ?? (anchor?.type === 'code' ? 'code' : 'text');
-  const dims = defaultDims(type);
-  const w    = (args.width  as number | undefined) ?? dims.w;
+  const dims = defaultDims(type, args.url as string | undefined);
+  // - a supplied size is snapped; a default one is the webview's as it stands (a YouTube link's 320,
+  //   a cell's 480×320 are off the grid there too)
+  const w    = args.width !== undefined ? snapGrid(args.width as number) : dims.w;
   // - a code cell written here is as tall as its text needs, the way the webview sizes one the user
-  //   edits; an explicit height still wins. `codeCellHeight` steps by 50, off the 100 grid, so that
-  //   height is the one size not snapped.
+  //   edits; an explicit height still wins. `codeCellHeight` steps by 50, off the 100 grid.
   const sized = type === 'code' && args.height === undefined && typeof args.content === 'string';
-  const h     = sized ? codeCellHeight(estimateCodeNeedPx(args.content as string)) : ((args.height as number | undefined) ?? dims.h);
+  const h     = sized ? codeCellHeight(estimateCodeNeedPx(args.content as string)) : (args.height !== undefined ? snapGrid(args.height as number) : dims.h);
 
   let placed: { x: number; y: number } | null = null;
   if (anchor) {
@@ -708,7 +755,7 @@ async function canvasAddNode(args: Record<string, unknown>): Promise<string> {
     const around = sectionEngineNodes(d.nodes, d.metadata?.sections ?? [], anchor.id) ?? toEngineNodes(d.nodes);
     placed = args.after !== undefined
       ? insertAfter(around, anchor.id)
-      : forkOf(around, anchor.id, (args.side as 'right' | 'left' | undefined) ?? 'right', snapGrid(w));
+      : forkOf(around, anchor.id, (args.side as 'right' | 'left' | undefined) ?? 'right', w);
     // - the anchor is a node of the section either way, so the only refusal left is a left fork off
     //   the edge
     if (!placed) return 'a left fork does not fit before the origin';
@@ -727,8 +774,8 @@ async function canvasAddNode(args: Record<string, unknown>): Promise<string> {
     type:      type as CanvasNode['type'],
     x:         at.x,
     y:         at.y,
-    width:     snapGrid(w),
-    height:    sized ? h : snapGrid(h),
+    width:     w,
+    height:    h,
     createdBy: 'ai' as const,
     ...(args.color ? { color: args.color as CanvasNodeBase['color'] } : {}),
     ...(args.tags  ? { tags:  args.tags  as string[] } : {}),
@@ -758,6 +805,12 @@ async function canvasAddNode(args: Record<string, unknown>): Promise<string> {
     case 'portal':
       newNode = { ...base, type: 'portal', canvas: (args.canvas as string | undefined) ?? '' } as CanvasNode;
       break;
+    case 'noderef':
+      newNode = { ...base, type: 'noderef', canvas: noderefCanvasPath(ref!.canvas, p), label: ref!.label, ...(args.title ? { title: args.title as string } : {}) } as CanvasNode;
+      break;
+    case 'group':
+      newNode = { ...base, type: 'group', ...(args.label ? { label: args.label as string } : {}) } as CanvasNode;
+      break;
     default:
       newNode = { ...base, type: 'text', text: (args.content as string | undefined) ?? '' } as CanvasNode;
   }
@@ -769,7 +822,8 @@ async function canvasAddNode(args: Record<string, unknown>): Promise<string> {
   //   pinned to that lane until the user unfolds, rather than being adopted by the lane below
   if (anchor && d.metadata?.sections) d.metadata = { ...d.metadata, sections: pinOutputToLane(d.metadata.sections, anchor.id, labeled.id) };
   const report: { capped?: boolean } = {};
-  const own = applyEngine(d, [labeled.id], [], report, anchor ? { id: anchor.id, joining: [labeled.id] } : undefined);
+  // - a group is drawn behind the nodes it covers: as a mover it would push every one of them away
+  const own = type === 'group' ? new Map<string, number>() : applyEngine(d, [labeled.id], [], report, anchor ? { id: anchor.id, joining: [labeled.id] } : undefined);
   Object.assign(d, applyLaneFit(d, Date.now(), own));   // - every write fits the sections
   const moved = movedLabels(d, before, [labeled.id]);
   await writeCanvas(p, d);
@@ -1103,7 +1157,7 @@ async function canvasPinOutput(args: Record<string, unknown>): Promise<string> {
   const d       = await readCanvas(p);
   const format  = (args.format as 'html' | 'markdown' | 'image' | undefined) ?? 'html';
   const content = (args.content as string | undefined) ?? '';
-  const W = 480, H = 320;
+  const W: number = CELL_SIZE.w, H: number = CELL_SIZE.h;
 
   // - a pin onto a code cell with no output yet IS that cell's output: same slot as a run, so the
   //   engine keeps the pair together. Off a code cell, or onto one whose output already fills that
@@ -1180,14 +1234,27 @@ async function canvasPinOutput(args: Record<string, unknown>): Promise<string> {
   }); // - withFileLock
 }
 
-// - kernel servers for the agent-run path: prefer the harness-injected env (JSON),
-// - else fall back to the same ~/.aix/xlmcp/.env resolution the host uses.
-function loadKernelServersFromEnv(): KernelServerConfig[] {
-  const raw = process.env.SKENA_JUPYTER_KERNELS;
-  if (raw) {
-    try { return JSON.parse(raw) as KernelServerConfig[]; } catch { /* - fall through to config */ }
-  }
-  return resolveKernelConfig(undefined, null);
+function readSettingsSync(file: string): SettingsRead {
+  let raw: string;
+  try { raw = fsSync.readFileSync(file, 'utf-8'); }
+  catch (e) { return { file, problem: (e as NodeJS.ErrnoException).code === 'ENOENT' ? 'missing' : 'not readable' }; }
+  try { return { file, json: parseSettingsJson(raw) }; }
+  catch (e) { return { file, problem: e instanceof Error ? e.message : String(e) }; }
+}
+
+/**
+ * The Jupyter servers this process can reach, read fresh on every call so an edited settings file
+ * applies at once. An agent that starts this server from the workspace `.mcp.json` gets no
+ * SKENA_JUPYTER_KERNELS, so the workspace settings are read here: those of the nearest folder above
+ * the canvas that has a .vscode directory, then those above the working directory.
+ */
+function loadKernelServers(canvasPath: string): KernelLookup {
+  const dirs = [workspaceDirAbove(path.dirname(canvasPath)), workspaceDirAbove(process.cwd())]
+    .filter((d, i, all): d is string => d !== null && all.indexOf(d) === i);
+  const settings: SettingsRead[] = dirs.length
+    ? dirs.flatMap(d => ['settings.local.json', 'settings.json'].map(f => readSettingsSync(path.join(d, '.vscode', f))))
+    : [{ file: '.vscode settings', problem: `no .vscode folder at or above ${path.dirname(canvasPath)} or ${process.cwd()}` }];
+  return pickKernelServers(process.env.SKENA_JUPYTER_KERNELS, settings, process.env);
 }
 
 // - run ONE code cell on its kernel: mark running (stripe via soft-reload), stream live output to
@@ -1341,7 +1408,7 @@ interface RunContext { kernel: KernelLike; kernelId: string; server: KernelServe
 // - everything one run needs, or the error text explaining why it cannot start: an explicit kernelRef
 // - (a kernel record id/name, or a kernel node label/id), else the cell's kernel — edge-bound kernel,
 // - else the kernel bound to the cell's section.
-function prepareRun(d: CanvasData, cell: CanvasNode, kernelRef?: string): RunContext | string {
+function prepareRun(d: CanvasData, p: string, cell: CanvasNode, kernelRef?: string): RunContext | string {
   let kernel: KernelLike | null = kernelRef ? kernelByRef(d, kernelRef) : null;
   if (kernelRef && !kernel) return `error: no kernel matches "${kernelRef}" — a record id or display name, or a kernel node label/id`;
   if (!kernel) {
@@ -1350,9 +1417,9 @@ function prepareRun(d: CanvasData, cell: CanvasNode, kernelRef?: string): RunCon
   }
   if (!kernel) return 'error: no kernel bound to this cell — connect it to a kernel node, or bind a kernel to its section from the rail';
 
-  const servers = loadKernelServersFromEnv();
-  const server  = servers.find(s => s.name === kernel.server);
-  if (!server) return `error: unknown server ${kernel.server}`;
+  const lookup = loadKernelServers(p);
+  const server = lookup.servers.find(s => s.name === kernel.server);
+  if (!server) return unknownServerText(kernel.server, lookup);
   if (!kernel.kernelId) return 'error: kernel has no live kernelId (open the canvas so Skena starts it)';
 
   return { kernel, kernelId: kernel.kernelId, server, ipc: parseRunIpc(process.env.SKENA_RUN_IPC) };
@@ -1366,7 +1433,7 @@ async function canvasRunCell(args: Record<string, unknown>): Promise<string> {
     const cell = findNode(d, args.cellRef as string);
     if (!cell || cell.type !== 'code') return `error: ${args.cellRef} is not a code node`;
 
-    const prep = prepareRun(d, cell, args.kernelRef as string | undefined);
+    const prep = prepareRun(d, p, cell, args.kernelRef as string | undefined);
     if (typeof prep === 'string') return prep;
     const { kernel, kernelId, server, ipc } = prep;
 
@@ -1563,7 +1630,7 @@ async function canvasRunSection(args: Record<string, unknown>): Promise<string> 
       // - a previous cell's run re-fits the sections and replaces d.nodes: read this one again
       const cell = d.nodes.find(n => n.id === cellId && n.type === 'code') as CodeNode | undefined;
       if (!cell) continue;
-      const prep = prepareRun(d, cell);
+      const prep = prepareRun(d, p, cell);
       if (typeof prep === 'string') return `${prep}${ran.length ? ` (ran ${ran.join(', ')})` : ''}`;
       const r = await runCellCore(d, cell, prep.kernel, prep.kernelId, prep.server, p, prep.ipc);
       ran.push(`${cell.nodeLabel ?? cell.id}:${r.status}`);
@@ -1581,9 +1648,9 @@ async function canvasAddKernel(args: Record<string, unknown>): Promise<string> {
   const p = resolvePath(args.canvasPath as string);
   return withFileLock(p, async () => {
     const d       = await readCanvas(p);
-    const servers = loadKernelServersFromEnv();
-    const server  = servers.find(s => s.name === args.server);
-    if (!server) return `error: unknown server ${args.server} — known: ${servers.map(s => s.name).join(', ') || '(none configured)'}`;
+    const lookup = loadKernelServers(p);
+    const server = lookup.servers.find(s => s.name === args.server);
+    if (!server) return unknownServerText(String(args.server), lookup);
 
     const spec = args.spec as string | undefined;
     let kernelId: string | undefined;
@@ -1631,7 +1698,7 @@ async function canvasRemoveKernel(args: Record<string, unknown>): Promise<string
       return `error: no kernel record matches ${ref} — a record id or display name`;
     }
 
-    const server = loadKernelServersFromEnv().find(s => s.name === rec.server);
+    const server = loadKernelServers(p).servers.find(s => s.name === rec.server);
     if (server && rec.kernelId) {
       try { await shutdownKernel(server, rec.kernelId); } catch { /* - already gone */ }
     }
@@ -1681,7 +1748,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_search',
-    description: 'Search for canvas nodes whose labels, content, filenames, or tags match a query string.',
+    description: 'Search for canvas nodes whose labels, content, filenames, tags, or the labels of their edges contain a query string (case-insensitive).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1718,23 +1785,25 @@ const TOOLS = [
   },
   {
     name: 'canvas_add_node',
-    description: 'Add a new node to the canvas. The node is automatically marked as AI-created (🤖 badge) and assigned a label. Position defaults to the right of all existing nodes. `after` puts the new node under any node, in that node\'s own column (the type defaults to code under a code cell, else to a text note); `forkOf` names a code cell: on side right the new node goes on that cell\'s row in the nearest column past its output column that holds a code cell (under the cell\'s own output when it would overlap it), else it starts a new column pair right of the cell\'s pair; on side left it starts a new column pair left of the cell\'s column; both ignore x/y. Whatever the placement, the layout engine then packs the column the node landed in and pushes the column pairs to its right and the notes it covers out of the way — never across a section boundary. Sections fit their content: a node placed past its section\'s bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Supplied coordinates are snapped to the grid and clamped to the canvas origin.',
+    description: `Add a new node to the canvas: text (default), code, cell, file, link, portal, noderef or group; any other type is refused with an error. The node is marked as AI-created (🤖 badge) and assigned a label. Default sizes are the ones the canvas UI gives a new node: text ${NODE_SIZE.text.w}×${NODE_SIZE.text.h}, code ${NODE_SIZE.code.w}×${NODE_SIZE.code.h} (a code cell with content is as tall as its lines need, ${CODE_HEIGHT_RANGE}), cell ${CELL_SIZE.w}×${CELL_SIZE.h}, file ${NODE_SIZE.file.w}×${NODE_SIZE.file.h}, link ${NODE_SIZE.link.w}×${NODE_SIZE.link.h} (a link to a YouTube video ${YOUTUBE_NODE.w}×${YOUTUBE_NODE.h}, room for its thumbnail), portal ${NODE_SIZE.portal.w}×${NODE_SIZE.portal.h}, noderef ${NODEREF_SIZE.w}×${NODEREF_SIZE.h}; a supplied width or height is snapped to the grid. A noderef points at a node in another canvas: canvas (the target .canvas file) and label (the target node's label, e.g. N3), or canvas alone as path.canvas#N3, plus an optional title. A group is a backdrop drawn behind other nodes, with label as the text on it; it needs width and height, is placed by x/y only (after and forkOf are refused), and the layout engine does not run for it, so it moves none of the nodes it covers. Position defaults to the right of all existing nodes. after puts the new node under any node, in that node's own column (the type defaults to code under a code cell, else to a text note); forkOf names a code cell: on side right the new node goes on that cell's row in the nearest column past its output column that holds a code cell (under the cell's own output when it would overlap it), else it starts a new column pair right of the cell's pair; on side left it starts a new column pair left of the cell's column; both ignore x/y. Whatever the placement (a group aside), the layout engine then packs the column the node landed in and pushes the column pairs to its right and the notes it covers out of the way — never across a section boundary. Sections fit their content: a node placed past its section's bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Supplied coordinates are snapped to the grid and clamped to the canvas origin.`,
     inputSchema: {
       type: 'object',
       properties: {
         canvasPath: { type: 'string', description: 'Path to the .canvas file' },
-        type:       { type: 'string', description: 'Node type: text (default), code, cell, file, link, portal' },
-        content:    { type: 'string', description: 'Text content for text/cell nodes, or the code for a code node' },
+        type:       { type: 'string', description: `Node type: ${ADD_NODE_TYPES.join(', ')}; text is the default (code under a code cell)` },
+        content:    { type: 'string', description: 'Text of a text note or a cell, or the code of a code node' },
         format:     { type: 'string', description: 'Cell format: markdown (default), html, image' },
-        file:       { type: 'string', description: 'File path for file nodes (vault:// URI or absolute path)' },
+        file:       { type: 'string', description: 'File path for file nodes (vault:// URI, or a path; an absolute one under the canvas folder is stored relative to it)' },
         url:        { type: 'string', description: 'URL for link nodes' },
-        canvas:     { type: 'string', description: 'Relative canvas path for portal nodes' },
+        canvas:     { type: 'string', description: 'portal: path of the target canvas relative to this canvas\'s folder, stored as given. noderef: the target .canvas — absolute (stored relative to the workspace folder, as Copy node reference writes it) or relative to the workspace folder — or the whole reference path.canvas#N3' },
+        label:      { type: 'string', description: 'noderef: the target node\'s label (N3, E10). group: the text shown on the backdrop' },
+        title:      { type: 'string', description: 'noderef: optional text shown under the reference' },
         tags:       { type: 'array',  items: { type: 'string' }, description: 'Optional tags for search/organisation' },
         color:      { type: 'string', description: 'Node accent color: 1=red, 2=orange, 3=yellow, 4=green, 5=cyan, 6=purple' },
         x:          { type: 'number', description: 'X position (auto-placed if omitted; ignored with after/forkOf)' },
         y:          { type: 'number', description: 'Y position (auto-placed if omitted; ignored with after/forkOf)' },
-        width:      { type: 'number', description: 'Width in canvas units (default: type-dependent)' },
-        height:     { type: 'number', description: 'Height in canvas units (default: type-dependent; a code cell with content is sized to the lines it holds, between 300 and 900)' },
+        width:      { type: 'number', description: 'Width in canvas units, snapped to the grid (default: the UI size for the type; required for a group)' },
+        height:     { type: 'number', description: `Height in canvas units, snapped to the grid (default: the UI size for the type; a code cell with content is sized to the lines it holds, ${CODE_HEIGHT_RANGE}; required for a group)` },
         after:      { type: 'string', description: 'Label or id of any node: place the new node one gap below it in the same column (type defaults to code under a code cell, else text)' },
         forkOf:     { type: 'string', description: 'Label or id of a code cell: the new node goes on its row beside it (see the tool description; type defaults to code)' },
         side:       { type: 'string', description: 'forkOf side: right (default) or left; a left fork that would start before the canvas origin is refused' },
@@ -1744,20 +1813,20 @@ const TOOLS = [
   },
   {
     name: 'canvas_update_node',
-    description: 'Update an existing node: content, tags, color, label, and/or move/resize it. Partial — only supplied fields change. Code content that CHANGES the cell\'s text, with no explicit height, re-sizes it to the lines it now holds (grows or shrinks, 300 to 900) and counts as a resize; re-sending the same text re-sizes nothing, so a height set by hand is kept. Move/resize uses absolute canvas coordinates and runs the layout engine: the node\'s column is packed, the column pairs to its right are pushed clear, and the notes it covers move down. An output cell is clamped to 1400 wide by 900 high so it cannot overlap the pair to its right. Sections fit their content: a node placed past its section\'s bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Supplied coordinates are snapped to the grid and clamped to the canvas origin.',
+    description: `Update an existing node: content, tags, color, label, and/or move/resize it. Partial — only supplied fields change. content sets the text of a text note, the content of a cell or the code of a code cell; other types ignore it and a knowledge node refuses it. Code content that CHANGES the cell's text, with no explicit height, re-sizes it to the lines it now holds (grows or shrinks, ${CODE_HEIGHT_RANGE}) and counts as a resize; re-sending the same text re-sizes nothing, so a height set by hand is kept. Move/resize uses absolute canvas coordinates and runs the layout engine: the node's column is packed, the column pairs to its right are pushed clear, and the notes it covers move down. An output cell is clamped to ${OUTPUT_MAX_W} wide by ${OUTPUT_MAX_H} high so it cannot overlap the pair to its right. Sections fit their content: a node placed past its section's bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Supplied coordinates and sizes are snapped to the grid; coordinates are clamped to the canvas origin.`,
     inputSchema: {
       type: 'object',
       properties: {
         canvasPath: { type: 'string', description: 'Path to the .canvas file' },
         ref:        { type: 'string', description: 'Node label or ID to update' },
-        content:    { type: 'string', description: 'New text/cell content' },
+        content:    { type: 'string', description: 'New text of a text note or a cell, or new code of a code cell' },
         tags:       { type: 'array',  items: { type: 'string' }, description: 'Replace tags list' },
         color:      { type: 'string', description: 'New accent color (1-6)' },
-        label:      { type: 'string', description: 'Override the node label (e.g. rename N5 to N1)' },
+        label:      { type: 'string', description: 'Override the node label (e.g. rename N5 to N1); not checked against the labels already in use' },
         x:          { type: 'number', description: 'Move: absolute x (left)' },
         y:          { type: 'number', description: 'Move: absolute y (top)' },
         width:      { type: 'number', description: 'Resize: width' },
-        height:     { type: 'number', description: 'Resize: height (omit it and code content that CHANGES the text re-sizes the cell to the lines it now holds, 300 to 900)' },
+        height:     { type: 'number', description: `Resize: height (omit it and code content that CHANGES the text re-sizes the cell to the lines it now holds, ${CODE_HEIGHT_RANGE})` },
       },
       required: ['canvasPath', 'ref'],
     },
@@ -1855,7 +1924,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_remove_node',
-    description: 'Delete one or more nodes from the canvas (also removes their connected edges). The column a deleted code cell sat in closes the hole it left, and sections fit their content.',
+    description: 'Delete one or more nodes from the canvas (also removes their connected edges). The column each deleted node sat in closes the hole it left (a deleted output counts for its code cell\'s column). A code cell\'s output is deleted only when it is named too; deleting a kernel node does not shut its kernel down. Sections fit their content.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1884,7 +1953,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_pin_output',
-    description: 'Pin a content snippet (analysis result, notebook output, HTML table, image) as a CellNode on the canvas. Automatically links it to a source node if specified. Pinned onto a code cell it becomes that cell\'s output: it is placed in the pair\'s output column and the column below and the pairs to the right may move.',
+    description: `Pin a content snippet (analysis result, notebook output, HTML table, image) as a cell node on the canvas. With sourceRef it is connected from that node by an edge labelled with the date and time (or edgeLabel). Pinned onto a code cell that has no output yet, it becomes that cell's output: it is placed in the pair's output column, and the column below and the pairs to the right may move. Pinned onto any other node, or a code cell that already has an output, it is a ${CELL_SIZE.w}×${CELL_SIZE.h} cell beside the source; with no source, right of all existing nodes.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -1900,7 +1969,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_run_section',
-    description: 'Run every code cell of a section in run order (top to bottom, then left to right), each on its own resolved kernel, stopping at the first error. Needs a live kernel, as canvas_run_cell does. A new output is placed in its pair\'s output column; the column below and the pairs to the right may move.',
+    description: 'Run every code cell of a section in run order (top to bottom, then left to right), each on its own resolved kernel, whether it has run before or not, stopping at the first error. Needs a live kernel on a server this process can find, as canvas_run_cell does. A new output is placed in its pair\'s output column; the column below and the pairs to the right may move.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1912,12 +1981,12 @@ const TOOLS = [
   },
   {
     name: 'canvas_add_kernel',
-    description: 'Add a kernel record to the canvas (the kind a section binds, not a kernel node). By default it starts the kernel on the Jupyter server at once, as the rail\'s "New kernel…" does, so cells can run on it immediately.',
+    description: `Add a kernel record to the canvas (the kind a section binds, not a kernel node). By default it starts the kernel on the Jupyter server at once, as the rail's "New kernel…" does, so cells can run on it immediately. ${KERNEL_SERVERS_TEXT}`,
     inputSchema: {
       type: 'object',
       properties: {
         canvasPath:  { type: 'string', description: 'absolute path to the .canvas file' },
-        server:      { type: 'string', description: 'a configured Jupyter server name (skena.jupyter.kernels[].name)' },
+        server:      { type: 'string', description: 'name of a Jupyter server this process can find (see the tool description), e.g. a skena.jupyter.kernels[].name' },
         spec:        { type: 'string', description: 'optional: kernelspec to launch, default python3; remembered so a restart reuses the same environment' },
         displayName: { type: 'string', description: 'optional: name shown in the rail; defaults to the spec' },
         bindSection: { type: 'string', description: 'optional: section to bind it to (S1, S2 … or the section id)' },
@@ -1928,7 +1997,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_remove_kernel',
-    description: 'Remove a kernel record: shut it down if live, unbind every section that named it, and un-run the cells that ran on it (its namespace is gone with it). A kernel NODE is removed with canvas_remove_node instead.',
+    description: 'Remove a kernel record: shut it down if it is live and its server can be found, unbind every section that named it, and un-run the cells that ran on it (its namespace is gone with it). A kernel NODE is removed with canvas_remove_node instead.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1980,7 +2049,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_reflow_section',
-    description: 'Pack a section\'s code columns and output pairs tight and settle overlapped notes downward. The only whole-section move: every other write touches one column. Each code cell is snapped onto the nearest column, each column closes its holes, the pairs sit one gap apart left to right, and a note a managed cell overlaps moves down. Sections fit their content afterwards.',
+    description: 'Lay out a whole section again: the only write that moves more than the column it touches. Every node is put on a column, left to right — the code cells decide where the columns are, then every other node joins the nearest column that reaches it or starts its own (an output cell goes back to its pair\'s output slot; a kernel node stays where it is). Every column is packed (a node an edge holds on another node\'s row keeps that row), the columns are moved tight left to right one gap apart (the output slot is kept only after a column that has an output), and the columns are packed again. Sizes do not change; nothing is written when nothing moves. Sections fit their content afterwards.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1992,7 +2061,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_run_cell',
-    description: 'Run a code cell node on a Jupyter kernel and write its output to a linked cell node. Resolves the kernel from kernelRef, else the code node\'s bound-kernel edge, else the kernel bound to the node\'s section. A new output is placed in its pair\'s output column; the column below and the pairs to the right may move.',
+    description: `Run a code cell node on a Jupyter kernel and write its output to a linked cell node. Resolves the kernel from kernelRef, else the code node's bound-kernel edge, else the kernel bound to the node's section; the kernel must be live. First runs, in order, the cells upstream of it that have not run successfully yet; a failed one stops the chain. The reply ends with the first 500 characters of the stream output. A new output is placed in its pair's output column; the column below and the pairs to the right may move. ${KERNEL_SERVERS_TEXT}`,
     inputSchema: {
       type: 'object',
       properties: {

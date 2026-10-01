@@ -2,7 +2,7 @@
 // - stdio JSON-RPC probe over dist/mcp-server.js; fixtures are scratch .cvs.json files under /tmp,
 //   so no real .canvas file is ever touched.
 import { spawn } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdtempSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { strict as assert } from 'node:assert';
@@ -13,14 +13,35 @@ const DIR  = mkdtempSync(join(tmpdir(), 'skena-parity-'));
 
 const SERVERS = JSON.stringify([{ name: 'probe', hubUrl: 'http://127.0.0.1:59999', token: 't' }]);
 
-let srv, buf = '', id = 0;
-const pending = new Map();
+// - one server process: `call` a tool, `stop` the process
+const startServer = async (cwd, env) => {
+  const proc = spawn('node', [join(REPO, 'dist/mcp-server.js')], { cwd, env, stdio: ['pipe', 'pipe', 'inherit'] });
+  const pending = new Map();
+  let buf = '', id = 0;
+  proc.stdout.on('data', d => {
+    buf += d;
+    let i;
+    while ((i = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, i); buf = buf.slice(i + 1);
+      if (!line.trim()) continue;
+      const msg = JSON.parse(line);
+      const r = pending.get(msg.id);
+      if (r) { pending.delete(msg.id); r(msg); }
+    }
+  });
+  const rpc = (method, params) => new Promise(res => {
+    const n = ++id; pending.set(n, res);
+    proc.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: n, method, params }) + '\n');
+  });
+  await rpc('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'probe', version: '0' } });
+  return {
+    call: async (name, args) => (await rpc('tools/call', { name, arguments: args })).result.content[0].text,
+    stop: () => proc.kill(),
+  };
+};
 
-const rpc = (method, params) => new Promise(res => {
-  const n = ++id; pending.set(n, res);
-  srv.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: n, method, params }) + '\n');
-});
-const call = async (name, args) => (await rpc('tools/call', { name, arguments: args })).result.content[0].text;
+let srv;
+const call = (name, args) => srv.call(name, args);
 const read = p => JSON.parse(readFileSync(p, 'utf8'));
 const fresh = n => join(DIR, `${n}.cvs.json`);
 const lanes = d => (d.metadata?.sections ?? []).map(l => l.y);
@@ -39,24 +60,9 @@ const deriveMembers = d => {
 };
 
 before(async () => {
-  srv = spawn('node', ['dist/mcp-server.js'], {
-    cwd: REPO, stdio: ['pipe', 'pipe', 'inherit'],
-    env: { ...process.env, SKENA_JUPYTER_KERNELS: SERVERS, SKENA_RUN_IPC: '' },
-  });
-  srv.stdout.on('data', d => {
-    buf += d;
-    let i;
-    while ((i = buf.indexOf('\n')) >= 0) {
-      const line = buf.slice(0, i); buf = buf.slice(i + 1);
-      if (!line.trim()) continue;
-      const msg = JSON.parse(line);
-      const r = pending.get(msg.id);
-      if (r) { pending.delete(msg.id); r(msg); }
-    }
-  });
-  await rpc('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'probe', version: '0' } });
+  srv = await startServer(REPO, { ...process.env, SKENA_JUPYTER_KERNELS: SERVERS, SKENA_RUN_IPC: '' });
 });
-after(() => srv?.kill());
+after(() => srv?.stop());
 
 
 test('canvas_add_node clamps to the origin and seeds the first section', async () => {
@@ -187,7 +193,7 @@ test('canvas_add_kernel with start:false records the kernel and binds the sectio
   assert.equal(d.metadata.kernels[0].colorIndex, 0);
   assert.equal('kernelId' in d.metadata.kernels[0], false);
   assert.equal(d.metadata.sections[0].kernelId, d.metadata.kernels[0].id);
-  assert.match(await call('canvas_add_kernel', { canvasPath: p, server: 'nope', start: false }), /^error: unknown server nope — known: probe$/);
+  assert.equal(await call('canvas_add_kernel', { canvasPath: p, server: 'nope', start: false }), 'error: unknown server nope — known: probe (from SKENA_JUPYTER_KERNELS)');
 });
 
 test('canvas_remove_kernel unbinds the section and un-runs its cells', async () => {
@@ -774,4 +780,201 @@ test('canvas_follow resolves a vault:// portal through skena.vaults, as it does 
   assert.equal(await call('canvas_follow', { canvasPath: p, ref: 'P1' }), `Sub-canvas path: ${join(vault, 'maps', 'sub.canvas')}\nVault URI: vault://notes/maps/sub.canvas`);
   assert.equal(await call('canvas_follow', { canvasPath: p, ref: 'F1' }), `File path: ${join(vault, 'maps', 'a.md')}\nVault URI: vault://notes/maps/a.md`);
   assert.match(await call('canvas_follow', { canvasPath: p, ref: 'P2' }), /^Vault URI: vault:\/\/other\/sub\.canvas\n\(vault not configured/);
+});
+
+// - the size the canvas UI gives a new node of each type: NODE_SIZE (text, file, link, portal),
+//   YOUTUBE_NODE for a link to a video, the pin's 480×320 (`addCellNode`) and the pasted reference's
+//   200×120 (`insertPastedNode`); this probe cannot import them, so they are written out
+const UI_SIZE = {
+  text: [700, 300], file: [700, 700], link: [300, 100], youtube: [500, 320], portal: [200, 200], cell: [480, 320], noderef: [200, 120],
+};
+
+test('canvas_add_node gives each type the size the canvas UI gives it, and snaps a supplied size', async () => {
+  const p = fresh('ui-sizes');
+  const add = args => call('canvas_add_node', { canvasPath: p, ...args });
+  await add({ type: 'text', content: 'a', x: 0, y: 0 });                                              // - N1
+  await add({ type: 'file', file: '/tmp/x.md', x: 1000, y: 0 });                                      // - M1
+  await add({ type: 'link', url: 'https://example.com/a', x: 2000, y: 0 });                           // - L1
+  await add({ type: 'link', url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', x: 3000, y: 0 });     // - L2
+  await add({ type: 'portal', canvas: './sub.canvas', x: 4000, y: 0 });                               // - R1
+  await add({ type: 'cell', content: 'c', x: 5000, y: 0 });                                           // - C1
+  await add({ type: 'noderef', canvas: 'maps/other.canvas', label: 'N2', x: 6000, y: 0 });            // - D1
+  await add({ type: 'link', url: 'https://example.com/b', x: 7000, y: 0, width: 333, height: 149 });  // - L3
+  const d = read(p);
+  const size = l => { const n = d.nodes.find(x => x.nodeLabel === l); return [n.width, n.height]; };
+  assert.deepEqual(size('N1'), UI_SIZE.text);
+  assert.deepEqual(size('M1'), UI_SIZE.file);
+  assert.deepEqual(size('L1'), UI_SIZE.link);
+  assert.deepEqual(size('L2'), UI_SIZE.youtube, 'a YouTube link gets room for its thumbnail, unsnapped as in the UI');
+  assert.deepEqual(size('R1'), UI_SIZE.portal);
+  assert.deepEqual(size('C1'), UI_SIZE.cell);
+  assert.deepEqual(size('D1'), UI_SIZE.noderef);
+  assert.deepEqual(size('L3'), [300, 100], 'a supplied size is snapped to the grid');
+});
+
+test('canvas_add_node refuses an unknown type, names the accepted ones, and writes nothing', async () => {
+  const p = fresh('bad-type');
+  const out = await call('canvas_add_node', { canvasPath: p, type: 'chat', content: 'x' });
+  assert.equal(out, 'error: unknown node type "chat" — canvas_add_node makes text, code, cell, file, link, portal, noderef, group');
+  assert.equal(existsSync(p), false, 'no file is created for a refused node');
+  assert.match(await call('canvas_add_node', { canvasPath: p, type: 'knowledge' }), /makes .*group \(a knowledge node: canvas_add_knowledge\)$/);
+
+  await call('canvas_add_node', { canvasPath: p, type: 'text', content: 'a', x: 0, y: 0 });
+  assert.match(await call('canvas_add_node', { canvasPath: p, type: 'Text' }), /^error: unknown node type "Text"/);
+  assert.equal(read(p).nodes.length, 1, 'an existing canvas keeps its nodes');
+});
+
+test('canvas_add_node makes a noderef with the fields the webview reads, its canvas relative to the workspace folder', async () => {
+  const ws = join(DIR, 'ref-ws');
+  mkdirSync(join(ws, '.vscode'), { recursive: true });
+  mkdirSync(join(ws, 'maps'), { recursive: true });
+  const p = join(ws, 'maps', 'here.cvs.json');
+  const out = await call('canvas_add_node', { canvasPath: p, type: 'noderef', canvas: join(ws, 'notes', 'plan.canvas'), label: 'N3', title: 'the plan', x: 0, y: 0 });
+  assert.match(out, /^Created node D1 .*\nType: noderef\n/);
+  await call('canvas_add_node', { canvasPath: p, type: 'noderef', canvas: 'notes/other.canvas#E10', x: 400, y: 0 });
+  await call('canvas_add_node', { canvasPath: p, type: 'noderef', canvas: '/elsewhere/far.canvas', label: 'K1', x: 800, y: 0 });
+
+  const d = read(p);
+  const ref = l => { const { type, canvas, label, title } = d.nodes.find(n => n.nodeLabel === l); return { type, canvas, label, title }; };
+  assert.deepEqual(ref('D1'), { type: 'noderef', canvas: 'notes/plan.canvas', label: 'N3', title: 'the plan' }, 'an absolute path inside the workspace is stored workspace-relative, as Copy node reference writes it');
+  assert.deepEqual(ref('D2'), { type: 'noderef', canvas: 'notes/other.canvas', label: 'E10', title: undefined }, 'a whole reference is split into canvas and label');
+  assert.deepEqual(ref('D3'), { type: 'noderef', canvas: '/elsewhere/far.canvas', label: 'K1', title: undefined }, 'outside the workspace the path stays absolute');
+  assert.match(await call('canvas_list', { canvasPath: p }), /^ {2}D1 +noderef +→ notes\/plan\.canvas#N3 "the plan"/m);
+  assert.match(await call('canvas_read', { canvasPath: p, ref: 'D1' }), /\nReference: notes\/plan\.canvas#N3\nTitle: the plan\n/);
+
+  const refused = 'error: a noderef needs canvas (a path ending in .canvas) and label (the target node\'s label, e.g. N3), or canvas as path.canvas#N3';
+  assert.equal(await call('canvas_add_node', { canvasPath: p, type: 'noderef', canvas: 'notes/plan.canvas', label: 'n3' }), refused);
+  assert.equal(await call('canvas_add_node', { canvasPath: p, type: 'noderef', canvas: 'notes/plan.md', label: 'N3' }), refused);
+  assert.equal(await call('canvas_add_node', { canvasPath: p, type: 'noderef', canvas: 'notes/plan.canvas' }), refused);
+  assert.equal(read(p).nodes.length, 3, 'a refused noderef writes nothing');
+});
+
+test('canvas_add_node makes a group as a backdrop: label and geometry stored, nothing it covers moves', async () => {
+  const p = fresh('group');
+  await call('canvas_add_node', { canvasPath: p, type: 'text', content: 'a', x: 0, y: 0 });
+  await call('canvas_add_node', { canvasPath: p, type: 'text', content: 'b', x: 0, y: 400 });
+  const out = await call('canvas_add_node', { canvasPath: p, type: 'group', label: 'Data', color: '4', x: 0, y: 0, width: 1000, height: 800 });
+  console.log(`--- canvas_add_node group ---\n${out}\n---`);
+  assert.doesNotMatch(out, /Moved/);
+  const d = read(p);
+  const g = d.nodes.find(n => n.nodeLabel === 'G1');
+  assert.deepEqual({ type: g.type, label: g.label, color: g.color, x: g.x, y: g.y, w: g.width, h: g.height },
+    { type: 'group', label: 'Data', color: '4', x: 0, y: 0, w: 1000, h: 800 });
+  assert.deepEqual([pick(d, 'N1'), pick(d, 'N2')], [[0, 0], [0, 400]], 'the notes under the backdrop stay put');
+
+  assert.equal(await call('canvas_add_node', { canvasPath: p, type: 'group', label: 'x', x: 0, y: 0 }), 'error: a group needs width and height');
+  assert.equal(await call('canvas_add_node', { canvasPath: p, type: 'group', after: 'N1', width: 500, height: 500 }), 'error: a group is a backdrop placed by x/y, not by after or forkOf');
+  assert.equal(read(p).nodes.length, 3);
+});
+
+// - the environment of an agent that starts the server from the workspace .mcp.json: no list from the
+//   AI companion, and no Jupyter variables unless a test sets them
+const bareEnv = extra => {
+  const env = { ...process.env, SKENA_RUN_IPC: '', ...extra };
+  for (const k of ['SKENA_JUPYTER_KERNELS', 'JUPYTER_SERVER_URL', 'JUPYTER_API_TOKEN']) if (!(k in extra)) delete env[k];
+  return env;
+};
+const TOKEN = 'tok-never-in-replies';
+const hub = name => ({ name, hubUrl: 'http://127.0.0.1:59997/user/q', token: TOKEN });
+const NOWHERE = join(DIR, 'no-settings');
+mkdirSync(NOWHERE, { recursive: true });
+
+// - a workspace folder with the given settings files (raw text, so comments can be in them)
+const workspace = (name, files) => {
+  const ws = join(DIR, name);
+  mkdirSync(join(ws, '.vscode'), { recursive: true });
+  mkdirSync(join(ws, 'deep', 'er'), { recursive: true });
+  for (const [f, text] of Object.entries(files)) writeFileSync(join(ws, '.vscode', f), text);
+  return ws;
+};
+
+test('kernel servers: settings.local.json wins over settings.json, found by walking up from the canvas', async () => {
+  const ws = workspace('k-local', {
+    // - a URL with // in a string, a comment and a trailing comma: the settings reader must read all three
+    'settings.local.json': `{\n  // personal\n  "skena.jupyter.kernels": [${JSON.stringify(hub('local-hub'))},],\n}`,
+    'settings.json': JSON.stringify({ 'skena.jupyter.kernels': [hub('shared-hub')] }),
+  });
+  const s = await startServer(NOWHERE, bareEnv({}));
+  try {
+    const p = join(ws, 'deep', 'er', 'k.cvs.json');
+    await s.call('canvas_add_node', { canvasPath: p, type: 'code', content: 'x = 1', x: 0, y: 0 });
+    assert.match(await s.call('canvas_add_kernel', { canvasPath: p, server: 'local-hub', start: false }), /^Added kernel k-[a-z0-9]+ \(kernel\) on local-hub, live id \(not started\)$/);
+    const out = await s.call('canvas_add_kernel', { canvasPath: p, server: 'shared-hub', start: false });
+    assert.equal(out, `error: unknown server shared-hub — known: local-hub (from ${join(ws, '.vscode', 'settings.local.json')})`);
+    assert.equal(out.includes(TOKEN), false);
+  } finally { s.stop(); }
+});
+
+test('kernel servers: settings.json is read when settings.local.json has no list', async () => {
+  const ws = workspace('k-shared', {
+    'settings.local.json': JSON.stringify({ 'skena.jupyter.kernels': [], 'skena.vaults': [] }),
+    'settings.json': JSON.stringify({ 'skena.jupyter.kernels': [hub('shared-hub')] }),
+  });
+  const s = await startServer(NOWHERE, bareEnv({}));
+  try {
+    const p = join(ws, 'k.cvs.json');
+    await s.call('canvas_add_node', { canvasPath: p, type: 'code', content: 'x = 1', x: 0, y: 0 });
+    assert.match(await s.call('canvas_add_kernel', { canvasPath: p, server: 'shared-hub', start: false }), /^Added kernel .* on shared-hub,/);
+  } finally { s.stop(); }
+});
+
+test('kernel servers: the working directory\'s settings are read when the canvas has none above it', async () => {
+  const ws = workspace('k-cwd', { 'settings.json': JSON.stringify({ 'skena.jupyter.kernels': [hub('cwd-hub')] }) });
+  const s = await startServer(ws, bareEnv({}));
+  try {
+    const p = join(NOWHERE, 'cwd.cvs.json');
+    await s.call('canvas_add_node', { canvasPath: p, type: 'code', content: 'x = 1', x: 0, y: 0 });
+    assert.match(await s.call('canvas_add_kernel', { canvasPath: p, server: 'cwd-hub', start: false }), /^Added kernel .* on cwd-hub,/);
+  } finally { s.stop(); }
+});
+
+test('kernel servers: JUPYTER_SERVER_URL + JUPYTER_API_TOKEN make a server named default when no settings list one', async () => {
+  const ws = workspace('k-env', { 'settings.json': JSON.stringify({ 'skena.vaults': [] }) });
+  const s = await startServer(NOWHERE, bareEnv({ JUPYTER_SERVER_URL: 'http://127.0.0.1:59996/user/q', JUPYTER_API_TOKEN: TOKEN }));
+  try {
+    const p = join(ws, 'k.cvs.json');
+    await s.call('canvas_add_node', { canvasPath: p, type: 'code', content: 'x = 1', x: 0, y: 0 });
+    assert.match(await s.call('canvas_add_kernel', { canvasPath: p, server: 'default', start: false }), /^Added kernel .* on default,/);
+    const out = await s.call('canvas_add_kernel', { canvasPath: p, server: 'hub', start: false });
+    assert.equal(out, 'error: unknown server hub — known: default (from JUPYTER_SERVER_URL + JUPYTER_API_TOKEN)');
+  } finally { s.stop(); }
+});
+
+test('kernel servers: the list from the AI companion wins, and an empty one falls through to the settings', async () => {
+  const ws = workspace('k-harness', { 'settings.json': JSON.stringify({ 'skena.jupyter.kernels': [hub('shared-hub')] }) });
+  const p = join(ws, 'k.cvs.json');
+  // - the main server was given SERVERS ('probe')
+  await call('canvas_add_node', { canvasPath: p, type: 'code', content: 'x = 1', x: 0, y: 0 });
+  assert.equal(await call('canvas_add_kernel', { canvasPath: p, server: 'shared-hub', start: false }), 'error: unknown server shared-hub — known: probe (from SKENA_JUPYTER_KERNELS)');
+
+  const s = await startServer(NOWHERE, bareEnv({ SKENA_JUPYTER_KERNELS: '[]' }));
+  try {
+    assert.match(await s.call('canvas_add_kernel', { canvasPath: p, server: 'shared-hub', start: false }), /^Added kernel .* on shared-hub,/);
+  } finally { s.stop(); }
+});
+
+test('kernel servers: with none found, canvas_run_cell and canvas_add_kernel say every place they looked', async () => {
+  const ws = workspace('k-none', { 'settings.json': '{ "skena.vaults": [] }' });
+  const s = await startServer(NOWHERE, bareEnv({}));
+  try {
+    const p = join(ws, 'k.cvs.json');
+    await s.call('canvas_add_node', { canvasPath: p, type: 'code', content: 'x = 1', x: 0, y: 0 });
+    // - a kernel record on a server this process cannot find, live id set: the run must stop before any request
+    const d = read(p);
+    d.metadata.kernels = [{ id: 'k-1', server: 'hub', kernelId: 'abc', displayName: 'k', colorIndex: 0 }];
+    d.metadata.sections[0].kernelId = 'k-1';
+    writeFileSync(p, JSON.stringify(d, null, 2));
+
+    const looked = [
+      'SKENA_JUPYTER_KERNELS (not set)',
+      `${join(ws, '.vscode', 'settings.local.json')} (missing)`,
+      `${join(ws, '.vscode', 'settings.json')} (no skena.jupyter.kernels)`,
+    ].join('; ');
+    const run = await s.call('canvas_run_cell', { canvasPath: p, cellRef: 'E1' });
+    console.log(`--- canvas_run_cell with no servers ---\n${run}\n---`);
+    assert.ok(run.startsWith(`error: unknown server hub — no Jupyter servers configured; looked in: ${looked}; `), run);
+    assert.ok(run.endsWith('JUPYTER_SERVER_URL and JUPYTER_API_TOKEN (not set)'), run);
+    const add = await s.call('canvas_add_kernel', { canvasPath: p, server: 'hub', start: false });
+    assert.ok(add.startsWith(`error: unknown server hub — no Jupyter servers configured; looked in: ${looked}`), add);
+  } finally { s.stop(); }
 });

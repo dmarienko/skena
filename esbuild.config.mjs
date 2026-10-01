@@ -100,6 +100,8 @@ const mcpServerConfig = {
   format:   'cjs',
   target:   'node20',
   external: [],  // - bundle everything; only Node built-ins are external
+  // - the settings reader uses jsonc-parser: its ESM build, for the reason given on extensionConfig
+  alias:    { 'jsonc-parser': 'jsonc-parser/lib/esm/main.js' },
   banner:   { js: '#!/usr/bin/env node' },
   plugins:  [...(baseOptions.plugins ?? []), deployMcpServer],
 };
