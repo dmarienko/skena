@@ -1672,7 +1672,10 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       const inSection = anchor && engineNodesOf({ nodeId: anchor.id });
       const cw = Number(anchor?.style?.width ?? 400);
       let dy = 0;
-      const placed = incoming.map(cn => {
+      // - then added one file at a time through the addNodeResult path, as several pasted URLs are:
+      //   one engine run per file, so the dropped files stay together and what already sat in the
+      //   slot column moves down under them
+      incoming.forEach((cn, i) => {
         let pos: { x: number; y: number };
         if (anchor) {
           const rawY = anchor.position.y + dy;
@@ -1682,47 +1685,19 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
           pos = clampToOrigin(cn.x, cn.y + dy);
         }
         dy += cn.height + GRID;
-        return { ...cn, x: pos.x, y: pos.y };
+        const node: CanvasNode = { ...cn, x: pos.x, y: pos.y };
+        // - an arrow from the focused node to each new node, as a paste beside it draws
+        const edge: CanvasEdge | undefined = anchor
+          ? { id: `edge-drop-${Date.now()}-${i}`, fromNode: anchor.id, fromSide: 'right', toNode: cn.id, toSide: 'left', toEnd: 'arrow' }
+          : undefined;
+        window.dispatchEvent(new CustomEvent('skena:addNodeResult', {
+          detail: { type: 'addNodeResult', node, edge, ...(anchor ? { anchorId: anchor.id } : {}) } satisfies MsgAddNodeResult,
+        }));
       });
-      // - assign labels to all dropped nodes, avoiding collisions with each other
-      // - and with existing canvas nodes (same logic as addNodeResult path)
-      const labelled: CanvasNode[] = [];
-      placed.forEach(cn => {
-        const existing  = [...canvasRef.current.nodes, ...labelled];
-        labelled.push(assignLabel(cn, existing));
-      });
-      const ids = labelled.map(cn => cn.id);
-      pushHistory();
-      setNodes(nds => [...nds, ...labelled.map(toFlowNode)]);
-      canvasRef.current = { ...canvasRef.current, nodes: [...canvasRef.current.nodes, ...labelled] };
-      // - the first node seeds the first section, as in the addNodeResult path
-      if (lanesRef.current.length === 0) {
-        const now = Date.now();
-        commitLanes([{ id: `sec-${now.toString(36)}`, y: 0, createdAt: now }]);
-      }
-      // - an arrow from the focused node to each new node, as a paste beside it draws
-      const newEdges: CanvasEdge[] = [];
-      if (anchor) labelled.forEach((cn, i) => {
-        const e: CanvasEdge = { id: `edge-paste-${Date.now()}-${i}`, fromNode: anchor.id, fromSide: 'right', toNode: cn.id, toSide: 'left', toEnd: 'arrow' };
-        newEdges.push(withKeepRow(e, [...canvasRef.current.edges, ...newEdges, e], { nodeId: anchor.id, extraIds: ids }));
-      });
-      if (newEdges.length > 0) {
-        setEdges(eds => [...eds, ...newEdges.map(toFlowEdge)]);
-        canvasRef.current = { ...canvasRef.current, edges: [...canvasRef.current.edges, ...newEdges] };
-      }
-      scheduleSave();
-      // - all the dropped nodes are the movers of one engine run, as for a paste of copied nodes: beside
-      //   the focused node they join its section; at the drop point they can straddle a section
-      //   boundary, so the engine runs once per section they reached
-      if (anchor) runEngine({ nodeId: anchor.id }, { moverIds: ids, extraIds: ids });
-      else {
-        const lanes = deriveLanes(canvasRef.current.nodes, canvasRef.current.metadata?.sections ?? []);
-        for (const moverIds of groupIdsByLane(lanes, ids).values()) runEngine({ nodeId: moverIds[0] }, { moverIds });
-      }
     };
     window.addEventListener('skena:nodesFromDrop', handler);
     return () => window.removeEventListener('skena:nodesFromDrop', handler);
-  }, [setNodes, setEdges, scheduleSave, pushHistory, commitLanes, engineNodesOf, runEngine, withKeepRow]);
+  }, [engineNodesOf]); // - reads refs otherwise; engineNodesOf never changes identity
 
   // ─── keyboard navigation between nodes (hjkl / arrow keys) ──────────────────
 
