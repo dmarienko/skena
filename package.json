@@ -343,7 +343,7 @@
         "skena.jupyter.kernels": {
           "type": "array",
           "default": [],
-          "description": "Jupyter servers for kernel nodes. Each item: {name, hubUrl, token}. When empty, falls back to ~/.aix/xlmcp/.env.",
+          "description": "Jupyter servers for kernel nodes. Each item: {name, hubUrl, token}. When empty, the same key in .vscode/settings.local.json is used, then JUPYTER_SERVER_URL + JUPYTER_API_TOKEN from the environment, then those two keys in ~/.aix/xlmcp/.env.",
           "items": {
             "type": "object",
             "properties": {

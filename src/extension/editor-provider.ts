@@ -770,6 +770,12 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       }
       if (e.affectsConfiguration('skena.jupyter.kernels')) manager.reloadConfig();
     });
+    // - VS Code reports no configuration change for settings.local.json, which can hold the kernel list
+    const localSettingsWatcher = vscode.workspace.createFileSystemWatcher('**/.vscode/settings.local.json');
+    const reloadKernels = () => manager.reloadConfig();
+    localSettingsWatcher.onDidChange(reloadKernels);
+    localSettingsWatcher.onDidCreate(reloadKernels);
+    localSettingsWatcher.onDidDelete(reloadKernels);
 
     panel.onDidDispose(() => {
       panelDisposed = true;   // - stop any in-flight async work from posting to the dead webview
@@ -788,6 +794,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       manager.stopPolling();
       canvasWatcher.dispose();
       workspaceWatcher.dispose();
+      localSettingsWatcher.dispose();
       saveDisposable.dispose();
       cfgDisposable.dispose();
       unsubscribe();
@@ -2118,7 +2125,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
   ): Promise<void> {
     const servers = manager.allServers();
     if (!servers.length) {
-      void vscode.window.showWarningMessage('Skena: no Jupyter kernels configured (skena.jupyter.kernels or ~/.aix/xlmcp/.env).');
+      void vscode.window.showWarningMessage('Skena: no Jupyter kernels configured (skena.jupyter.kernels in the settings or in .vscode/settings.local.json, JUPYTER_SERVER_URL + JUPYTER_API_TOKEN, or ~/.aix/xlmcp/.env).');
       return;
     }
 

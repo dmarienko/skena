@@ -2,17 +2,18 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { resolveKernelConfig, type KernelServerConfig } from './config';
+import { pickCanvasKernelServers, type KernelServerConfig } from './config';
+import { readLocalSettingsSync } from '../settings';
 import { listKernels, startKernel, executeCell, completeCode, inspectCode, restartKernel, shutdownKernel, interruptKernel, type LiveKernel } from './client';
 import type { CollectedOutput, CompleteResult, InspectResult } from './protocol';
 import type { KernelStatusEntry } from '../../shared/types';
 
-// - reads skena.jupyter.kernels, falling back to ~/.aix/xlmcp/.env
+// - read fresh on each call; the order of the sources is pickCanvasKernelServers'
 export function loadKernelServers(): KernelServerConfig[] {
-  const setting = vscode.workspace.getConfiguration('skena').get<KernelServerConfig[]>('jupyter.kernels');
-  let envText: string | null = null;
-  try { envText = fs.readFileSync(path.join(os.homedir(), '.aix', 'xlmcp', '.env'), 'utf8'); } catch { /* - no env */ }
-  return resolveKernelConfig(setting, envText);
+  const setting = vscode.workspace.getConfiguration('skena').get<unknown>('jupyter.kernels');
+  let xlmcpEnv: string | null = null;
+  try { xlmcpEnv = fs.readFileSync(path.join(os.homedir(), '.aix', 'xlmcp', '.env'), 'utf8'); } catch { /* - no file */ }
+  return pickCanvasKernelServers(setting, readLocalSettingsSync(), process.env, xlmcpEnv).servers;
 }
 
 export class KernelManager {

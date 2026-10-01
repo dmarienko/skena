@@ -21,9 +21,11 @@
 
 import * as vscode from 'vscode';
 import * as fs     from 'fs/promises';
+import * as fsSync from 'fs';
 import * as path   from 'path';
 import { VaultConfig } from '../shared/types';
 import type { KnowledgeServerConfig } from '../shared/knowledge/types';
+import type { SettingsRead } from './jupyter/config';
 import { parseSettingsJson } from './settingsJson';
 
 // ─── file reader ──────────────────────────────────────────────────────────────
@@ -38,6 +40,28 @@ async function readJson(filePath: string): Promise<Record<string, unknown> | nul
   }
 }
 
+/** The `.vscode` folder of the first workspace folder; null without a workspace. */
+function workspaceVscodeDir(): string | null {
+  const wsFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  return wsFolder ? path.join(wsFolder, '.vscode') : null;
+}
+
+/**
+ * The workspace's `settings.local.json`, read synchronously: the kernel lookup runs while a canvas
+ * panel is being set up and when the AI companion writes its MCP config, neither of which awaits.
+ * The same file the readers below use; a missing or broken file says why instead of throwing.
+ */
+export function readLocalSettingsSync(): SettingsRead {
+  const vscodeDir = workspaceVscodeDir();
+  if (!vscodeDir) return { file: '.vscode/settings.local.json', problem: 'no workspace folder' };
+  const file = path.join(vscodeDir, 'settings.local.json');
+  let raw: string;
+  try { raw = fsSync.readFileSync(file, 'utf-8'); }
+  catch (e) { return { file, problem: (e as NodeJS.ErrnoException).code === 'ENOENT' ? 'missing' : 'not readable' }; }
+  try { return { file, json: parseSettingsJson(raw) }; }
+  catch (e) { return { file, problem: e instanceof Error ? e.message : String(e) }; }
+}
+
 /**
  * Read workspace settings from disk, merging local overrides on top.
  * Returns [localSettings, baseSettings] — either may be null if missing.
@@ -46,10 +70,9 @@ async function readWorkspaceSettings(): Promise<[
   local: Record<string, unknown> | null,
   base:  Record<string, unknown> | null,
 ]> {
-  const wsFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  if (!wsFolder) return [null, null];
+  const vscodeDir = workspaceVscodeDir();
+  if (!vscodeDir) return [null, null];
 
-  const vscodeDir = path.join(wsFolder, '.vscode');
   const [local, base] = await Promise.all([
     readJson(path.join(vscodeDir, 'settings.local.json')),
     readJson(path.join(vscodeDir, 'settings.json')),

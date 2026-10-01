@@ -1,7 +1,7 @@
 // - run: npx esbuild src/extension/jupyter/config.ts --bundle --format=esm --outfile=tests/.build/jupyter-config.mjs && node --test tests/jupyter-config.mjs
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { parseEnvFile, resolveKernelConfig, pickKernelServers, unknownServerText } from './.build/jupyter-config.mjs';
+import { parseEnvFile, pickKernelServers, pickCanvasKernelServers, unknownServerText } from './.build/jupyter-config.mjs';
 
 test('parseEnvFile reads KEY=VALUE, skips comments and blanks', () => {
   const env = parseEnvFile('# comment\nJUPYTER_SERVER_URL=https://h/user/q\n\nJUPYTER_API_TOKEN=tok123\n');
@@ -12,21 +12,6 @@ test('parseEnvFile reads KEY=VALUE, skips comments and blanks', () => {
 test('parseEnvFile strips surrounding quotes and inline whitespace', () => {
   const env = parseEnvFile('JUPYTER_API_TOKEN = "abc" \n');
   assert.equal(env.JUPYTER_API_TOKEN, 'abc');
-});
-
-test('resolveKernelConfig prefers the setting when present', () => {
-  const out = resolveKernelConfig([{ name: 'a', hubUrl: 'u', token: 't' }], 'JUPYTER_SERVER_URL=x\nJUPYTER_API_TOKEN=y');
-  assert.deepEqual(out, [{ name: 'a', hubUrl: 'u', token: 't' }]);
-});
-
-test('resolveKernelConfig falls back to env text as a default server', () => {
-  const out = resolveKernelConfig(undefined, 'JUPYTER_SERVER_URL=https://h/user/q\nJUPYTER_API_TOKEN=tok');
-  assert.deepEqual(out, [{ name: 'default', hubUrl: 'https://h/user/q', token: 'tok' }]);
-});
-
-test('resolveKernelConfig returns [] when neither setting nor env present', () => {
-  assert.deepEqual(resolveKernelConfig(undefined, null), []);
-  assert.deepEqual(resolveKernelConfig([], null), []);
 });
 
 const hub = name => ({ name, hubUrl: `http://127.0.0.1:1/${name}`, token: 'secret' });
@@ -78,4 +63,42 @@ test('pickKernelServers with nothing found lists every place it looked, and unkn
   const text = unknownServerText('hub', found);
   assert.equal(text, `error: unknown server hub — known: a, b (from ${SHARED})`);
   assert.equal(text.includes('secret'), false);
+});
+
+const XLMCP = 'JUPYTER_SERVER_URL=http://x/user/q\nJUPYTER_API_TOKEN=xtok\n';
+const ENV = { JUPYTER_SERVER_URL: 'http://e/user/q', JUPYTER_API_TOKEN: 'etok' };
+
+test('pickCanvasKernelServers: VS Code settings first, then settings.local.json, then the environment, then ~/.aix/xlmcp/.env', () => {
+  const local = { file: LOCAL, json: { 'skena.jupyter.kernels': [hub('l')] } };
+  const noLocal = { file: LOCAL, problem: 'missing' };
+
+  const vscodeWins = pickCanvasKernelServers([hub('v')], local, ENV, XLMCP);
+  assert.deepEqual(vscodeWins.servers.map(s => s.name), ['v']);
+  assert.equal(vscodeWins.from, 'VS Code settings');
+
+  // - [] is the setting's default, so an empty list must not hide a token kept only in the local file
+  const localNext = pickCanvasKernelServers([], local, ENV, XLMCP);
+  assert.deepEqual(localNext.servers.map(s => s.name), ['l']);
+  assert.equal(localNext.from, LOCAL);
+
+  const envNext = pickCanvasKernelServers([], noLocal, ENV, XLMCP);
+  assert.deepEqual(envNext.servers, [{ name: 'default', hubUrl: 'http://e/user/q', token: 'etok' }]);
+  assert.equal(envNext.from, 'JUPYTER_SERVER_URL + JUPYTER_API_TOKEN');
+
+  const fileLast = pickCanvasKernelServers(undefined, noLocal, {}, XLMCP);
+  assert.deepEqual(fileLast.servers, [{ name: 'default', hubUrl: 'http://x/user/q', token: 'xtok' }]);
+  assert.equal(fileLast.from, '~/.aix/xlmcp/.env');
+});
+
+test('pickCanvasKernelServers with nothing found lists its own sources in order, without SKENA_JUPYTER_KERNELS', () => {
+  const out = pickCanvasKernelServers([], { file: LOCAL, problem: 'missing' }, { JUPYTER_SERVER_URL: 'http://h' }, null);
+  assert.deepEqual(out.servers, []);
+  assert.deepEqual(out.looked, [
+    'VS Code settings (no skena.jupyter.kernels)',
+    `${LOCAL} (missing)`,
+    'JUPYTER_API_TOKEN (not set)',
+    '~/.aix/xlmcp/.env (missing)',
+  ]);
+  const halfFile = pickCanvasKernelServers([], { file: LOCAL, json: {} }, {}, 'JUPYTER_SERVER_URL=http://x\n');
+  assert.equal(halfFile.looked.at(-1), '~/.aix/xlmcp/.env (no JUPYTER_SERVER_URL + JUPYTER_API_TOKEN)');
 });
