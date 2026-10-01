@@ -16,7 +16,6 @@
  *   R  — portal references to other canvases
  *   D  — node references (diamond) to a node in another canvas
  *   W  — knowledge results fetched from a knowledge server
- *   G  — group containers
  *   F  — other file types
  *
  * Labels are persisted in the .canvas JSON under `nodeLabel` on each node.
@@ -30,7 +29,6 @@ export function nodeLabelPrefix(node: CanvasNode): string {
   switch (node.type) {
     case 'text':   return 'N';
     case 'link':   return 'L';
-    case 'group':  return 'G';
     case 'cell':   return 'C';
     case 'kernel': return 'K';
     case 'code':   return 'E';
@@ -66,18 +64,18 @@ function nextLabel(prefix: string, used: Set<string>): string {
 }
 
 /**
- * Ensure every node in `nodes` has a `nodeLabel`.
+ * Ensure every node in `nodes` has a `nodeLabel`, except a group, which is kept in the file as it is.
  * Nodes that already have one are left unchanged.
  * Returns a new array; the original is not mutated.
  * Returns the same array reference if nothing changed (no work needed).
  */
 export function ensureLabels(nodes: CanvasNode[]): CanvasNode[] {
-  const needsLabel = nodes.some(n => !n.nodeLabel);
+  const needsLabel = nodes.some(n => !n.nodeLabel && n.type !== 'group');
   if (!needsLabel) return nodes; // - fast path — nothing to do
 
   const used = usedLabels(nodes);
   return nodes.map(n => {
-    if (n.nodeLabel) return n;
+    if (n.nodeLabel || n.type === 'group') return n;
     const label = nextLabel(nodeLabelPrefix(n), used);
     used.add(label);
     return { ...n, nodeLabel: label };

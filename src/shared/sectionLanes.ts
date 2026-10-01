@@ -34,6 +34,15 @@ export interface LaneNodeGeom {
   y: number;
   width: number;
   height: number;
+  type?: string;
+}
+
+/**
+ * A `group` entry (JSON Canvas) is kept in the file as it is, but skena does not show it, lay it out
+ * or count it in a section. Every input to the lane maths and the layout engine leaves it out here.
+ */
+export function isGroup(n: { type?: string }): boolean {
+  return n.type === 'group';
 }
 
 export interface DerivedLane extends SectionLane {
@@ -88,6 +97,7 @@ export function deriveLanes(nodes: LaneNodeGeom[], lanes: SectionLane[]): Derive
   const maxY: number[] = sorted.map(() => -Infinity);
 
   for (const n of nodes) {
+    if (isGroup(n)) continue;
     const i = laneIndexForNode(sorted, n, pinned);
     members[i].push(n.id);
     // - hidden (pinned) members count for nothing in a lane's content
@@ -163,7 +173,8 @@ export function sectionTargetHeight(l: SectionLane, members: LaneNodeGeom[]): nu
  * park moves the lane record alone — its members keep their positions, and its target height is
  * measured from y = 0.
  */
-export function fitLanes(lanes: SectionLane[], nodes: LaneNodeGeom[], own?: Map<string, number>): LaneGrowth {
+export function fitLanes(lanes: SectionLane[], all: LaneNodeGeom[], own?: Map<string, number>): LaneGrowth {
+  const nodes = all.filter(n => !isGroup(n));
   const empty: LaneGrowth = { laneShifts: {}, nodeShifts: {} };
   const sorted = sortLanes(lanes);
   if (sorted.length === 0) return empty;
@@ -224,7 +235,7 @@ export function unfoldLane(lanes: SectionLane[], nodes: LaneNodeGeom[], id: stri
 export function applyLaneFit(canvas: CanvasData, now: number, own?: Map<string, number>): CanvasData {
   const lanes = canvas.metadata?.sections ?? [];
   if (lanes.length === 0) {
-    if (canvas.nodes.length === 0) return canvas;
+    if (canvas.nodes.every(isGroup)) return canvas;
     return { ...canvas, metadata: { ...canvas.metadata, sections: [{ id: `sec-${now.toString(36)}`, y: 0, createdAt: now }] } };
   }
   const f = fitLanes(lanes, canvas.nodes, own);

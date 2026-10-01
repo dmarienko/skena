@@ -49,10 +49,15 @@ function sectionOfLabel(canvas: RefCanvas, label: string): { title?: string } | 
   return sorted[Number(m[1]) - 1];
 }
 
+// - the node carrying a label; a group is kept in the file but not shown, so a label names no group
+function nodeOfLabel(canvas: RefCanvas, label: string): CanvasNode | undefined {
+  return canvas.nodes.find(n => n.nodeLabel === label && n.type !== 'group');
+}
+
 /** What a reference label names in a canvas: a node by id, or a section by its label. Null when nothing. */
 export function findRefTarget(canvas: RefCanvas, label: string): { kind: 'node'; id: string } | { kind: 'section'; label: string } | null {
   if (isSectionLabel(label)) return sectionOfLabel(canvas, label) ? { kind: 'section', label } : null;
-  const node = canvas.nodes.find(n => n.nodeLabel === label);
+  const node = nodeOfLabel(canvas, label);
   return node ? { kind: 'node', id: node.id } : null;
 }
 
@@ -70,7 +75,6 @@ function nodeTitle(node: CanvasNode): string | undefined {
     case 'link':      return node.url;
     case 'knowledge': return node.title;
     case 'portal':    return node.label ?? baseName(node.canvas);
-    case 'group':     return node.label;
     case 'kernel':    return node.displayName ?? node.server;
     case 'noderef':   return node.title;
     case 'chat':      return node.title;
@@ -86,7 +90,7 @@ export function refTitle(canvas: RefCanvas, label: string): string | undefined {
   let raw: string | undefined;
   if (isSectionLabel(label)) raw = sectionOfLabel(canvas, label)?.title;
   else {
-    const node = canvas.nodes.find(n => n.nodeLabel === label);
+    const node = nodeOfLabel(canvas, label);
     raw = node && nodeTitle(node);
   }
   const t = raw?.trim();

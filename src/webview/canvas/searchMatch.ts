@@ -37,7 +37,6 @@ export function nodeContent(n: CanvasNode): string {
     case 'text':   return stripDataUris(n.text);
     case 'file':   return n.file;
     case 'link':   return n.url;
-    case 'group':  return n.label ?? '';
     case 'cell':
       // - image cells are base64, plotly cells are figure JSON → no searchable text.
       // - markdown/html cells are real text (strip any inline pasted images).

@@ -137,7 +137,8 @@ function extOf(path: string): string | undefined {
 function cardBorder(node: CanvasNode & { accentColor?: string }): string {
   // - the default code border is too dark to see on the card background
   if (node.type === 'code' && node.accentColor === undefined) return CARD_CODE_BORDER;
-  return nodeBorderColor(node.type, node.accentColor);
+  // - the palette has no entry for a group, which is never shown, so never the node of a card
+  return nodeBorderColor(node.type, node.accentColor) ?? 'transparent';
 }
 
 function cellBody(node: CellNode): CardBody {
@@ -167,8 +168,6 @@ function headerRows(node: CanvasNode): CardRow[] {
       return [{ text: node.title, style: 'strong' }];
     case 'kernel':
       return [{ text: node.displayName ?? 'kernel', style: 'strong' }, { text: node.server, style: 'path' }];
-    case 'group':
-      return node.label ? [{ text: node.label, style: 'strong' }] : [];
     default:
       return [];
   }

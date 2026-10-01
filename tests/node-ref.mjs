@@ -66,6 +66,10 @@ test('findRefTarget: a label that names nothing is null', () => {
   assert.equal(findRefTarget(canvas, 'S0'), null);
   assert.equal(findRefTarget(canvas, 'S01'), null, 'labels are S1, S2 …, never zero-padded');
   assert.equal(findRefTarget({ nodes: [] }, 'S1'), null, 'a canvas with no sections');
+  // - a group is kept in the file but not shown: a label it carries names nothing
+  const grouped = { nodes: [{ id: 'g', type: 'group', nodeLabel: 'G1', label: 'Data', x: 0, y: 0, width: 900, height: 900 }] };
+  assert.equal(findRefTarget(grouped, 'G1'), null);
+  assert.equal(refTitle(grouped, 'G1'), undefined);
 });
 
 test('refTitle: the section title by stack order, nothing for an untitled one', () => {

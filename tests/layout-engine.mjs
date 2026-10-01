@@ -1274,15 +1274,12 @@ test('an edge from an output cell anchors its target to the row of the output co
 });
 
 // 72
-test('a kernel badge or a band anchors nothing, as the source or as the target', () => {
+test('a kernel badge anchors nothing, as the source or as the target', () => {
   const kernel = (id, x, y) => ({ id, type: 'kernel', x, y, w: 140, h: 160 });
-  const band = (id, x, y) => ({ id, type: 'group', x, y, w: 700, h: 300 });
   const edge = (from, to) => [{ id: 'q', fromNode: from, fromSide: 'right', toNode: to, toSide: 'left', keepRow: true }];
   const cases = [
     { nodes: [kernel('K', 0, 300), note('T', 800, 0, 700, 300)], from: 'K', to: 'T', mover: 'T' },
-    { nodes: [band('G', 0, 300), note('T', 800, 0, 700, 300)], from: 'G', to: 'T', mover: 'T' },
     { nodes: [code('S', 0, 300), kernel('K', 800, 0)], from: 'S', to: 'K', mover: 'K' },
-    { nodes: [code('S', 0, 300), band('G', 800, 0)], from: 'S', to: 'G', mover: 'G' },
   ];
   for (const c of cases) {
     const riders = ridersOf(c.nodes, edge(c.from, c.to));
@@ -2537,4 +2534,31 @@ test('factors: a cell inserted under a held cell whose output sits below its row
   const shrink = ns => ns.map(n => (n.id === 'C1' ? { ...n, h: 100 } : n));
   settles(shrink(inserted), edges, ['C1'], { C2: { x: 3200, y: 800 }, E9: { x: 2400, y: 1250 } });
   settles(shrink(ran), edges, ['C1'], { C2: { x: 3200, y: 800 }, E9: { x: 2400, y: 1250 }, C9: { x: 3200, y: 1250 } });
+});
+
+// 154
+test('a group in the file is in no section and no column: a note added under N1 lays out as if it were not there', () => {
+  const sections = [{ id: 's1', y: 0, createdAt: 0 }, { id: 's2', y: 1200, createdAt: 1 }];
+  const text = (id, x, y) => ({ id, type: 'text', x, y, width: 700, height: 300 });
+  const notes = [text('N1', 100, 100), text('N2', 100, 500), text('N3', 900, 100), text('N4', 100, 1300)];
+  const group = { id: 'G', type: 'group', label: 'Data', x: 0, y: 0, width: 1700, height: 1000 };
+  // - the UI's `o` under N1, then runEngine: the new note joins N1's section, the pack, then the fit
+  const addUnder = nodes => {
+    const at = insertAfter(sectionEngineNodes(nodes, sections, 'N1'), 'N1');
+    const all = [...nodes, { ...text('X', at.x, at.y) }];
+    const own = sectionMembership(all, sections, 'N1', ['X']);
+    const packed = applyPatchesToCanvas(all, layoutSection(sectionEngineNodes(all, sections, 'N1', ['X']), { moverIds: ['X'] }));
+    const fit = fitLanes(sections, packed, own);
+    return packed.map(n => (fit.nodeShifts[n.id] ? { ...n, y: n.y + fit.nodeShifts[n.id] } : n));
+  };
+  const without = addUnder(notes);
+  const withGroup = addUnder([group, ...notes]);
+  assert.deepEqual(withGroup.filter(n => n.id !== 'G'), without);
+  assert.deepEqual(withGroup.find(n => n.id === 'G'), group, 'the group keeps its place and size');
+  // - X under N1 pushes N2 down; the fit grows S1 and moves N4 with S2. N1 and N3 stay.
+  const at = id => { const n = without.find(m => m.id === id); return [n.x, n.y]; };
+  assert.deepEqual([at('N1'), at('X'), at('N2'), at('N3'), at('N4')], [[100, 100], [100, 500], [100, 900], [900, 100], [100, 1400]]);
+  assert.deepEqual(deriveLanes([group, ...notes], sections).map(l => l.memberIds), [['N1', 'N2', 'N3'], ['N4']]);
+  // - a canvas without sections hands the engine every node: the group is still left out
+  assert.deepEqual(toEngineNodes([group, ...notes]).map(n => n.id), ['N1', 'N2', 'N3', 'N4']);
 });

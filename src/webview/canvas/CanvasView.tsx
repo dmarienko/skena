@@ -45,7 +45,6 @@ import { ZoomLevelProvider } from '../context/ZoomLevelContext';
 import { nextKernelColorIndex } from './palette';
 import { FileNodeComponent }  from './nodes/FileNode';
 import { TextNodeComponent }  from './nodes/TextNode';
-import { GroupNodeComponent } from './nodes/GroupNode';
 import { LinkNodeComponent }  from './nodes/LinkNode';
 import { CellNodeComponent }  from './nodes/CellNode';
 import { ChatNodeComponent }  from './nodes/ChatNode';
@@ -64,7 +63,7 @@ import { G_BADGES_ATTR, gChordStep } from './gChord';
 import { SectionRail, type RailKernel } from '../rail/SectionRail';
 import { fmtDateTime } from '../rail/RailSegment';
 import { refTitle } from '../../shared/nodeRef';
-import { allFolded, deriveLanes, fitLanes, groupIdsByLane, sortLanes, insertLaneAt, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
+import { allFolded, deriveLanes, fitLanes, groupIdsByLane, isGroup, sortLanes, insertLaneAt, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
 import { applyPatchesToCanvas, codeCellHeight, columnsOfDeleted as columnsOfDeletedIn, directionSlot, forkOf, hangingBelow, insertAfter, keepRowOf, layoutSection, reflowSection, ridersOf, sectionEngineNodes, sectionMembership, toEngineNodes, type EngineNode, type LayoutOpts, type Patches } from '../../shared/layoutEngine';
 import { youtubeId, YOUTUBE_NODE } from '../../shared/youtube';
 import { useLaneFit, flowGeom } from '../rail/useLaneFit';
@@ -82,7 +81,6 @@ import { borderPoint, LANE_STEP, routeSection, sideOfHandle, type RouteEdge, typ
 const NODE_TYPES: NodeTypes = {
   file:   FileNodeComponent,
   text:   TextNodeComponent,
-  group:  GroupNodeComponent,
   link:   LinkNodeComponent,
   cell:   CellNodeComponent,
   chat:   ChatNodeComponent,
@@ -92,9 +90,6 @@ const NODE_TYPES: NodeTypes = {
   code:   CodeNodeComponent,
   knowledge: KnowledgeNodeComponent,
 };
-
-// - band-type nodes (group) are visual backdrops: skipped by snapping, nav, overlap checks
-const isBandType = (t?: string): boolean => t === 'group';
 
 // - the title is pinned outside the canvas area now, so no zoom is unsafe: back to the original floor
 const MIN_ZOOM = 0.05;
@@ -160,10 +155,17 @@ function toFlowNode(cn: CanvasNode): Node {
     width:    cn.width,
     height:   cn.height,
     data:     { ...cn, accentColor: resolveColor(cn.color) },
-    // - groups are non-interactive drag targets (they expand to contain nodes visually)
-    draggable:   !isBandType(cn.type),
-    zIndex:      isBandType(cn.type) ? -1 : 0,
   };
+}
+
+// - a group stays in canvasRef, so a save writes it back as it was, but it is never a React Flow
+//   node, and an edge to it is never a React Flow edge
+function toFlowNodes(cns: CanvasNode[]): Node[] {
+  return cns.filter(n => !isGroup(n)).map(toFlowNode);
+}
+function toFlowEdges(ces: CanvasEdge[], cns: CanvasNode[]): Edge[] {
+  const groups = new Set(cns.filter(isGroup).map(n => n.id));
+  return ces.filter(e => !groups.has(e.fromNode) && !groups.has(e.toNode)).map(toFlowEdge);
 }
 
 // - how long a just-produced run output is protected from being reverted by a stale reload
@@ -341,7 +343,7 @@ function getHelperLines(
   let snapY:      number | undefined;
 
   for (const other of nodes) {
-    if (other.id === node.id || isBandType(other.type)) continue;
+    if (other.id === node.id) continue;
 
     const ow = other.measured?.width  ?? Number(other.style?.width  ?? 200);
     const oh = other.measured?.height ?? Number(other.style?.height ?? 150);
@@ -417,7 +419,6 @@ function findFreePosition(
   let free = false;
   for (let iter = 0; iter < 40; iter++) {
     const hit = existingNodes.find(n => {
-      if (isBandType(n.type)) return false;
       const nw = Number(n.style?.width  ?? 200);
       const nh = Number(n.style?.height ?? 150);
       return x         < n.position.x + nw + gap &&
@@ -479,8 +480,8 @@ interface CanvasViewProps {
 function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: CanvasViewProps): JSX.Element {
   // - ensure every node has a reference label (N1, M3, J2 …); save if any were missing
   const initialNodes = ensureLabels(canvas.nodes);
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes.map(toFlowNode));
-  const [edges, setEdges, onEdgesChange] = useEdgesState(canvas.edges.map(toFlowEdge));
+  const [nodes, setNodes, onNodesChange] = useNodesState(toFlowNodes(initialNodes));
+  const [edges, setEdges, onEdgesChange] = useEdgesState(toFlowEdges(canvas.edges, initialNodes));
   // - the completion word list of the text-node editor and the chat input; rebuilt once the canvas stops changing
   useEffect(() => {
     const t = setTimeout(() => setCanvasWords(nodes.map(n => n.data as unknown as CanvasNode)), WORDS_REBUILD_MS);
@@ -609,7 +610,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
   // ─── active node tracking (for FloatingChat context) ─────────────────────────
   const activeNodeIdRef = useRef<string | null>(null);
   useEffect(() => {
-    const selected = nodes.find(n => n.selected && !isBandType(n.type));
+    const selected = nodes.find(n => n.selected);
     const newId    = selected?.id ?? null;
     if (newId !== activeNodeIdRef.current) {
       activeNodeIdRef.current = newId;
@@ -747,8 +748,8 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
     });
 
     // - reconcile (not replace) so unchanged nodes keep their exact object ref → no flicker re-render
-    setNodes(prev => [...reconcileFlowNodes(prev, labeled.map(toFlowNode), pinned), ...keepNodes]);
-    setEdges([...canvas.edges.map(toFlowEdge), ...keepEdges]);
+    setNodes(prev => [...reconcileFlowNodes(prev, toFlowNodes(labeled), pinned), ...keepNodes]);
+    setEdges([...toFlowEdges(canvas.edges, labeled), ...keepEdges]);
     canvasRef.current = { ...canvas, nodes: [...labeledForRef, ...keepAsCanvas], edges: [...canvas.edges, ...keepEdgesAsCanvas] };
 
     // - restore saved viewport ONLY on the first load of this path (defaultViewport only fires on
@@ -891,9 +892,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
     const next = new Map<string, RoutedEdge>();
     for (const lane of derivedLanes) {
       const member = new Set(lane.memberIds);
-      // - a group box encloses the nodes it holds, so handing it to the router would block every edge
-      //   drawn over it; the per-edge fallback router leaves group nodes out for the same reason
-      const routeNodes = nodes.filter(n => member.has(n.id) && !hiddenByFold.has(n.id) && n.type !== 'group');
+      const routeNodes = nodes.filter(n => member.has(n.id) && !hiddenByFold.has(n.id));
       if (routeNodes.length === 0) continue;
       const ids = new Set(routeNodes.map(n => n.id));
       const sectionEdges: RouteEdge[] = edges
@@ -1077,29 +1076,28 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
     return byId;
   }, []);
 
-  // - who takes the focus once `deleted` is gone. Bands and kernel badges are not candidates, and
-  //   a folded node is passed over: the focus must stay somewhere the user can see it.
+  // - who takes the focus once `deleted` is gone. Kernel badges are not candidates, and a folded
+  //   node is passed over: the focus must stay somewhere the user can see it.
   const nextFocusAfterDelete = useCallback((deleted: Node[], sectionOf: Map<string, string>): string | null => {
-    const gone = deleted.filter(n => !isBandType(n.type));
-    if (gone.length === 0) return null;
+    if (deleted.length === 0) return null;
     const geom = (n: Node) => ({
       x: n.position.x, y: n.position.y,
       w: Number(n.style?.width ?? 200), h: Number(n.style?.height ?? 150),
     });
     // - a multi-select delete leaves one hole: the box around everything that went
-    const boxes = gone.map(geom);
+    const boxes = deleted.map(geom);
     const x1 = Math.min(...boxes.map(b => b.x));
     const y1 = Math.min(...boxes.map(b => b.y));
     const x2 = Math.max(...boxes.map(b => b.x + b.w));
     const y2 = Math.max(...boxes.map(b => b.y + b.h));
     const deletedIds = new Set(deleted.map(n => n.id));
     return focusAfterDelete(
-      // - a multi-section delete picks the first deleted non-band node's section
-      { x: x1, y: y1, w: x2 - x1, h: y2 - y1, sectionId: sectionOf.get(gone[0].id) },
+      // - a multi-section delete picks the first deleted node's section
+      { x: x1, y: y1, w: x2 - x1, h: y2 - y1, sectionId: sectionOf.get(deleted[0].id) },
       nodesRef.current
-        // - kernel badges are excluded here (never a focus candidate) but not from `gone` above,
+        // - kernel badges are excluded here (never a focus candidate) but not from `deleted` above,
         //   so a deleted kernel badge still widens the box the next focus is picked near
-        .filter(n => !deletedIds.has(n.id) && !isBandType(n.type) && n.type !== 'kernel')
+        .filter(n => !deletedIds.has(n.id) && n.type !== 'kernel')
         .map(n => ({ id: n.id, ...geom(n), hidden: hiddenByFoldRef.current.has(n.id), sectionId: sectionOf.get(n.id) })),
     );
   }, []); // - nodesRef / hiddenByFoldRef are refs, always current
@@ -1222,7 +1220,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
     }),
   ], [nodes, kernels]);
 
-  const selectedNodeId = useMemo(() => nodes.find(n => n.selected && !isBandType(n.type))?.id ?? null, [nodes]);
+  const selectedNodeId = useMemo(() => nodes.find(n => n.selected)?.id ?? null, [nodes]);
 
   const handleBindKernel = useCallback((id: string, kernelId: string | null) => {
     pushHistory();
@@ -1288,8 +1286,8 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
     fromHistoryRef.current = true;
     canvasRef.current = { ...canvasRef.current, nodes: entry.nodes, edges: entry.edges, metadata: { ...canvasRef.current.metadata, sections: entry.sections } };
     setLanes(entry.sections);
-    setNodes(entry.nodes.map(toFlowNode));
-    setEdges(entry.edges.map(toFlowEdge));
+    setNodes(toFlowNodes(entry.nodes));
+    setEdges(toFlowEdges(entry.edges, entry.nodes));
     scheduleSave();
   }, [setNodes, setEdges, scheduleSave]);
 
@@ -1657,7 +1655,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
 
     // - convert screen coords to flow canvas coords
     const position = screenToFlowPosition({ x: e.clientX, y: e.clientY });
-    const focused  = nodesRef.current.find(n => n.selected && !isBandType(n.type));
+    const focused  = nodesRef.current.find(n => n.selected);
     vscodePostMessage({ type: 'dropFiles', uris, position, connectTo: focused?.id });
   }, [screenToFlowPosition]);
 
@@ -1826,7 +1824,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
   //   after a drag. An already-selected node does not pan either: a double-click to enter the editor
   //   delivers two clicks first, and the second would pan under the cursor.
   const onNodeClick = useCallback((e: React.MouseEvent, n: Node) => {
-    if (e.shiftKey || e.ctrlKey || e.metaKey || isBandType(n.type)) return;
+    if (e.shiftKey || e.ctrlKey || e.metaKey) return;
     recordPreviousPosition(n.id);              // - a click is a jump too, so `` ` ` `` comes back from it
     lastFocusedNodeId.set(canvasPath, n.id);   // - a reload restores the node last clicked, not last keyed
     if (n.selected) return;
@@ -1834,7 +1832,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
   }, [revealNode, canvasPath, recordPreviousPosition]);
 
   /**
-   * Returns the id of the non-group node whose center is closest to the
+   * Returns the id of the node whose center is closest to the
    * current viewport center. Returns null if no eligible nodes exist.
    */
   const pickViewportNode = useCallback((): string | null => {
@@ -1844,7 +1842,6 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
     let bestId:   string | null = null;
     let bestDist  = Infinity;
     for (const n of nodesRef.current) {
-      if (isBandType(n.type)) continue;
       const cx   = n.position.x + Number(n.style?.width  ?? 200) / 2;
       const cy   = n.position.y + Number(n.style?.height ?? 150) / 2;
       const dist = Math.hypot(cx - vpCx, cy - vpCy);
@@ -1886,18 +1883,11 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
     else jumpToMark(register);
   }, [jumpToPreviousNode, jumpToMark]);
 
-  // - per-lane count of nodes handlePickSection can actually focus: memberIds includes band (group)
-  //   nodes, which a pick skips, so the marks panel row and the folded band both read from here
-  const laneFocusableCounts = useMemo(() => {
-    const band = new Set(nodes.filter(n => isBandType(n.type)).map(n => n.id));
-    return new Map(derivedLanes.map(l => [l.id, l.memberIds.filter(id => !band.has(id)).length]));
-  }, [derivedLanes, nodes]);
-
   // - the section rows of the marks panel: stack order, the rail's title for an untitled one
   const marksSections = useMemo<SectionEntry[]>(() => derivedLanes.map(l => ({
     id: l.id, label: l.label, title: l.title?.trim() || fmtDateTime(l.createdAt),
-    count: laneFocusableCounts.get(l.id) ?? 0, folded: !!l.folded,
-  })), [derivedLanes, laneFocusableCounts]);
+    count: l.memberIds.length, folded: !!l.folded,
+  })), [derivedLanes]);
 
   // - pan so a section's top sits at the top of the view; x and zoom are kept
   const revealLaneTop = useCallback((id: string) => {
@@ -1922,7 +1912,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
     if (lane.folded) foldLaneRef.current(id);   // - the same action unfolds
     const members = new Set(lane.memberIds);
     const first = nodes
-      .filter(n => members.has(n.id) && !isBandType(n.type))
+      .filter(n => members.has(n.id))
       .sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x)[0];
     if (first) {
       requestAnimationFrame(() => focusNodeById(first.id, forceCenter));
@@ -1948,7 +1938,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
    * Reuses the skena:addNodeResult handler for wiring (nodes, edges, save, focus, autoEdit).
    */
   const addTextNodeInDirection = useCallback((dir: 'H' | 'J' | 'K' | 'L') => {
-    const current = nodesRef.current.find(n => n.selected && !isBandType(n.type));
+    const current = nodesRef.current.find(n => n.selected);
     if (!current) return;
 
     const cw = Number(current.style?.width  ?? 400);
@@ -2080,7 +2070,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
   }, []); // - no deps: reads ref, not state
 
   const handleCopy = useCallback(() => {
-    const selectedNodes = nodesRef.current.filter(n => n.selected && !isBandType(n.type));
+    const selectedNodes = nodesRef.current.filter(n => n.selected);
     if (selectedNodes.length === 0) return;
     const selectedIds = new Set(selectedNodes.map(n => n.id));
     clipboard = {
@@ -2094,7 +2084,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
 
   // - copy a cross-canvas reference to the single selected node (same action as the c,c hotkey)
   const handleCopyNodeReference = useCallback(() => {
-    const focused = nodesRef.current.find(n => n.selected && !isBandType(n.type));
+    const focused = nodesRef.current.find(n => n.selected);
     const label = focused ? (focused.data as Record<string, unknown>).nodeLabel as string | undefined : undefined;
     if (focused && label) vscodePostMessage({ type: 'copyNodeReference', label });
   }, []);
@@ -2119,7 +2109,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
 
     // - the anchor is the focused node, not the copied one: the copy may sit far away or in
     // - another section, and the paste has to land where the user is looking
-    const anchor = nodesRef.current.find(n => n.selected && !isBandType(n.type));
+    const anchor = nodesRef.current.find(n => n.selected);
     let target: { x: number; y: number };
     if (anchor) {
       // - the slot one gap right of the anchor, the same one `Alt+X l` adds into. A node already
@@ -2193,7 +2183,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
   //   render, only a code cell is.
   const placeKnowledgeNode = useCallback((hit: KnowledgeHit, text: KnowledgeText) => {
     const { w, h } = NODE_SIZE.knowledge;
-    const anchor = nodesRef.current.find(n => n.selected && !isBandType(n.type));
+    const anchor = nodesRef.current.find(n => n.selected);
     let target: { x: number; y: number };
     if (anchor) {
       const anchorW = Number(anchor.style?.width ?? 200);
@@ -2360,7 +2350,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
   }, [nodes.map(n => n.selected ? `${n.id}:${(n.data as unknown as KnowledgeNode).changed ? 1 : 0}` : '').join(','), setNodes, scheduleSave]);
 
   const handleMoveToSubCanvas = useCallback(() => {
-    const selectedNodes = nodesRef.current.filter(n => n.selected && !isBandType(n.type));
+    const selectedNodes = nodesRef.current.filter(n => n.selected);
     if (selectedNodes.length < 2) return;
     const selectedIds = new Set(selectedNodes.map(n => n.id));
     const cx = selectedNodes.reduce((s, n) => s + n.position.x + Number(n.style?.width  ?? 200) / 2, 0) / selectedNodes.length;
@@ -2373,7 +2363,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
     });
   }, []);
 
-  // - delete all currently selected (non-group) nodes and their connected edges.
+  // - delete all currently selected nodes and their connected edges.
   // - mirrors onNodesDelete logic but triggered imperatively (e.g. dd shortcut).
   const performDelete = useCallback((toDelete: Node[]) => {
     if (toDelete.length === 0) return;
@@ -2454,7 +2444,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
   };
 
   const deleteSelectedNodes = useCallback(async () => {
-    const toDelete = nodesRef.current.filter(n => n.selected && !isBandType(n.type));
+    const toDelete = nodesRef.current.filter(n => n.selected);
     if (toDelete.length === 0) return;
     const reason = activeKernelReason(toDelete);
     if (reason && !(await confirmDeleteViaHost(toDelete.map(n => n.id), reason))) return;
@@ -2504,19 +2494,18 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       }
     };
 
-    // - band nodes are backdrops, never nav targets; the rest map into the pure finder, which
-    //   derives the folded (hidden) ids from the lanes itself
+    // - the nodes map into the pure finder, which derives the folded (hidden) ids from the lanes itself
     const toNav = (n: Node): NavNode => ({
       id: n.id, x: n.position.x, y: n.position.y,
       w: Number(n.style?.width ?? 200), h: Number(n.style?.height ?? 150),
     });
 
-    const focusedNode = () => nodesRef.current.find(n => n.selected && !isBandType(n.type));
+    const focusedNode = () => nodesRef.current.find(n => n.selected);
 
-    // - what the follow reads: every visible node, every edge, and the routes of the last pass. A band
-    //   node is a backdrop and a folded member is hidden, so neither is a landing place.
+    // - what the follow reads: every visible node, every edge, and the routes of the last pass. A
+    //   folded member is hidden, so it is no landing place.
     const sideContext = (): EdgeSideContext => ({
-      nodes: nodesRef.current.filter(n => !isBandType(n.type) && !hiddenByFoldRef.current.has(n.id)).map(toNav),
+      nodes: nodesRef.current.filter(n => !hiddenByFoldRef.current.has(n.id)).map(toNav),
       edges: edgesRef.current,
       routes: routesRef.current,
     });
@@ -2616,7 +2605,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       if (!lane) return;
       const ids = new Set(lane.memberIds);
       const members = nodesRef.current
-        .filter(n => ids.has(n.id) && !isBandType(n.type) && !hiddenByFoldRef.current.has(n.id))
+        .filter(n => ids.has(n.id) && !hiddenByFoldRef.current.has(n.id))
         .sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x);
       const target = which === 'first' ? members[0] : members[members.length - 1];
       if (target && target.id !== current?.id) focusNodeById(target.id);
@@ -2624,7 +2613,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
 
     // - add a node off the focused node in the given direction (Alt+X chord target)
     const requestAddNodeInDirection = (key: 'H' | 'J' | 'K' | 'L') => {
-      const current = nodesRef.current.find(n => n.selected && !isBandType(n.type));
+      const current = nodesRef.current.find(n => n.selected);
       if (!current) return;
       const cw = Number(current.style?.width  ?? 400);
       const ch = Number(current.style?.height ?? 300);
@@ -2666,7 +2655,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
 
     // - scroll the focused node's content (Shift+hjkl); returns false if nothing scrollable
     const scrollFocusedNode = (key: 'H' | 'J' | 'K' | 'L'): boolean => {
-      const focused = nodesRef.current.find(n => n.selected && !isBandType(n.type));
+      const focused = nodesRef.current.find(n => n.selected);
       if (!focused) return false;
       const nodeEl   = document.querySelector(`.react-flow__node[data-id="${focused.id}"]`);
       const scrollEl = nodeEl?.querySelector('.skena-scrollable') as HTMLElement | null;
@@ -2741,7 +2730,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
             const reg = e.key;
             if (pendingMarkRef.current === 'set') {
               // - m{x}: store current node + viewport under register x
-              const focused = nodesRef.current.find(n => n.selected && !isBandType(n.type));
+              const focused = nodesRef.current.find(n => n.selected);
               if (focused) {
                 marksRef.current = { ...marksRef.current, [reg]: { nodeId: focused.id, viewport: rfRef.current.getViewport() } };
                 vscodePostMessage({ type: 'saveMarks', marks: persistedMarks(marksRef.current) });
@@ -2815,7 +2804,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
 
       // - Ctrl+U / Ctrl+D: scroll focused node content up / down (vim half-page)
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'u' || e.key === 'd')) {
-        const focused = nodesRef.current.find(n => n.selected && !isBandType(n.type));
+        const focused = nodesRef.current.find(n => n.selected);
         if (focused) {
           const nodeEl  = document.querySelector(`.react-flow__node[data-id="${focused.id}"]`);
           const scrollEl = nodeEl?.querySelector('.skena-scrollable') as HTMLElement | null;
@@ -2841,7 +2830,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
 
         // - keep the WHOLE focused node in view after zoom-in when it fits (pan just enough); if
         //   it's larger than the viewport on an axis, leave that axis alone (can't fit it)
-        const focused = nodesRef.current.find(n => n.selected && !isBandType(n.type));
+        const focused = nodesRef.current.find(n => n.selected);
         if (focused) {
           const nw = Number(focused.style?.width  ?? 200);
           const nh = Number(focused.style?.height ?? 150);
@@ -2884,7 +2873,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'Home') {
         e.preventDefault();
         const { zoom } = rfRef.current.getViewport();
-        const framed = nodesRef.current.filter(n => !isBandType(n.type));
+        const framed = nodesRef.current;
         if (!framed.length) return;
         const minX = Math.min(...framed.map(n => n.position.x));
         const minY = Math.min(...framed.map(n => n.position.y));
@@ -2896,7 +2885,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       // - Alt+Shift+C: centre the focused node on the pane at READABLE_ZOOM — a code cell's text is
       // - sized in --vscode-editor-font-size, so zoom 1 reads exactly like the VS Code editor.
       if (!e.ctrlKey && !e.metaKey && e.shiftKey && e.altKey && e.key === 'C') {
-        const focused = nodesRef.current.find(n => n.selected && !isBandType(n.type));
+        const focused = nodesRef.current.find(n => n.selected);
         if (focused) {
           e.preventDefault();
           if (!wrapperRef.current) return;   // - the pane sits right of the rail; without it there is no centre
@@ -2916,7 +2905,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
 
       // - Shift+C: pan viewport to centre on the focused node (zoom unchanged)
       if (!e.ctrlKey && !e.metaKey && e.shiftKey && !e.altKey && e.key === 'C') {
-        const focused = nodesRef.current.find(n => n.selected && !isBandType(n.type));
+        const focused = nodesRef.current.find(n => n.selected);
         if (focused) {
           e.preventDefault();
           if (!wrapperRef.current) return;
@@ -2939,7 +2928,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       // - AND delivers the keydown to the webview, which would cause double node creation.
       // - J/K arrive exclusively through the skena:addTextNodeTrigger event handler below.
       if (e.ctrlKey && e.shiftKey && ['H', 'L'].includes(e.key)) {
-        if (!nodesRef.current.some(n => n.selected && !isBandType(n.type))) return;
+        if (!nodesRef.current.some(n => n.selected)) return;
         e.preventDefault();
         addTextNodeInDirection(e.key as 'H' | 'L');
         return;
@@ -3013,7 +3002,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       // - Enter / Ctrl+Enter: open non-text selected node in VS Code editor
       // - Ctrl+Enter → modal (maximize editor group); Enter → beside preview
       if (e.key === 'Enter') {
-        const current = nodesRef.current.find(n => n.selected && !isBandType(n.type));
+        const current = nodesRef.current.find(n => n.selected);
         // - text nodes handle Enter themselves via their own onKeyDown
         if (!current || current.type === 'text') return;
         e.preventDefault();
@@ -3041,7 +3030,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       //   link / noderef nodes in the VS Code editor. Guarded by !inField so a plain 'i' typed inside
       //   an editor stays a normal keystroke.
       if (!inField && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'i') {
-        const current = nodesRef.current.find(n => n.selected && !isBandType(n.type));
+        const current = nodesRef.current.find(n => n.selected);
         if (!current) return;
         e.preventDefault();
         const d = current.data as Record<string, unknown>;
@@ -3064,7 +3053,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       // - o: add an empty text node below the focused node (mirrors `o` on a code node). Code nodes
       //   handle their own `o` (chained code cell) via CodeNode, so skip them here.
       if (!inField && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'o') {
-        const current = nodesRef.current.find(n => n.selected && !isBandType(n.type));
+        const current = nodesRef.current.find(n => n.selected);
         if (current && current.type !== 'code') {
           e.preventDefault();
           addTextNodeInDirection('J');
@@ -3088,7 +3077,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       //   out through the same event the mouse resizer fires: that handler owns the history entry, the
       //   snap, the output clamp and the engine run, so the keyboard cannot bypass any of them.
       if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'w' || e.key === 'W' || e.key === 'e' || e.key === 'E')) {
-        const cur = nodesRef.current.find(nd => nd.selected && !isBandType(nd.type));
+        const cur = nodesRef.current.find(nd => nd.selected);
         if (!cur) return;
         e.preventDefault();
         const wide = e.key === 'w' || e.key === 'W';
@@ -3112,7 +3101,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
 
       // - m: start set-mark sequence (requires a focused node)
       if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'm') {
-        if (nodesRef.current.some(n => n.selected && !isBandType(n.type))) {
+        if (nodesRef.current.some(n => n.selected)) {
           e.preventDefault();
           pendingMarkRef.current = 'set';
           if (markTimerRef.current) clearTimeout(markTimerRef.current);
@@ -3194,7 +3183,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
 
       // - Space: toggle space-pinned selection on the keyboard-focused node
       if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key === ' ') {
-        const focused = nodesRef.current.find(n => n.selected && !isBandType(n.type));
+        const focused = nodesRef.current.find(n => n.selected);
         if (!focused) return;
         e.preventDefault();
         const next = new Set(spaceSelectedRef.current);
@@ -3218,7 +3207,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
         if (now - lastCPressRef.current < 400) {
           // - double-c detected: copy a reference to the focused node
           lastCPressRef.current = 0; // - reset so a third c doesn't re-trigger
-          const focused = nodesRef.current.find(n => n.selected && !isBandType(n.type));
+          const focused = nodesRef.current.find(n => n.selected);
           const label = focused ? (focused.data as Record<string, unknown>).nodeLabel as string | undefined : undefined;
           if (focused && label) {
             e.preventDefault();
@@ -3237,7 +3226,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
         if (pinned.length !== 1) return;
         const pinnedId  = pinned[0];
         const pinnedNode = nodesRef.current.find(n => n.id === pinnedId);
-        const targetNode = nodesRef.current.find(n => n.selected && !isBandType(n.type) && !spaceSelectedRef.current.has(n.id));
+        const targetNode = nodesRef.current.find(n => n.selected && !spaceSelectedRef.current.has(n.id));
         if (!pinnedNode || !targetNode) return;
         e.preventDefault();
         const targetId = targetNode.id;
@@ -3289,7 +3278,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       // - Bail out and let VS Code handle the combo.
       if (e.altKey || e.ctrlKey || e.metaKey) return;
 
-      let current = nodesRef.current.find(n => n.selected && !isBandType(n.type));
+      let current = nodesRef.current.find(n => n.selected);
 
       // - no focused node: establish focus on the viewport-nearest node first;
       // - the user can press the key again to navigate from there
@@ -3301,7 +3290,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       }
 
       const targetId = findNearestNode(toNav(current), dir, {
-        nodes: nodesRef.current.filter(n => !isBandType(n.type)).map(toNav),
+        nodes: nodesRef.current.map(toNav),
         lanes: lanesRef.current,
       });
       if (!targetId) return;
@@ -3373,7 +3362,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       const W = window.innerWidth, H = window.innerHeight;
       const visibleNodes: string[] = [];
       for (const cn of canvasRef.current.nodes) {
-        if (isBandType(cn.type)) continue;
+        if (isGroup(cn)) continue;
         const sx = cn.x * vp.zoom + vp.x;
         const sy = cn.y * vp.zoom + vp.y;
         const sw = cn.width * vp.zoom, sh = cn.height * vp.zoom;
@@ -3383,7 +3372,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       }
       let focusedScrollPct: number | undefined;
       let focusedVisibleText: string | undefined;
-      const focused = nodesRef.current.find(n => n.selected && !isBandType(n.type));
+      const focused = nodesRef.current.find(n => n.selected);
       if (focused) {
         const el = document.querySelector(`.react-flow__node[data-id="${focused.id}"] .skena-scrollable`) as HTMLElement | null;
         if (el && el.scrollHeight > el.clientHeight + 1) {
@@ -3884,7 +3873,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
   // - insert a pasted node right of the focused node (edge) or at viewport centre (no edge).
   // - offsetIndex spreads same-tick batch inserts vertically (nodesRef can't see siblings yet)
   const insertPastedNode = useCallback((partial: { type: 'text'; text: string } | { type: 'link'; url: string } | { type: 'file'; file: string } | { type: 'noderef'; canvas: string; label: string; title?: string }, offsetIndex = 0) => {
-    const focused = nodesRef.current.find(n => n.selected && !isBandType(n.type));
+    const focused = nodesRef.current.find(n => n.selected);
     // - link nodes are compact (matches editor-provider link node size); noderef is a small diamond
     const [nw, nh] = partial.type === 'link'
       ? (youtubeId(partial.url) ? [YOUTUBE_NODE.w, YOUTUBE_NODE.h] : [320, 80])
@@ -4012,7 +4001,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       if (action.kind === 'none') { if (clipboard) { e.preventDefault(); pasteInternalClipboard(); } return; }
       e.preventDefault();
 
-      const focused = nodesRef.current.find(n => n.selected && !isBandType(n.type));
+      const focused = nodesRef.current.find(n => n.selected);
       switch (action.kind) {
         case 'cell-image': {
           const file = imageItem!.getAsFile();
@@ -4234,7 +4223,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
         elevateEdgesOnSelect
       >
         <Background variant={BackgroundVariant.Dots} gap={GRID} size={1} color="var(--vscode-editorIndentGuide-background)" />
-        <SectionSeparators lanes={derivedLanes} kernels={railKernels} focusableCounts={laneFocusableCounts} />
+        <SectionSeparators lanes={derivedLanes} kernels={railKernels} />
         <EdgeFollowHints shown={gShown} />
         <HelperLines horizontal={helperLines.horizontal} vertical={helperLines.vertical} />
         <Controls showInteractive={false} showFitView={false}>
@@ -4267,7 +4256,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       </ReactFlow>
       {searchOpen && (
         <CanvasSearch
-          nodes={canvasRef.current.nodes}
+          nodes={canvasRef.current.nodes.filter(n => !isGroup(n))}
           onFocus={focusNodeById}
           onClose={() => setSearchOpen(false)}
         />
@@ -4292,7 +4281,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
         <ContextMenu
           screenX={contextMenu.screenX}
           screenY={contextMenu.screenY}
-          selectedCount={nodes.filter(n => n.selected && !isBandType(n.type)).length}
+          selectedCount={nodes.filter(n => n.selected).length}
           hasClipboard={clipboard !== null}
           onClose={handleMenuClose}
           onAddText={handleMenuAddText}

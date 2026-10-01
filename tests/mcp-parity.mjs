@@ -815,9 +815,9 @@ test('canvas_add_node gives each type the size the canvas UI gives it, and snaps
 test('canvas_add_node refuses an unknown type, names the accepted ones, and writes nothing', async () => {
   const p = fresh('bad-type');
   const out = await call('canvas_add_node', { canvasPath: p, type: 'chat', content: 'x' });
-  assert.equal(out, 'error: unknown node type "chat" — canvas_add_node makes text, code, cell, file, link, portal, noderef, group');
+  assert.equal(out, 'error: unknown node type "chat" — canvas_add_node makes text, code, cell, file, link, portal, noderef');
   assert.equal(existsSync(p), false, 'no file is created for a refused node');
-  assert.match(await call('canvas_add_node', { canvasPath: p, type: 'knowledge' }), /makes .*group \(a knowledge node: canvas_add_knowledge\)$/);
+  assert.match(await call('canvas_add_node', { canvasPath: p, type: 'knowledge' }), /makes .*noderef \(a knowledge node: canvas_add_knowledge\)$/);
 
   await call('canvas_add_node', { canvasPath: p, type: 'text', content: 'a', x: 0, y: 0 });
   assert.match(await call('canvas_add_node', { canvasPath: p, type: 'Text' }), /^error: unknown node type "Text"/);
@@ -866,22 +866,33 @@ test('canvas_add_node makes a noderef to a section, in both forms, and canvas_li
   assert.match(await call('canvas_read', { canvasPath: p, ref: 'D1' }), /\nReference: notes\/plan\.canvas#S3 \(section\)\nTitle: Lesson 3\n/);
 });
 
-test('canvas_add_node makes a group as a backdrop: label and geometry stored, nothing it covers moves', async () => {
+test('canvas_add_node refuses a group and writes nothing', async () => {
   const p = fresh('group');
   await call('canvas_add_node', { canvasPath: p, type: 'text', content: 'a', x: 0, y: 0 });
-  await call('canvas_add_node', { canvasPath: p, type: 'text', content: 'b', x: 0, y: 400 });
-  const out = await call('canvas_add_node', { canvasPath: p, type: 'group', label: 'Data', color: '4', x: 0, y: 0, width: 1000, height: 800 });
-  console.log(`--- canvas_add_node group ---\n${out}\n---`);
-  assert.doesNotMatch(out, /Moved/);
-  const d = read(p);
-  const g = d.nodes.find(n => n.nodeLabel === 'G1');
-  assert.deepEqual({ type: g.type, label: g.label, color: g.color, x: g.x, y: g.y, w: g.width, h: g.height },
-    { type: 'group', label: 'Data', color: '4', x: 0, y: 0, w: 1000, h: 800 });
-  assert.deepEqual([pick(d, 'N1'), pick(d, 'N2')], [[0, 0], [0, 400]], 'the notes under the backdrop stay put');
+  const out = await call('canvas_add_node', { canvasPath: p, type: 'group', label: 'Data', x: 0, y: 0, width: 1000, height: 800 });
+  assert.equal(out, 'error: unknown node type "group" — canvas_add_node makes text, code, cell, file, link, portal, noderef (the canvas does not show groups; a section holds a set of nodes: canvas_add_section)');
+  assert.equal(read(p).nodes.length, 1);
+});
 
-  assert.equal(await call('canvas_add_node', { canvasPath: p, type: 'group', label: 'x', x: 0, y: 0 }), 'error: a group needs width and height');
-  assert.equal(await call('canvas_add_node', { canvasPath: p, type: 'group', after: 'N1', width: 500, height: 500 }), 'error: a group is a backdrop placed by x/y, not by after or forkOf');
-  assert.equal(read(p).nodes.length, 3);
+test('a group already in the file is kept as it is through a write, in no section, and listed as not shown', async () => {
+  const p = fresh('group-kept');
+  // - written by hand, as another JSON Canvas editor leaves it: no nodeLabel
+  const group = { id: 'g1', type: 'group', label: 'Data', color: '4', x: 0, y: 0, width: 1700, height: 1000 };
+  const text = (id, label, x, y) => ({ id, type: 'text', text: label, nodeLabel: label, x, y, width: 700, height: 300 });
+  writeFileSync(p, JSON.stringify({
+    nodes: [group, text('a', 'N1', 100, 100), text('b', 'N2', 100, 500)],
+    edges: [],
+    metadata: { sections: [{ id: 's1', y: 0, createdAt: 0 }] },
+  }, null, 2));
+  const out = await call('canvas_add_node', { canvasPath: p, after: 'N1', content: 'x' });
+  assert.match(out, /^Created node N3 /);
+  const d = read(p);
+  assert.deepEqual(d.nodes.find(n => n.id === 'g1'), group, 'not moved, not resized, not labelled');
+  assert.deepEqual([pick(d, 'N1'), pick(d, 'N3'), pick(d, 'N2')], [[100, 100], [100, 500], [100, 900]], 'laid out as if the group were not there');
+  const list = await call('canvas_list', { canvasPath: p });
+  assert.match(list, /^ {2}g1 +group \(not shown\) +"Data"$/m);
+  assert.match(list, /nodes=3$/m, 'the section counts N1, N2, N3 and not the group');
+  assert.match(await call('canvas_read', { canvasPath: p, ref: 'g1' }), /\nType: group \(not shown\)\n/);
 });
 
 // - the environment of an agent that starts the server from the workspace .mcp.json: no list from the

@@ -28,7 +28,7 @@ import { assignLabel, ensureLabels } from '../../shared/nodeLabels';
 import { snapGrid } from '../../shared/grid';
 import { NODE_SIZE, OUTPUT_MAX_W, OUTPUT_MAX_H, CODE_MIN_H, CODE_MAX_H, CODE_H_STEP } from '../../shared/constants';
 import { clampToOrigin } from '../../shared/bounds';
-import { applyLaneFit, deriveLanes, outputCellGeom, pinOutputToLane, pruneFoldedIds, sectionByRef, insertLaneAt, foldLane, unfoldLane, sectionTargetHeight, parkFirstLaneAtOrigin, memberCodeCellsInRunOrder, type SectionLane } from '../../shared/sectionLanes';
+import { applyLaneFit, deriveLanes, isGroup, outputCellGeom, pinOutputToLane, pruneFoldedIds, sectionByRef, insertLaneAt, foldLane, unfoldLane, sectionTargetHeight, parkFirstLaneAtOrigin, memberCodeCellsInRunOrder, type SectionLane } from '../../shared/sectionLanes';
 import { resolveCellKernel, cellKernelView, kernelById, upstreamCellsForRun, resolveKernelCellsInCanvas, type KernelLike } from '../../shared/kernelBinding';
 import { layoutSection, reflowSection, insertAfter, forkOf, placeOutput, applyPatchesToCanvas, columnsOfDeleted, ridersOf, hangingBelow, sectionEngineNodes, sectionMembership, toEngineNodes, codeCellHeight, estimateCodeNeedPx, keepRowOf, markKeepRowOnLoad } from '../../shared/layoutEngine';
 import { pickKernelServers, unknownServerText, type KernelServerConfig, type KernelLookup, type SettingsRead } from '../jupyter/config';
@@ -297,6 +297,7 @@ function nodeSnippet(node: CanvasNode): string {
 }
 
 function typeLabel(node: CanvasNode): string {
+  if (node.type === 'group') return 'group (not shown)';
   if (node.type === 'file') {
     const f = node.file.toLowerCase();
     if (f.endsWith('.ipynb')) return 'notebook';
@@ -336,8 +337,10 @@ function uid(): string {
   return `ai-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
 }
 
-// - compute placement for a new node: right of all existing nodes, vertically centred
-function autoPlace(nodes: CanvasNode[], w: number, h: number): { x: number; y: number } {
+// - compute placement for a new node: right of all existing nodes, vertically centred. A group is
+//   not shown, so it takes no room.
+function autoPlace(all: CanvasNode[], w: number, h: number): { x: number; y: number } {
+  const nodes = all.filter(n => !isGroup(n));
   if (nodes.length === 0) return { x: 100, y: 100 };
   const GAP      = 60;
   const rightmost = Math.max(...nodes.map(n => n.x + n.width));
@@ -426,10 +429,10 @@ const CODE_HEIGHT_RANGE = `${CODE_MIN_H} to ${CODE_MAX_H} px in ${CODE_H_STEP} p
 const KERNEL_SERVERS_TEXT = 'Jupyter servers are looked up on every call, and the first non-empty list wins: SKENA_JUPYTER_KERNELS (set when the canvas AI companion starts this server); then skena.jupyter.kernels in .vscode/settings.local.json and then .vscode/settings.json of the nearest folder above the canvas that has a .vscode directory, then of the one above this server\'s working directory; then JUPYTER_SERVER_URL + JUPYTER_API_TOKEN from the environment, as a server named "default". An unknown server name is answered with the names found and where they came from, or with every place looked in.';
 
 // - the types canvas_add_node makes; a kernel node and a knowledge node have tools of their own
-const ADD_NODE_TYPES = ['text', 'code', 'cell', 'file', 'link', 'portal', 'noderef', 'group'];
+const ADD_NODE_TYPES = ['text', 'code', 'cell', 'file', 'link', 'portal', 'noderef'];
 
 // - the size the webview gives a new node of this type, so a node the agent adds lays out as one the
-//   user adds. A group has none: nothing in the UI creates one, so the caller gives its size.
+//   user adds
 function defaultDims(type: string, url?: string): { w: number; h: number } {
   switch (type) {
     case 'code':    return NODE_SIZE.code;
@@ -539,7 +542,7 @@ async function canvasList(args: Record<string, unknown>): Promise<string> {
     const tags   = ext.tags?.length ? `  [${ext.tags.join(', ')}]` : '';
     const out    = links.output.get(n.id), of = links.outputOf.get(n.id);
     const link   = out ? `  (output: ${out.nodeLabel ?? out.id})` : of ? `  (output of: ${of.nodeLabel ?? of.id})` : '';
-    lines.push(`  ${(n.nodeLabel ?? '?').padEnd(4)}  ${typeLabel(n).padEnd(10)}  ${nodeSnippet(n)}${aiMark}${tags}${link}`);
+    lines.push(`  ${(n.nodeLabel ?? n.id).padEnd(4)}  ${typeLabel(n).padEnd(10)}  ${nodeSnippet(n)}${aiMark}${tags}${link}`);
   }
 
   if (d.metadata?.sections?.length) {
@@ -660,7 +663,7 @@ async function canvasSearch(args: Record<string, unknown>): Promise<string> {
 
   const lines = [`Found ${results.length} node(s) matching "${args.query}":`, ''];
   for (const n of results) {
-    lines.push(`  ${(n.nodeLabel ?? '?').padEnd(4)}  ${typeLabel(n).padEnd(10)}  ${nodeSnippet(n)}`);
+    lines.push(`  ${(n.nodeLabel ?? n.id).padEnd(4)}  ${typeLabel(n).padEnd(10)}  ${nodeSnippet(n)}`);
   }
   return lines.join('\n');
 }
@@ -716,7 +719,8 @@ async function canvasAddNode(args: Record<string, unknown>): Promise<string> {
   const p = resolvePath(args.canvasPath as string);
   if (args.type !== undefined && !ADD_NODE_TYPES.includes(args.type as string)) {
     const elsewhere = args.type === 'knowledge' ? ' (a knowledge node: canvas_add_knowledge)'
-      : args.type === 'kernel' ? ' (a kernel: canvas_add_kernel adds a kernel record)' : '';
+      : args.type === 'kernel' ? ' (a kernel: canvas_add_kernel adds a kernel record)'
+      : args.type === 'group' ? ' (the canvas does not show groups; a section holds a set of nodes: canvas_add_section)' : '';
     return `error: unknown node type "${String(args.type)}" — canvas_add_node makes ${ADD_NODE_TYPES.join(', ')}${elsewhere}`;
   }
   // - a reference is `<path>.canvas#<LABEL>` whether it comes in one piece or as canvas + label
@@ -724,10 +728,6 @@ async function canvasAddNode(args: Record<string, unknown>): Promise<string> {
     ? parseNodeRef(args.label === undefined ? String(args.canvas ?? '') : `${String(args.canvas ?? '')}#${String(args.label)}`)
     : null;
   if (args.type === 'noderef' && !ref) return 'error: a noderef needs canvas (a path ending in .canvas) and label (the target node\'s label, e.g. N3, or a section\'s label, e.g. S3), or canvas as path.canvas#N3';
-  if (args.type === 'group') {
-    if (args.after !== undefined || args.forkOf !== undefined) return 'error: a group is a backdrop placed by x/y, not by after or forkOf';
-    if (args.width === undefined || args.height === undefined) return 'error: a group needs width and height';
-  }
   return withFileLock(p, async () => {
   const d    = await readCanvasOrEmpty(p);   // - create-on-first-add: empty canvas if the file is new
   // - `after` and `forkOf` both let the engine place the new node, so a supplied x/y is ignored (the
@@ -808,9 +808,6 @@ async function canvasAddNode(args: Record<string, unknown>): Promise<string> {
     case 'noderef':
       newNode = { ...base, type: 'noderef', canvas: noderefCanvasPath(ref!.canvas, p), label: ref!.label, ...(args.title ? { title: args.title as string } : {}) } as CanvasNode;
       break;
-    case 'group':
-      newNode = { ...base, type: 'group', ...(args.label ? { label: args.label as string } : {}) } as CanvasNode;
-      break;
     default:
       newNode = { ...base, type: 'text', text: (args.content as string | undefined) ?? '' } as CanvasNode;
   }
@@ -822,8 +819,7 @@ async function canvasAddNode(args: Record<string, unknown>): Promise<string> {
   //   pinned to that lane until the user unfolds, rather than being adopted by the lane below
   if (anchor && d.metadata?.sections) d.metadata = { ...d.metadata, sections: pinOutputToLane(d.metadata.sections, anchor.id, labeled.id) };
   const report: { capped?: boolean } = {};
-  // - a group is drawn behind the nodes it covers: as a mover it would push every one of them away
-  const own = type === 'group' ? new Map<string, number>() : applyEngine(d, [labeled.id], [], report, anchor ? { id: anchor.id, joining: [labeled.id] } : undefined);
+  const own = applyEngine(d, [labeled.id], [], report, anchor ? { id: anchor.id, joining: [labeled.id] } : undefined);
   Object.assign(d, applyLaneFit(d, Date.now(), own));   // - every write fits the sections
   const moved = movedLabels(d, before, [labeled.id]);
   await writeCanvas(p, d);
@@ -1725,7 +1721,7 @@ async function canvasRemoveKernel(args: Record<string, unknown>): Promise<string
 const TOOLS = [
   {
     name: 'canvas_list',
-    description: 'List all nodes and edges on a canvas. Returns node labels (N1, J3, etc.), types, and content previews. Use these labels to reference nodes in other tools. A code cell that has an output ends its line with "(output: C5)", and that output cell with "(output of: E6)". Lists the sections (S1…, their y, kernel and title) when the canvas has any. Lists the kernel records (id, name, server, live id) when the canvas has any.',
+    description: 'List all nodes and edges on a canvas. Returns node labels (N1, J3, etc.), types, and content previews. Use these labels to reference nodes in other tools. A code cell that has an output ends its line with "(output: C5)", and that output cell with "(output of: E6)". Lists the sections (S1…, their y, kernel and title) when the canvas has any. Lists the kernel records (id, name, server, live id) when the canvas has any. A group entry in the file is listed as "group (not shown)", by its id when it has no label: the canvas keeps it but does not show it, lay it out or count it in a section.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1785,7 +1781,7 @@ const TOOLS = [
   },
   {
     name: 'canvas_add_node',
-    description: `Add a new node to the canvas: text (default), code, cell, file, link, portal, noderef or group; any other type is refused with an error. The node is marked as AI-created (🤖 badge) and assigned a label. Default sizes are the ones the canvas UI gives a new node: text ${NODE_SIZE.text.w}×${NODE_SIZE.text.h}, code ${NODE_SIZE.code.w}×${NODE_SIZE.code.h} (a code cell with content is as tall as its lines need, ${CODE_HEIGHT_RANGE}), cell ${CELL_SIZE.w}×${CELL_SIZE.h}, file ${NODE_SIZE.file.w}×${NODE_SIZE.file.h}, link ${NODE_SIZE.link.w}×${NODE_SIZE.link.h} (a link to a YouTube video ${YOUTUBE_NODE.w}×${YOUTUBE_NODE.h}, room for its thumbnail), portal ${NODE_SIZE.portal.w}×${NODE_SIZE.portal.h}, noderef ${NODEREF_SIZE.w}×${NODEREF_SIZE.h}; a supplied width or height is snapped to the grid. A noderef points at a node or a section in another canvas: canvas (the target .canvas file) and label (the target node's label, e.g. N3, or a section's label, e.g. S3 — S followed by digits always names a section), or canvas alone as path.canvas#N3, plus an optional title. Opening a section reference unfolds that section and focuses its first node. A group is a backdrop drawn behind other nodes, with label as the text on it; it needs width and height, is placed by x/y only (after and forkOf are refused), and the layout engine does not run for it, so it moves none of the nodes it covers. Position defaults to the right of all existing nodes. after puts the new node under any node, in that node's own column (the type defaults to code under a code cell, else to a text note); forkOf names a code cell: on side right the new node goes on that cell's row in the nearest column past its output column that holds a code cell (under the cell's own output when it would overlap it), else it starts a new column pair right of the cell's pair; on side left it starts a new column pair left of the cell's column; both ignore x/y. Whatever the placement (a group aside), the layout engine then packs the column the node landed in and pushes the column pairs to its right and the notes it covers out of the way — never across a section boundary. Sections fit their content: a node placed past its section's bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Supplied coordinates are snapped to the grid and clamped to the canvas origin.`,
+    description: `Add a new node to the canvas: text (default), code, cell, file, link, portal or noderef; any other type is refused with an error (a group too: the canvas does not show groups, a section does that job). The node is marked as AI-created (🤖 badge) and assigned a label. Default sizes are the ones the canvas UI gives a new node: text ${NODE_SIZE.text.w}×${NODE_SIZE.text.h}, code ${NODE_SIZE.code.w}×${NODE_SIZE.code.h} (a code cell with content is as tall as its lines need, ${CODE_HEIGHT_RANGE}), cell ${CELL_SIZE.w}×${CELL_SIZE.h}, file ${NODE_SIZE.file.w}×${NODE_SIZE.file.h}, link ${NODE_SIZE.link.w}×${NODE_SIZE.link.h} (a link to a YouTube video ${YOUTUBE_NODE.w}×${YOUTUBE_NODE.h}, room for its thumbnail), portal ${NODE_SIZE.portal.w}×${NODE_SIZE.portal.h}, noderef ${NODEREF_SIZE.w}×${NODEREF_SIZE.h}; a supplied width or height is snapped to the grid. A noderef points at a node or a section in another canvas: canvas (the target .canvas file) and label (the target node's label, e.g. N3, or a section's label, e.g. S3 — S followed by digits always names a section), or canvas alone as path.canvas#N3, plus an optional title. Opening a section reference unfolds that section and focuses its first node. Position defaults to the right of all existing nodes. after puts the new node under any node, in that node's own column (the type defaults to code under a code cell, else to a text note); forkOf names a code cell: on side right the new node goes on that cell's row in the nearest column past its output column that holds a code cell (under the cell's own output when it would overlap it), else it starts a new column pair right of the cell's pair; on side left it starts a new column pair left of the cell's column; both ignore x/y. Whatever the placement, the layout engine then packs the column the node landed in and pushes the column pairs to its right and the notes it covers out of the way — never across a section boundary. Sections fit their content: a node placed past its section's bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Supplied coordinates are snapped to the grid and clamped to the canvas origin.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -1796,14 +1792,14 @@ const TOOLS = [
         file:       { type: 'string', description: 'File path for file nodes (vault:// URI, or a path; an absolute one under the canvas folder is stored relative to it)' },
         url:        { type: 'string', description: 'URL for link nodes' },
         canvas:     { type: 'string', description: 'portal: path of the target canvas relative to this canvas\'s folder, stored as given. noderef: the target .canvas — absolute (stored relative to the workspace folder, as Copy node reference writes it) or relative to the workspace folder — or the whole reference path.canvas#N3' },
-        label:      { type: 'string', description: 'noderef: the target node\'s label (N3, E10) or a section\'s label (S3). group: the text shown on the backdrop' },
+        label:      { type: 'string', description: 'noderef: the target node\'s label (N3, E10) or a section\'s label (S3)' },
         title:      { type: 'string', description: 'noderef: optional text shown under the reference' },
         tags:       { type: 'array',  items: { type: 'string' }, description: 'Optional tags for search/organisation' },
         color:      { type: 'string', description: 'Node accent color: 1=red, 2=orange, 3=yellow, 4=green, 5=cyan, 6=purple' },
         x:          { type: 'number', description: 'X position (auto-placed if omitted; ignored with after/forkOf)' },
         y:          { type: 'number', description: 'Y position (auto-placed if omitted; ignored with after/forkOf)' },
-        width:      { type: 'number', description: 'Width in canvas units, snapped to the grid (default: the UI size for the type; required for a group)' },
-        height:     { type: 'number', description: `Height in canvas units, snapped to the grid (default: the UI size for the type; a code cell with content is sized to the lines it holds, ${CODE_HEIGHT_RANGE}; required for a group)` },
+        width:      { type: 'number', description: 'Width in canvas units, snapped to the grid (default: the UI size for the type)' },
+        height:     { type: 'number', description: `Height in canvas units, snapped to the grid (default: the UI size for the type; a code cell with content is sized to the lines it holds, ${CODE_HEIGHT_RANGE})` },
         after:      { type: 'string', description: 'Label or id of any node: place the new node one gap below it in the same column (type defaults to code under a code cell, else text)' },
         forkOf:     { type: 'string', description: 'Label or id of a code cell: the new node goes on its row beside it (see the tool description; type defaults to code)' },
         side:       { type: 'string', description: 'forkOf side: right (default) or left; a left fork that would start before the canvas origin is refused' },

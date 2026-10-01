@@ -1,6 +1,6 @@
 import { GRID, NODE_SIZE, CODE_MIN_H, CODE_MAX_H, CODE_H_STEP, CODE_LINE_H_ESTIMATE, CODE_CHROME_ESTIMATE, OUTPUT_MIN_W, OUTPUT_MAX_H, OUTPUT_DEFAULT_H, NOTE_LINE_H_ESTIMATE, NOTE_CHARS_PER_LINE_ESTIMATE, NOTE_MATH_LINES_ESTIMATE, NOTE_CHROME_ESTIMATE } from './constants';
 import { snapGrid } from './grid';
-import { deriveLanes, type SectionLane } from './sectionLanes';
+import { deriveLanes, isGroup, type SectionLane } from './sectionLanes';
 import type { CanvasData } from './types';
 
 /**
@@ -124,9 +124,9 @@ const isMember = (n: EngineNode, owners: Map<string, string>) => !owners.has(n.i
  * `keepRow: true`, leaves the source's right border and enters the target's left one (a side the file
  * leaves out is that border), and the source's column is strictly left of the target's. An edge with
  * no `keepRow`, or `keepRow: false`, holds nothing. Any two node types count, with
- * these exceptions: the target is a column member and not a band (a `group` node) — an output cell
- * already takes its code cell's row, a kernel badge is in no column — and the source is not a kernel
- * badge or a band. An output cell as the source stands for its code cell: its row is that cell's
+ * these exceptions: the target is a column member — an output cell already takes its code cell's
+ * row, a kernel badge is in no column — and the source is not a kernel badge. An output cell as the
+ * source stands for its code cell: its row is that cell's
  * row, so the map names the code cell, and that cell's column too has to be left of the target's.
  * Everything else — a bottom-to-top edge down one column, an edge drawn back to the left — stays a
  * drawing and moves nothing. A target several edges point at takes the leftmost source, ties going
@@ -141,7 +141,7 @@ export function ridersOf(nodes: EngineNode[], edges: { fromNode: string; toNode:
     if ((e.fromSide ?? 'right') !== 'right' || (e.toSide ?? 'left') !== 'left') continue;
     const from = map.get(e.fromNode);
     const to   = map.get(e.toNode);
-    if (!from || !to || !isMember(to, owners) || to.type === 'group' || from.type === 'kernel' || from.type === 'group') continue;
+    if (!from || !to || !isMember(to, owners) || from.type === 'kernel') continue;
     const source = map.get(owners.get(from.id) ?? '') ?? from;
     if (snapGrid(from.x) >= snapGrid(to.x) || snapGrid(source.x) >= snapGrid(to.x)) continue;
     const held = best.get(to.id);
@@ -154,8 +154,8 @@ export function ridersOf(nodes: EngineNode[], edges: { fromNode: string; toNode:
  * Which nodes move down with another node (§3.5): source id → target ids. An edge counts when it
  * leaves the source's bottom border and enters the target's top border, the target's top is at or
  * below the source's bottom, the two x-spans cross, and the two are in different columns (a target in
- * the source's own column packs under it anyway). The target is a column member and not a band; the
- * source is not a kernel badge or a band. A pair is left out when the source is held, directly or up
+ * the source's own column packs under it anyway). The target is a column member; the source is not
+ * a kernel badge. A pair is left out when the source is held, directly or up
  * the chain, to the target or to a node under the target in its column: the source would then follow
  * the target's row while the target follows the source down.
  * `draggedFrom` (the call's `LayoutOpts.draggedFrom`) puts the dragged nodes back where they were, so
@@ -174,7 +174,7 @@ export function hangingBelow(input: EngineNode[], edges: { fromNode: string; toN
     if (e.fromSide !== 'bottom' || e.toSide !== 'top') continue;
     const from = map.get(e.fromNode);
     const to = map.get(e.toNode);
-    if (!from || !to || !isMember(to, owners) || to.type === 'group' || from.type === 'kernel' || from.type === 'group') continue;
+    if (!from || !to || !isMember(to, owners) || from.type === 'kernel') continue;
     if (snapGrid(from.x) === snapGrid(to.x) || to.y < from.y + from.h) continue;
     if (from.x >= to.x + to.w || to.x >= from.x + from.w) continue;
     const at = now.get(to.id)!;
@@ -1203,7 +1203,7 @@ export function columnsOfDeleted(nodes: CanvasShapedNode[], sections: SectionLan
   return cols;
 }
 
-/** Adapter: canvas nodes → engine nodes (the file's `width`/`height` → `w`/`h`). */
+/** Adapter: canvas nodes → engine nodes (the file's `width`/`height` → `w`/`h`). A group is left out. */
 export function toEngineNodes(nodes: CanvasShapedNode[]): EngineNode[] {
-  return nodes.map(n => ({ id: n.id, type: n.type, x: n.x, y: n.y, w: n.width, h: n.height, ...(n.outputNodeId ? { outputNodeId: n.outputNodeId } : {}) }));
+  return nodes.filter(n => !isGroup(n)).map(n => ({ id: n.id, type: n.type, x: n.x, y: n.y, w: n.width, h: n.height, ...(n.outputNodeId ? { outputNodeId: n.outputNodeId } : {}) }));
 }

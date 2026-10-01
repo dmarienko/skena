@@ -7,7 +7,7 @@ import { fmtDateTime } from '../rail/RailSegment';
 const FONT = 'system-ui, -apple-system, sans-serif';
 
 /** The 1px line at each section's bottom, and the title a folded section shows in its band. */
-export function SectionSeparators({ lanes, kernels, focusableCounts }: { lanes: DerivedLane[]; kernels: RailKernel[]; focusableCounts: Map<string, number> }): JSX.Element {
+export function SectionSeparators({ lanes, kernels }: { lanes: DerivedLane[]; kernels: RailKernel[] }): JSX.Element {
   const ty = useStore(s => s.transform[1]);
   const zoom = useStore(s => s.transform[2]);
   const height = useStore(s => s.height);
@@ -31,8 +31,7 @@ export function SectionSeparators({ lanes, kernels, focusableCounts }: { lanes: 
         // - the kernel's own name, not the rail's status line: a record's display name is its label,
         //   a kernel node's is its name
         const kernelName = kernel ? (kernel.kind === 'record' ? kernel.label : kernel.name) : null;
-        // - the count of nodes a pick can actually focus: memberIds also holds band (group) nodes
-        const count = `${focusableCounts.get(l.id) ?? 0} nodes`;
+        const count = `${l.memberIds.length} nodes`;
         // - flow-space text: it scales with the canvas, so it keeps its place in the band at any zoom
         return (
           <div key={`${l.id}-band`}

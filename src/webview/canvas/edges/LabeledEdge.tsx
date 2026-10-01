@@ -107,10 +107,9 @@ function markerKey(id: string): string {
   return `${id.replace(/[^\w-]/g, '_')}-${(h >>> 0).toString(36)}`;
 }
 
-// - every non-group node as a box the per-edge fallback router must stay out of
+// - every node as a box the per-edge fallback router must stay out of
 function obstacles(nodes: readonly StoreNode[]): NodeRect[] {
   return nodes
-    .filter(n => n.type !== 'group')
     .map(n => ({
       x: n.position.x,
       y: n.position.y,
@@ -176,7 +175,7 @@ export function LabeledEdgeComponent({
   }
   const route = useEdgeRoute(id);
 
-  // - the section pass drew this one; otherwise route it alone against every non-group node as before
+  // - the section pass drew this one; otherwise route it alone against every node as before
   const pts = route && !route.fallback && !endMoving && route.points.length >= 2
     ? route.points
     : routeOrthogonal(sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, obstacles(allNodes));
