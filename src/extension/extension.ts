@@ -3,7 +3,7 @@
  *
  * Registers:
  * - Custom editor provider for *.canvas files
- * - Commands: openCanvas, addNode, quickSearch, new* entries
+ * - Commands: openCanvas, quickSearch, addNode, addTextNode*, addKernel, newSection
  * - Vault indexer + file watcher lifecycle
  */
 
@@ -77,19 +77,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const doc = await vscode.workspace.openTextDocument(entry.fsPath);
         vscode.window.showTextDocument(doc);
       }
-    }),
-
-    vscode.commands.registerCommand('skena.newStrategy', () => {
-      // - placeholder, implemented in commands/create-entry.ts
-      vscode.window.showInformationMessage('Skena: New Strategy — coming in Phase 3');
-    }),
-
-    vscode.commands.registerCommand('skena.newKnowledge', () => {
-      vscode.window.showInformationMessage('Skena: New Knowledge — coming in Phase 3');
-    }),
-
-    vscode.commands.registerCommand('skena.newResearchLog', () => {
-      vscode.window.showInformationMessage('Skena: New Research Log — coming in Phase 3');
     }),
 
     // - Ctrl+N override: VS Code intercepts ctrl+n ("New File") before the webview sees it.

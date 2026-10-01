@@ -87,18 +87,6 @@
         "title": "Skena: Quick Search Vault"
       },
       {
-        "command": "skena.newStrategy",
-        "title": "Skena: New Strategy Entry"
-      },
-      {
-        "command": "skena.newKnowledge",
-        "title": "Skena: New Knowledge Entry"
-      },
-      {
-        "command": "skena.newResearchLog",
-        "title": "Skena: New Research Log"
-      },
-      {
         "command": "skena.addTextNodeDown",
         "title": "Skena: Add Text Node Below"
       },
@@ -206,43 +194,6 @@
             "."
           ],
           "description": "Global fallback: directories to scan in each vault when a vault entry has no per-vault 'directories' list. Use [\".\"] (the default) to scan the entire vault root recursively.",
-          "scope": "window"
-        },
-        "skena.workspacePatterns": {
-          "type": "array",
-          "default": [
-            "**/*.ipynb",
-            "**/*.py",
-            "**/*.yaml",
-            "**/*.md"
-          ],
-          "description": "File patterns to index in workspace",
-          "scope": "window"
-        },
-        "skena.excludePatterns": {
-          "type": "array",
-          "default": [
-            "**/node_modules/**",
-            "**/.git/**",
-            "**/__pycache__/**",
-            "**/dist/**"
-          ],
-          "description": "Patterns to exclude from indexing",
-          "scope": "window"
-        },
-        "skena.autoSaveDelay": {
-          "type": "number",
-          "default": 500,
-          "description": "Canvas auto-save debounce delay in ms",
-          "scope": "window"
-        },
-        "skena.notion": {
-          "type": "object",
-          "default": {
-            "enabled": false,
-            "mcpServerUrl": "http://localhost:3000"
-          },
-          "description": "Notion MCP server integration for vault://notion/<page-id> URIs",
           "scope": "window"
         },
         "skena.knowledge.servers": {
@@ -361,34 +312,12 @@
           "markdownDescription": "Base URL for the `openai-compat` provider. Examples:\n- Ollama: `http://localhost:11434/v1`\n- LM Studio: `http://localhost:1234/v1`\n- Groq: `https://api.groq.com/openai/v1`",
           "scope": "window"
         },
-        "skena.chat": {
-          "type": "object",
-          "default": {
-            "backend": "claude",
-            "model": "claude-opus-4-5"
-          },
-          "description": "AI chat node backend. backend: claude | ollama | openai",
-          "scope": "window"
-        },
         "skena.notebook": {
           "type": "object",
           "default": {
             "showSourceCells": false
           },
           "description": "Notebook rendering options. showSourceCells: show code source alongside output (default false — outputs only)",
-          "scope": "window"
-        },
-        "skena.colors": {
-          "type": "object",
-          "default": {
-            "1": "#fb464c",
-            "2": "#e9973f",
-            "3": "#e0de71",
-            "4": "#44cf6e",
-            "5": "#53dfdd",
-            "6": "#a882ff"
-          },
-          "description": "Canvas color palette (matches Obsidian color codes 1-6)",
           "scope": "window"
         },
         "skena.markdownTheme": {
