@@ -65,6 +65,7 @@ import { SectionRail, type RailKernel } from '../rail/SectionRail';
 import { fmtDateTime } from '../rail/RailSegment';
 import { allFolded, deriveLanes, fitLanes, groupIdsByLane, sortLanes, insertLaneAt, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
 import { applyPatchesToCanvas, codeCellHeight, columnsOfDeleted as columnsOfDeletedIn, directionSlot, forkOf, hangingBelow, insertAfter, keepRowOf, layoutSection, reflowSection, ridersOf, sectionEngineNodes, sectionMembership, toEngineNodes, type EngineNode, type LayoutOpts, type Patches } from '../../shared/layoutEngine';
+import { youtubeId, YOUTUBE_NODE } from '../../shared/youtube';
 import { useLaneFit, flowGeom } from '../rail/useLaneFit';
 import { connectionLabels, findNearestNode, focusAfterDelete, revealPan, type ConnectionLabel, type EdgeSideContext, type NavDir, type NavNode, type Rect } from './spatialNav';
 import { focusAreaBottom } from './chat/consoleLayout';
@@ -2005,10 +2006,11 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const handleMenuAddUrl = useCallback((url: string) => {
     const { flowX, flowY } = contextMenuFlowPos.current;
     const nodeId = `node-${Date.now()}`;
+    const size = youtubeId(url) ? YOUTUBE_NODE : NODE_SIZE.link;
     const newNode: CanvasNode = {
       id: nodeId, type: 'link', url,
-      x: Math.round(flowX - NODE_SIZE.link.w / 2), y: Math.round(flowY - NODE_SIZE.link.h / 2),
-      width: NODE_SIZE.link.w, height: NODE_SIZE.link.h,
+      x: Math.round(flowX - size.w / 2), y: Math.round(flowY - size.h / 2),
+      width: size.w, height: size.h,
     };
     window.dispatchEvent(new CustomEvent('skena:addNodeResult', {
       detail: { type: 'addNodeResult', node: newNode } satisfies MsgAddNodeResult,
@@ -3824,7 +3826,9 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
   const insertPastedNode = useCallback((partial: { type: 'text'; text: string } | { type: 'link'; url: string } | { type: 'file'; file: string } | { type: 'noderef'; canvas: string; label: string; title?: string }, offsetIndex = 0) => {
     const focused = nodesRef.current.find(n => n.selected && !isBandType(n.type));
     // - link nodes are compact (matches editor-provider link node size); noderef is a small diamond
-    const [nw, nh] = partial.type === 'link' ? [320, 80] : partial.type === 'noderef' ? [200, 120] : [400, 300];
+    const [nw, nh] = partial.type === 'link'
+      ? (youtubeId(partial.url) ? [YOUTUBE_NODE.w, YOUTUBE_NODE.h] : [320, 80])
+      : partial.type === 'noderef' ? [200, 120] : [400, 300];
     let x: number, y: number;
     if (focused) {
       const cw = Number(focused.style?.width ?? 400);

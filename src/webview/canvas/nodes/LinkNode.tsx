@@ -1,6 +1,6 @@
 /**
  * LinkNode — external URL node.
- * Shows favicon + URL. Click opens in VS Code HTML browser.
+ * Shows favicon + URL; a YouTube video shows its thumbnail. Click opens the URL in the browser.
  */
 
 import React from 'react';
@@ -9,6 +9,7 @@ import { LinkNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
 import { nodeBorderColor } from '../palette';
+import { youtubeId, youtubeThumbnail } from '../../../shared/youtube';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -35,6 +36,7 @@ export function LinkNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
   const favicon = getFaviconUrl(node.url);
 
   const open = () => vscodePostMessage({ type: 'openFile', uri: node.url });
+  const videoId = youtubeId(node.url);
 
   return (
     <>
@@ -63,7 +65,20 @@ export function LinkNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
           {getHostname(node.url)}
         </span>
       </div>
-      <div style={{ fontSize: 12, wordBreak: 'break-all', opacity: 0.85 }}>{node.url}</div>
+      {videoId ? (
+        <div style={{ position: 'relative', flex: 1, minHeight: 0, borderRadius: 4, overflow: 'hidden', background: '#000' }}>
+          <img
+            src={youtubeThumbnail(videoId)} alt=""
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+          />
+          <svg viewBox="0 0 68 48" width={68} height={48} style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', opacity: 0.9 }}>
+            <path d="M66.5 7.7a8.6 8.6 0 0 0-6-6C55.2.3 34 .3 34 .3s-21.2 0-26.5 1.4a8.6 8.6 0 0 0-6 6C.1 13 .1 24 .1 24s0 11 1.4 16.3a8.6 8.6 0 0 0 6 6C12.8 47.7 34 47.7 34 47.7s21.2 0 26.5-1.4a8.6 8.6 0 0 0 6-6C67.9 35 67.9 24 67.9 24s0-11-1.4-16.3z" fill="#f00" />
+            <path d="M45 24 27 14v20z" fill="#fff" />
+          </svg>
+        </div>
+      ) : (
+        <div style={{ fontSize: 12, wordBreak: 'break-all', opacity: 0.85 }}>{node.url}</div>
+      )}
     </div>
     <NodeResizer
       minWidth={100} minHeight={60}

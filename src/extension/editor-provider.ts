@@ -84,6 +84,7 @@ import { normalizeCanvasToOrigin } from '../shared/bounds';
 import { migrateSections, memberCodeCellsInRunOrder, applyLaneFit, outputCellGeom, pinOutputToLane } from '../shared/sectionLanes';
 import { placeOutput, sectionEngineNodes, markKeepRowOnLoad, layoutAround } from '../shared/layoutEngine';
 import { addChatNote } from '../shared/chatNote';
+import { youtubeId, YOUTUBE_NODE } from '../shared/youtube';
 
 /**
  * A canvas as the editor opens it from disk: lifted to the origin, sections seeded, and an edge the
@@ -1368,7 +1369,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         },
       });
       if (!url) return; // - user cancelled the input box
-      newNode = { id: nodeId, type: 'link', url: url.trim(), x, y, width: NODE_SIZE.link.w, height: NODE_SIZE.link.h };
+      const size = youtubeId(url.trim()) ? YOUTUBE_NODE : NODE_SIZE.link;
+      newNode = { id: nodeId, type: 'link', url: url.trim(), x, y, width: size.w, height: size.h };
     } else if (picked.canvasUri.endsWith('.canvas')) {
       // - .canvas file → portal node (circle shape, opens linked canvas on click)
       newNode = { id: nodeId, type: 'portal', canvas: picked.canvasUri, x, y, width: NODE_SIZE.portal.w, height: NODE_SIZE.portal.h };
