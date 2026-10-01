@@ -16,7 +16,6 @@
  */
 
 import * as fs       from 'fs/promises';
-import * as fsSync   from 'fs';
 import * as path     from 'path';
 import * as os       from 'os';
 import * as readline from 'readline';
@@ -33,6 +32,7 @@ import { resolveCellKernel, cellKernelView, kernelById, upstreamCellsForRun, res
 import { layoutSection, reflowSection, insertAfter, forkOf, placeOutput, applyPatchesToCanvas, columnsOfDeleted, ridersOf, hangingBelow, sectionEngineNodes, sectionMembership, toEngineNodes, codeCellHeight, estimateCodeNeedPx, keepRowOf, markKeepRowOnLoad } from '../../shared/layoutEngine';
 import { pickKernelServers, unknownServerText, type KernelServerConfig, type KernelLookup, type SettingsRead } from '../jupyter/config';
 import { parseSettingsJson } from '../settingsJson';
+import { readSettingsSync, workspaceDirAbove } from '../settingsFiles';
 import { parseNodeRef, isSectionLabel } from '../../shared/nodeRef';
 import { youtubeId, YOUTUBE_NODE } from '../../shared/youtube';
 import { executeCell, startKernel, shutdownKernel } from '../jupyter/client';
@@ -165,18 +165,6 @@ function normalizeFileUri(fileUri: string, canvasPath: string): string {
   // - path.relative returns something starting with ".." when outside canvasDir
   if (rel.startsWith('..')) return fileUri; // - keep absolute, it's outside the project
   return rel.startsWith('./') ? rel : `./${rel}`;
-}
-
-// - the nearest folder at or above `start` that has a .vscode directory: the workspace folder the
-//   extension deploys this script into, as near as a process outside VS Code can tell
-function workspaceDirAbove(start: string): string | null {
-  let dir = path.resolve(start);
-  for (;;) {
-    try { if (fsSync.statSync(path.join(dir, '.vscode')).isDirectory()) return dir; } catch { /* - keep walking */ }
-    const parent = path.dirname(dir);
-    if (parent === dir) return null;
-    dir = parent;
-  }
 }
 
 /**
@@ -1228,14 +1216,6 @@ async function canvasPinOutput(args: Record<string, unknown>): Promise<string> {
   lines.push(`Canvas: ${p}`);
   return lines.join('\n');
   }); // - withFileLock
-}
-
-function readSettingsSync(file: string): SettingsRead {
-  let raw: string;
-  try { raw = fsSync.readFileSync(file, 'utf-8'); }
-  catch (e) { return { file, problem: (e as NodeJS.ErrnoException).code === 'ENOENT' ? 'missing' : 'not readable' }; }
-  try { return { file, json: parseSettingsJson(raw) }; }
-  catch (e) { return { file, problem: e instanceof Error ? e.message : String(e) }; }
 }
 
 /**

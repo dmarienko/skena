@@ -6,7 +6,7 @@ output into a connected output node. Both the user (button/hotkey) and the AI ag
 (`canvas_run_cell`) can run cells.
 
 **Status:** design approved 2026-07-25. Spike PASSED 2026-07-24 (REST `/api/kernels`
-status + WS `execute_request` round-trip against the live JupyterHub, standalone of xlmcp).
+status + WS `execute_request` round-trip against the live JupyterHub, standalone).
 
 **Branch:** `feature/jupyter-kernel`
 
@@ -34,8 +34,8 @@ every rich mime we need. Output reuses it verbatim; no new output renderer.
 ### Config
 
 `skena.jupyter.kernels: [{ name: string, hubUrl: string, token: string }]`. Defaults to
-reading `~/.aix/xlmcp/.env` (`JUPYTER_SERVER_URL`, `JUPYTER_API_TOKEN`) when the setting is
-empty, so an existing xlmcp user needs zero config. Multiple servers supported.
+`JUPYTER_SERVER_URL` + `JUPYTER_API_TOKEN` when the setting is empty (the env file this spec
+first read is gone). Multiple servers supported.
 
 The host passes the resolved kernel config to the MCP server process via an `env` field on
 its spawn entry in the written MCP config (`SKENA_JUPYTER_KERNELS` = JSON), so the agent-run
@@ -197,7 +197,7 @@ output-node accent border.
 status); manual cell↔kernel binding; user run (button + `Shift+Enter`); host Jupyter client
 (status poll + WS execute); output to a reused `cell` node at the right edge (single, replaced
 per run); rich output (stream + final image/html/plotly/markdown); `canvas_run_cell` MCP tool;
-"Skena: Add kernel" QuickPick; config with `~/.aix/xlmcp/.env` fallback.
+"Skena: Add kernel" QuickPick; config with a `JUPYTER_SERVER_URL` + `JUPYTER_API_TOKEN` fallback.
 
 **Deferred to v2:** typed dependency edges between cells; run-with-upstream (DAG execution);
 staleness dots; ordered multi-output stacking; precise agent-run running indicators;

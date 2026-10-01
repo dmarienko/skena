@@ -196,7 +196,7 @@ export class HarnessAdapter implements ILLMClient {
 
     let mcpConfigPath: string;
     try {
-      mcpConfigPath = this.writeMcpConfig(workspaceDir, mcpJs, /*includeUserServers*/ true);
+      mcpConfigPath = this.writeMcpConfig(workspaceDir, canvasPath, mcpJs, /*includeUserServers*/ true);
     } catch (e) {
       callbacks.onError(`Failed to write MCP config: ${(e as Error).message}`);
       return null;
@@ -291,10 +291,10 @@ export class HarnessAdapter implements ILLMClient {
   }
 
   /** - write the MCP config: skena server + the user's own servers (merged; loaded strictly) */
-  private writeMcpConfig(workspaceDir: string, mcpJs: string, includeUserServers: boolean): string {
+  private writeMcpConfig(workspaceDir: string, canvasPath: string, mcpJs: string, includeUserServers: boolean): string {
     // - pass the resolved Jupyter servers to the MCP process so canvas_run_cell can reach them,
     // - plus the run-ipc endpoint so an agent run streams live output back to the webview
-    const kernels = loadKernelServers();
+    const kernels = loadKernelServers(canvasPath).servers;
     const skenaEnv: Record<string, string> = { SKENA_JUPYTER_KERNELS: JSON.stringify(kernels) };
     const ipc = runIpc.endpointEnv();
     if (ipc) skenaEnv.SKENA_RUN_IPC = ipc;

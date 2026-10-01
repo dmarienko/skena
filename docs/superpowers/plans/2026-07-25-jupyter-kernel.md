@@ -16,7 +16,7 @@
 
 **New (host):**
 - `src/extension/jupyter/protocol.ts` — pure Jupyter v5.3 message framing: `buildExecuteRequest`, `parseReply`, `collectOutputs`. Unit-tested.
-- `src/extension/jupyter/config.ts` — pure: `parseEnvFile`, `resolveKernelConfig` (`~/.aix/xlmcp/.env` fallback). Unit-tested.
+- `src/extension/jupyter/config.ts` — pure: `parseEnvFile`, `resolveKernelConfig` (env file fallback; since removed). Unit-tested.
 - `src/extension/jupyter/client.ts` — network wrapper: `listKernels`, `startKernel`, `executeCell` (uses `ws` + `fetch` + protocol). Smoke-tested.
 - `src/extension/jupyter/manager.ts` — host orchestration: status poll → `kernelStatus`; `runCell` → execute + output node + `runStatus`.
 
@@ -365,7 +365,7 @@ Expected: PASS — 5 tests.
 
 ```bash
 cd ~/devs/skena && git add src/extension/jupyter/config.ts test/jupyter-config.mjs
-git commit -m "feat(jupyter): kernel server config resolution with xlmcp .env fallback"
+git commit -m "feat(jupyter): kernel server config resolution with .env fallback"
 ```
 
 ---
@@ -982,11 +982,11 @@ import { listKernels, startKernel, executeCell, type LiveKernel } from './client
 import type { CollectedOutput } from './protocol';
 import type { KernelStatusEntry } from '../../shared/types';
 
-// - reads skena.jupyter.kernels, falling back to ~/.aix/xlmcp/.env
+// - reads skena.jupyter.kernels, falling back to an env file (since removed)
 export function loadKernelServers(): KernelServerConfig[] {
   const setting = vscode.workspace.getConfiguration('skena').get<KernelServerConfig[]>('jupyter.kernels');
   let envText: string | null = null;
-  try { envText = fs.readFileSync(path.join(os.homedir(), '.aix', 'xlmcp', '.env'), 'utf8'); } catch { /* - no env */ }
+  try { envText = fs.readFileSync(ENV_FILE, 'utf8'); } catch { /* - no env */ }
   return resolveKernelConfig(setting, envText);
 }
 
@@ -1088,7 +1088,7 @@ Expected: build succeeds; only pre-existing fsPath errors. (Handlers `handleRunC
 
 - [ ] **Step 7: Manual smoke**
 
-With `~/.aix/xlmcp/.env` present, open a canvas containing a `kernel` node whose `server:"default"` and set its `kernelId` to a real id from `curl -H "Authorization: token $TOK" $URL/api/kernels`. Confirm within ~2s the LED turns green (idle) or blinks (busy). Kill the kernel → LED goes grey.
+With JUPYTER_SERVER_URL + JUPYTER_API_TOKEN available, open a canvas containing a `kernel` node whose `server:"default"` and set its `kernelId` to a real id from `curl -H "Authorization: token $TOK" $URL/api/kernels`. Confirm within ~2s the LED turns green (idle) or blinks (busy). Kill the kernel → LED goes grey.
 
 - [ ] **Step 8: Commit**
 
@@ -1261,7 +1261,7 @@ Replace the `handleAddKernel` stub in `src/extension/editor-provider.ts`:
   ): Promise<void> {
     const servers = manager.allServers();
     if (!servers.length) {
-      void vscode.window.showWarningMessage('Skena: no Jupyter kernels configured (skena.jupyter.kernels or ~/.aix/xlmcp/.env).');
+      void vscode.window.showWarningMessage('Skena: no Jupyter kernels configured (skena.jupyter.kernels or the env file).');
       return;
     }
     type Item = vscode.QuickPickItem & { server: string; kernelId?: string; start?: boolean };
@@ -1307,7 +1307,7 @@ Add to `contributes.configuration.properties`:
 "skena.jupyter.kernels": {
   "type": "array",
   "default": [],
-  "description": "Jupyter servers for kernel nodes. Each: {name, hubUrl, token}. When empty, falls back to ~/.aix/xlmcp/.env.",
+  "description": "Jupyter servers for kernel nodes. Each: {name, hubUrl, token}. When empty, falls back to the env file.",
   "items": {
     "type": "object",
     "properties": {

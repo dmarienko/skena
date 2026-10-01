@@ -21,12 +21,12 @@
 
 import * as vscode from 'vscode';
 import * as fs     from 'fs/promises';
-import * as fsSync from 'fs';
 import * as path   from 'path';
 import { VaultConfig } from '../shared/types';
 import type { KnowledgeServerConfig } from '../shared/knowledge/types';
 import type { SettingsRead } from './jupyter/config';
 import { parseSettingsJson } from './settingsJson';
+import { readSettingsSync, workspaceDirAbove } from './settingsFiles';
 
 // ─── file reader ──────────────────────────────────────────────────────────────
 
@@ -47,19 +47,18 @@ function workspaceVscodeDir(): string | null {
 }
 
 /**
- * The workspace's `settings.local.json`, read synchronously: the kernel lookup runs while a canvas
+ * The `settings.local.json` files the kernel lookup reads, synchronously: it runs while a canvas
  * panel is being set up and when the AI companion writes its MCP config, neither of which awaits.
- * The same file the readers below use; a missing or broken file says why instead of throwing.
+ * That of the nearest folder above the canvas that has a .vscode directory comes first, as the MCP
+ * server reads it, then the first workspace folder's, the file the readers below use. A missing or
+ * broken file says why instead of throwing.
  */
-export function readLocalSettingsSync(): SettingsRead {
-  const vscodeDir = workspaceVscodeDir();
-  if (!vscodeDir) return { file: '.vscode/settings.local.json', problem: 'no workspace folder' };
-  const file = path.join(vscodeDir, 'settings.local.json');
-  let raw: string;
-  try { raw = fsSync.readFileSync(file, 'utf-8'); }
-  catch (e) { return { file, problem: (e as NodeJS.ErrnoException).code === 'ENOENT' ? 'missing' : 'not readable' }; }
-  try { return { file, json: parseSettingsJson(raw) }; }
-  catch (e) { return { file, problem: e instanceof Error ? e.message : String(e) }; }
+export function readLocalSettingsSync(canvasPath?: string): SettingsRead[] {
+  const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  const dirs = [canvasPath ? workspaceDirAbove(path.dirname(canvasPath)) : null, ws ? path.resolve(ws) : null]
+    .filter((d, i, all): d is string => d !== null && all.indexOf(d) === i);
+  if (!dirs.length) return [{ file: '.vscode/settings.local.json', problem: 'no workspace folder' }];
+  return dirs.map(d => readSettingsSync(path.join(d, '.vscode', 'settings.local.json')));
 }
 
 /**

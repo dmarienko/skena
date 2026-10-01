@@ -1,18 +1,7 @@
 // - run: npx esbuild src/extension/jupyter/config.ts --bundle --format=esm --outfile=tests/.build/jupyter-config.mjs && node --test tests/jupyter-config.mjs
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { parseEnvFile, pickKernelServers, pickCanvasKernelServers, unknownServerText } from './.build/jupyter-config.mjs';
-
-test('parseEnvFile reads KEY=VALUE, skips comments and blanks', () => {
-  const env = parseEnvFile('# comment\nJUPYTER_SERVER_URL=https://h/user/q\n\nJUPYTER_API_TOKEN=tok123\n');
-  assert.equal(env.JUPYTER_SERVER_URL, 'https://h/user/q');
-  assert.equal(env.JUPYTER_API_TOKEN, 'tok123');
-});
-
-test('parseEnvFile strips surrounding quotes and inline whitespace', () => {
-  const env = parseEnvFile('JUPYTER_API_TOKEN = "abc" \n');
-  assert.equal(env.JUPYTER_API_TOKEN, 'abc');
-});
+import { pickKernelServers, pickCanvasKernelServers, unknownServerText } from './.build/jupyter-config.mjs';
 
 const hub = name => ({ name, hubUrl: `http://127.0.0.1:1/${name}`, token: 'secret' });
 const LOCAL  = '/ws/.vscode/settings.local.json';
@@ -65,40 +54,41 @@ test('pickKernelServers with nothing found lists every place it looked, and unkn
   assert.equal(text.includes('secret'), false);
 });
 
-const XLMCP = 'JUPYTER_SERVER_URL=http://x/user/q\nJUPYTER_API_TOKEN=xtok\n';
 const ENV = { JUPYTER_SERVER_URL: 'http://e/user/q', JUPYTER_API_TOKEN: 'etok' };
+const NEAR = '/ws/notes/.vscode/settings.local.json';
 
-test('pickCanvasKernelServers: VS Code settings first, then settings.local.json, then the environment, then ~/.aix/xlmcp/.env', () => {
+test('pickCanvasKernelServers: settings.local.json first, the one near the canvas before the workspace one, then VS Code settings, then the environment', () => {
+  const near = { file: NEAR, json: { 'skena.jupyter.kernels': [hub('n')] } };
   const local = { file: LOCAL, json: { 'skena.jupyter.kernels': [hub('l')] } };
+  const noNear = { file: NEAR, problem: 'missing' };
   const noLocal = { file: LOCAL, problem: 'missing' };
 
-  const vscodeWins = pickCanvasKernelServers([hub('v')], local, ENV, XLMCP);
-  assert.deepEqual(vscodeWins.servers.map(s => s.name), ['v']);
-  assert.equal(vscodeWins.from, 'VS Code settings');
+  // - the MCP server's order: a list in settings.local.json wins over the one VS Code reads
+  const nearWins = pickCanvasKernelServers([hub('v')], [near, local], ENV);
+  assert.deepEqual(nearWins.servers.map(s => s.name), ['n']);
+  assert.equal(nearWins.from, NEAR);
 
-  // - [] is the setting's default, so an empty list must not hide a token kept only in the local file
-  const localNext = pickCanvasKernelServers([], local, ENV, XLMCP);
+  const localNext = pickCanvasKernelServers([hub('v')], [noNear, local], ENV);
   assert.deepEqual(localNext.servers.map(s => s.name), ['l']);
   assert.equal(localNext.from, LOCAL);
 
-  const envNext = pickCanvasKernelServers([], noLocal, ENV, XLMCP);
-  assert.deepEqual(envNext.servers, [{ name: 'default', hubUrl: 'http://e/user/q', token: 'etok' }]);
-  assert.equal(envNext.from, 'JUPYTER_SERVER_URL + JUPYTER_API_TOKEN');
+  const vscodeNext = pickCanvasKernelServers([hub('v')], [noNear, noLocal], ENV);
+  assert.deepEqual(vscodeNext.servers.map(s => s.name), ['v']);
+  assert.equal(vscodeNext.from, 'VS Code settings');
 
-  const fileLast = pickCanvasKernelServers(undefined, noLocal, {}, XLMCP);
-  assert.deepEqual(fileLast.servers, [{ name: 'default', hubUrl: 'http://x/user/q', token: 'xtok' }]);
-  assert.equal(fileLast.from, '~/.aix/xlmcp/.env');
+  // - [] is the setting's default: an empty list does not hide the environment
+  const envLast = pickCanvasKernelServers([], [noLocal], ENV);
+  assert.deepEqual(envLast.servers, [{ name: 'default', hubUrl: 'http://e/user/q', token: 'etok' }]);
+  assert.equal(envLast.from, 'JUPYTER_SERVER_URL + JUPYTER_API_TOKEN');
 });
 
-test('pickCanvasKernelServers with nothing found lists its own sources in order, without SKENA_JUPYTER_KERNELS', () => {
-  const out = pickCanvasKernelServers([], { file: LOCAL, problem: 'missing' }, { JUPYTER_SERVER_URL: 'http://h' }, null);
+test('pickCanvasKernelServers with nothing found lists only the places it looked, in order, without SKENA_JUPYTER_KERNELS', () => {
+  const out = pickCanvasKernelServers([], [{ file: NEAR, problem: 'missing' }, { file: LOCAL, json: {} }], { JUPYTER_SERVER_URL: 'http://h' });
   assert.deepEqual(out.servers, []);
   assert.deepEqual(out.looked, [
+    `${NEAR} (missing)`,
+    `${LOCAL} (no skena.jupyter.kernels)`,
     'VS Code settings (no skena.jupyter.kernels)',
-    `${LOCAL} (missing)`,
     'JUPYTER_API_TOKEN (not set)',
-    '~/.aix/xlmcp/.env (missing)',
   ]);
-  const halfFile = pickCanvasKernelServers([], { file: LOCAL, json: {} }, {}, 'JUPYTER_SERVER_URL=http://x\n');
-  assert.equal(halfFile.looked.at(-1), '~/.aix/xlmcp/.env (no JUPYTER_SERVER_URL + JUPYTER_API_TOKEN)');
 });

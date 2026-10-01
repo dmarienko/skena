@@ -251,7 +251,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     // - while the canvas was closed (external restart/timeout) means a wiped namespace, so its cells
     // - must re-run. Only the first poll, and only when the kernel's server actually responded.
     let reconciledFlags = false;
-    const manager = new KernelManager(kernels => {
+    const manager = new KernelManager(document.uri.fsPath, kernels => {
       send({ type: 'kernelStatus', kernels });
       if (!reconciledFlags) { reconciledFlags = true; void this.reconcileRunFlags(document, kernels); }
     });
@@ -2133,7 +2133,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
   ): Promise<void> {
     const servers = manager.allServers();
     if (!servers.length) {
-      void vscode.window.showWarningMessage('Skena: no Jupyter kernels configured (skena.jupyter.kernels in the settings or in .vscode/settings.local.json, JUPYTER_SERVER_URL + JUPYTER_API_TOKEN, or ~/.aix/xlmcp/.env).');
+      void vscode.window.showWarningMessage(`Skena: no Jupyter servers configured; looked in: ${manager.looked().join('; ')}.`);
       return;
     }
 

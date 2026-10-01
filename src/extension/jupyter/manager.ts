@@ -1,36 +1,37 @@
 import * as vscode from 'vscode';
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
-import { pickCanvasKernelServers, type KernelServerConfig } from './config';
+import { pickCanvasKernelServers, type KernelLookup, type KernelServerConfig } from './config';
 import { readLocalSettingsSync } from '../settings';
 import { listKernels, startKernel, executeCell, completeCode, inspectCode, restartKernel, shutdownKernel, interruptKernel, type LiveKernel } from './client';
 import type { CollectedOutput, CompleteResult, InspectResult } from './protocol';
 import type { KernelStatusEntry } from '../../shared/types';
 
-// - read fresh on each call; the order of the sources is pickCanvasKernelServers'
-export function loadKernelServers(): KernelServerConfig[] {
+// - read fresh on each call; the order of the sources is pickCanvasKernelServers'. `canvasPath` puts
+//   the settings.local.json nearest above the canvas first.
+export function loadKernelServers(canvasPath?: string): KernelLookup {
   const setting = vscode.workspace.getConfiguration('skena').get<unknown>('jupyter.kernels');
-  let xlmcpEnv: string | null = null;
-  try { xlmcpEnv = fs.readFileSync(path.join(os.homedir(), '.aix', 'xlmcp', '.env'), 'utf8'); } catch { /* - no file */ }
-  return pickCanvasKernelServers(setting, readLocalSettingsSync(), process.env, xlmcpEnv).servers;
+  return pickCanvasKernelServers(setting, readLocalSettingsSync(canvasPath), process.env);
 }
 
 export class KernelManager {
-  private servers: KernelServerConfig[] = loadKernelServers();
+  private lookup:  KernelLookup;
   private timer:   ReturnType<typeof setInterval> | null = null;
   // - kernel ids currently running a cell, so the LED blinks the right kernel
   private running = new Set<string>();
 
-  constructor(private readonly push: (kernels: KernelStatusEntry[]) => void) {}
-
-  reloadConfig(): void { this.servers = loadKernelServers(); }
-
-  serverByName(name: string): KernelServerConfig | undefined {
-    return this.servers.find(s => s.name === name);
+  constructor(private readonly canvasPath: string, private readonly push: (kernels: KernelStatusEntry[]) => void) {
+    this.lookup = loadKernelServers(canvasPath);
   }
 
-  allServers(): KernelServerConfig[] { return this.servers; }
+  reloadConfig(): void { this.lookup = loadKernelServers(this.canvasPath); }
+
+  serverByName(name: string): KernelServerConfig | undefined {
+    return this.lookup.servers.find(s => s.name === name);
+  }
+
+  allServers(): KernelServerConfig[] { return this.lookup.servers; }
+
+  /** Every place the last lookup tried and what was missing there; never a token. */
+  looked(): string[] { return this.lookup.looked; }
 
   startPolling(): void {
     if (this.timer) return;
@@ -45,7 +46,7 @@ export class KernelManager {
 
   private async poll(): Promise<void> {
     const entries: KernelStatusEntry[] = [];
-    for (const s of this.servers) {
+    for (const s of this.lookup.servers) {
       try {
         const kernels = await listKernels(s);
         for (const k of kernels) entries.push({ server: s.name, kernelId: k.id, state: this.ledFor(k), connections: k.connections });
