@@ -16,6 +16,7 @@ import {
   FileNode,
   TextNode,
   CellNode,
+  CodeNode,
   ChatNode,
   PortalNode,
   NoderefNode,
@@ -186,6 +187,7 @@ export function nodeTitle(node: CanvasNode): string {
     case 'group':  return node.label ?? 'group';
     case 'link':   return (node as LinkNode).url.slice(0, 60);
     case 'cell':   return `[cell:${(node as CellNode).format}]`;
+    case 'code':   return `[code:${(node as CodeNode).language ?? 'python'}]`;
     case 'chat':   return (node as ChatNode).title;
     case 'portal':  return (node as PortalNode).canvas;
     case 'noderef': return `${(node as NoderefNode).canvas.split('/').pop()} › ${(node as NoderefNode).label}`;
@@ -208,6 +210,9 @@ export async function nodeContent(
       break;
     case 'cell':
       raw = (node as CellNode).content;
+      break;
+    case 'code':
+      raw = (node as CodeNode).code;
       break;
     case 'knowledge':
       raw = (node as KnowledgeNode).text;

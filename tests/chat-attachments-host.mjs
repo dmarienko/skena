@@ -82,3 +82,16 @@ test('a picked binary file node is not inlined, for providers without file tools
   const [b] = await attachmentBlocks([{ kind: 'node', id: 'f2', label: 'N3' }], c, dir, contentMode, false);
   assert.equal(b.body, '[binary file, not inlined: y.bin]');
 });
+
+test('a picked code cell brings its language and source', async () => {
+  const c = { nodes: [{ id: 'c1', type: 'code', code: 'import numpy as np\nnp.ones(3)', language: 'python', nodeLabel: 'E2', x: 0, y: 0, width: 10, height: 10 }], edges: [] };
+  const [b] = await attachmentBlocks([{ kind: 'node', id: 'c1', label: 'E2' }], c, dir, pathMode, true);
+  assert.deepEqual(b, { heading: '[E2] (code) [code:python]', body: 'import numpy as np\nnp.ones(3)' });
+});
+
+test('a picked code cell is cut at the node cap', async () => {
+  const c = { nodes: [{ id: 'c2', type: 'code', code: 'x'.repeat(3001), language: 'r', x: 0, y: 0, width: 10, height: 10 }], edges: [] };
+  const [b] = await attachmentBlocks([{ kind: 'node', id: 'c2', label: 'E3' }], c, dir, contentMode, false);
+  assert.equal(b.heading, '[E3] (code) [code:r]');
+  assert.equal(b.body, 'x'.repeat(3000) + '\n…[truncated]');
+});
