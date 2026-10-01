@@ -1646,7 +1646,8 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
 
     // - convert screen coords to flow canvas coords
     const position = screenToFlowPosition({ x: e.clientX, y: e.clientY });
-    vscodePostMessage({ type: 'dropFiles', uris, position });
+    const focused  = nodesRef.current.find(n => n.selected && !isBandType(n.type));
+    vscodePostMessage({ type: 'dropFiles', uris, position, connectTo: focused?.id });
   }, [screenToFlowPosition]);
 
   // - listen for resolved nodes coming back from host after drop
@@ -1654,40 +1655,65 @@ function CanvasViewInner({ canvas, canvasPath, onActiveNodeChange }: CanvasViewP
     const handler = (e: Event) => {
       const { nodes: incoming, connectTo } =
         (e as CustomEvent<{ nodes: CanvasNode[]; connectTo?: string }>).detail;
+      if (incoming.length === 0) return;
+      // - placed as insertPastedNode places a paste: the column slot right of the focused node in a
+      //   section, the free-slot search right of it outside one, the drop point with nothing focused.
+      //   Several files stack down one column, one gap apart.
+      const anchor = connectTo ? nodesRef.current.find(n => n.id === connectTo) : undefined;
+      const inSection = anchor && engineNodesOf({ nodeId: anchor.id });
+      const cw = Number(anchor?.style?.width ?? 400);
+      let dy = 0;
+      const placed = incoming.map(cn => {
+        let pos: { x: number; y: number };
+        if (anchor) {
+          const rawY = anchor.position.y + dy;
+          const slot = inSection && directionSlot('L', { x: anchor.position.x, y: rawY, w: cw }, cn.width, cn.height);
+          pos = slot ?? findFreePosition(nodesRef.current, anchor.position.x + cw + GRID, rawY, cn.width, cn.height, 1, 0);
+        } else {
+          pos = clampToOrigin(cn.x, cn.y + dy);
+        }
+        dy += cn.height + GRID;
+        return { ...cn, x: pos.x, y: pos.y };
+      });
       // - assign labels to all dropped nodes, avoiding collisions with each other
       // - and with existing canvas nodes (same logic as addNodeResult path)
       const labelled: CanvasNode[] = [];
-      incoming.forEach(cn => {
+      placed.forEach(cn => {
         const existing  = [...canvasRef.current.nodes, ...labelled];
         labelled.push(assignLabel(cn, existing));
       });
+      const ids = labelled.map(cn => cn.id);
       pushHistory();
-      labelled.forEach(cn => {
-        setNodes(nds => [...nds, toFlowNode(cn)]);
-        canvasRef.current = {
-          ...canvasRef.current,
-          nodes: [...canvasRef.current.nodes, cn],
-        };
-      });
-      // - paste-to-node: arrow from source node to each new node (skip if source vanished)
-      const sourceExists = connectTo && canvasRef.current.nodes.some(n => n.id === connectTo);
+      setNodes(nds => [...nds, ...labelled.map(toFlowNode)]);
+      canvasRef.current = { ...canvasRef.current, nodes: [...canvasRef.current.nodes, ...labelled] };
+      // - the first node seeds the first section, as in the addNodeResult path
+      if (lanesRef.current.length === 0) {
+        const now = Date.now();
+        commitLanes([{ id: `sec-${now.toString(36)}`, y: 0, createdAt: now }]);
+      }
+      // - an arrow from the focused node to each new node, as a paste beside it draws
       const newEdges: CanvasEdge[] = [];
-      if (sourceExists) labelled.forEach((cn, i) => {
-        const e: CanvasEdge = { id: `edge-paste-${Date.now()}-${i}`, fromNode: connectTo, fromSide: 'right', toNode: cn.id, toSide: 'left', toEnd: 'arrow' };
-        newEdges.push(withKeepRow(e, [...canvasRef.current.edges, ...newEdges, e]));
+      if (anchor) labelled.forEach((cn, i) => {
+        const e: CanvasEdge = { id: `edge-paste-${Date.now()}-${i}`, fromNode: anchor.id, fromSide: 'right', toNode: cn.id, toSide: 'left', toEnd: 'arrow' };
+        newEdges.push(withKeepRow(e, [...canvasRef.current.edges, ...newEdges, e], { nodeId: anchor.id, extraIds: ids }));
       });
       if (newEdges.length > 0) {
         setEdges(eds => [...eds, ...newEdges.map(toFlowEdge)]);
         canvasRef.current = { ...canvasRef.current, edges: [...canvasRef.current.edges, ...newEdges] };
       }
       scheduleSave();
-      // - the new nodes are placed by the engine, each as the mover: the ones a right → left edge from
-      //   the source could hold, whether or not it does (§3.5)
-      runEngineForCells(anchoredBy(newEdges.map(e => ({ ...e, keepRow: true }))));
+      // - all the dropped nodes are the movers of one engine run, as for a paste of copied nodes: beside
+      //   the focused node they join its section; at the drop point they can straddle a section
+      //   boundary, so the engine runs once per section they reached
+      if (anchor) runEngine({ nodeId: anchor.id }, { moverIds: ids, extraIds: ids });
+      else {
+        const lanes = deriveLanes(canvasRef.current.nodes, canvasRef.current.metadata?.sections ?? []);
+        for (const moverIds of groupIdsByLane(lanes, ids).values()) runEngine({ nodeId: moverIds[0] }, { moverIds });
+      }
     };
     window.addEventListener('skena:nodesFromDrop', handler);
     return () => window.removeEventListener('skena:nodesFromDrop', handler);
-  }, [setNodes, setEdges, scheduleSave, pushHistory, anchoredBy, runEngineForCells, withKeepRow]);
+  }, [setNodes, setEdges, scheduleSave, pushHistory, commitLanes, engineNodesOf, runEngine, withKeepRow]);
 
   // ─── keyboard navigation between nodes (hjkl / arrow keys) ──────────────────
 

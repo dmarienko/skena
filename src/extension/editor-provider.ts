@@ -1127,13 +1127,13 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       const resolved = resolver.resolveFromFsPath(fsPath);
       const relPath  = resolved ?? path.relative(canvasDir, fsPath).replace(/\\/g, '/');
 
-      // - stagger multiple drops slightly so nodes don't stack exactly
+      // - all at the drop point: the webview stacks them and lays them out
       const node = buildDroppedNode(
         `node-${Date.now()}-${i}`,
         fsPath,
         relPath,
-        Math.round(position.x + i * 24),
-        Math.round(position.y + i * 24),
+        Math.round(position.x),
+        Math.round(position.y),
       );
       nodes.push(node);
     });

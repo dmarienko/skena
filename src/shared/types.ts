@@ -458,7 +458,7 @@ export interface MsgSearchResults {
 export interface MsgNodesFromDrop {
   type: 'nodesFromDrop';
   nodes: CanvasNode[];
-  /** - echoed from dropFiles: draw an arrow edge from this node to each new node */
+  /** - echoed from dropFiles: place the new nodes right of this node, each with an arrow edge from it */
   connectTo?: string;
 }
 
@@ -661,7 +661,7 @@ export interface MsgDropFiles {
   type: 'dropFiles';
   uris: string[];
   position: { x: number; y: number };
-  /** - when set, webview draws an arrow edge from this node to each dropped node */
+  /** - the focused node: the webview places the dropped nodes right of it, each with an arrow edge from it */
   connectTo?: string;
 }
 
