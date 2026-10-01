@@ -60,12 +60,12 @@ A chat console docked at the bottom of the canvas itself, not in a side panel. I
 | `openai-compat` | Ollama, LM Studio, Groq, OpenAI, any OpenAI-format endpoint | endpoint-dependent |
 
 - **Harness mode** is the flagship: one persistent Claude Code process per canvas, streaming responses, full agent tool use (file reads, shell, MCP), and session **resume** when you reopen a canvas. Permission mode, allowed tools, and reachable directories are all configurable.
-- **Live tool feedback** — watch Claude Code work: tool calls (edits, shell, canvas ops) stream in as cards with running→done status, thinking blocks, and a live token/cost meter. The full timeline is saved with the canvas.
-- **Per-canvas model and effort** — the picker at the right of the input bar sets the AI model (and the effort level) for *this* canvas; the choice is saved in the `.canvas` file (portable), overriding the global `skena.ai.model`.
-- **Input bar** — always on screen, even with the conversation folded. A Monaco editor with vim bindings that grows with each line up to 8 lines. `+` attaches the nodes you picked with `Space`, a file from the workspace, or an image from the clipboard; attachments show as chips at the start of the input. While the agent works, the send button becomes **Stop**.
-- **Conversation** — above the input bar, up to 60% of the view's height. Each turn starts with your prompt on one line (`› prompt`); click it to fold or open the turn. Under each answer: **copy** it, or **add it to the canvas** as a note connected to the focused node. New text scrolls the view only when you are already at the bottom, so you can read back while an answer streams.
+- **Live tool feedback** — watch Claude Code work: tool calls (edits, shell, canvas ops) stream in as cards with running→done status, thinking blocks, and a live token/cost meter. The timeline is kept with the canvas's chat history.
+- **Per-canvas model and effort** — with the `harness` provider, the picker at the right of the input bar sets the AI model (and the effort level) for *this* canvas; the choice is saved in the `.canvas` file (portable), overriding the global `skena.ai.model`. The other providers use `skena.ai.model`.
+- **Input bar** — always on screen, even with the conversation folded. A Monaco editor with vim bindings that grows with each line up to 8 lines. `+` attaches the nodes you picked with `Space`, a file from the workspace, or (with `harness`) an image from the clipboard; attachments show as chips at the start of the input. While the agent works, the send button becomes **Stop**.
+- **Conversation** — above the input bar, up to 60% of the view's height. Each turn starts with your prompt on one line, marked ▾ when open and ▸ when folded; click it to fold or open the turn. Under each answer: **copy** it, or **add it to the canvas** as a note connected to the focused node. New text scrolls the view only when you are already at the bottom, so you can read back while an answer streams.
 - **Width** — drag either side edge; 900 px by default, saved per canvas.
-- **History** — markdown + math (KaTeX + Typst) in answers, per-canvas history persisted in a `.skena.json` sidecar, **Reset** (new session) and **Compact** (summarise to shrink the context) in the header.
+- **History** — markdown + math (KaTeX + Typst) in answers; history and the console's width and fold state are kept per canvas in VS Code's workspace storage (not in the `.canvas` file); **Reset** (new session) and **Compact** (summarise to shrink the context) in the header.
 
 | Key | Action |
 |---|---|
@@ -75,9 +75,9 @@ A chat console docked at the bottom of the canvas itself, not in a side panel. I
 | `Shift+H/J/K/L` | Scroll the conversation from vim normal mode in the input |
 
 ### Paste and drop anything
-`Ctrl+V` on the canvas turns the clipboard into the right node: screenshots and notebook chart/table outputs become cell nodes, copied files become file nodes (a `.canvas` file becomes a portal), URLs become link nodes, a `path/to/x.canvas#N3` reference becomes a diamond that opens that canvas on node `N3`, text becomes a text node — all connected to the focused node with an edge. `yy` then `Ctrl+V` still duplicates canvas nodes.
+`Ctrl+V` on the canvas turns the clipboard into the right node: screenshots and notebook chart/table outputs become cell nodes, copied files become file nodes (a copied `.canvas` file becomes a portal; a pasted path *string* stays a file node), URLs become link nodes, a `path/to/x.canvas#N3` reference becomes a diamond that opens that canvas on node `N3`, text becomes a text node — all connected to the focused node with an edge. `yy` then `Ctrl+V` still duplicates canvas nodes.
 
-Drag files from the VS Code Explorer onto the canvas — several at once work, and a `.canvas` file becomes a portal. A file node refreshes when its file changes on disk.
+Drag files from the VS Code Explorer onto the canvas — several at once work (they land 24 px apart and are not laid out), and a `.canvas` file becomes a portal. A file node refreshes when its file changes on disk.
 
 ### Interactive plotly charts
 Plotly figures render live in cell nodes — from notebook outputs (`go.Figure`), via the `Alt+P` pin, or by pasting `fig.to_json()` output onto the canvas. Pan, zoom, and hover work inside the node. (Jupyter `FigureWidget` outputs carry no offline figure data, so use `go.Figure` or paste the figure JSON.)
@@ -94,11 +94,11 @@ Plotly figures render live in cell nodes — from notebook outputs (`go.Figure`)
 ### Run code on a Jupyter kernel
 Turn code nodes into a live notebook. Run **Skena: Add Kernel** to drop a kernel node (configure servers in `skena.jupyter.kernels` as `{name, hubUrl, token}`), connect a code node to it with an edge, and execute.
 
-- **Run** — `Shift+Enter`, `Ctrl+Enter`, `Alt+R`, or `Alt+J` inside the editor, or the ▶ button in the node header (disabled until the cell is connected to a kernel). Running a cell first runs any unrun upstream cells it's wired to, in dependency order.
+- **Run** — `Shift+Enter`, `Ctrl+Enter`, `Alt+R`, or `Alt+J` inside the editor, or the ▶ button in the node header (disabled until the cell is connected to a kernel node or its section has a kernel bound). Running a cell first runs any unrun upstream cells it's wired to, in dependency order.
 - **Live output** — stdout, `tqdm` progress bars, and a subset of `ipywidgets` stream into a connected output node as the cell runs.
 - **Interrupt** — `Ctrl`/`Cmd+C` (with confirm), the ■ stop button, or right-click while a cell is running.
 - **Restart / shutdown** from the kernel node — cell run-flags reset so they re-run cleanly against the fresh namespace.
-- **Agent runs too** — the AI companion can execute cells over MCP and you see the same live output.
+- **Agent runs too** — with the `harness` provider, the AI companion can execute cells over MCP and you see the same live output. An agent that reaches skena's MCP server any other way gets no Jupyter servers, so it cannot run cells.
 - **New code cell** — pick **Code node** in the `Ctrl+N` or `Alt+X` menu, or press `o` on a code cell for a new one under it in the same column.
 - **Height follows the code** — a cell is 100 px tall for up to three lines and grows in 50 px steps as you type, up to 900 px; fewer lines shrink it again.
 - **Preview looks like the editor** — out of edit mode the cell is drawn with the editor's own highlighter and colours, bracket pairs in matching colours, relative line numbers and indent guides, so entering and leaving edit mode does not move or recolour the text.
@@ -114,30 +114,37 @@ Navigate the canvas without touching the mouse:
 | Key | Action |
 |---|---|
 | `h` / `j` / `k` / `l` | Move focus to the nearest node in that direction within the focused node's row (`h`/`l`) or column (`j`/`k`); when that row or column is empty, the next one over, if it lies within one grid step. `h`/`l` stay in the section |
-| `g` | Label every connection of the focused node — in and out, all four borders — for 1.5 s |
+| `g` | Label every connection of the focused node — in and out, all four borders — with preview cards; the labels stay until the next key or click |
 | `g` then a label key | Focus and reveal the node at the other end of that connection. The first connection of a border is its own vim key (left `h`, top `k`, right `l`, bottom `j`); the rest take `1`–`9` then `a`–`z` minus `g h j k l`, walked left, top, right, bottom |
 | `gg` / `G` | Focus the first / last node of the focused node's section (by y, then x) |
 | `Shift+(` / `Shift+)` | Fold / unfold the current section (same action as the rail chevron) |
-| `Enter` / `Ctrl+Enter` | Open focused file in editor (beside / maximized); on a knowledge node, open its source in the server's web reader, as `↗` does |
+| `Enter` / `Ctrl+Enter` | Open focused file in editor (beside the canvas / in the canvas's own editor group); on a knowledge node, open its source in the server's web reader, as `↗` does |
 | `Alt+X` then `h/j/k/l` | Add a node connected in that direction, picked from a menu: new text note, **code node**, URL, or a vault / workspace file. In a section the new node takes the column slot beside, below or above the anchor and that column packs. On a code cell `h` / `l` branch left / right: `l` goes into the nearest column to the right that already holds a code cell, on the cell's row (under the cell's own output when that column is the one its output sits in) |
 | `Ctrl+Shift+H/J/K/L` or arrows | Add connected empty text node in direction and start editing it |
 | `Space` | Pin node for group movement or edge connection |
 | `Shift+H/J/K/L` | Move pinned nodes one grid step, and the view follows them — or scroll focused node's content if nothing is pinned |
-| `c` | Toggle edge between pinned node and focused node (connect / disconnect) |
+| `c` | With exactly one pinned node: toggle an edge between it and the focused node (connect / disconnect) |
+| `c c` | Copy a reference to the focused node (`path/to/x.canvas#E3`) — paste it on any canvas for a diamond that jumps there |
+| `i` | Edit a text or code node; open a file, portal, link or reference node beside the canvas |
+| `xx` | Delete the focused code cell's output |
+| `Delete` | Delete the selected nodes and edges |
+| Double-click an edge | Edit its label (an empty label removes it) |
+| `Ctrl`/`Cmd`+click a file node | Open the file |
 | `o` | New node below the focused one — on a code cell a new code cell in the same column, with the cells under it pushed down |
 | `yy` / `dd` / `p` | Copy / delete / paste nodes (canvas clipboard) |
 | `u` / `r` | Undo / redo (50-entry canvas history) |
-| `Ctrl+U` / `Ctrl+D` | Scroll focused node's content up / down (vim half-page) |
+| `Ctrl+U` / `Ctrl+D` | Scroll focused node's content up / down by a quarter of its visible height |
 | `w` / `W` | Widen / narrow focused node |
 | `e` / `E` | Expand / shrink focused node height |
 | `z` / `Z` | Zoom in / out |
 | `Shift+Alt+H/J/K/L` | Pan the viewport (vim scroll semantics) |
+| `Home` | Pan to the top-left of the canvas content (zoom unchanged) |
 | `Shift+C` | Center viewport on focused node (zoom unchanged) |
 | `Alt+Shift+C` | Center on focused node and zoom to readable scale |
 | `m` `<key>` / `` ` `` `<key>` | Set / jump to mark (`Ctrl+M` opens the marks panel) |
 | `` ` `` `` ` `` | Back to the previous node (press again to return) |
 | `Ctrl+N` | Add a node from the menu: new text note, code node, URL, or fuzzy vault / workspace search |
-| `/` | Search within canvas |
+| `/` | Search within canvas (labels, text, paths, URLs, tags — not code-cell source); `vault:<name>` limits it to that vault's files |
 | `Ctrl+F` | Knowledge search (see below) |
 | `Alt+P` | Pin hovered notebook cell output as a standalone node |
 | `Ctrl+Shift+V` | Paste clipboard as a cell node |
@@ -149,14 +156,14 @@ Sections are horizontal lanes running down the canvas — a node belongs to the 
 
 - **Segment controls** — the chevron folds / unfolds the section (folded members are hidden, not moved), ▶ runs its code cells in order, the dot binds a Jupyter kernel (hollow ring = none bound), ✕ deletes the section and its nodes after a confirm. Double-click the title to rename it.
 - **Right-click a segment** for the full menu: **Fold** / **Unfold**, **Run section**, **Reflow section**, **Kernel…**, **Rename…**, **Delete section** — plus **Start / Interrupt / Restart / Shutdown kernel** when a kernel is bound.
-- **Reflow section** snaps every code cell onto the nearest column, closes the holes in each column, sits the column pairs one gap apart left to right, and moves the notes a cell covers down out of the way. It is the only whole-section move — every other edit touches one column.
+- **Reflow section** puts every node into a column: code cells first, then the rest, each joining the nearest column that reaches it or starting its own; then it closes the holes in each column, sits the column pairs one gap apart left to right, and moves the notes a cell covers down out of the way. It is the only whole-section move — every other edit touches one column.
 - **`+`** at the bottom of the rail adds a new section under the last one.
 - Sections fit their content: a node placed past a section's bottom edge grows that section, slack shrinks it (never below the minimum), and the sections and nodes below move by the same amount.
 - **Connections hold rows** — a connection drawn from the side of one node to the side of another holds the target on the source's row: when the source moves, the target follows, and dragging the target far away keeps the connection. The hold is stored on the connection.
 - **Nothing moves up past a held node** — a cell added under a node held on a row stays under it. A node you drop above a held node keeps its place and the held node moves under it. A new or resized output never pushes the cell above it down: when it would cover a held cell's output, only that output moves under it, and the held cell keeps its row.
 - A **folded** section draws its title and its node count (plus the kernel name when one is bound) in the band it collapses to, and **`Ctrl+M`** lists every section above the bookmarks — choosing one unfolds it and focuses its first node.
 
-**From MCP** — `canvas_add_node` takes `after` (a code cell: the new code cell goes under it in the same column) and `forkOf` with `side` (`right` by default: on that cell's row in the nearest column past its output column that holds a code cell, or under the cell's own output when that column is where the output sits; else a new column pair right of the cell's pair; or `left`: a new column pair left of the cell's column); both place the node themselves and ignore `x`/`y`. `canvas_reflow_section` runs the same reflow as the rail menu. Every MCP write follows the same engine rules as the UI — the touched column is packed, the column pairs to its right are pushed clear, covered notes move down, no node crosses a section boundary, and the sections re-fit afterwards.
+**From MCP** — `canvas_add_node` takes `after` (any node; the new node goes under it in the same column) and `forkOf` with `side` (`right` by default: on that cell's row in the nearest column past its output column that holds a code cell, or under the cell's own output when that column is where the output sits; else a new column pair right of the cell's pair; or `left`: a new column pair left of the cell's column); both place the node themselves and ignore `x`/`y`. `canvas_reflow_section` runs the same reflow as the rail menu. Every MCP write that adds, moves or resizes nodes follows the same engine rules as the UI — the touched column is packed, the column pairs to its right are pushed clear, covered notes move down, no node crosses a section boundary, and the sections re-fit afterwards.
 
 ### Knowledge search
 Search a knowledge server from the canvas and put a result on it as a node. The node keeps its own copy of the matched section, so it still reads with the server unreachable. First server: crtx (the `kb` MCP).
@@ -209,18 +216,13 @@ Double-click any text node to edit it inline — full Monaco editor with vim key
 Point Skena at a folder of `.md` files (a vault). Use `Ctrl+N` to fuzzy-search and add any entry as a node. The vault is watched for changes — nodes update automatically.
 
 ### Canvas portals
-Select nodes → right-click → **Move to sub-canvas** — selected nodes move to a new `.canvas` file and a portal node replaces them. Click the portal to open the linked canvas in a new tab.
+Select two or more nodes → right-click → **Move to sub-canvas…** — the selected nodes and the edges among them move to a new `.canvas` file and a portal node replaces them; edges to nodes left behind are deleted. Click the portal to open the linked canvas beside this one.
 
-### Zoom-adaptive rendering (LOD)
-| Zoom | What you see |
-|---|---|
-| Very zoomed out | Colored rectangles + title only |
-| Overview | Title + status badge |
-| Reading distance | Full rendered content |
-| Zoomed in | Full detail, scrollable |
+### Zoom
+Zoom runs from 0.05 to 1 (`z` / `Z`, the wheel, `Alt+Shift+C` for 1). Below zoom 0.3 a file node hides its body and shows its title only, which keeps large canvases fast to pan.
 
 ### MCP server
-On activation, Skena auto-deploys a local MCP server to `.vscode/skena-mcp.js` so Claude Code and other AI tools can read and write canvas nodes programmatically.
+On activation, Skena auto-deploys a local MCP server to `.vscode/skena-mcp.js` and adds a `skena` entry to the workspace's `.mcp.json`, so Claude Code and other AI tools can read and write canvas nodes programmatically.
 
 ### VS Code Remote SSH compatible
 All processing runs in the extension host on the remote machine. No local toolchain needed.
@@ -300,7 +302,7 @@ Then press ``Alt+` `` on any canvas to open the chat.
   "skena.ai.session.restore": true,        // resume the canvas conversation on reopen
 
   // anthropic / openai-compat providers
-  "skena.ai.apiKey": "",                   // or ANTHROPIC_API_KEY env var
+  "skena.ai.apiKey": "",                   // anthropic / openai-compat API key
   "skena.ai.baseURL": "http://localhost:11434/v1"  // e.g. Ollama
 }
 ```
