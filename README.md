@@ -4,7 +4,7 @@
 
 # Skena — Visual Research Canvas for VS Code
 
-> Render [JSON Canvas](https://jsoncanvas.org/) (`.canvas`) files as interactive node graphs right inside VS Code. Preview markdown notes, notebooks, code, and charts side-by-side. Navigate with vim keys. Talk to an AI companion that sees your canvas and works on it with you — no API key needed. Works over Remote SSH. Obsidian-compatible.
+> A research canvas inside VS Code that puts documents, Jupyter code and an AI agent on one board. Notes, markdown files, notebooks and knowledge-base entries sit next to code cells that run on live Jupyter kernels, with their outputs and charts placed beside them. An AI companion sees the canvas and works on it with you: it reads nodes, adds notes and runs cells — no API key needed with Claude Code. Sections, columns and connections keep it laid out; vim keys move you around it. Works over Remote SSH.
 
 ---
 
@@ -30,17 +30,14 @@
 
 ## Why Skena
 
-Quantitative research (or any deep technical work) generates a web of interconnected files — notebooks, results, code, configs, notes. Most tools force a choice:
+Quantitative research (or any deep technical work) spreads over notes, notebooks, code, results, references and conversations with an AI. They usually live in separate tools, and the links between them live in your head. Skena keeps them on one canvas, in the editor where the code already is:
 
-| Tool | Problem |
-|---|---|
-| Obsidian canvas | Requires a desktop app — unusable on headless remote servers |
-| Notion | Disconnected from code, slow, no git |
-| Plain markdown | No visual overview of relationships |
+- **Documents** — markdown notes and files, notebooks, HTML reports, images and knowledge-base entries, rendered in place and refreshed when they change.
+- **Code** — code cells that run on Jupyter kernels, section by section or with their upstream cells, with outputs (tables, plotly charts, progress bars) placed next to the cell that made them.
+- **AI** — a companion that receives what you are looking at, works on the canvas through skena's MCP tools, and leaves its answers as notes connected to the node you were on.
+- **Structure** — sections for stages of the work, columns that keep code and outputs in order, connections that hold related nodes on one row, portals and references between canvases.
 
-Skena brings the spatial canvas experience **into VS Code**, so it works wherever VS Code works — including over Remote SSH on headless servers.
-
-It reads and writes the standard [JSON Canvas 1.0](https://jsoncanvas.org/spec/1.0/) format, so `.canvas` files are fully compatible with Obsidian.
+It runs wherever VS Code runs, including over Remote SSH on headless servers, and stores everything in plain `.canvas` files that diff and version well.
 
 ---
 
@@ -313,17 +310,11 @@ Then press ``Alt+` `` on any canvas to open the chat.
 
 ## Canvas Format
 
-Skena reads and writes standard [JSON Canvas 1.0](https://jsoncanvas.org/spec/1.0/) — the same format used by Obsidian. Files are plain JSON, version-control friendly, and diffable.
+Skena reads and writes [JSON Canvas 1.0](https://jsoncanvas.org/spec/1.0/) with its own node types added. Files are plain JSON, version-control friendly, and diffable.
 
 **Supported node types**: `file`, `text`, `group`, `link`, `code` (code cell), `cell` (output or standalone cell), `kernel` (Jupyter kernel), `knowledge` (knowledge-search result with its cached text), `noderef` (reference to a node in another canvas), `portal` (link to another canvas), `chat` (AI terminal, UI only)
 
-Extension node types (everything past `link`) are silently ignored by Obsidian, so files remain fully interoperable.
-
----
-
-## Obsidian Compatibility
-
-`.canvas` files created in Skena open correctly in Obsidian and vice versa. Vault `.md` files use standard YAML frontmatter — readable by Obsidian, Foam, and any markdown tool.
+The node types past `link` are skena's own additions to the format.
 
 ---
 
