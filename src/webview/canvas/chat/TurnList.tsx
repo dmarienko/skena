@@ -71,7 +71,7 @@ function OpenTurn({ turn, streaming, thinking, working, onToggle, onCopy, onAddN
   return (
     <div className="cc-turn">
       {turn.prompt !== null && (
-        <div className="cc-user" data-turn-head={turn.key} title={turn.prompt} onClick={() => onToggle(turn.key)}>{firstLine(turn.prompt)}</div>
+        <div className="cc-user" data-turn-head={turn.key} onClick={() => onToggle(turn.key)}>{turn.prompt}</div>
       )}
       {turn.items.map((it, i) => <TurnItem key={it.kind === 'tool' ? it.id : `${it.kind}-${i}`} item={it} />)}
       {streaming !== '' && <AnswerText content={streaming} streaming />}
@@ -92,7 +92,7 @@ function OpenTurn({ turn, streaming, thinking, working, onToggle, onCopy, onAddN
 // - memoized: an item object is replaced only when it changes, so the other rows skip re-rendering
 const TurnItem = memo(function TurnItem({ item }: { item: ChatItem }): JSX.Element | null {
   if (item.kind === 'text') {
-    if (item.role === 'user') return <div className="cc-user">{firstLine(item.content)}</div>;
+    if (item.role === 'user') return <div className="cc-user">{item.content}</div>;
     // - the ＋ canvas line only, and only once it carries the node's id (older history has the text
     // - alone); anything else, including that same line without an id, renders as plain markdown as before
     const label = item.nodeRef ? noteAddedLabel(item.content) : null;
