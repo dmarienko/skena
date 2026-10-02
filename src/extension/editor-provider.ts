@@ -85,6 +85,7 @@ import { normalizeCanvasToOrigin } from '../shared/bounds';
 import { migrateSections, memberCodeCellsInRunOrder, applyLaneFit, outputCellGeom, pinOutputToLane } from '../shared/sectionLanes';
 import { placeOutput, sectionEngineNodes, markKeepRowOnLoad, layoutAround } from '../shared/layoutEngine';
 import { addChatNote } from '../shared/chatNote';
+import { copyNode, ownedOutputId } from '../shared/outputLink';
 import { youtubeId, YOUTUBE_NODE } from '../shared/youtube';
 
 /**
@@ -1428,7 +1429,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     // - normalize node positions so they start near (40, 40) in the new canvas
     const minX = Math.min(...msg.nodes.map(n => n.x));
     const minY = Math.min(...msg.nodes.map(n => n.y));
-    const normalized = msg.nodes.map(n => ({ ...n, x: n.x - minX + 40, y: n.y - minY + 40 }));
+    // - the ids stay, so a code cell keeps the link only to an output that moves with it
+    const moved = new Map(msg.nodes.map(n => [n.id, n.id]));
+    const normalized = msg.nodes.map(n => ({ ...copyNode(n, moved), x: n.x - minX + 40, y: n.y - minY + 40 }));
 
     const newCanvasPath = path.join(canvasDir, filename);
     await writeCanvas(newCanvasPath, { nodes: normalized, edges: msg.edges });
@@ -1493,7 +1496,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       if (payload.phase === 'start') {
         cn.lastStatus = 'running';
         // - do NOT set cn.outputNodeId yet — only commit it once there is output (matches applyAndPersist)
-        const outId = cn.outputNodeId ?? `ai-${Date.now().toString(36)}`;
+        const outId = ownedOutputId(c.nodes, c.edges, cn) ?? `ai-${Date.now().toString(36)}`;
         await persist();
         send({ type: 'runOutput', codeNodeId: cn.id, lastStatus: 'running', kernelNodeId: payload.kernelNodeId, kernelId: payload.kernelId, source: 'host' });
         return { handled: true, outputNodeId: outId };
@@ -1504,7 +1507,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       let outputNode: CellNode | undefined;
       let edge:       CanvasEdge | undefined;
       if (payload.output) {
-        const outId    = payload.outputNodeId ?? cn.outputNodeId ?? `ai-${Date.now().toString(36)}`;
+        const outId    = payload.outputNodeId ?? ownedOutputId(c.nodes, c.edges, cn) ?? `ai-${Date.now().toString(36)}`;
         const existing = c.nodes.find(n => n.id === outId && n.type === 'cell') as CellNode | undefined;
         if (existing) {
           existing.format  = payload.output.format;
@@ -1636,9 +1639,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       let outputNode: CellNode | undefined;
       let edge:       CanvasEdge | undefined;
       if (output) {
-        const existing = cn.outputNodeId
-          ? c.nodes.find(n => n.id === cn.outputNodeId && n.type === 'cell') as CellNode | undefined
-          : undefined;
+        const ownedId  = ownedOutputId(c.nodes, c.edges, cn);
+        const existing = ownedId ? c.nodes.find(n => n.id === ownedId) as CellNode | undefined : undefined;
         if (existing) {
           // - content only; keep the node WHERE IT IS (the user may have dragged it — don't snap it)
           existing.format  = output.format;
@@ -1718,7 +1720,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       if (!cn) return;
       // - reuse this cell's existing output node on a re-run so the live node updates it in place
       // - (a fresh id would duplicate the persisted output cell); only mint a new id on first run
-      if (!liveOutputId) liveOutputId = cn.outputNodeId ?? `ai-${Date.now().toString(36)}`;
+      if (!liveOutputId) liveOutputId = ownedOutputId(document.canvas.nodes, document.canvas.edges, cn) ?? `ai-${Date.now().toString(36)}`;
       const { format, content } = renderOutput(latest);
       const liveExisting = document.canvas.nodes.find(n => n.id === liveOutputId && n.type === 'cell');
       const outputNode: CellNode = {
@@ -1736,7 +1738,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         livePersisted = true;
         const c = document.canvas;
         const cnDisk = c.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code') as CodeNode | undefined;
-        if (cnDisk && !cnDisk.outputNodeId) {
+        if (cnDisk && !ownedOutputId(c.nodes, c.edges, cnDisk)) {
           if (!c.nodes.some(n => n.id === outputNode.id)) c.nodes.push(assignLabel(outputNode, c.nodes) as CellNode);
           cnDisk.outputNodeId = outputNode.id;   // - link first, see above
           if (c.metadata?.sections) c.metadata = { ...c.metadata, sections: pinOutputToLane(c.metadata.sections, cn.id, outputNode.id) };   // - an output of a folded cell stays folded

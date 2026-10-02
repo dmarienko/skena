@@ -436,6 +436,31 @@ test('a second canvas_pin_output on the same cell does not land on the first', a
   assert.ok(apart, `the two pinned cells overlap: C1 ${first.x},${first.y} ${first.width}×${first.height} C2 ${second.x},${second.y} ${second.width}×${second.height}`);
 });
 
+test('a copy that names the original\'s output does not own it: read shows no output, a pin becomes its own', async () => {
+  const p = fresh('copyout');
+  await codeAt(p, 0, 0);                                                        // - E1, the original
+  await call('canvas_pin_output', { canvasPath: p, sourceRef: 'E1', content: 'E1 result' });   // - C1, with the edge E1 → C1
+  await codeAt(p, 0, 800);                                                      // - E2, the copy
+  // - what an older paste wrote: the copy names the original's output, with no edge to it
+  const d0 = read(p);
+  const c1 = d0.nodes.find(n => n.nodeLabel === 'C1');
+  d0.nodes.find(n => n.nodeLabel === 'E2').outputNodeId = c1.id;
+  writeFileSync(p, JSON.stringify(d0, null, 2));
+
+  assert.ok((await call('canvas_read', { canvasPath: p, ref: 'E1' })).includes(`Output: C1 (id: ${c1.id})`));
+  assert.ok(!(await call('canvas_read', { canvasPath: p, ref: 'E2' })).includes('Output:'));
+  assert.ok((await call('canvas_read', { canvasPath: p, ref: 'C1' })).includes('Output of: E1 '));
+
+  // - the copy has no output of its own, so a pin onto it becomes that output, as a first run's would
+  await call('canvas_pin_output', { canvasPath: p, sourceRef: 'E2', content: 'E2 result' });
+  const d = read(p);
+  const c2 = d.nodes.find(n => n.nodeLabel === 'C2');
+  assert.equal(d.nodes.find(n => n.nodeLabel === 'E2').outputNodeId, c2.id);
+  assert.equal(d.nodes.find(n => n.nodeLabel === 'E1').outputNodeId, c1.id);
+  assert.equal(d.nodes.find(n => n.id === c1.id).content, 'E1 result');
+  assert.ok(d.edges.some(e => e.fromNode === d.nodes.find(n => n.nodeLabel === 'E2').id && e.toNode === c2.id));
+});
+
 // - mirrors src/shared/constants.ts (CODE_LINE_H_ESTIMATE 18, CODE_CHROME_ESTIMATE 39,
 //   CODE_H_STEP 50, CODE_MIN_H 100, CODE_MAX_H 900); this probe talks to the built server,
 //   not to a bundle it could import the real ones from

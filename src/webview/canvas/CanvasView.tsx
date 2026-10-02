@@ -66,6 +66,7 @@ import { refTitle } from '../../shared/nodeRef';
 import { allFolded, deriveLanes, fitLanes, groupIdsByLane, isGroup, sortLanes, insertLaneAt, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
 import { applyPatchesToCanvas, codeCellHeight, columnsOfDeleted as columnsOfDeletedIn, directionSlot, forkOf, hangingBelow, insertAfter, keepRowOf, layoutSection, reflowSection, ridersOf, sectionEngineNodes, sectionMembership, toEngineNodes, type EngineNode, type LayoutOpts, type Patches } from '../../shared/layoutEngine';
 import { youtubeId, YOUTUBE_NODE } from '../../shared/youtube';
+import { copyNode, ownedOutputId } from '../../shared/outputLink';
 import { useLaneFit, flowGeom } from '../rail/useLaneFit';
 import { connectionLabels, findNearestNode, focusAfterDelete, revealPan, type ConnectionLabel, type EdgeSideContext, type NavDir, type NavNode, type Rect } from './spatialNav';
 import { focusAreaBottom } from './chat/consoleLayout';
@@ -2109,7 +2110,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
 
     // - pasted nodes get new IDs and fresh labels (copies aren't the same node)
     const rawPasted: CanvasNode[] = clipboard.nodes.map(n => ({
-      ...n, id: idMap.get(n.id)!, x: n.x + dx, y: n.y + dy,
+      ...copyNode(n, idMap), x: n.x + dx, y: n.y + dy,
       nodeLabel: undefined, // - strip old label so assignLabel gives a new one
     }));
     const allAfterPaste = [...canvasRef.current.nodes, ...rawPasted];
@@ -3128,7 +3129,8 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
         if (now - lastXPressRef.current < 400) {
           lastXPressRef.current = 0;
           const code   = nodesRef.current.find(n => n.selected && n.type === 'code');
-          const outId  = (code?.data as { outputNodeId?: string } | undefined)?.outputNodeId;
+          const cn     = code && canvasRef.current.nodes.find(n => n.id === code.id);
+          const outId  = cn && ownedOutputId(canvasRef.current.nodes, canvasRef.current.edges, cn);
           const outNode = outId ? nodesRef.current.find(n => n.id === outId) : undefined;
           if (outNode) { e.preventDefault(); performDelete([outNode]); }
         } else {

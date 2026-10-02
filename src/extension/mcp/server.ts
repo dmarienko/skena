@@ -35,6 +35,7 @@ import { parseSettingsJson } from '../settingsJson';
 import { readSettingsSync, workspaceDirAbove } from '../settingsFiles';
 import { parseNodeRef, isSectionLabel } from '../../shared/nodeRef';
 import { youtubeId, YOUTUBE_NODE } from '../../shared/youtube';
+import { ownedOutputId } from '../../shared/outputLink';
 import { executeCell, startKernel, shutdownKernel } from '../jupyter/client';
 import { renderOutput, hasVisibleOutput } from '../jupyter/output';
 import type { CollectedOutput } from '../jupyter/protocol';
@@ -498,14 +499,13 @@ async function readFileNodeContent(uri: string, canvasPath: string): Promise<str
 
 // ─── tools ────────────────────────────────────────────────────────────────────
 
-// - which cell is a code cell's output, both ways: `outputNodeId` on the code cell, when that node
-//   exists on the canvas
+// - which cell is a code cell's output, both ways: the output a run of the code cell writes into
 function outputLinks(d: CanvasData): { output: Map<string, CanvasNode>; outputOf: Map<string, CanvasNode> } {
   const byId = new Map(d.nodes.map(n => [n.id, n]));
   const output = new Map<string, CanvasNode>(), outputOf = new Map<string, CanvasNode>();
   for (const n of d.nodes) {
-    if (n.type !== 'code' || !n.outputNodeId) continue;
-    const o = byId.get(n.outputNodeId);
+    if (n.type !== 'code') continue;
+    const o = byId.get(ownedOutputId(d.nodes, d.edges, n) ?? '');
     if (!o) continue;
     output.set(n.id, o); outputOf.set(o.id, n);
   }
@@ -1153,7 +1153,7 @@ async function canvasPinOutput(args: Record<string, unknown>): Promise<string> {
   if (args.sourceRef) {
     sourceNode = findNode(d, args.sourceRef as string);
     if (sourceNode) {
-      const around = sourceNode.type === 'code' && !sourceNode.outputNodeId
+      const around = sourceNode.type === 'code' && !ownedOutputId(d.nodes, d.edges, sourceNode)
         ? sectionEngineNodes(d.nodes, d.metadata?.sections ?? [], sourceNode.id)
         : null;
       const slot   = around && placeOutput(around, sourceNode.id);
@@ -1194,7 +1194,7 @@ async function canvasPinOutput(args: Record<string, unknown>): Promise<string> {
 
   // - the cell adopts the pinned node as its output, which is what keeps the two in one pair. A cell
   //   that already has an output keeps it, and the pin stays a free node.
-  const adopted = sourceNode?.type === 'code' && !sourceNode.outputNodeId;
+  const adopted = sourceNode?.type === 'code' && !ownedOutputId(d.nodes, d.edges, sourceNode);
   if (adopted) (sourceNode as CodeNode).outputNodeId = labeled.id;
   if (sourceNode && d.metadata?.sections) d.metadata = { ...d.metadata, sections: pinOutputToLane(d.metadata.sections, sourceNode.id, labeled.id) };   // - an output of a folded cell stays folded
   // - a free pin is a column member its edge could hold: `keepRow` as for any new edge, read in the
@@ -1249,7 +1249,8 @@ async function runCellCore(
   // - false and the MCP writes the file itself, as before.
   const startRes = await persistViaHost(ipc, p, { phase: 'start', cellNodeId: cell.id, kernelNodeId: kernel.id, kernelId });
   const hostOwns = startRes.handled;
-  const outId    = hostOwns ? (startRes.outputNodeId ?? cell.outputNodeId ?? uid()) : (cell.outputNodeId ?? uid());
+  const owned    = ownedOutputId(d.nodes, d.edges, cell);
+  const outId    = hostOwns ? (startRes.outputNodeId ?? owned ?? uid()) : (owned ?? uid());
   if (!hostOwns) { cell.lastStatus = 'running'; await writeCanvas(p, d); }
 
   // - the engine's slot for this cell's output: its pair's output column, the cell's y. The fallback
