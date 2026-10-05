@@ -4,18 +4,19 @@
  * server, the source and how old the copy is. Refresh and open go back to the host.
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import { KnowledgeNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { MarkdownRenderer } from '../../renderers/MarkdownRenderer';
 import { useHighlightedHtml } from '../../lib/codeHighlight';
-import { useHostMarkdown } from '../../hooks/useHostMarkdown';
-import { ScrollableContent } from '../../components/ScrollableContent';
+import { useHostMarkdownOf } from '../../hooks/useHostMarkdown';
+import { ScrollableContent, getScrollPosition } from '../../components/ScrollableContent';
 import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
 import { nodeBorderColor } from '../palette';
 import { sanitizeHtmlAttrs } from './knowledgeHtml';
 import { useKnowledgeAssets } from '../knowledgeAssets';
+import { chunkEnd, definitionsAfter } from '../textWindow';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -52,6 +53,12 @@ function useMinuteTick(): void {
   }, []);
 }
 
+// - characters rendered at a time: four times what the node's box holds of prose (12px text on a
+//   20px line, about 7px a character), never under 8 000
+function stepChars(width: number, height: number): number {
+  return Math.max(8_000, Math.round(4 * (width / 7) * (height / 20)));
+}
+
 const BUTTON_STYLE: React.CSSProperties = {
   cursor: 'pointer', background: 'transparent', border: 'none', color: 'inherit',
   fontSize: 12, padding: 0, lineHeight: 1, opacity: 0.7,
@@ -63,7 +70,25 @@ export function KnowledgeNodeComponent({ data, id, selected }: NodeProps): JSX.E
   const selectedStyle = useSelectedStyle(selected);
   const bw = useZoomInvariantBorderWidth(1.5);
   const borderColor = nodeBorderColor('knowledge', node.accentColor);
-  const hostHtml  = useHostMarkdown(node.text);
+  // - a whole paper in the DOM is laid out and painted on every pan and zoom, so only the start of
+  //   the text is rendered, cut at a block boundary, and it grows as the reader scrolls toward its
+  //   end. The definitions after the cut go along so the footnote references in it still render.
+  const step = stepChars(node.width, node.height);
+  const [win, setWin] = useState(() => ({ text: node.text, end: chunkEnd(node.text, 0, step) }));
+  let end = win.end;
+  if (win.text !== node.text) {
+    // - a refresh brought new text: keep at least as much of it rendered, so the scroll offset holds
+    end = chunkEnd(node.text, 0, Math.max(step, win.end));
+    setWin({ text: node.text, end });
+  }
+  const whole = end >= node.text.length;
+  const windowText = useMemo(
+    () => (whole ? node.text : `${node.text.slice(0, end)}\n\n${definitionsAfter(node.text, end)}`),
+    [node.text, end, whole],
+  );
+  // - routed by the whole text, so every window takes the renderer the whole text would
+  const host      = useHostMarkdownOf(windowText, node.text);
+  const hostHtml  = host.html;
   const shownHtml = useHighlightedHtml(hostHtml);
   // - the images the text refers to by the server's uri; the host fetches them, these two put the
   //   data urls in
@@ -75,7 +100,54 @@ export function KnowledgeNodeComponent({ data, id, selected }: NodeProps): JSX.E
     () => (hostHtml === null ? null : swapHtml(sanitizeHtmlAttrs(shownHtml ?? hostHtml))),
     [hostHtml, shownHtml, swapHtml],
   );
-  const shownText = useMemo(() => swapMarkdown(node.text), [node.text, swapMarkdown]);
+  const shownText = useMemo(() => swapMarkdown(windowText), [windowText, swapMarkdown]);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // - a saved scroll offset past the first window: the window grows until it reaches that far, and
+  //   only then is ScrollableContent told the content is loaded, so it restores the offset
+  const [restoreTo] = useState(() => getScrollPosition(id) ?? 0);
+  const [reached, setReached] = useState(() => restoreTo === 0 || whole);
+  // - what is on screen is the current window: the markdown path renders in the same pass, host html
+  //   once it is the html of this very text
+  const current = hostHtml === null || host.of === windowText;
+  const growing = useRef(false);
+
+  const grow = (): void => {
+    const el = scrollRef.current;
+    // - a box with no height is not laid out yet: nothing to measure against
+    if (whole || !current || growing.current || !el || el.clientHeight === 0) return;
+    const top = reached ? el.scrollTop : restoreTo;
+    // - the box on screen and two more below it
+    const need = top + 3 * el.clientHeight;
+    if (el.scrollHeight >= need) return;
+    // - characters per rendered pixel so far: a far target (a saved offset) is reached in one step
+    const perPx = end / Math.max(1, el.scrollHeight);
+    growing.current = true;
+    setWin({ text: node.text, end: chunkEnd(node.text, end, Math.max(step, Math.ceil((need - el.scrollHeight) * perPx))) });
+  };
+  const growRef = useRef(grow);
+  growRef.current = grow;
+
+  useLayoutEffect(() => {
+    growing.current = false;
+    const el = scrollRef.current;
+    if (!el || !current) return;
+    if (!reached && (whole || el.scrollHeight >= restoreTo + el.clientHeight)) setReached(true);
+    growRef.current();
+  }, [safeHtml, shownText, current, reached, whole, restoreTo, node.width, node.height]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => growRef.current();
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
+
+  // - the share of the text rendered: CanvasView scales the chat context's "scrolled ~N% down" by it
+  useLayoutEffect(() => {
+    if (scrollRef.current) scrollRef.current.dataset.shown = whole ? '1' : (end / node.text.length).toFixed(3);
+  }, [end, whole, node.text.length]);
 
   return (
     <>
@@ -121,7 +193,12 @@ export function KnowledgeNodeComponent({ data, id, selected }: NodeProps): JSX.E
         >↗</button>
       </div>
       {/* - baseUri="." so relative image paths (./img.png) resolve against canvas dir */}
-      <ScrollableContent scrollKey={id} style={{ padding: '6px 8px 6px 12px' }}>
+      {/* - skena-knowledge-partial hides the footnote list while only the start is rendered */}
+      <ScrollableContent
+        ref={scrollRef} scrollKey={id} contentLoaded={reached || whole}
+        className={whole ? undefined : 'skena-knowledge-partial'}
+        style={{ padding: '6px 8px 6px 12px' }}
+      >
         {safeHtml !== null
           ? <div className="skena-markdown" dangerouslySetInnerHTML={{ __html: safeHtml }} />
           : <MarkdownRenderer content={shownText} baseUri="." />}

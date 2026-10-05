@@ -69,6 +69,10 @@ export function setScrollPosition(key: string, top: number): void {
   scrollPositions.set(key, top);
 }
 
+export function getScrollPosition(key: string): number | undefined {
+  return scrollPositions.get(key);
+}
+
 // ─── localStorage persistence ─────────────────────────────────────────────────
 
 const LS_KEY = 'skena:scrollPositions';

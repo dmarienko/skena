@@ -102,20 +102,17 @@ export function useHighlightedHtml(html: string | null | undefined): string | nu
 
   const active = typeof document !== 'undefined' && document.documentElement.dataset.mdTheme === 'factors';
   const needs = active && !!html && html.includes('language-');
-  const [out, setOut] = useState<string | null>(() =>
-    !html ? null : needs ? (cache.get(html) ?? html) : html,
-  );
+  const [, setHighlighted] = useState(0);
 
   useEffect(() => {
-    if (!html) { setOut(null); return; }
-    if (!needs) { setOut(html); return; }
-    const cached = cache.get(html);
-    if (cached) { setOut(cached); return; }
+    if (!html || !needs || cache.has(html)) return;
     let cancelled = false;
-    setOut(html);   // - show plain immediately; upgrade when ready
-    void highlightHtml(html).then(h => { cache.set(html, h); if (!cancelled) setOut(h); });
+    void highlightHtml(html).then(h => { cache.set(html, h); if (!cancelled) setHighlighted(n => n + 1); });
     return () => { cancelled = true; };
   }, [html, needs]);
 
-  return out;
+  // - derived in the render, not held in state, so a new html is what the caller gets in the same
+  //   render (plain until its highlighted copy is cached), never the previous html for one render
+  if (!html) return null;
+  return needs ? cache.get(html) ?? html : html;
 }

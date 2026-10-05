@@ -3353,7 +3353,9 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       if (focused) {
         const el = document.querySelector(`.react-flow__node[data-id="${focused.id}"] .skena-scrollable`) as HTMLElement | null;
         if (el && el.scrollHeight > el.clientHeight + 1) {
-          focusedScrollPct = Math.round((el.scrollTop / (el.scrollHeight - el.clientHeight)) * 100);
+          // - a knowledge node renders the start of its text; data-shown is the share rendered
+          const shown = Number(el.dataset.shown ?? 1);
+          focusedScrollPct = Math.round((el.scrollTop / (el.scrollHeight - el.clientHeight)) * shown * 100);
         }
         if (el) {
           // - the literal on-screen text: rendered blocks whose rect intersects the

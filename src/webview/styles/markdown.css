@@ -211,3 +211,7 @@
    - content still uses the full node width. */
 .skena-markdown { max-width: var(--skena-md-maxw, none); }
 .skena-markdown table, .skena-markdown pre, .skena-markdown img { max-width: 100%; }
+
+/* - a knowledge node rendering only the start of its text appends the footnote definitions so the
+   - references in it render; the list they make belongs at the end, so it stays hidden until then */
+.skena-knowledge-partial section[data-footnotes] { display: none; }
