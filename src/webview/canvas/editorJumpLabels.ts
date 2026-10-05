@@ -1,0 +1,187 @@
+import type { editor as MonacoEditor } from 'monaco-editor';
+import { VimMode, type VimAdapterInstance } from 'monaco-vim';
+import { assignLabels, labelKey, leaderStep, lineStarts, vimKeyOf, wordStarts, type JumpDir, type LeaderState, type TextPos, type VisibleLine } from './jumpLabels';
+import { vimSettings } from './vimSettings';
+
+// - the parts of monaco-vim's per-editor state read and written here (keymap_vim.ts maybeInitVimState, InputState)
+interface VimState {
+  insertMode: boolean;
+  visualMode: boolean;
+  inputState: { keyBuffer: unknown; operator: string | null };
+  lastMotion: unknown;
+  lastHPos:   number;
+}
+
+// - VimMode.Vim is monaco-vim's Vim API object; handleKey(cm, key) runs one key as if typed
+const Vim = (VimMode as unknown as { Vim: { handleKey(cm: unknown, key: string): unknown } }).Vim;
+
+const STYLE_ID = 'skena-jump-labels';
+
+function vimState(vim: VimAdapterInstance): VimState | null {
+  return (vim as unknown as { state: { vim?: VimState | null } }).state.vim ?? null;
+}
+
+// - normal mode with nothing typed yet: no count, no pending f/t/r/m/'/", no operator. A leader typed
+//   after one of those belongs to it (f; finds a ;).
+function idleNormal(s: VimState | null): boolean {
+  return !!s && !s.insertMode && !s.visualMode && !s.inputState.operator && String(s.inputState.keyBuffer ?? '') === '';
+}
+
+function cssString(s: string): string {
+  return `"${s.replace(/["\\]/g, m => `\\${m}`)}"`;
+}
+
+// - the label text of each index, as ::after rules in one <style> shared by every editor; only the
+//   focused editor shows labels, so the rules are rewritten each time labels are shown
+function writeLabelStyle(labels: readonly string[]): void {
+  let el = document.getElementById(STYLE_ID) as HTMLStyleElement | null;
+  if (!el) {
+    el = document.createElement('style');
+    el.id = STYLE_ID;
+    document.head.appendChild(el);
+  }
+  el.textContent = labels.map((l, i) => `.monaco-editor .skena-jl-${i}::after { content: ${cssString(l)}; }`).join('\n');
+}
+
+// - the model lines Monaco shows in the viewport, ascending; folded lines are left out
+function visibleLines(editor: MonacoEditor.IStandaloneCodeEditor): VisibleLine[] {
+  const model = editor.getModel();
+  if (!model) return [];
+  const out: VisibleLine[] = [];
+  let last = 0;
+  for (const r of editor.getVisibleRanges()) {
+    for (let line = Math.max(r.startLineNumber, last + 1); line <= r.endLineNumber; line++) {
+      out.push({ line, text: model.getLineContent(line) });
+      last = line;
+    }
+  }
+  return out;
+}
+
+// - the targets drawn inside the text area, in the order given. A line that does not wrap (code cells)
+//   can have word starts scrolled off to the left or right; those get no label.
+function onScreen(editor: MonacoEditor.IStandaloneCodeEditor, targets: TextPos[]): TextPos[] {
+  const { contentLeft, contentWidth, verticalScrollbarWidth, height } = editor.getLayoutInfo();
+  // - contentWidth includes the vertical scrollbar (computeLayout in editorOptions.js)
+  const right = contentLeft + contentWidth - verticalScrollbarWidth;
+  return targets.filter(t => {
+    const p = editor.getScrolledVisiblePosition({ lineNumber: t.line, column: t.col });
+    return !!p && p.left >= contentLeft && p.left < right && p.top + p.height > 0 && p.top < height;
+  });
+}
+
+function targetsFor(dir: JumpDir, lines: VisibleLine[], cursor: TextPos): TextPos[] {
+  switch (dir) {
+    case 'l': return wordStarts(lines, cursor, 'forward');
+    case 'h': return wordStarts(lines, cursor, 'backward');
+    case 'j': return lineStarts(lines, cursor.line, 'down');
+    case 'k': return lineStarts(lines, cursor.line, 'up');
+  }
+}
+
+/**
+ * Leader leader h/j/k/l in vim normal mode: a label over each word start (h/l) or line start (j/k)
+ * on that side of the cursor in the visible lines; typing a label moves the cursor there.
+ *
+ * monaco-vim cannot bind it: its matcher (commandDispatcher.matchCommand) runs a full match at once
+ * even when a longer mapping starts with it, so `;` (repeat f/t) would fire before a second key
+ * arrives. The keys are read instead at capture on the editor's container, before Monaco and vim see
+ * them. A leader that is not followed by a second leader is handed to vim then.
+ *
+ * Call once per editor, after initVimMode. The settings are read on every key: the chat input mounts
+ * before the host has sent them.
+ */
+export function installJumpLabels(editor: MonacoEditor.IStandaloneCodeEditor, vim: VimAdapterInstance): void {
+  const decorations = editor.createDecorationsCollection();
+  let held: LeaderState = 0;
+  let shown: { labels: string[]; targets: TextPos[]; typed: string } | null = null;
+
+  // - an empty span before the target character; its ::after draws the label over the character(s)
+  //   (canvas.css), so no text moves
+  const draw = () => {
+    if (!shown) { decorations.clear(); return; }
+    const { labels, targets, typed } = shown;
+    decorations.set(targets.flatMap((t, i) => (labels[i].startsWith(typed) ? [{
+      range:   { startLineNumber: t.line, startColumn: t.col, endLineNumber: t.line, endColumn: t.col },
+      options: { beforeContentClassName: `skena-jump-label skena-jl-${i}` },
+    }] : [])));
+  };
+
+  const hide = () => {
+    held = 0;
+    if (!shown) return;
+    shown = null;
+    decorations.clear();
+  };
+
+  const show = (dir: JumpDir) => {
+    const pos = editor.getPosition();
+    if (!pos) return;
+    const targets = onScreen(editor, targetsFor(dir, visibleLines(editor), { line: pos.lineNumber, col: pos.column }));
+    const { leader, jumpLabels } = vimSettings();
+    const labels = assignLabels(targets.length, jumpLabels, leader);
+    if (labels.length === 0) return;
+    shown = { labels, targets: targets.slice(0, labels.length), typed: '' };
+    writeLabelStyle(labels);
+    draw();
+  };
+
+  const jump = (t: TextPos) => {
+    editor.setPosition({ lineNumber: t.line, column: t.col });
+    // - vim keeps the column of the last vertical move for the next j/k (moveByLines); without this a
+    //   j right after the jump would go back to that old column
+    const s = vimState(vim);
+    if (s) {
+      s.lastMotion = null;
+      s.lastHPos = t.col - 1;
+    }
+  };
+
+  const onKeyDown = (e: KeyboardEvent) => {
+    const k = { key: e.key, ctrl: e.ctrlKey, meta: e.metaKey, alt: e.altKey };
+    if (shown) {
+      // - every key is the labels' while they are shown: Monaco, vim and the node never see it
+      e.preventDefault();
+      e.stopPropagation();
+      const m = labelKey(shown.labels, shown.typed, k);
+      if (m.kind === 'ignore') return;
+      if (m.kind === 'narrow') {
+        shown = { ...shown, typed: m.prefix };
+        draw();
+        return;
+      }
+      const target = m.kind === 'jump' ? shown.targets[m.index] : null;
+      hide();
+      if (target) jump(target);
+      return;
+    }
+    if (!editor.hasTextFocus()) return;
+    if (held === 0 && !idleNormal(vimState(vim))) return;
+    const { leader } = vimSettings();
+    const step = leaderStep(held, k, leader);
+    if (step.do === 'none') return;
+    if (step.do === 'release') {
+      // - the held leaders run as vim's own key (; repeats the last f/t), then this key goes on to vim
+      held = 0;
+      for (let i = 0; i < step.held; i++) Vim.handleKey(vim, vimKeyOf(leader));
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    if (step.do === 'hold') { held = step.next; return; }
+    held = 0;
+    show(step.dir);
+  };
+
+  const node = editor.getContainerDomNode();
+  node.addEventListener('keydown', onKeyDown, { capture: true });
+  const subs = [
+    editor.onDidBlurEditorText(hide),
+    editor.onMouseDown(hide),
+    editor.onDidChangeModelContent(hide),
+  ];
+  editor.onDidDispose(() => {
+    node.removeEventListener('keydown', onKeyDown, { capture: true });
+    subs.forEach(d => d.dispose());
+  });
+}

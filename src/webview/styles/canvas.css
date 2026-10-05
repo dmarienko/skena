@@ -334,3 +334,19 @@ body.vscode-dark, body.vscode-high-contrast {
   content: '\00a0';
   background: #f01010 !important;
 }
+
+/* - jump labels in an editor (editorJumpLabels.ts): Monaco puts an empty span before the target
+   - character; its ::after draws the label over the character(s), so no text moves. The label text
+   - comes from a rule per label in <style id="skena-jump-labels">. */
+.monaco-editor .skena-jump-label { position: relative; }
+.monaco-editor .skena-jump-label::after {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 3;
+  background: #f01010;
+  color: #fff;
+  font-weight: 700;
+  white-space: pre;
+  pointer-events: none;
+}
