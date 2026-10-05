@@ -52,16 +52,43 @@ function cssString(s: string): string {
   return `"${s.replace(/["\\]/g, m => `\\${m}`)}"`;
 }
 
-// - the label text of each index, as ::after rules in one <style> shared by every editor; only the
-//   focused editor shows labels, so the rules are rewritten each time labels are shown
-function writeLabelStyle(labels: readonly string[]): void {
+// - the characters of each label (::before the first, ::after the second) and the background they are
+//   drawn on, as rules in one <style> shared by every editor; only the focused editor shows labels, so
+//   the rules are rewritten each time labels are shown
+function writeLabelStyle(labels: readonly string[], background: string): void {
   let el = document.getElementById(STYLE_ID) as HTMLStyleElement | null;
   if (!el) {
     el = document.createElement('style');
     el.id = STYLE_ID;
     document.head.appendChild(el);
   }
-  el.textContent = labels.map((l, i) => `.monaco-editor .skena-jl-${i}::after { content: ${cssString(l)}; }`).join('\n');
+  const rules = [`.monaco-editor .skena-jump-label::before, .monaco-editor .skena-jump-label::after { background: ${background}; }`];
+  labels.forEach((l, i) => {
+    const [first, second] = [...l];
+    rules.push(`.monaco-editor .skena-jl-${i}::before { content: ${cssString(first)}; }`);
+    if (second !== undefined) rules.push(`.monaco-editor .skena-jl-${i}::after { content: ${cssString(second)}; }`);
+  });
+  el.textContent = rules.join('\n');
+}
+
+// - [r, g, b, alpha] of a computed colour; null when it is not rgb() or rgba()
+function rgba(css: string): [number, number, number, number] | null {
+  const m = /^rgba?\(([^)]*)\)$/.exec(css.trim());
+  if (!m) return null;
+  const v = m[1].split(/[\s,/]+/).filter(Boolean).map(Number);
+  if (v.length < 3 || v.some(Number.isNaN)) return null;
+  return [v[0], v[1], v[2], v.length > 3 ? v[3] : 1];
+}
+
+// - the colour behind the editor's text, made opaque: the editor's own background, else the first
+//   ancestor's that is not transparent (the chat input's editor is see-through over the input bar)
+function editorBackground(editor: MonacoEditor.IStandaloneCodeEditor): string {
+  const root = editor.getDomNode();
+  for (let el: Element | null = root?.querySelector('.monaco-editor-background') ?? root; el; el = el.parentElement) {
+    const c = rgba(getComputedStyle(el).backgroundColor);
+    if (c && c[3] > 0) return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+  }
+  return getComputedStyle(document.body).getPropertyValue('--vscode-editor-background').trim() || '#1e1e1e';
 }
 
 // - the model lines Monaco shows in the viewport, ascending; folded lines are left out
@@ -117,7 +144,7 @@ export function installJumpLabels(editor: MonacoEditor.IStandaloneCodeEditor, vi
   const decorations = editor.createDecorationsCollection();
   const node = editor.getContainerDomNode();
   let held: LeaderState = 0;
-  let shown: { labels: string[]; targets: TextPos[]; typed: string } | null = null;
+  let shown: { labels: string[]; targets: TextPos[]; typed: string; lines: VisibleLine[] } | null = null;
 
   // - the window listener at the top of this module ends a held leader before other window listeners
   //   take the key
@@ -146,15 +173,20 @@ export function installJumpLabels(editor: MonacoEditor.IStandaloneCodeEditor, vi
     }
   };
 
-  // - an empty span before the target character; its ::after draws the label over the character(s)
-  //   (canvas.css), so no text moves
+  // - the visible text dimmed, and before each target an empty span whose ::before and ::after draw
+  //   the label over the character(s) (canvas.css), so no text moves
   const draw = () => {
     if (!shown) { decorations.clear(); return; }
-    const { labels, targets, typed } = shown;
-    decorations.set(targets.flatMap((t, i) => (labels[i].startsWith(typed) ? [{
+    const { labels, targets, typed, lines } = shown;
+    const dim = lines.filter(l => l.text !== '').map(l => ({
+      range:   { startLineNumber: l.line, startColumn: 1, endLineNumber: l.line, endColumn: l.text.length + 1 },
+      options: { inlineClassName: 'skena-jump-dim' },
+    }));
+    const marks = targets.flatMap((t, i) => (labels[i].startsWith(typed) ? [{
       range:   { startLineNumber: t.line, startColumn: t.col, endLineNumber: t.line, endColumn: t.col },
-      options: { beforeContentClassName: `skena-jump-label skena-jl-${i}` },
-    }] : [])));
+      options: { beforeContentClassName: `skena-jump-label ${[...labels[i]].length === 1 ? 'skena-jl-one' : 'skena-jl-two'} skena-jl-${i}` },
+    }] : []));
+    decorations.set([...dim, ...marks]);
   };
 
   const hide = () => {
@@ -169,12 +201,13 @@ export function installJumpLabels(editor: MonacoEditor.IStandaloneCodeEditor, vi
   const show = (dir: JumpDir) => {
     const pos = editor.getPosition();
     if (!pos) return;
-    const targets = onScreen(editor, targetsFor(dir, visibleLines(editor), { line: pos.lineNumber, col: pos.column }));
+    const lines = visibleLines(editor);
+    const targets = onScreen(editor, targetsFor(dir, lines, { line: pos.lineNumber, col: pos.column }));
     const { leader, jumpLabels } = vimSettings();
     const labels = assignLabels(targets.length, jumpLabels, leader);
     if (labels.length === 0) return;
-    shown = { labels, targets: targets.slice(0, labels.length), typed: '' };
-    writeLabelStyle(labels);
+    shown = { labels, targets: targets.slice(0, labels.length), typed: '', lines };
+    writeLabelStyle(labels, editorBackground(editor));
     draw();
   };
 

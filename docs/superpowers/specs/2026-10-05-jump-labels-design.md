@@ -43,8 +43,12 @@ The leader is a setting, `skena.vim.leader`, one key, default `;` (the user's VS
   rest get two-character labels that share a first character, as VSCodeVim does; no label is a prefix of
   another.
 - Labels are drawn over the first character(s) of the target in the editor (the text itself is not
-  changed), and as tags on the top-left corner of a node on the canvas, in the same red the cursor uses
-  (`#f01010`, white text).
+  changed), as VSCodeVim's easymotion draws them: bold letters in the editor's font, one character cell
+  each, on the editor's own background so the characters underneath are hidden; a one-character label in
+  `#ff0000`, a two-character label with its first character in `#ffb400` and its second in `#b98300`;
+  the rest of the visible text is dimmed (opacity 0.45) while labels are shown (user, 2026-10-05, after
+  comparing skena's red boxes with VSCodeVim). On the canvas they are tags on the top-left corner of a
+  node, in the same red the cursor uses (`#f01010`, white text).
 - Typing the first character of a two-character label hides every label that does not start with it.
   Typing a full label jumps. `Esc`, or any key that no label starts with, removes the labels and does
   nothing else (the key is not passed on).

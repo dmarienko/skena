@@ -335,21 +335,31 @@ body.vscode-dark, body.vscode-high-contrast {
   background: #f01010 !important;
 }
 
-/* - jump labels in an editor (editorJumpLabels.ts): Monaco puts an empty span before the target
-   - character; its ::after draws the label over the character(s), so no text moves. The label text
-   - comes from a rule per label in <style id="skena-jump-labels">. */
+/* - jump labels in an editor (editorJumpLabels.ts), drawn like VSCodeVim's easymotion. Monaco puts an
+   - empty span before the target character; its ::before draws the label's first character and its
+   - ::after the second, one character cell each, on the editor's own background, so the text underneath
+   - is hidden and nothing moves. The characters and the background come from <style id="skena-jump-labels">,
+   - written each time labels are shown. The rest of the visible text is dimmed meanwhile. */
 .monaco-editor .skena-jump-label { position: relative; }
+.monaco-editor .skena-jump-label::before,
 .monaco-editor .skena-jump-label::after {
   position: absolute;
-  left: 0;
   top: 0;
   z-index: 3;
-  background: #f01010;
-  color: #fff;
+  width: 1ch;
+  text-align: center;
   font-weight: 700;
   white-space: pre;
   pointer-events: none;
 }
+.monaco-editor .skena-jump-label::before { left: 0; }
+.monaco-editor .skena-jump-label::after  { left: 1ch; }
+/* - VSCodeVim's default easymotion colours */
+.monaco-editor .skena-jl-one::before { color: #ff0000; }
+.monaco-editor .skena-jl-two::before { color: #ffb400; }
+.monaco-editor .skena-jl-two::after  { color: #b98300; }
+/* - Monaco gives a label's span the class of the dim decoration around it too (LineDecorationsNormalizer) */
+.monaco-editor .skena-jump-dim:not(.skena-jump-label) { opacity: 0.45; }
 
 /* - jump tags on the canvas (JumpTags.tsx): one on each target node's top-left corner */
 .skena-jump-tag {
