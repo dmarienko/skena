@@ -1,0 +1,96 @@
+/**
+ * Jump labels (EasyMotion style), the pure part: leader leader h/j/k/l puts a label on every target on
+ * that side, typing a label moves there. editorJumpLabels.ts (Monaco) and CanvasView.tsx (nodes) find
+ * the targets with the functions here, draw the labels and read the keys.
+ */
+export const DEFAULT_LEADER = ';';
+export const DEFAULT_JUMP_LABELS = 'asdfghjklqwertyuiopzxcvbnm';
+
+export type JumpDir = 'h' | 'j' | 'k' | 'l';
+/** - how many leader presses are held back, waiting for the next key */
+export type LeaderState = 0 | 1 | 2;
+export interface JumpKey { key: string; ctrl: boolean; meta: boolean; alt: boolean }
+
+/**
+ * - `none`: not part of a leader sequence; the key goes on as usual and the state stays
+ * - `hold`: a leader; stop the key and wait for the next one
+ * - `show`: leader leader + h/j/k/l; stop the key and show the labels
+ * - `release`: any other key ends the sequence; the `held` leaders keep their own meaning, then the
+ *   key goes on as usual
+ */
+export type LeaderStep =
+  | { do: 'none' }
+  | { do: 'hold'; next: 1 | 2 }
+  | { do: 'show'; dir: JumpDir }
+  | { do: 'release'; held: 1 | 2 };
+
+export type JumpMatch =
+  | { kind: 'jump'; index: number }
+  | { kind: 'narrow'; prefix: string }
+  | { kind: 'cancel' };
+
+const MODIFIER_KEYS: ReadonlySet<string> = new Set(['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'AltGraph']);
+const DIRS: ReadonlySet<string> = new Set(['h', 'j', 'k', 'l']);
+
+/** - the setting when it is exactly one character, else the default */
+export function normalizeLeader(raw: unknown): string {
+  return typeof raw === 'string' && [...raw].length === 1 ? raw : DEFAULT_LEADER;
+}
+
+/** - the name monaco-vim's handleKey takes for the leader: a character as itself, space as <Space> */
+export function vimKeyOf(leader: string): string {
+  return leader === ' ' ? '<Space>' : leader;
+}
+
+/** - the label characters in setting order: no repeats, no blanks, never the leader */
+function usableChars(chars: string, leader: string): string[] {
+  const out: string[] = [];
+  for (const ch of chars) if (ch !== leader && !/\s/.test(ch) && !out.includes(ch)) out.push(ch);
+  return out;
+}
+
+/**
+ * Labels for `count` targets ordered nearest first. With n characters and count <= n every target
+ * gets one character. With more, the last p characters become first characters of two-character
+ * labels (each followed by every character), the first n - p stay one-character labels for the
+ * nearest targets, and p is the fewest that covers count (at most n). No label is a prefix of
+ * another. Past n * n targets the rest get no label. Fewer than two usable characters in the
+ * setting: the default characters are used.
+ */
+export function assignLabels(count: number, chars: string, leader: string): string[] {
+  const own = usableChars(chars, leader);
+  const keys = own.length >= 2 ? own : usableChars(DEFAULT_JUMP_LABELS, leader);
+  const n = keys.length;
+  if (count <= n) return keys.slice(0, Math.max(0, count));
+  const p = Math.min(n, Math.ceil((count - n) / (n - 1)));
+  const pairs: string[] = [];
+  for (const first of keys.slice(n - p)) for (const second of keys) pairs.push(first + second);
+  return [...keys.slice(0, n - p), ...pairs].slice(0, count);
+}
+
+/** - the keys typed so far against the labels: a whole label jumps, the start of one narrows */
+export function matchKeys(labels: readonly string[], typed: string): JumpMatch {
+  const index = labels.indexOf(typed);
+  if (index >= 0) return { kind: 'jump', index };
+  if (typed !== '' && labels.some(l => l.startsWith(typed))) return { kind: 'narrow', prefix: typed };
+  return { kind: 'cancel' };
+}
+
+/**
+ * One key while the labels are shown. A modifier pressed alone changes nothing (`ignore`); Esc, a
+ * chord with Ctrl/Alt/Meta and any named key cancel; a character is matched after `typed`.
+ */
+export function labelKey(labels: readonly string[], typed: string, k: JumpKey): JumpMatch | { kind: 'ignore' } {
+  if (MODIFIER_KEYS.has(k.key)) return { kind: 'ignore' };
+  if (k.ctrl || k.meta || k.alt || [...k.key].length !== 1) return { kind: 'cancel' };
+  return matchKeys(labels, typed + k.key);
+}
+
+/** - one key of leader leader h/j/k/l, from `state` leaders held. Shift does not count as a modifier. */
+export function leaderStep(state: LeaderState, k: JumpKey, leader: string): LeaderStep {
+  if (MODIFIER_KEYS.has(k.key)) return { do: 'none' };
+  const plain = !k.ctrl && !k.meta && !k.alt;
+  if (state === 0) return plain && k.key === leader ? { do: 'hold', next: 1 } : { do: 'none' };
+  if (state === 1) return plain && k.key === leader ? { do: 'hold', next: 2 } : { do: 'release', held: 1 };
+  return plain && DIRS.has(k.key) ? { do: 'show', dir: k.key as JumpDir } : { do: 'release', held: 2 };
+}
