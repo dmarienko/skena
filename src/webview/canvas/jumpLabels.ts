@@ -94,3 +94,53 @@ export function leaderStep(state: LeaderState, k: JumpKey, leader: string): Lead
   if (state === 1) return plain && k.key === leader ? { do: 'hold', next: 2 } : { do: 'release', held: 1 };
   return plain && DIRS.has(k.key) ? { do: 'show', dir: k.key as JumpDir } : { do: 'release', held: 2 };
 }
+
+/** - 1-based line and column, as Monaco counts them */
+export interface TextPos { line: number; col: number }
+/** - one line the editor shows, by its model line number */
+export interface VisibleLine { line: number; text: string }
+
+const WORD_CHAR = /[\p{L}\p{N}_]/u;
+
+// - vim's `w` classes: 0 blank, 1 letters, digits and _, 2 any other non-blank character
+function charClass(ch: string): 0 | 1 | 2 {
+  if (/\s/.test(ch)) return 0;
+  return WORD_CHAR.test(ch) ? 1 : 2;
+}
+
+/** - 1-based columns where a word starts: a non-blank character whose class differs from the one before */
+function lineWordStarts(text: string): number[] {
+  const out: number[] = [];
+  let prev: 0 | 1 | 2 = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = charClass(text[i]);
+    if (c !== 0 && c !== prev) out.push(i + 1);
+    prev = c;
+  }
+  return out;
+}
+
+/**
+ * Word starts in `lines` (ascending line numbers) after the cursor (`forward`) or before it
+ * (`backward`), nearest first: document order outward from the cursor. A line's first non-blank
+ * character always starts a word.
+ */
+export function wordStarts(lines: readonly VisibleLine[], cursor: TextPos, dir: 'forward' | 'backward'): TextPos[] {
+  const all: TextPos[] = [];
+  for (const l of lines) for (const col of lineWordStarts(l.text)) all.push({ line: l.line, col });
+  if (dir === 'forward') return all.filter(p => p.line > cursor.line || (p.line === cursor.line && p.col > cursor.col));
+  return all.filter(p => p.line < cursor.line || (p.line === cursor.line && p.col < cursor.col)).reverse();
+}
+
+/**
+ * The first non-blank character of each line in `lines` (ascending) below (`down`) or above (`up`)
+ * the cursor's line, nearest first. A line with no non-blank character gives column 1.
+ */
+export function lineStarts(lines: readonly VisibleLine[], cursorLine: number, dir: 'down' | 'up'): TextPos[] {
+  const picked = lines.filter(l => (dir === 'down' ? l.line > cursorLine : l.line < cursorLine));
+  if (dir === 'up') picked.reverse();
+  return picked.map(l => {
+    const i = l.text.search(/\S/);
+    return { line: l.line, col: i < 0 ? 1 : i + 1 };
+  });
+}

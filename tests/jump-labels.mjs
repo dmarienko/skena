@@ -2,7 +2,7 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import {
-  DEFAULT_JUMP_LABELS, assignLabels, labelKey, leaderStep, matchKeys, normalizeLeader, vimKeyOf,
+  DEFAULT_JUMP_LABELS, assignLabels, labelKey, leaderStep, lineStarts, matchKeys, normalizeLeader, vimKeyOf, wordStarts,
 } from './.build/jumpLabels.mjs';
 
 const key = (k, mods = {}) => ({ key: k, ctrl: false, meta: false, alt: false, ...mods });
@@ -100,4 +100,45 @@ test('12. leader setting: exactly one character, else ;', () => {
   assert.equal(normalizeLeader(undefined), ';');
   assert.equal(vimKeyOf(';'), ';');
   assert.equal(vimKeyOf(' '), '<Space>');
+});
+
+// - lines 4-8 are on screen; the cursor is on line 5 at column 7 (the `b` of `bar`)
+//   col: 123456789012345
+const LINES = [
+  { line: 4, text: 'x = 1' },
+  { line: 5, text: '  foo.bar(baz_2)' },
+  { line: 6, text: '' },
+  { line: 7, text: '\tif (a)' },
+  { line: 8, text: '    ' },
+];
+const CURSOR = { line: 5, col: 7 };
+const at = (line, col) => ({ line, col });
+
+test('13. word starts after the cursor: runs of word characters and runs of other non-blanks, in document order', () => {
+  assert.deepEqual(wordStarts(LINES, CURSOR, 'forward'), [
+    at(5, 10), at(5, 11), at(5, 16),   // - `(`, `baz_2`, `)`
+    at(7, 2), at(7, 5), at(7, 6), at(7, 7),   // - `if`, `(`, `a`, `)`
+  ]);
+});
+
+test('14. word starts before the cursor, nearest first: the cursor word start itself is excluded', () => {
+  assert.deepEqual(wordStarts(LINES, CURSOR, 'backward'), [
+    at(5, 6), at(5, 3),   // - `.`, `foo`
+    at(4, 5), at(4, 3), at(4, 1),   // - `1`, `=`, `x`
+  ]);
+  assert.deepEqual(wordStarts(LINES, at(5, 8), 'backward')[0], at(5, 7));   // - mid-word: back to its start
+});
+
+test('15. letters outside ASCII are word characters', () => {
+  assert.deepEqual(wordStarts([{ line: 1, text: 'été+ça' }], at(1, 1), 'forward'), [at(1, 4), at(1, 5)]);
+});
+
+test('16. line starts below the cursor: first non-blank character, column 1 for an empty or blank line', () => {
+  assert.deepEqual(lineStarts(LINES, 5, 'down'), [at(6, 1), at(7, 2), at(8, 1)]);
+});
+
+test('17. line starts above the cursor, nearest first; the cursor line is never a target', () => {
+  assert.deepEqual(lineStarts(LINES, 5, 'up'), [at(4, 1)]);
+  assert.deepEqual(lineStarts(LINES, 8, 'up').map(p => p.line), [7, 6, 5, 4]);
+  assert.deepEqual(lineStarts(LINES, 4, 'up'), []);
 });
