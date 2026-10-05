@@ -340,6 +340,20 @@
           "description": "Max line length (in characters) for rendered markdown nodes — widening a node past this keeps a readable text column instead of reflowing full width. 0 = unlimited. Try ~88.",
           "scope": "window"
         },
+        "skena.vim.leader": {
+          "type": "string",
+          "default": ";",
+          "minLength": 1,
+          "maxLength": 1,
+          "description": "Leader key for jump labels, one key. Leader leader h/j/k/l labels the word starts (h/l) or line starts (j/k) on that side of the cursor in an editor's vim normal mode, and the visible nodes on that side of the focused node on the canvas; typing a label moves there. The leader followed by any other key keeps its own meaning (in an editor, ; repeats the last f/t).",
+          "scope": "window"
+        },
+        "skena.vim.jumpLabels": {
+          "type": "string",
+          "default": "asdfghjklqwertyuiopzxcvbnm",
+          "description": "Characters for jump labels, given to the nearest targets first. More targets than characters: the nearest keep one-character labels and the rest get two-character ones. The leader key is never used as a label.",
+          "scope": "window"
+        },
         "skena.jupyter.kernels": {
           "type": "array",
           "default": [],

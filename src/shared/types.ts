@@ -506,6 +506,7 @@ export type HostToWebview =
   | MsgAgentNodeCreated
   | MsgSearchResults
   | MsgMarkdownConfig
+  | MsgVimConfig
   | MsgAddNodeResult
   | MsgAddNodeTrigger
   | MsgAddTextNodeTrigger
@@ -1011,6 +1012,17 @@ export interface MarkdownConfig {
 export interface MsgMarkdownConfig {
   type:   'markdownConfig';
   config: MarkdownConfig;
+}
+
+/** - skena.vim.*: the jump-label leader key and the label characters, as set (the webview checks them) */
+export interface VimConfig {
+  leader:     string;   // - skena.vim.leader
+  jumpLabels: string;   // - skena.vim.jumpLabels
+}
+
+export interface MsgVimConfig {
+  type:   'vimConfig';
+  config: VimConfig;
 }
 
 // ─── LOD ─────────────────────────────────────────────────────────────────────

@@ -19,6 +19,7 @@ import { HostToWebview, MarkdownConfig, ChatToolEvent, ChatTokenUsage } from '..
 import { MarkdownConfigContext, DEFAULT_MARKDOWN_CONFIG } from './context/MarkdownConfigContext';
 import { warmCodeHighlighter } from './lib/codeHighlight';
 import { installThemeVars } from './theme';
+import { setVimSettings } from './canvas/vimSettings';
 
 type VsCodeApi = { postMessage: (msg: unknown) => void };
 
@@ -153,6 +154,9 @@ export function App(): JSX.Element {
           styleUrlsRef.current = urls;
           break;
         }
+        case 'vimConfig':
+          setVimSettings(msg.config);
+          break;
         case 'fileContent':
         case 'fileError':
           window.dispatchEvent(new CustomEvent('skena:fileResponse', { detail: msg }));

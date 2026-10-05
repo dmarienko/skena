@@ -20,7 +20,7 @@ import { VaultIndexer } from './vault-indexer';
 import { FileWatcher } from './file-watcher';
 import { parseNotebook } from './notebook-parser';
 import { renderMarkdownToHtml } from './markdown-html';
-import { getVaults, getKnowledgeServers, getKnowledgeRefreshAfterHours } from './settings';
+import { getVaults, getKnowledgeServers, getKnowledgeRefreshAfterHours, getVimConfig } from './settings';
 import { KnowledgeService } from './knowledge/service';
 import { createLLMClient, CANVAS_TOOLS, ILLMClient } from './llm-client';
 import { buildSystemPrompt, buildStaticSystemPrompt, buildCanvasContext, nodeTitle, nodeContent } from './context-builder';
@@ -280,6 +280,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             } catch {
               this.knowledge.configure([]);
             }
+            // - the jump-label keys, before the canvas can take a key
+            send({ type: 'vimConfig', config: getVimConfig() });
             send({ type: 'canvasLoaded', canvas, canvasPath: document.uri.fsPath, refPath: this.refPathFor(document) });
             // - a cross-canvas reference opened this canvas — focus its target now that the webview
             // - has parsed it (document.canvas isn't ready any earlier than this)
@@ -766,6 +768,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         void getVaults().then(v => resolver.updateVaults(v));
       }
       if (e.affectsConfiguration('skena.jupyter.kernels')) manager.reloadConfig();
+      // - the editors and the canvas use new jump-label keys from the next key on
+      if (e.affectsConfiguration('skena.vim')) send({ type: 'vimConfig', config: getVimConfig() });
     });
     // - VS Code reports no configuration change for settings.local.json, which can hold the kernel list
     const localSettingsWatcher = vscode.workspace.createFileSystemWatcher('**/.vscode/settings.local.json');

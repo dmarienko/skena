@@ -22,7 +22,7 @@
 import * as vscode from 'vscode';
 import * as fs     from 'fs/promises';
 import * as path   from 'path';
-import { VaultConfig } from '../shared/types';
+import { VaultConfig, VimConfig } from '../shared/types';
 import type { KnowledgeServerConfig } from '../shared/knowledge/types';
 import type { SettingsRead } from './jupyter/config';
 import { parseSettingsJson } from './settingsJson';
@@ -145,4 +145,13 @@ export async function getKnowledgeRefreshAfterHours(): Promise<number> {
     ?? vscode.workspace.getConfiguration('skena').get<number>('knowledge.refreshAfterHours');
 
   return typeof v === 'number' && v >= 0 ? v : 24;
+}
+
+/** - skena.vim.* for the webview: the jump-label leader key and the label characters, as set */
+export function getVimConfig(): VimConfig {
+  const cfg = vscode.workspace.getConfiguration('skena.vim');
+  return {
+    leader:     cfg.get<string>('leader') ?? ';',
+    jumpLabels: cfg.get<string>('jumpLabels') ?? 'asdfghjklqwertyuiopzxcvbnm',
+  };
 }
