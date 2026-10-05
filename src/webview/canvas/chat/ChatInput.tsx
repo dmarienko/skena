@@ -8,6 +8,7 @@ import {
 } from './chatClipboard';
 import { INPUT_LINE_H, inputHeight } from './consoleLayout';
 import { ensureCanvasWordCompletion } from '../canvasWordCompletion';
+import { installJumpLabels } from '../editorJumpLabels';
 
 export interface ChatInputHandle {
   focus:  () => void;
@@ -198,9 +199,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(p
       propsRef.current.onEmptyChange(isEmpty);
     });
 
-    vimRef.current = initVimMode(editor, null) as { dispose: () => void };
+    const vim = initVimMode(editor, null);
+    vimRef.current = vim;
     // - track the vim mode so Shift+H/J/K/L scroll only outside insert mode
-    (vimRef.current as unknown as { on?: (ev: string, cb: (e: { mode: string }) => void) => void })
+    (vim as unknown as { on?: (ev: string, cb: (e: { mode: string }) => void) => void })
       .on?.('vim-mode-change', ev => { vimModeRef.current = ev.mode; });
     patchVimNewlineAndIndent();
     patchVimLastLine();
@@ -210,6 +212,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(p
     patchVimDeleteLastLine();
     applyVimClipboard();
     bindSuggestNav(editor, monaco);
+    installJumpLabels(editor, vim);
 
     editor.onDidFocusEditorText(() => {
       // - a node editor may have taken the vim registers while it had focus; take them back

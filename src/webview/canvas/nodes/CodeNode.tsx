@@ -23,6 +23,7 @@ import { useKernels } from '../KernelsContext';
 import { G_BADGES_ATTR } from '../gChord';
 import { ScrollableContent, setScrollPosition } from '../../components/ScrollableContent';
 import { applyVimClipboard, patchVimNewlineAndIndent, patchVimLastLine, patchVimBlockCursorBlink, patchVimVisualCursor, patchVimExternalSelection, patchVimDeleteLastLine, patchVimJoin, bindSuggestNav } from './TextNode';
+import { installJumpLabels } from '../editorJumpLabels';
 import { ensureKernelCompletion, setActiveCodeCell } from './kernelCompletion';
 import {
   CodeCellPreview, firstGlyphRect, previewGuides, previewLineRects, textContentRect, whenPythonTokenizerReady,
@@ -351,7 +352,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
 
     bindSuggestNav(editorInstance, monacoInstance);
     // - vim mode (same editor experience as text nodes); status bar shows the mode
-    initVimMode(editorInstance, vimStatusRef.current ?? undefined);
+    const vimMode = initVimMode(editorInstance, vimStatusRef.current ?? undefined);
     // - wire vim y/p to the host clipboard relay (webview sandbox blocks navigator.clipboard);
     // - MUST run after initVimMode (which can recreate the register controller). Also patch
     // - vim o/O newline. Both operate on monaco-vim's global singleton.
@@ -363,6 +364,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     patchVimExternalSelection();
     patchVimDeleteLastLine();
     patchVimJoin(editorInstance, vimStatusRef.current);
+    installJumpLabels(editorInstance, vimMode);
     if (savedViewState.current) editorInstance.restoreViewState(savedViewState.current);
     // - the preview is still on screen over the editor; start at its scroll offset (it shares the
     // - editor's font and line height, so the offsets map 1:1) so nothing moves when it goes

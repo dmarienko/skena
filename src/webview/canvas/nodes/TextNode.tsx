@@ -41,6 +41,7 @@ import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './n
 import { nodeBorderColor } from '../palette';
 import { stripForHost, rememberWritten, classifyHostText } from '../vimClipboard';
 import { ensureCanvasWordCompletion } from '../canvasWordCompletion';
+import { installJumpLabels } from '../editorJumpLabels';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -865,6 +866,7 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
     patchVimDeleteLastLine();
     patchVimJoin(editorInstance, vimStatusRef.current);
     bindSuggestNav(editorInstance, monacoInstance);
+    installJumpLabels(editorInstance, vimMode);
 
     // ─── vim mode tracking via MutationObserver ──────────────────────────────
     //
