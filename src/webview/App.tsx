@@ -114,6 +114,8 @@ export function App(): JSX.Element {
       const href = a.getAttribute('href');   // - raw href, not the browser-resolved URL
       if (!href) return;
       e.preventDefault();
+      // - VS Code's webview listener on window (pre/index.html handleInnerClick) would open it again
+      e.stopPropagation();
       (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']
         ?.postMessage({ type: 'openFile', uri: href });
     };

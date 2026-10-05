@@ -99,6 +99,9 @@ function MarkdownRendererInner({ content, baseUri }: MarkdownRendererProps): JSX
         href={href}
         onClick={e => {
           e.preventDefault();
+          // - VS Code's own webview click listener on window opens every <a href> clicked and does
+          //   not check defaultPrevented; only stopping the event keeps a link from opening twice
+          e.stopPropagation();
           if (href) {
             (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage({ type: 'openFile', uri: href });
           }
