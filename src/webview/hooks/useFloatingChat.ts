@@ -6,6 +6,7 @@ import { ChatAttachment, mergeAttachments, removeAttachment as withoutAttachment
 import { applyToolEvent, flushPendingText, migrateHistory } from '../canvas/chat/chatTimeline';
 import { NODE_ADDED_PREFIX, addToTurn, noteAddedLine } from '../canvas/chat/chatTurns';
 import { DEFAULT_CONSOLE_WIDTH } from '../canvas/chat/consoleLayout';
+import { inJumpLabels } from '../canvas/editorJumpLabels';
 
 // - a node the agent added (its note's text), or the one the user's ＋ canvas added from a turn
 export type NodeAdded = { note: string } | { turnKey: string; label: string; id: string };
@@ -58,6 +59,7 @@ export function useFloatingChat(postMessage: (msg: unknown) => void) {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (inJumpLabels(e)) return;
       // - key or code: some layouts send a dead key for Alt+`
       if (e.altKey && (e.key === '`' || e.code === 'Backquote')) {
         e.preventDefault();

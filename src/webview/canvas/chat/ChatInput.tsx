@@ -8,7 +8,7 @@ import {
 } from './chatClipboard';
 import { INPUT_LINE_H, inputHeight } from './consoleLayout';
 import { ensureCanvasWordCompletion } from '../canvasWordCompletion';
-import { installJumpLabels } from '../editorJumpLabels';
+import { inJumpLabels, installJumpLabels } from '../editorJumpLabels';
 
 export interface ChatInputHandle {
   focus:  () => void;
@@ -71,6 +71,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(p
   // - Ctrl+Enter in the capture phase: Monaco's addCommand drops other bindings once Ctrl+V and Ctrl+C are bound
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (inJumpLabels(e)) return;
       if (!(e.ctrlKey || e.metaKey) || e.key !== 'Enter') return;
       if (!editorRef.current?.hasTextFocus()) return;
       e.preventDefault();
@@ -84,6 +85,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(p
   // - Alt+I moves focus between the input and the canvas; the capture phase runs before Monaco
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (inJumpLabels(e)) return;
       if (!e.altKey || e.key.toLowerCase() !== 'i') return;
       e.preventDefault();
       e.stopPropagation();
@@ -123,6 +125,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(p
   // - Monaco binds Alt+L to find-in-selection and swallows it; send VS Code's navigateRight instead
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (inJumpLabels(e)) return;
       if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
       if (e.key.toLowerCase() !== 'l') return;
       if (!editorRef.current?.hasTextFocus()) return;
@@ -137,6 +140,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(p
   // - Shift+H/J/K/L scroll the conversation from vim normal mode; the capture phase runs before vim's J/H/L
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (inJumpLabels(e)) return;
       if (!e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
       if (!['H', 'J', 'K', 'L'].includes(e.key)) return;
       if (!editorRef.current?.hasTextFocus() || vimModeRef.current !== 'normal') return;

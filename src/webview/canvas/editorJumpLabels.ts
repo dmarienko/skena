@@ -17,6 +17,15 @@ const Vim = (VimMode as unknown as { Vim: { handleKey(cm: unknown, key: string):
 
 const STYLE_ID = 'skena-jump-labels';
 
+// - set on an editor's container while its labels are shown or it holds a leader. A keydown listener
+//   on window in the capture phase runs before the container's, so it has to leave such a key alone.
+export const JUMP_LABELS_ATTR = 'data-skena-jump-labels';
+
+/** - the key was typed in an editor whose labels are shown or that holds a leader */
+export function inJumpLabels(e: Event): boolean {
+  return e.target instanceof Element && e.target.closest(`[${JUMP_LABELS_ATTR}]`) !== null;
+}
+
 function vimState(vim: VimAdapterInstance): VimState | null {
   return (vim as unknown as { state: { vim?: VimState | null } }).state.vim ?? null;
 }
@@ -58,15 +67,16 @@ function visibleLines(editor: MonacoEditor.IStandaloneCodeEditor): VisibleLine[]
   return out;
 }
 
-// - the targets drawn inside the text area, in the order given. A line that does not wrap (code cells)
-//   can have word starts scrolled off to the left or right; those get no label.
+// - the targets drawn inside the text area, in the order given, on lines shown whole. A line that does
+//   not wrap (code cells) can have word starts scrolled off to the left or right; those get no label.
 function onScreen(editor: MonacoEditor.IStandaloneCodeEditor, targets: TextPos[]): TextPos[] {
-  const { contentLeft, contentWidth, verticalScrollbarWidth, height } = editor.getLayoutInfo();
-  // - contentWidth includes the vertical scrollbar (computeLayout in editorOptions.js)
+  const { contentLeft, contentWidth, verticalScrollbarWidth, height, horizontalScrollbarHeight } = editor.getLayoutInfo();
+  // - contentWidth includes the vertical scrollbar and height the horizontal one (computeLayout in editorOptions.js)
   const right = contentLeft + contentWidth - verticalScrollbarWidth;
+  const bottom = height - horizontalScrollbarHeight;
   return targets.filter(t => {
     const p = editor.getScrolledVisiblePosition({ lineNumber: t.line, column: t.col });
-    return !!p && p.left >= contentLeft && p.left < right && p.top + p.height > 0 && p.top < height;
+    return !!p && p.left >= contentLeft && p.left < right && p.top >= 0 && p.top + p.height <= bottom;
   });
 }
 
@@ -93,8 +103,11 @@ function targetsFor(dir: JumpDir, lines: VisibleLine[], cursor: TextPos): TextPo
  */
 export function installJumpLabels(editor: MonacoEditor.IStandaloneCodeEditor, vim: VimAdapterInstance): void {
   const decorations = editor.createDecorationsCollection();
+  const node = editor.getContainerDomNode();
   let held: LeaderState = 0;
   let shown: { labels: string[]; targets: TextPos[]; typed: string } | null = null;
+
+  const mark = () => node.toggleAttribute(JUMP_LABELS_ATTR, held !== 0 || shown !== null);
 
   // - an empty span before the target character; its ::after draws the label over the character(s)
   //   (canvas.css), so no text moves
@@ -109,9 +122,11 @@ export function installJumpLabels(editor: MonacoEditor.IStandaloneCodeEditor, vi
 
   const hide = () => {
     held = 0;
-    if (!shown) return;
-    shown = null;
-    decorations.clear();
+    if (shown) {
+      shown = null;
+      decorations.clear();
+    }
+    mark();
   };
 
   const show = (dir: JumpDir) => {
@@ -137,7 +152,7 @@ export function installJumpLabels(editor: MonacoEditor.IStandaloneCodeEditor, vi
     }
   };
 
-  const onKeyDown = (e: KeyboardEvent) => {
+  const readKey = (e: KeyboardEvent) => {
     const k = { key: e.key, ctrl: e.ctrlKey, meta: e.metaKey, alt: e.altKey };
     if (shown) {
       // - every key is the labels' while they are shown: Monaco, vim and the node never see it
@@ -163,7 +178,11 @@ export function installJumpLabels(editor: MonacoEditor.IStandaloneCodeEditor, vi
     if (step.do === 'release') {
       // - the held leaders run as vim's own key (; repeats the last f/t), then this key goes on to vim
       held = 0;
-      for (let i = 0; i < step.held; i++) Vim.handleKey(vim, vimKeyOf(leader));
+      try {
+        for (let i = 0; i < step.held; i++) Vim.handleKey(vim, vimKeyOf(leader));
+      } catch {
+        // - the command findKey returns (keymap_vim.ts) resets vim's state and logs the error before rethrowing it
+      }
       return;
     }
     e.preventDefault();
@@ -173,7 +192,11 @@ export function installJumpLabels(editor: MonacoEditor.IStandaloneCodeEditor, vi
     show(step.dir);
   };
 
-  const node = editor.getContainerDomNode();
+  const onKeyDown = (e: KeyboardEvent) => {
+    readKey(e);
+    mark();
+  };
+
   node.addEventListener('keydown', onKeyDown, { capture: true });
   const subs = [
     editor.onDidBlurEditorText(hide),
@@ -182,6 +205,7 @@ export function installJumpLabels(editor: MonacoEditor.IStandaloneCodeEditor, vi
   ];
   editor.onDidDispose(() => {
     node.removeEventListener('keydown', onKeyDown, { capture: true });
+    node.removeAttribute(JUMP_LABELS_ATTR);
     subs.forEach(d => d.dispose());
   });
 }
