@@ -1,9 +1,10 @@
-import { memo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import { ChatItem } from '../../../shared/types';
+import { normalizeMath } from '../../../shared/mathDelims';
 import { useHostMarkdown } from '../../hooks/useHostMarkdown';
 import { useHighlightedHtml } from '../../lib/codeHighlight';
 import { ChatTurn, clockTime, firstLine, noteAddedLabel, turnAnswer, turnCost } from './chatTurns';
@@ -167,6 +168,7 @@ function ThinkingStep({ content }: { content: string }): JSX.Element {
 const AnswerText = memo(function AnswerText({ content, streaming = false }: { content: string; streaming?: boolean }): JSX.Element {
   const hostHtml  = useHostMarkdown(streaming ? '' : content);
   const shownHtml = useHighlightedHtml(hostHtml);
+  const mdContent = useMemo(() => normalizeMath(content), [content]);
   return (
     <div className="cc-reply">
       {hostHtml !== null ? (
@@ -176,7 +178,7 @@ const AnswerText = memo(function AnswerText({ content, streaming = false }: { co
           remarkPlugins={[remarkGfm, remarkMath]}
           rehypePlugins={[[rehypeKatex, { output: 'mathml', throwOnError: false }]]}
         >
-          {content}
+          {mdContent}
         </ReactMarkdown>
       )}
       {streaming && <span className="cc-caret" />}

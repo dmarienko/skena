@@ -22,7 +22,7 @@ import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
 import { useFileContent } from '../hooks/useFileContent';
 import { useMarkdownConfig } from '../context/MarkdownConfigContext';
-import { normalizeMathDelimiters } from '../../shared/mathDelims';
+import { normalizeMath } from '../../shared/mathDelims';
 
 interface MarkdownRendererProps {
   content: string;
@@ -122,8 +122,8 @@ function MarkdownRendererInner({ content, baseUri }: MarkdownRendererProps): JSX
   if (fontSize)   fontStyle.fontSize   = fontSize;
 
   // - rewrite \(…\) / \[…\] LaTeX delimiters to $ / $$ so remark-math renders them (papers exported
-  //   without dollar signs)
-  const mdContent = useMemo(() => normalizeMathDelimiters(content), [content]);
+  //   without dollar signs), and put a display $$ glued to text on its own line
+  const mdContent = useMemo(() => normalizeMath(content), [content]);
 
   return (
     <div className="skena-markdown" style={fontStyle}>

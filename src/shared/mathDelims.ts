@@ -28,3 +28,172 @@ export function normalizeMathDelimiters(md: string): string {
 
   return converted.replace(new RegExp(`${NUL}(\\d+)${NUL}`, 'g'), (_, i) => codeSpans[Number(i)]);
 }
+
+// - `s`: a line split from a CRLF text ends in \r, which `.` would not match
+const FENCE_OPEN  = /^[ \t]*(`{3,}|~{3,})(.*)$/s;
+const FENCE_CLOSE = /^[ \t]*(`{3,}|~{3,})\s*$/;
+// - remark-math opens a $$ block on a line of up to 3 spaces, a run of two or more `$` and a rest with
+//   no `$` (the rest is dropped), and closes it only on a line that is a run at least as long
+const MATH_OPEN   = /^( {0,3})(\${2,})([^$]*)$/;
+const LEADING_RUN = /^( {0,3})(\$+)(.*)$/s;
+const HEADING     = /^ {0,3}#{1,6}(?:[ \t]|$)/;
+const LIST_ITEM   = /^ {0,3}(?:[-+*]|\d{1,9}[.)])(?:[ \t]|$)/;
+const QUOTE       = /^ {0,3}>/;
+const BREAK       = /^ {0,3}([-*_])(?:[ \t]*\1){2,}\s*$/;
+const INDENTED    = /^(?: {4}|\t)/;
+
+const isBlank = (line: string): boolean => line.trim() === '';
+
+function fenceOpen(line: string): RegExpExecArray | null {
+  const f = FENCE_OPEN.exec(line);
+  // - a backtick fence's info string has no backtick: ```x``` on one line is inline code
+  return f && !(f[1][0] === '`' && f[2].includes('`')) ? f : null;
+}
+
+const endsParagraph = (line: string): boolean =>
+  isBlank(line) || MATH_OPEN.test(line) || fenceOpen(line) !== null || line.trim() === '%%' ||
+  HEADING.test(line) || LIST_ITEM.test(line) || QUOTE.test(line) || BREAK.test(line);
+
+// - the run of `$` that ends a line, trailing whitespace aside; a first `$` escaped by a backslash is
+//   not part of it
+function trailingRun(line: string): { before: string; run: string; after: string } | null {
+  const m = /^(.*?)(\$+)(\s*)$/s.exec(line);
+  if (!m) return null;
+  let [, before, run] = m;
+  if (/(?:^|[^\\])(?:\\\\)*\\$/.test(before)) { before += '$'; run = run.slice(1); }
+  return run.length >= 2 ? { before, run, after: m[3] } : null;
+}
+
+// - the `$` runs of a paragraph that remark-math leaves as plain text: a run pairs with the next run of
+//   the same length and the runs between are inside that math. An escaped `$` and code are no run.
+function unpairedRuns(text: string): { at: number; size: number }[] {
+  const t = text.replace(/(`+)[\s\S]*?[^`]\1(?!`)/g, m => m.replace(/[^\n]/g, '_'));
+  const runs: { at: number; size: number }[] = [];
+  for (let k = 0; k < t.length; k++) {
+    if (t[k] !== '$') continue;
+    let slashes = 0;
+    while (t[k - 1 - slashes] === '\\') slashes++;
+    if (slashes % 2 === 1) continue;
+    let e = k;
+    while (t[e] === '$') e++;
+    runs.push({ at: k, size: e - k });
+    k = e - 1;
+  }
+  const unpaired: typeof runs = [];
+  for (let r = 0; r < runs.length; r++) {
+    let c = r + 1;
+    while (c < runs.length && runs[c].size !== runs[r].size) c++;
+    if (c < runs.length) r = c;
+    else unpaired.push(runs[r]);
+  }
+  return unpaired;
+}
+
+// - the paragraph starting at line `from`: the first line after it, and the line whose last `$` run
+//   opens a $$ block, -1 when none does. That is a run of two or more `$` that remark-math leaves
+//   unpaired, the only such run in the paragraph, ending a line after some text, when the line after
+//   the paragraph is a run at least as long. remark-math reads that line as opening a block, so every
+//   later $$ pairs with the wrong one.
+function paragraphAt(lines: string[], from: number): { end: number; opensAt: number } {
+  const first = lines[from];
+  let end = from + 1;
+  if (!HEADING.test(first)) while (end < lines.length && !endsParagraph(lines[end])) end++;
+  const none = { end, opensAt: -1 };
+  const close = end < lines.length ? MATH_OPEN.exec(lines[end]) : null;
+  // - a quote's closing line would carry a `>`; an indented first line is code or a list item's text
+  if (!close || HEADING.test(first) || QUOTE.test(first) || INDENTED.test(first)) return none;
+  const text = lines.slice(from, end).join('\n');
+  const runs = unpairedRuns(text).filter(r => r.size >= 2);
+  if (runs.length !== 1 || runs[0].size > close[2].length) return none;
+  const { at, size } = runs[0];
+  const lineStart = text.lastIndexOf('\n', at) + 1;
+  const lineEnd = text.indexOf('\n', at) === -1 ? text.length : text.indexOf('\n', at);
+  if (!isBlank(text.slice(at + size, lineEnd)) || isBlank(text.slice(lineStart, at))) return none;
+  return { end, opensAt: from + text.slice(0, at).split('\n').length - 1 };
+}
+
+/**
+ * Put a `$$` that opens or closes a display block on a line of its own when text is glued to it, so
+ * remark-math pairs every `$$` as written: `text$$` opening a block, and `text$$` or `$$text`
+ * closing one, become `text` and `$$` on two lines; `$$text` opening a block (remark-math drops the
+ * text) becomes `$$` and `text`. A `$$a$$` on one line, `$` math, `\$`, code and %% Typst blocks are
+ * left as they are. Applying it twice gives what applying it once does.
+ */
+export function normalizeDisplayMath(md: string): string {
+  if (!md.includes('$$')) return md;
+  const lines = md.split('\n');
+  // - a %% line opens a Typst block only when a later %% line closes it (markdown-html.ts)
+  let lastTypst = -1;
+  for (let k = lines.length - 1; k >= 0 && lastTypst < 0; k--) if (lines[k].trim() === '%%') lastTypst = k;
+  const out: string[] = [];
+  let fence: { char: string; size: number } | null = null;
+  let typst = false;
+  let math = 0;          // - length of the run that opened the $$ block being read, 0 outside one
+  let mathIndent = '';
+  let paraEnd = -1;      // - the first line after the paragraph being read
+  let opensAt = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (fence) {
+      out.push(line);
+      const m = FENCE_CLOSE.exec(line);
+      if (m && m[1][0] === fence.char && m[1].length >= fence.size) fence = null;
+      continue;
+    }
+    if (typst) {
+      out.push(line);
+      if (line.trim() === '%%') typst = false;
+      continue;
+    }
+    if (math) {
+      const lead = LEADING_RUN.exec(line);
+      if (lead && lead[2].length >= math) {
+        math = 0;
+        if (isBlank(lead[3])) { out.push(line); continue; }
+        // - the text after the closing run is read again as the line after the block
+        out.push(lead[1] + lead[2]);
+        lines[i--] = lead[1] + lead[3].trimStart();
+        continue;
+      }
+      const t = trailingRun(line);
+      if (t && t.run.length >= math && !isBlank(t.before)) {
+        out.push(t.before.trimEnd(), mathIndent + t.run + t.after);
+        math = 0;
+        continue;
+      }
+      out.push(line);
+      continue;
+    }
+    if (isBlank(line)) { out.push(line); paraEnd = -1; continue; }
+    const f = fenceOpen(line);
+    if (f) { fence = { char: f[1][0], size: f[1].length }; out.push(line); paraEnd = -1; continue; }
+    if (line.trim() === '%%' && i < lastTypst) { typst = true; out.push(line); paraEnd = -1; continue; }
+    const open = MATH_OPEN.exec(line);
+    if (open) {
+      math = open[2].length;
+      mathIndent = open[1];
+      if (isBlank(open[3])) out.push(line);
+      else out.push(open[1] + open[2], open[1] + open[3].trimStart());
+      paraEnd = -1;
+      continue;
+    }
+    if (i >= paraEnd) ({ end: paraEnd, opensAt } = paragraphAt(lines, i));
+    if (i === opensAt) {
+      const t = trailingRun(line)!;
+      mathIndent = MATH_OPEN.exec(lines[paraEnd])![1];
+      out.push(t.before.trimEnd(), mathIndent + t.run + t.after);
+      math = t.run.length;
+      continue;
+    }
+    out.push(line);
+  }
+  return out.join('\n');
+}
+
+/**
+ * The math preparation every markdown renderer applies before remark-math: LaTeX delimiters to `$`,
+ * then display `$$` on lines of their own. Applying it twice gives what applying it once does.
+ */
+export function normalizeMath(md: string): string {
+  return normalizeDisplayMath(normalizeMathDelimiters(md));
+}

@@ -17,6 +17,7 @@ import { nodeBorderColor } from '../palette';
 import { sanitizeHtmlAttrs } from './knowledgeHtml';
 import { useKnowledgeAssets } from '../knowledgeAssets';
 import { chunkEnd, definitionsAfter } from '../textWindow';
+import { normalizeMath } from '../../../shared/mathDelims';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -74,20 +75,23 @@ export function KnowledgeNodeComponent({ data, id, selected }: NodeProps): JSX.E
   //   the text is rendered, cut at a block boundary, and it grows as the reader scrolls toward its
   //   end. The definitions after the cut go along so the footnote references in it still render.
   const step = stepChars(node.width, node.height);
-  const [win, setWin] = useState(() => ({ text: node.text, end: chunkEnd(node.text, 0, step) }));
+  // - the cuts are read on the text the renderers parse: they normalize math the same way, and a
+  //   second pass over normalized text changes nothing
+  const text = useMemo(() => normalizeMath(node.text), [node.text]);
+  const [win, setWin] = useState(() => ({ text, end: chunkEnd(text, 0, step) }));
   let end = win.end;
-  if (win.text !== node.text) {
+  if (win.text !== text) {
     // - a refresh brought new text: keep at least as much of it rendered, so the scroll offset holds
-    end = chunkEnd(node.text, 0, Math.max(step, win.end));
-    setWin({ text: node.text, end });
+    end = chunkEnd(text, 0, Math.max(step, win.end));
+    setWin({ text, end });
   }
-  const whole = end >= node.text.length;
+  const whole = end >= text.length;
   const windowText = useMemo(
-    () => (whole ? node.text : `${node.text.slice(0, end)}\n\n${definitionsAfter(node.text, end)}`),
-    [node.text, end, whole],
+    () => (whole ? text : `${text.slice(0, end)}\n\n${definitionsAfter(text, end)}`),
+    [text, end, whole],
   );
   // - routed by the whole text, so every window takes the renderer the whole text would
-  const host      = useHostMarkdownOf(windowText, node.text);
+  const host      = useHostMarkdownOf(windowText, text);
   const hostHtml  = host.html;
   const shownHtml = useHighlightedHtml(hostHtml);
   // - the images the text refers to by the server's uri; the host fetches them, these two put the
@@ -123,7 +127,7 @@ export function KnowledgeNodeComponent({ data, id, selected }: NodeProps): JSX.E
     // - characters per rendered pixel so far: a far target (a saved offset) is reached in one step
     const perPx = end / Math.max(1, el.scrollHeight);
     growing.current = true;
-    setWin({ text: node.text, end: chunkEnd(node.text, end, Math.max(step, Math.ceil((need - el.scrollHeight) * perPx))) });
+    setWin({ text, end: chunkEnd(text, end, Math.max(step, Math.ceil((need - el.scrollHeight) * perPx))) });
   };
   const growRef = useRef(grow);
   growRef.current = grow;
@@ -146,8 +150,8 @@ export function KnowledgeNodeComponent({ data, id, selected }: NodeProps): JSX.E
 
   // - the share of the text rendered: CanvasView scales the chat context's "scrolled ~N% down" by it
   useLayoutEffect(() => {
-    if (scrollRef.current) scrollRef.current.dataset.shown = whole ? '1' : (end / node.text.length).toFixed(3);
-  }, [end, whole, node.text.length]);
+    if (scrollRef.current) scrollRef.current.dataset.shown = whole ? '1' : (end / text.length).toFixed(3);
+  }, [end, whole, text.length]);
 
   return (
     <>
