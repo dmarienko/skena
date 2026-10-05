@@ -60,6 +60,9 @@ import { EdgeFollowHints, type EdgeHint, type ShownHints } from './EdgeFollowHin
 import { cardContent, type CardContent } from './cardContent';
 import { loadedFileText } from '../hooks/useFileContent';
 import { G_BADGES_ATTR, gChordStep } from './gChord';
+import { JumpTags, type ShownTags } from './JumpTags';
+import { assignLabels, labelKey, leaderStep, nodesInDirection, type JumpDir, type LeaderState } from './jumpLabels';
+import { vimSettings } from './vimSettings';
 import { SectionRail, type RailKernel } from '../rail/SectionRail';
 import { fmtDateTime } from '../rail/RailSegment';
 import { refTitle } from '../../shared/nodeRef';
@@ -548,6 +551,27 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
   }, [gShown, closeG]);
   // - a canvas switch drops the armed chord and its badges
   useEffect(() => closeG, [canvasPath, closeG]);
+  // - leader leader h/j/k/l: the leader presses held back so far (the keydown handler), and the tags
+  //   on screen with the node each label leads to (jumpCapture reads the keys while they are shown)
+  const leaderHeldRef = useRef<LeaderState>(0);
+  const jumpRef       = useRef<{ labels: string[]; ids: string[]; typed: string } | null>(null);
+  const [jumpShown, setJumpShown] = useState<ShownTags | null>(null);
+  // - drop the tags and a held leader. G_BADGES_ATTR is set while the tags are shown, so a code
+  //   cell's own key listener leaves the keys to them.
+  const closeJump = useCallback(() => {
+    leaderHeldRef.current = 0;
+    jumpRef.current = null;
+    document.documentElement.removeAttribute(G_BADGES_ATTR);
+    setJumpShown(null);
+  }, []);
+  // - a click anywhere closes the tags; the click itself goes on as usual
+  useEffect(() => {
+    if (jumpShown === null) return;
+    window.addEventListener('pointerdown', closeJump, { capture: true });
+    return () => window.removeEventListener('pointerdown', closeJump, { capture: true });
+  }, [jumpShown, closeJump]);
+  // - a canvas switch drops the tags and a held leader
+  useEffect(() => closeJump, [canvasPath, closeJump]);
   const [marksOpen, setMarksOpen] = useState(false);
   // - mirrored so the stable document-level paste listener sees panel state without re-subscribing
   const panelOpenRef = useRef(false);
@@ -2564,6 +2588,50 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       return true;
     };
 
+    // - leader leader h/j/k/l: a tag on every visible node whose centre is on that side of the focused
+    //   node's centre (the view's centre with nothing focused), nearest first. Visible: overlapping the
+    //   part of the pane above the chat console, not in a folded section. Groups are never React Flow
+    //   nodes (toFlowNodes), so they need no filter here.
+    const showJumpTags = (dir: JumpDir) => {
+      if (!wrapperRef.current) return;
+      const area = paneArea(wrapperRef.current);
+      const { x: vx, y: vy, zoom } = rfRef.current.getViewport();
+      const view: Rect = {
+        left: (area.left - vx) / zoom, top: (area.top - vy) / zoom,
+        right: (area.right - vx) / zoom, bottom: (area.bottom - vy) / zoom,
+      };
+      const from = focusedNode();
+      const f = from ? toNav(from) : null;
+      const origin = f
+        ? { x: f.x + f.w / 2, y: f.y + f.h / 2 }
+        : { x: (view.left + view.right) / 2, y: (view.top + view.bottom) / 2 };
+      const navs = nodesRef.current.filter(n => !hiddenByFoldRef.current.has(n.id)).map(toNav);
+      const near = nodesInDirection(navs, origin, view, dir);
+      const { leader, jumpLabels } = vimSettings();
+      const labels = assignLabels(near.length, jumpLabels, leader);
+      if (labels.length === 0) return;
+      const targets = near.slice(0, labels.length);
+      jumpRef.current = { labels, ids: targets.map(n => n.id), typed: '' };
+      document.documentElement.setAttribute(G_BADGES_ATTR, '1');
+      setJumpShown({ tags: targets.map((n, i) => ({ id: n.id, label: labels[i], x: n.x, y: n.y })), typed: '' });
+    };
+
+    // - a key while the tags are shown: a whole label focuses its node as h/j/k/l would, a first
+    //   character keeps the tags that start with it, Esc or any other key closes them and does nothing else
+    const readJumpKey = (e: KeyboardEvent) => {
+      const shown = jumpRef.current;
+      if (!shown) return;
+      const m = labelKey(shown.labels, shown.typed, { key: e.key, ctrl: e.ctrlKey, meta: e.metaKey, alt: e.altKey });
+      if (m.kind === 'ignore') return;
+      if (m.kind === 'narrow') {
+        jumpRef.current = { ...shown, typed: m.prefix };
+        setJumpShown(s => (s ? { ...s, typed: m.prefix } : s));
+        return;
+      }
+      closeJump();
+      if (m.kind === 'jump') focusNodeById(shown.ids[m.index]);
+    };
+
     // - the section the keys act on: the focused node's, or — after a fold dropped the selection —
     //   the one holding the node focused last
     const currentLane = () => {
@@ -2693,7 +2761,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       }
 
       // - don't intercept while user is typing in Monaco, an input, or textarea
-      if (inField) return;
+      if (inField) { leaderHeldRef.current = 0; return; }
 
       // ── vim marks: consume second key of m{x} / `{x} sequence ──────────────
       if (pendingMarkRef.current !== null) {
@@ -2737,6 +2805,13 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       //   g goes to the section top, any other key cancels the chord and is then handled normally,
       //   so plain h still navigates left
       if (readGKey(e)) return;
+
+      // - leader leader h/j/k/l shows the jump tags. The leader followed by any other key is dropped
+      //   and that key is handled below as usual.
+      const lead = leaderStep(leaderHeldRef.current, { key: e.key, ctrl: e.ctrlKey, meta: e.metaKey, alt: e.altKey }, vimSettings().leader);
+      if (lead.do === 'hold') { e.preventDefault(); leaderHeldRef.current = lead.next; return; }
+      if (lead.do === 'show') { e.preventDefault(); leaderHeldRef.current = 0; showJumpTags(lead.dir); return; }
+      if (lead.do === 'release') leaderHeldRef.current = 0;
 
       // - g: arm the chord. Nothing happens on its own, so a stray g is harmless.
       if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === 'g') {
@@ -3320,16 +3395,26 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       e.stopImmediatePropagation();
     };
 
-    // - gCapture before panCapture: listeners on one target run in the order they were added
+    // - while the tags are shown the next key is theirs, wherever the focus sits (as gCapture)
+    const jumpCapture = (e: KeyboardEvent) => {
+      if (!jumpRef.current) return;
+      readJumpKey(e);
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    };
+
+    // - jumpCapture and gCapture before panCapture: listeners on one target run in the order they were added
+    window.addEventListener('keydown', jumpCapture, { capture: true });
     window.addEventListener('keydown', gCapture, { capture: true });
     window.addEventListener('keydown', handler);
     window.addEventListener('keydown', panCapture, { capture: true });
     return () => {
+      window.removeEventListener('keydown', jumpCapture, { capture: true });
       window.removeEventListener('keydown', gCapture, { capture: true });
       window.removeEventListener('keydown', handler);
       window.removeEventListener('keydown', panCapture, { capture: true });
     };
-  }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, closeKnowledge, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToRegister, engineNodesOf, runEngineAfterMove, anchoredBy, runEngineForCells, withKeepRow, canvasPath, closeG, revealBox]); // - nodesRef + spaceSelectedRef carry live state
+  }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, closeKnowledge, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToRegister, engineNodesOf, runEngineAfterMove, anchoredBy, runEngineForCells, withKeepRow, canvasPath, closeG, revealBox, closeJump]); // - nodesRef + spaceSelectedRef carry live state
 
   // - expose a viewport snapshot for the AI companion (what the user actually sees:
   // - zoom, on-screen node labels, scroll position within the focused node)
@@ -4204,6 +4289,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
         <Background variant={BackgroundVariant.Dots} gap={GRID} size={1} color="var(--vscode-editorIndentGuide-background)" />
         <SectionSeparators lanes={derivedLanes} kernels={railKernels} />
         <EdgeFollowHints shown={gShown} />
+        <JumpTags shown={jumpShown} />
         <HelperLines horizontal={helperLines.horizontal} vertical={helperLines.vertical} />
         <Controls showInteractive={false} showFitView={false}>
           {/* - our own fit button: React Flow's fires an unbounded fitView */}

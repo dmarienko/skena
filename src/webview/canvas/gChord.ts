@@ -1,6 +1,7 @@
 // - how long g waits for its second key when it shows nothing
 export const G_CHORD_MS = 400;
-// - set on <html> while the badges are on screen, so a node's own key listener leaves the key to them
+// - set on <html> while the g badges or the jump tags are on screen, so a node's own key listener
+//   leaves the key to them
 export const G_BADGES_ATTR = 'data-skena-g-badges';
 
 export interface GChordState {

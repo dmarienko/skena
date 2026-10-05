@@ -350,3 +350,15 @@ body.vscode-dark, body.vscode-high-contrast {
   white-space: pre;
   pointer-events: none;
 }
+
+/* - jump tags on the canvas (JumpTags.tsx): one on each target node's top-left corner */
+.skena-jump-tag {
+  position: absolute;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: #f01010;
+  color: #fff;
+  font: 700 12px/14px 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  white-space: pre;
+  user-select: none;
+}
