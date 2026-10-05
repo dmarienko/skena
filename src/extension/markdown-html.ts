@@ -28,31 +28,16 @@ import remarkRehype        from 'remark-rehype';
 import rehypeKatex         from 'rehype-katex';
 import { toHtml }          from 'hast-util-to-html';
 import type { Root }       from 'hast';
-import { visit }           from 'unist-util-visit';
-import { findTypstSpans }  from './typst-delim';
+import { renderTypstSpans } from './typst-mdast';
 import { typstMathToSvg }  from './typst';
 import { normalizeMath } from '../shared/mathDelims';
 
-// - remark plugin: replace %..% / %%..%% spans in text nodes with raw HTML nodes
-// - carrying the compiled Typst SVG. Splits each matched text node into
-// - [text before][html svg][text after…]. Sync — NodeCompiler.svg() is synchronous.
+// - remark plugin: replace %..% / %%..%% spans with raw HTML nodes carrying the compiled Typst SVG
+// - (typst-mdast.ts). `file.value` must be the string the tree was parsed from: spans split by
+// - emphasis are found by node offsets into it. Sync — NodeCompiler.svg() is synchronous.
 function remarkTypstMath() {
-  return (tree: any) => {
-    visit(tree, 'text', (node: any, index: number | undefined, parent: any) => {
-      if (index === undefined || !parent || typeof node.value !== 'string') return;
-      const spans = findTypstSpans(node.value);
-      if (spans.length === 0) return;
-      const out: any[] = [];
-      let last = 0;
-      for (const s of spans) {
-        if (s.start > last) out.push({ type: 'text', value: node.value.slice(last, s.start) });
-        out.push({ type: 'html', value: typstMathToSvg(s.body, s.block) });
-        last = s.end;
-      }
-      if (last < node.value.length) out.push({ type: 'text', value: node.value.slice(last) });
-      parent.children.splice(index, 1, ...out);
-      return index + out.length;
-    });
+  return (tree: any, file: any) => {
+    renderTypstSpans(tree, typeof file?.value === 'string' ? file.value : '', typstMathToSvg);
   };
 }
 
@@ -182,7 +167,8 @@ export async function renderMarkdownToHtml(
   }
   const proc = (hasMath || hasTypst) ? _processor! : _processorLight!;
 
-  const hast = await proc.run(proc.parse(source));
+  // - the source goes to run() as the file, so remarkTypstMath reads the exact string parsed
+  const hast = await proc.run(proc.parse(source), source);
   if (resolveImageUri) {
     visitHastImages(hast, resolveImageUri);
   }
