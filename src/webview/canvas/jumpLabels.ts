@@ -3,6 +3,8 @@
  * that side, typing a label moves there. editorJumpLabels.ts (Monaco) and CanvasView.tsx (nodes) find
  * the targets with the functions here, draw the labels and read the keys.
  */
+import type { NavNode, Rect } from './spatialNav';
+
 export const DEFAULT_LEADER = ';';
 export const DEFAULT_JUMP_LABELS = 'asdfghjklqwertyuiopzxcvbnm';
 
@@ -143,4 +145,21 @@ export function lineStarts(lines: readonly VisibleLine[], cursorLine: number, di
     const i = l.text.search(/\S/);
     return { line: l.line, col: i < 0 ? 1 : i + 1 };
   });
+}
+
+/**
+ * The nodes that overlap `view` and whose centre is strictly on the `dir` side of `origin` (l right,
+ * h left, j below, k above), nearest centre first; equal distances keep the input order. All in flow
+ * coordinates. The focused node's own centre is the origin, so it is never on any side.
+ */
+export function nodesInDirection(nodes: readonly NavNode[], origin: { x: number; y: number }, view: Rect, dir: JumpDir): NavNode[] {
+  const onSide = (cx: number, cy: number): boolean =>
+    dir === 'l' ? cx > origin.x : dir === 'h' ? cx < origin.x : dir === 'j' ? cy > origin.y : cy < origin.y;
+  return nodes
+    .filter(n => n.x < view.right && n.x + n.w > view.left && n.y < view.bottom && n.y + n.h > view.top)
+    .map(n => ({ n, cx: n.x + n.w / 2, cy: n.y + n.h / 2 }))
+    .filter(c => onSide(c.cx, c.cy))
+    .map(c => ({ n: c.n, d: Math.hypot(c.cx - origin.x, c.cy - origin.y) }))
+    .sort((a, b) => a.d - b.d)
+    .map(c => c.n);
 }

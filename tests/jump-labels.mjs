@@ -2,7 +2,8 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import {
-  DEFAULT_JUMP_LABELS, assignLabels, labelKey, leaderStep, lineStarts, matchKeys, normalizeLeader, vimKeyOf, wordStarts,
+  DEFAULT_JUMP_LABELS, assignLabels, labelKey, leaderStep, lineStarts, matchKeys, nodesInDirection, normalizeLeader,
+  vimKeyOf, wordStarts,
 } from './.build/jumpLabels.mjs';
 
 const key = (k, mods = {}) => ({ key: k, ctrl: false, meta: false, alt: false, ...mods });
@@ -141,4 +142,36 @@ test('17. line starts above the cursor, nearest first; the cursor line is never 
   assert.deepEqual(lineStarts(LINES, 5, 'up'), [at(4, 1)]);
   assert.deepEqual(lineStarts(LINES, 8, 'up').map(p => p.line), [7, 6, 5, 4]);
   assert.deepEqual(lineStarts(LINES, 4, 'up'), []);
+});
+
+// - focused node F (centre 500,500) in a 1000x1000 view; R right, L left, D below, U above, RD right and
+//   below (counts for l and j), OFF right but outside the view, EDGE right and only partly inside it
+const nav = (id, x, y, w = 100, h = 100) => ({ id, x, y, w, h });
+const F = nav('F', 450, 450);
+const R = nav('R', 650, 450);
+const L = nav('L', 150, 450);
+const D = nav('D', 450, 750);
+const U = nav('U', 450, 50);
+const RD = nav('RD', 800, 800);
+const OFF = nav('OFF', 1200, 450);
+const EDGE = nav('EDGE', 950, 450);
+const NODES = [F, R, L, D, U, RD, OFF, EDGE];
+const VIEW = { left: 0, top: 0, right: 1000, bottom: 1000 };
+const ORIGIN = { x: 500, y: 500 };
+const ids = nodes => nodes.map(n => n.id);
+
+test('18. l: visible nodes whose centre is right of the origin, nearest centre first', () => {
+  assert.deepEqual(ids(nodesInDirection(NODES, ORIGIN, VIEW, 'l')), ['R', 'RD', 'EDGE']);
+});
+
+test('19. h, j, k: the other three sides; the focused node is never a target', () => {
+  assert.deepEqual(ids(nodesInDirection(NODES, ORIGIN, VIEW, 'h')), ['L']);
+  assert.deepEqual(ids(nodesInDirection(NODES, ORIGIN, VIEW, 'j')), ['D', 'RD']);
+  assert.deepEqual(ids(nodesInDirection(NODES, ORIGIN, VIEW, 'k')), ['U']);
+});
+
+test('20. equal distances keep the input order; no visible node on that side gives nothing', () => {
+  const a = nav('a', 650, 300), b = nav('b', 650, 600);   // - both 158.1 from the origin
+  assert.deepEqual(ids(nodesInDirection([b, a], ORIGIN, VIEW, 'l')), ['b', 'a']);
+  assert.deepEqual(nodesInDirection([F, L], ORIGIN, VIEW, 'l'), []);
 });
