@@ -114,10 +114,12 @@ function charClass(ch: string): 0 | 1 | 2 {
 function lineWordStarts(text: string): number[] {
   const out: number[] = [];
   let prev: 0 | 1 | 2 = 0;
-  for (let i = 0; i < text.length; i++) {
-    const c = charClass(text[i]);
+  for (let i = 0; i < text.length;) {
+    const cp = text.codePointAt(i) as number;
+    const c = charClass(String.fromCodePoint(cp));
     if (c !== 0 && c !== prev) out.push(i + 1);
     prev = c;
+    i += cp > 0xffff ? 2 : 1;
   }
   return out;
 }

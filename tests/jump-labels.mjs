@@ -175,3 +175,8 @@ test('20. equal distances keep the input order; no visible node on that side giv
   assert.deepEqual(ids(nodesInDirection([b, a], ORIGIN, VIEW, 'l')), ['b', 'a']);
   assert.deepEqual(nodesInDirection([F, L], ORIGIN, VIEW, 'l'), []);
 });
+
+test('21. a letter outside the BMP is one character: columns count UTF-16 units, classes count code points', () => {
+  assert.deepEqual(wordStarts([{ line: 1, text: 'a\u{20000}b' }], at(1, 0), 'forward'), [at(1, 1)]);
+  assert.deepEqual(wordStarts([{ line: 1, text: '\u{20000}.x' }], at(1, 0), 'forward'), [at(1, 1), at(1, 3), at(1, 4)]);
+});
