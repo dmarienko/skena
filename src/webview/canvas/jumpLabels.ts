@@ -36,7 +36,7 @@ const DIRS: ReadonlySet<string> = new Set(['h', 'j', 'k', 'l']);
 
 /** - the setting when it is exactly one character, else the default */
 export function normalizeLeader(raw: unknown): string {
-  return typeof raw === 'string' && [...raw].length === 1 ? raw : DEFAULT_LEADER;
+  return typeof raw === 'string' && [...raw].length === 1 && (raw === ' ' || !/\s/.test(raw)) ? raw : DEFAULT_LEADER;
 }
 
 /** - the name monaco-vim's handleKey takes for the leader: a character as itself, space as <Space> */
@@ -115,11 +115,14 @@ function lineWordStarts(text: string): number[] {
   const out: number[] = [];
   let prev: 0 | 1 | 2 = 0;
   for (let i = 0; i < text.length;) {
+    const start = i;
     const cp = text.codePointAt(i) as number;
-    const c = charClass(String.fromCodePoint(cp));
-    if (c !== 0 && c !== prev) out.push(i + 1);
-    prev = c;
+    const ch = String.fromCodePoint(cp);
     i += cp > 0xffff ? 2 : 1;
+    if (/\p{M}/u.test(ch)) continue;
+    const c = charClass(ch);
+    if (c !== 0 && c !== prev) out.push(start + 1);
+    prev = c;
   }
   return out;
 }

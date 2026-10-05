@@ -99,12 +99,14 @@ test('12. leader setting: exactly one character, else ;', () => {
   assert.equal(normalizeLeader(''), ';');
   assert.equal(normalizeLeader(',,'), ';');
   assert.equal(normalizeLeader(undefined), ';');
+  assert.equal(normalizeLeader('\t'), ';');
+  assert.equal(normalizeLeader('\n'), ';');
   assert.equal(vimKeyOf(';'), ';');
   assert.equal(vimKeyOf(' '), '<Space>');
 });
 
 // - lines 4-8 are on screen; the cursor is on line 5 at column 7 (the `b` of `bar`)
-//   col: 123456789012345
+//   col: 1234567890123456
 const LINES = [
   { line: 4, text: 'x = 1' },
   { line: 5, text: '  foo.bar(baz_2)' },
@@ -171,7 +173,7 @@ test('19. h, j, k: the other three sides; the focused node is never a target', (
 });
 
 test('20. equal distances keep the input order; no visible node on that side gives nothing', () => {
-  const a = nav('a', 650, 300), b = nav('b', 650, 600);   // - both 158.1 from the origin
+  const a = nav('a', 650, 300), b = nav('b', 650, 600);   // - both 250 from the origin
   assert.deepEqual(ids(nodesInDirection([b, a], ORIGIN, VIEW, 'l')), ['b', 'a']);
   assert.deepEqual(nodesInDirection([F, L], ORIGIN, VIEW, 'l'), []);
 });
@@ -179,4 +181,9 @@ test('20. equal distances keep the input order; no visible node on that side giv
 test('21. a letter outside the BMP is one character: columns count UTF-16 units, classes count code points', () => {
   assert.deepEqual(wordStarts([{ line: 1, text: 'a\u{20000}b' }], at(1, 0), 'forward'), [at(1, 1)]);
   assert.deepEqual(wordStarts([{ line: 1, text: '\u{20000}.x' }], at(1, 0), 'forward'), [at(1, 1), at(1, 3), at(1, 4)]);
+});
+
+test('22. a combining mark stays in its word; a run of punctuation is one word', () => {
+  assert.deepEqual(wordStarts([{ line: 1, text: 'cafe\u0301 x' }], at(1, 0), 'forward'), [at(1, 1), at(1, 7)]);
+  assert.deepEqual(wordStarts([{ line: 1, text: 'a->b' }], at(1, 0), 'forward'), [at(1, 1), at(1, 2), at(1, 4)]);
 });
