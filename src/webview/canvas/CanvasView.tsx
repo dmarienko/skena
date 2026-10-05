@@ -61,7 +61,7 @@ import { cardContent, type CardContent } from './cardContent';
 import { loadedFileText } from '../hooks/useFileContent';
 import { G_BADGES_ATTR, gChordStep } from './gChord';
 import { JumpTags, type ShownTags } from './JumpTags';
-import { assignLabels, labelKey, leaderStep, nodesInDirection, type JumpDir, type LeaderState } from './jumpLabels';
+import { MODIFIER_KEYS, assignLabels, labelKey, leaderStep, nodesInDirection, type JumpDir, type LeaderState } from './jumpLabels';
 import { vimSettings } from './vimSettings';
 import { SectionRail, type RailKernel } from '../rail/SectionRail';
 import { fmtDateTime } from '../rail/RailSegment';
@@ -180,6 +180,12 @@ const WORDS_REBUILD_MS = 400;
 
 // - the label map of a disarmed chord, so disarming allocates nothing
 const EMPTY_LABELS: ReadonlyMap<string, string> = new Map();
+
+// - keydowns the window has seen, a modifier pressed alone not counted. Added at module load, before
+//   any component's effect adds a keydown listener, so it counts every key, also one that a node or
+//   another binding stops before the canvas handler sees it (leaderAtRef).
+let keydownCount = 0;
+window.addEventListener('keydown', e => { if (!MODIFIER_KEYS.has(e.key)) keydownCount++; }, { capture: true });
 
 // - default size + gap for a NEW node created by directional-add (Alt+X / Ctrl+Shift+hjkl), an edge
 //   dropped on empty canvas, or `o` below a node
@@ -554,6 +560,8 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
   // - leader leader h/j/k/l: the leader presses held back so far (the keydown handler), and the tags
   //   on screen with the node each label leads to (jumpCapture reads the keys while they are shown)
   const leaderHeldRef = useRef<LeaderState>(0);
+  // - keydownCount at the last held leader: the held leaders count only for the key right after it
+  const leaderAtRef   = useRef(0);
   const jumpRef       = useRef<{ labels: string[]; ids: string[]; typed: string } | null>(null);
   const [jumpShown, setJumpShown] = useState<ShownTags | null>(null);
   // - drop the tags and a held leader. G_BADGES_ATTR is set while the tags are shown, so a code
@@ -572,6 +580,19 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
   }, [jumpShown, closeJump]);
   // - a canvas switch drops the tags and a held leader
   useEffect(() => closeJump, [canvasPath, closeJump]);
+  // - a click drops a held leader. The webview losing focus (another VS Code tab, an iframe in the
+  //   canvas) drops it too, with the tags and the g badges: each canvas keeps its webview while
+  //   hidden, so the canvasPath cleanups above do not run on a tab switch.
+  useEffect(() => {
+    const dropLeader = () => { leaderHeldRef.current = 0; };
+    const onBlur = () => { closeJump(); closeG(); };
+    window.addEventListener('pointerdown', dropLeader, { capture: true });
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('pointerdown', dropLeader, { capture: true });
+      window.removeEventListener('blur', onBlur);
+    };
+  }, [closeJump, closeG]);
   const [marksOpen, setMarksOpen] = useState(false);
   // - mirrored so the stable document-level paste listener sees panel state without re-subscribing
   const panelOpenRef = useRef(false);
@@ -2807,9 +2828,11 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       if (readGKey(e)) return;
 
       // - leader leader h/j/k/l shows the jump tags. The leader followed by any other key is dropped
-      //   and that key is handled below as usual.
-      const lead = leaderStep(leaderHeldRef.current, { key: e.key, ctrl: e.ctrlKey, meta: e.metaKey, alt: e.altKey }, vimSettings().leader);
-      if (lead.do === 'hold') { e.preventDefault(); leaderHeldRef.current = lead.next; return; }
+      //   and that key is handled below as usual. Held leaders count only when this is the very next
+      //   key after the last one; a key stopped before it got here has ended the sequence.
+      const held = keydownCount === leaderAtRef.current + 1 ? leaderHeldRef.current : 0;
+      const lead = leaderStep(held, { key: e.key, ctrl: e.ctrlKey, meta: e.metaKey, alt: e.altKey }, vimSettings().leader);
+      if (lead.do === 'hold') { e.preventDefault(); leaderHeldRef.current = lead.next; leaderAtRef.current = keydownCount; return; }
       if (lead.do === 'show') { e.preventDefault(); leaderHeldRef.current = 0; showJumpTags(lead.dir); return; }
       if (lead.do === 'release') leaderHeldRef.current = 0;
 
@@ -3398,7 +3421,8 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
     // - while the tags are shown the next key is theirs, wherever the focus sits (as gCapture)
     const jumpCapture = (e: KeyboardEvent) => {
       if (!jumpRef.current) return;
-      readJumpKey(e);
+      // - a key still held from leader leader h/j/k/l repeats: the repeats are stopped, not read as labels
+      if (!e.repeat) readJumpKey(e);
       e.preventDefault();
       e.stopImmediatePropagation();
     };

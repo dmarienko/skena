@@ -31,7 +31,8 @@ export type JumpMatch =
   | { kind: 'narrow'; prefix: string }
   | { kind: 'cancel' };
 
-const MODIFIER_KEYS: ReadonlySet<string> = new Set(['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'AltGraph']);
+/** - keys that are a modifier pressed alone: they neither end a leader sequence nor pick a label */
+export const MODIFIER_KEYS: ReadonlySet<string> = new Set(['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'AltGraph']);
 const DIRS: ReadonlySet<string> = new Set(['h', 'j', 'k', 'l']);
 
 /** - the setting when it is exactly one character, else the default */
