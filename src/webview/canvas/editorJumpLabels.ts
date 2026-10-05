@@ -1,6 +1,6 @@
 import type { editor as MonacoEditor } from 'monaco-editor';
 import { VimMode, type VimAdapterInstance } from 'monaco-vim';
-import { assignLabels, labelKey, leaderStep, lineStarts, vimKeyOf, wordStarts, type JumpDir, type JumpKey, type LeaderState, type TextPos, type VisibleLine } from './jumpLabels';
+import { assignLabels, labelKey, labelRest, leaderStep, lineStarts, vimKeyOf, wordStarts, type JumpDir, type JumpKey, type LeaderState, type TextPos, type VisibleLine } from './jumpLabels';
 import { vimSettings } from './vimSettings';
 
 // - the parts of monaco-vim's per-editor state read and written here (keymap_vim.ts maybeInitVimState, InputState)
@@ -52,10 +52,10 @@ function cssString(s: string): string {
   return `"${s.replace(/["\\]/g, m => `\\${m}`)}"`;
 }
 
-// - the characters of each label (::before the first, ::after the second) and the background they are
-//   drawn on, as rules in one <style> shared by every editor; only the focused editor shows labels, so
-//   the rules are rewritten each time labels are shown
-function writeLabelStyle(labels: readonly string[], background: string): void {
+// - the characters each label shows (::before the first, ::after the second; null shows nothing) and
+//   the background they are drawn on, as rules in one <style> shared by every editor; only the focused
+//   editor shows labels, so the rules are rewritten each time labels are drawn
+function writeLabelStyle(texts: readonly (string | null)[], background: string): void {
   let el = document.getElementById(STYLE_ID) as HTMLStyleElement | null;
   if (!el) {
     el = document.createElement('style');
@@ -63,8 +63,9 @@ function writeLabelStyle(labels: readonly string[], background: string): void {
     document.head.appendChild(el);
   }
   const rules = [`.monaco-editor .skena-jump-label::before, .monaco-editor .skena-jump-label::after { background: ${background}; }`];
-  labels.forEach((l, i) => {
-    const [first, second] = [...l];
+  texts.forEach((text, i) => {
+    if (text === null) return;
+    const [first, second] = [...text];
     rules.push(`.monaco-editor .skena-jl-${i}::before { content: ${cssString(first)}; }`);
     if (second !== undefined) rules.push(`.monaco-editor .skena-jl-${i}::after { content: ${cssString(second)}; }`);
   });
@@ -144,7 +145,7 @@ export function installJumpLabels(editor: MonacoEditor.IStandaloneCodeEditor, vi
   const decorations = editor.createDecorationsCollection();
   const node = editor.getContainerDomNode();
   let held: LeaderState = 0;
-  let shown: { labels: string[]; targets: TextPos[]; typed: string; lines: VisibleLine[] } | null = null;
+  let shown: { labels: string[]; targets: TextPos[]; typed: string; lines: VisibleLine[]; background: string } | null = null;
 
   // - the window listener at the top of this module ends a held leader before other window listeners
   //   take the key
@@ -174,18 +175,23 @@ export function installJumpLabels(editor: MonacoEditor.IStandaloneCodeEditor, vi
   };
 
   // - the visible text dimmed, and before each target an empty span whose ::before and ::after draw
-  //   the label over the character(s) (canvas.css), so no text moves
+  //   the characters of its label still to type over the character(s) (canvas.css), so no text moves
   const draw = () => {
     if (!shown) { decorations.clear(); return; }
-    const { labels, targets, typed, lines } = shown;
+    const { labels, targets, typed, lines, background } = shown;
+    const rests = labels.map(l => labelRest(l, typed));
+    writeLabelStyle(rests, background);
     const dim = lines.filter(l => l.text !== '').map(l => ({
       range:   { startLineNumber: l.line, startColumn: 1, endLineNumber: l.line, endColumn: l.text.length + 1 },
       options: { inlineClassName: 'skena-jump-dim' },
     }));
-    const marks = targets.flatMap((t, i) => (labels[i].startsWith(typed) ? [{
-      range:   { startLineNumber: t.line, startColumn: t.col, endLineNumber: t.line, endColumn: t.col },
-      options: { beforeContentClassName: `skena-jump-label ${[...labels[i]].length === 1 ? 'skena-jl-one' : 'skena-jl-two'} skena-jl-${i}` },
-    }] : []));
+    const marks = targets.flatMap((t, i) => {
+      const rest = rests[i];
+      return rest === null ? [] : [{
+        range:   { startLineNumber: t.line, startColumn: t.col, endLineNumber: t.line, endColumn: t.col },
+        options: { beforeContentClassName: `skena-jump-label ${[...rest].length === 1 ? 'skena-jl-one' : 'skena-jl-two'} skena-jl-${i}` },
+      }];
+    });
     decorations.set([...dim, ...marks]);
   };
 
@@ -206,8 +212,7 @@ export function installJumpLabels(editor: MonacoEditor.IStandaloneCodeEditor, vi
     const { leader, jumpLabels } = vimSettings();
     const labels = assignLabels(targets.length, jumpLabels, leader);
     if (labels.length === 0) return;
-    shown = { labels, targets: targets.slice(0, labels.length), typed: '', lines };
-    writeLabelStyle(labels, editorBackground(editor));
+    shown = { labels, targets: targets.slice(0, labels.length), typed: '', lines, background: editorBackground(editor) };
     draw();
   };
 

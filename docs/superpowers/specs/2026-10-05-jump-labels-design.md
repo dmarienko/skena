@@ -49,9 +49,10 @@ The leader is a setting, `skena.vim.leader`, one key, default `;` (the user's VS
   the rest of the visible text is dimmed (opacity 0.45) while labels are shown (user, 2026-10-05, after
   comparing skena's red boxes with VSCodeVim). On the canvas they are tags on the top-left corner of a
   node, in the same red the cursor uses (`#f01010`, white text).
-- Typing the first character of a two-character label hides every label that does not start with it.
-  Typing a full label jumps. `Esc`, or any key that no label starts with, removes the labels and does
-  nothing else (the key is not passed on).
+- Typing the first character of a two-character label hides every label that does not start with it;
+  the labels that stay show only the character still to type (user, 2026-10-05). Typing a full label
+  jumps. `Esc`, or any key that no label starts with, removes the labels and does nothing else (the key
+  is not passed on).
 
 ## After the jump
 

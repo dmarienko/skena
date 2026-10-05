@@ -2,7 +2,7 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import {
-  DEFAULT_JUMP_LABELS, assignLabels, labelKey, leaderStep, lineStarts, matchKeys, nodesInDirection, normalizeLeader,
+  DEFAULT_JUMP_LABELS, assignLabels, labelKey, labelRest, leaderStep, lineStarts, matchKeys, nodesInDirection, normalizeLeader,
   vimKeyOf, wordStarts,
 } from './.build/jumpLabels.mjs';
 
@@ -186,4 +186,12 @@ test('21. a letter outside the BMP is one character: columns count UTF-16 units,
 test('22. a combining mark stays in its word; a run of punctuation is one word', () => {
   assert.deepEqual(wordStarts([{ line: 1, text: 'cafe\u0301 x' }], at(1, 0), 'forward'), [at(1, 1), at(1, 7)]);
   assert.deepEqual(wordStarts([{ line: 1, text: 'a->b' }], at(1, 0), 'forward'), [at(1, 1), at(1, 2), at(1, 4)]);
+});
+
+test('23. after a typed first character a label shows only the characters still to type', () => {
+  assert.equal(labelRest('ca', ''), 'ca');
+  assert.equal(labelRest('ca', 'c'), 'a');
+  assert.equal(labelRest('ba', 'c'), null);
+  assert.equal(labelRest('a', 'c'), null);
+  assert.equal(labelRest('\u{20000}b', '\u{20000}'), 'b');
 });

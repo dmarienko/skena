@@ -79,6 +79,11 @@ export function matchKeys(labels: readonly string[], typed: string): JumpMatch {
   return { kind: 'cancel' };
 }
 
+/** - what a label shows once `typed` is typed: the characters still to type; null when it does not start with `typed` */
+export function labelRest(label: string, typed: string): string | null {
+  return label.startsWith(typed) ? label.slice(typed.length) : null;
+}
+
 /**
  * One key while the labels are shown. A modifier pressed alone changes nothing (`ignore`); Esc, a
  * chord with Ctrl/Alt/Meta and any named key cancel; a character is matched after `typed`.

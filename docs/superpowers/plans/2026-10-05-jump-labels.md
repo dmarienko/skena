@@ -1598,7 +1598,7 @@ Each is in the code as described; the user may want another choice.
 5. **A leader typed after a count, `f`/`t`/`r`/`m`/`'`/`"` or an operator** goes to vim (`f;` finds `;`, `d;` deletes to the repeated find). `idleNormal` checks this.
 6. **Empty lines are not word starts** (`h`/`l`), following the spec's rule; vim's `w` does stop on them. A line of only blanks gives column 1 for `j`/`k`, like an empty line.
 7. **A modifier pressed alone** (Shift, Ctrl, Alt, Meta) keeps the labels and a held leader, so a label character or leader typed with Shift works. (`g` badges close on it.)
-8. **After the first character of a two-character label** the remaining labels still show both characters.
+8. **After the first character of a two-character label** the remaining labels still show both characters. Replaced (user, 2026-10-05): they show only the character still to type, in the editors and on the canvas.
 9. **Canvas tag position**: a node whose top-left corner is off screen gets its tag at the pane's edge, so every labelled node shows its tag. "Visible" is the part of the pane above the docked chat console.
 10. **More than N × N targets** (676 with the default characters): the farthest get no label.
 11. **The jump resets vim's remembered column** (`lastHPos`, `lastMotion`), so `j`/`k` after it start from the new column.
