@@ -1,6 +1,6 @@
 import type { editor as MonacoEditor } from 'monaco-editor';
 import { VimMode, type VimAdapterInstance } from 'monaco-vim';
-import { assignLabels, labelKey, leaderStep, lineStarts, vimKeyOf, wordStarts, type JumpDir, type LeaderState, type TextPos, type VisibleLine } from './jumpLabels';
+import { assignLabels, labelKey, leaderStep, lineStarts, vimKeyOf, wordStarts, type JumpDir, type JumpKey, type LeaderState, type TextPos, type VisibleLine } from './jumpLabels';
 import { vimSettings } from './vimSettings';
 
 // - the parts of monaco-vim's per-editor state read and written here (keymap_vim.ts maybeInitVimState, InputState)
@@ -17,13 +17,25 @@ const Vim = (VimMode as unknown as { Vim: { handleKey(cm: unknown, key: string):
 
 const STYLE_ID = 'skena-jump-labels';
 
-// - set on an editor's container while its labels are shown or it holds a leader. A keydown listener
-//   on window in the capture phase runs before the container's, so it has to leave such a key alone.
+// - set on an editor's container while its labels are shown. A keydown listener on window in the
+//   capture phase runs before the container's, so it has to leave such a key alone.
 export const JUMP_LABELS_ATTR = 'data-skena-jump-labels';
 
-/** - the key was typed in an editor whose labels are shown or that holds a leader */
+/** - the key was typed in an editor whose labels are shown */
 export function inJumpLabels(e: Event): boolean {
   return e.target instanceof Element && e.target.closest(`[${JUMP_LABELS_ATTR}]`) !== null;
+}
+
+// - the editor that holds a leader now; only the focused one can
+let holder: { take(e: KeyboardEvent): void } | null = null;
+
+// - a key that ends a held leader: the leader runs as vim's key here and the key goes on untouched, so
+//   the window listeners that React effects add later (ChatInput, useFloatingChat) and the editor get it
+//   as usual. Added at module load, so it runs before those listeners.
+window.addEventListener('keydown', e => holder?.take(e), { capture: true });
+
+function keyOf(e: KeyboardEvent): JumpKey {
+  return { key: e.key, ctrl: e.ctrlKey, meta: e.metaKey, alt: e.altKey };
 }
 
 function vimState(vim: VimAdapterInstance): VimState | null {
@@ -107,7 +119,32 @@ export function installJumpLabels(editor: MonacoEditor.IStandaloneCodeEditor, vi
   let held: LeaderState = 0;
   let shown: { labels: string[]; targets: TextPos[]; typed: string } | null = null;
 
-  const mark = () => node.toggleAttribute(JUMP_LABELS_ATTR, held !== 0 || shown !== null);
+  // - the window listener at the top of this module ends a held leader before other window listeners
+  //   take the key
+  const self = {
+    take(e: KeyboardEvent) {
+      if (shown || held === 0) return;
+      const step = leaderStep(held, keyOf(e), vimSettings().leader);
+      if (step.do === 'release') release(step.held);
+    },
+  };
+
+  const sync = () => {
+    node.toggleAttribute(JUMP_LABELS_ATTR, shown !== null);
+    if (held !== 0) holder = self;
+    else if (holder === self) holder = null;
+  };
+
+  // - the held leaders run as vim's own key (; repeats the last f/t); the key that ended them goes on as usual
+  const release = (count: 1 | 2) => {
+    held = 0;
+    sync();
+    try {
+      for (let i = 0; i < count; i++) Vim.handleKey(vim, vimKeyOf(vimSettings().leader));
+    } catch {
+      // - the command findKey returns (keymap_vim.ts) resets vim's state and logs the error before rethrowing it
+    }
+  };
 
   // - an empty span before the target character; its ::after draws the label over the character(s)
   //   (canvas.css), so no text moves
@@ -126,7 +163,7 @@ export function installJumpLabels(editor: MonacoEditor.IStandaloneCodeEditor, vi
       shown = null;
       decorations.clear();
     }
-    mark();
+    sync();
   };
 
   const show = (dir: JumpDir) => {
@@ -153,7 +190,7 @@ export function installJumpLabels(editor: MonacoEditor.IStandaloneCodeEditor, vi
   };
 
   const readKey = (e: KeyboardEvent) => {
-    const k = { key: e.key, ctrl: e.ctrlKey, meta: e.metaKey, alt: e.altKey };
+    const k = keyOf(e);
     if (shown) {
       // - every key is the labels' while they are shown: Monaco, vim and the node never see it
       e.preventDefault();
@@ -176,13 +213,8 @@ export function installJumpLabels(editor: MonacoEditor.IStandaloneCodeEditor, vi
     const step = leaderStep(held, k, leader);
     if (step.do === 'none') return;
     if (step.do === 'release') {
-      // - the held leaders run as vim's own key (; repeats the last f/t), then this key goes on to vim
-      held = 0;
-      try {
-        for (let i = 0; i < step.held; i++) Vim.handleKey(vim, vimKeyOf(leader));
-      } catch {
-        // - the command findKey returns (keymap_vim.ts) resets vim's state and logs the error before rethrowing it
-      }
+      // - the window listener has normally done this already; here for a key that did not reach it
+      release(step.held);
       return;
     }
     e.preventDefault();
@@ -194,7 +226,7 @@ export function installJumpLabels(editor: MonacoEditor.IStandaloneCodeEditor, vi
 
   const onKeyDown = (e: KeyboardEvent) => {
     readKey(e);
-    mark();
+    sync();
   };
 
   node.addEventListener('keydown', onKeyDown, { capture: true });
@@ -206,6 +238,7 @@ export function installJumpLabels(editor: MonacoEditor.IStandaloneCodeEditor, vi
   editor.onDidDispose(() => {
     node.removeEventListener('keydown', onKeyDown, { capture: true });
     node.removeAttribute(JUMP_LABELS_ATTR);
+    if (holder === self) holder = null;
     subs.forEach(d => d.dispose());
   });
 }
