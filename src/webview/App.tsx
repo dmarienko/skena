@@ -21,6 +21,7 @@ import { warmCodeHighlighter } from './lib/codeHighlight';
 import { installThemeVars } from './theme';
 import { setVimSettings } from './canvas/vimSettings';
 import { setCodeTheme } from './canvas/codeCellTheme';
+import { exportThemeVars } from './exportTheme';
 
 type VsCodeApi = { postMessage: (msg: unknown) => void };
 
@@ -162,6 +163,9 @@ export function App(): JSX.Element {
           break;
         case 'codeConfig':
           setCodeTheme(msg.config.theme);
+          break;
+        case 'exportThemeRequest':
+          postMessage({ type: 'exportThemeResult', requestId: msg.requestId, ...exportThemeVars() });
           break;
         case 'fileContent':
         case 'fileError':

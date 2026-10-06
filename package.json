@@ -109,6 +109,10 @@
       {
         "command": "skena.newSection",
         "title": "Skena: New Section"
+      },
+      {
+        "command": "skena.exportHtml",
+        "title": "Skena: Export canvas to HTML"
       }
     ],
     "keybindings": [

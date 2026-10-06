@@ -496,6 +496,7 @@ export interface MsgKnowledgeRefreshed {
 
 export type HostToWebview =
   | MsgCanvasLoaded
+  | MsgExportThemeRequest
   | MsgNodesFromDrop
   | MsgFileContent
   | MsgFileError
@@ -617,6 +618,11 @@ export interface AgentRunPersistResult {
 export type ExportReply =
   | { ok: true; outPath: string; bytes: number; nodes: number; edges: number; missing: string[] }
   | { ok: false; error: string };
+
+/** - host → webview: the HTML export asks for the theme variables VS Code gave this webview */
+export interface MsgExportThemeRequest { type: 'exportThemeRequest'; requestId: string; }
+/** - webview → host: every --vscode-* variable on the page, and whether the theme is dark */
+export interface MsgExportThemeResult { type: 'exportThemeResult'; requestId: string; vars: Record<string, string>; dark: boolean; }
 
 // - Webview → Host messages
 
@@ -821,6 +827,7 @@ export interface MsgKnowledgeOpen    { type: 'knowledgeOpen'; server: string; ur
 
 export type WebviewToHost =
   | MsgRequestFile
+  | MsgExportThemeResult
   | MsgSaveCanvas
   | MsgOpenFile
   | MsgCopyNodeReference

@@ -78,6 +78,7 @@ import {
   MsgFocusSection,
   AgentRunPersist,
   AgentRunPersistResult,
+  MsgExportThemeRequest,
 } from '../shared/types';
 import { parseNodeRef, formatNodeRef, findRefTarget } from '../shared/nodeRef';
 import { MAX_FILE_FULL_BYTES, MAX_FILE_PREVIEW_BYTES, MAX_NOTEBOOK_BYTES, NODE_SIZE } from '../shared/constants';
@@ -165,10 +166,40 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
   // - canvasPath (fsPath) → nodeLabel to focus once that canvas's webview reports ready
   private pendingFocus = new Map<string, string>();
 
+  /** - the canvas of the focused canvas tab, or null */
+  static activeCanvasPath(): string | null {
+    for (const [p, panel] of SkenaEditorProvider.panelsByPath) if (panel === SkenaEditorProvider.activePanel) return p;
+    return null;
+  }
+
+  /** An image a knowledge server serves, as a data url, for the HTML export; the server list is re-read from settings. */
+  async knowledgeAsset(server: string, uri: string): Promise<string> {
+    this.knowledge.configure(await getKnowledgeServers());
+    return this.knowledge.asset(server, uri);
+  }
+
+  /**
+   * The --vscode-* variables of an open canvas webview for the HTML export: that canvas's own, else
+   * the focused one's, else any. Null when no canvas is open or none answers within two seconds.
+   */
+  requestTheme(canvasPath: string): Promise<{ vars: Record<string, string>; dark: boolean } | null> {
+    const panel = SkenaEditorProvider.panelsByPath.get(canvasPath) ?? SkenaEditorProvider.activePanel ?? [...SkenaEditorProvider.panelsByPath.values()][0];
+    if (!panel) return Promise.resolve(null);
+    const requestId = randomUUID();
+    return new Promise(resolve => {
+      const timer = setTimeout(() => { this.themeWaiters.delete(requestId); resolve(null); }, 2000);
+      this.themeWaiters.set(requestId, theme => { clearTimeout(timer); this.themeWaiters.delete(requestId); resolve(theme); });
+      void panel.webview.postMessage({ type: 'exportThemeRequest', requestId } satisfies MsgExportThemeRequest);
+    });
+  }
+
   private runningSections = new Set<string>();   // - one run per section at a time
 
   /** - providers for skena.knowledge.servers; reconfigured from settings on every webview ready */
   private knowledge = new KnowledgeService();
+
+  /** - the HTML export's theme requests waiting for a webview's answer, by request id */
+  private themeWaiters = new Map<string, (theme: { vars: Record<string, string>; dark: boolean }) => void>();
 
   /** - lazily-created LLM client; null until first chat request */
   private _llmClient: ILLMClient | null = null;
@@ -557,6 +588,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           }
           break;
         }
+        case 'exportThemeResult': this.themeWaiters.get(msg.requestId)?.({ vars: msg.vars, dark: msg.dark }); break;
         case 'knowledgeAsset': {
           try {
             send({ type: 'knowledgeAssetResult', server: msg.server, uri: msg.uri, dataUrl: await this.knowledge.asset(msg.server, msg.uri) });

@@ -3,7 +3,7 @@
  *
  * Registers:
  * - Custom editor provider for *.canvas files
- * - Commands: openCanvas, quickSearch, addNode, addTextNode*, addKernel, newSection
+ * - Commands: openCanvas, quickSearch, addNode, addTextNode*, addKernel, newSection, exportHtml
  * - Vault indexer + file watcher lifecycle
  */
 
@@ -130,11 +130,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const panel = SkenaEditorProvider.activePanel;
       if (!panel) { void vscode.window.showInformationMessage('Skena: open a canvas first.'); return; }
       panel.webview.postMessage({ type: 'newSectionTrigger' });
+    }),
+
+    // - the export module (shiki, the markdown renderers) is loaded on first use, not at activation
+    vscode.commands.registerCommand('skena.exportHtml', async () => {
+      const { exportCommand } = await import('./export/exportCommand');
+      await exportCommand(context, editorProvider as SkenaEditorProvider, SkenaEditorProvider.activeCanvasPath());
     })
   );
 
+  // - the relay's /export: the MCP tool canvas_export_html renders through this extension
+  runIpc.setExportHandler(async (canvasPath, outPath) => {
+    const { exportToFile } = await import('./export/exportCommand');
+    return exportToFile(context, editorProvider as SkenaEditorProvider, canvasPath, outPath);
+  });
+
   // - deploy MCP server to each workspace folder
   const folders = vscode.workspace.workspaceFolders ?? [];
+  // - and tell an MCP server started from .mcp.json where the relay is (ipcEndpoint.ts)
+  runIpc.advertise(folders.map(f => f.uri.fsPath));
   for (const folder of folders) {
     await deployMcpServer(context, folder.uri.fsPath).catch(e =>
       console.error('Skena: MCP server deploy failed:', e)
