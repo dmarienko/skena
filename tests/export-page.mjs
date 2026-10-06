@@ -78,3 +78,11 @@ test('5. section frames take the kernel colour and name, else the palette by pos
     ['S3', '2026-10-06 12:00', '#7aa2f7', null],
   ]);
 });
+
+test('6. an edge colour stays inside its attributes', () => {
+  const color = 'red" onclick="x()';
+  const html = buildPage(input({ edges: [{ id: 'e', points: [[0, 0], [1, 0]], d: 'M 0,0 L 1,0', label: 'l', labelAt: [0, 0], color, dashed: false, arrow: true }] }));
+  assert.ok(!html.includes('" onclick'));
+  assert.ok(html.includes('stroke="red&quot; onclick=&quot;x()" stroke-opacity'));
+  assert.ok(html.includes('border-color:red&quot; onclick=&quot;x()">l</div>'));
+});

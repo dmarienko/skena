@@ -20,7 +20,7 @@ import type { CellOutput, ParsedNotebook } from '../notebook-parser';
 export const NODE_BORDER = 2.7;
 
 export function borderOf(node: CanvasNode): string {
-  return nodeBorderColor(node.type, canvasColor(node.color)) ?? '#6b7280';
+  return escapeHtml(nodeBorderColor(node.type, canvasColor(node.color)) ?? '#6b7280');
 }
 
 /**
@@ -46,7 +46,7 @@ function scroll(inner: string, padding = '6px 8px 6px 12px'): string {
 
 // - rendered markdown in the class MarkdownRenderer gives it; `mdStyle` is the markdown.preview font it applies
 function markdownDiv(html: string, mdStyle: string): string {
-  return `<div class="skena-markdown"${mdStyle ? ` style="${mdStyle}"` : ''}>${html}</div>`;
+  return `<div class="skena-markdown"${mdStyle ? ` style="${escapeHtml(mdStyle)}"` : ''}>${html}</div>`;
 }
 
 /** - a text note: its markdown html; `mdStyle` is the markdown.preview font the webview path applies */

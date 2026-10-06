@@ -93,3 +93,14 @@ test('9. a notebook: markdown cells as rendered, the outputs, the source only wh
   assert.ok(withSource.includes('[4]</span><pre>print(1)</pre>'));
   assert.ok(withSource.includes('[ ]</span><pre>x = 1</pre>'));
 });
+
+test('10. values from the file stay inside their style attribute: the markdown font, a node colour', () => {
+  const t = textNodeHtml({ id: 't', type: 'text', text: '', ...at }, '<p>x</p>', 'font-family:"IBM Plex Sans", serif;font-size:14px');
+  assert.ok(t.includes('<div class="skena-markdown" style="font-family:&quot;IBM Plex Sans&quot;, serif;font-size:14px">'));
+  for (const color of ['red" onmouseover="x()', 'red;background:url(https://x.org/a.png)', 'url(a.png)']) {
+    const html = textNodeHtml({ id: 't', type: 'text', text: '', color, ...at }, '<p>x</p>');
+    assert.ok(!html.includes('onmouseover') && !html.includes('url('), html);
+    assert.ok(html.includes('solid #1f96bd;'));
+  }
+  for (const color of ['#ff0000', 'red', 'rgb(1 2 3 / 50%)']) assert.ok(textNodeHtml({ id: 't', type: 'text', text: '', color, ...at }, '').includes(`solid ${color};`), color);
+});

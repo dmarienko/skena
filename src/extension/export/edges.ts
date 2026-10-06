@@ -32,9 +32,13 @@ export interface ExportEdge {
   arrow: boolean;
 }
 
-/** - a JSON Canvas colour ('1'…'6' or a hex) as the hex the canvas draws */
+// - a css colour and nothing else (a hex, a name, rgb()/hsl() of numbers): the value goes into style and stroke attributes
+const CSS_COLOR = /^(?:#[0-9a-f]{3,8}|[a-z]+|(?:rgba?|hsla?)\([\d\s.,%/+-]*\))$/i;
+
+/** - a JSON Canvas colour ('1'…'6' or a hex) as the hex the canvas draws; undefined when the file's value is not a colour */
 export function canvasColor(code?: string): string | undefined {
-  return code ? CANVAS_COLORS[code] ?? code : undefined;
+  const c = code ? (CANVAS_COLORS[code] ?? code).trim() : '';
+  return CSS_COLOR.test(c) ? c : undefined;
 }
 
 const toRouteNode = (n: CanvasNode): RouteNode => ({

@@ -72,3 +72,17 @@ test('5. an edge with no sides faces the other node', () => {
   assert.deepEqual(e.points[0], [700, 150]);
   assert.deepEqual(e.points[e.points.length - 1], [900, 150]);
 });
+
+test('6. a colour from the file that is not a colour is not used: the node colour, else the default, take its place', () => {
+  const canvas = {
+    nodes: [box('a', 'text', 0, 0, { color: 'red;background:url(https://x.org/a.png)' }), box('b', 'text', 900, 0)],
+    edges: [
+      { id: 'bad', fromNode: 'a', fromSide: 'right', toNode: 'b', toSide: 'left', color: '#fff" onclick="x()' },
+      { id: 'good', fromNode: 'b', fromSide: 'left', toNode: 'a', toSide: 'right', color: '3' },
+    ],
+    metadata: lanes([0]),
+  };
+  const all = Object.fromEntries(exportEdges(exportLayout(canvas, 0)).map(e => [e.id, e]));
+  assert.equal(all.bad.color, '#1f96bd');
+  assert.equal(all.good.color, '#e0de71');
+});

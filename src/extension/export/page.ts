@@ -80,20 +80,20 @@ function edgeLayer(box: PageBox, edges: readonly ExportEdge[]): string {
   const colors = [...new Set(edges.filter(e => e.arrow).map(e => e.color))];
   const ids = new Map(colors.map((c, i) => [c, markerId(c, i)] as const));
   const defs = colors.map(c => `<marker id="${ids.get(c)}" markerWidth="12.5" markerHeight="12.5" viewBox="-10 -10 20 20" markerUnits="strokeWidth" orient="auto-start-reverse" refX="0" refY="0">`
-    + `<polyline points="-5,-4 0,0 -5,4 -5,-4" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" stroke="${c}" fill="${c}" opacity="${EDGE_OPACITY}"/></marker>`).join('');
-  const paths = edges.map(e => `<path data-edge-id="${escapeHtml(e.id)}" d="${e.d}" fill="none" stroke="${e.color}" stroke-opacity="${EDGE_OPACITY}" stroke-width="${EDGE_WIDTH}"`
+    + `<polyline points="-5,-4 0,0 -5,4 -5,-4" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" stroke="${escapeHtml(c)}" fill="${escapeHtml(c)}" opacity="${EDGE_OPACITY}"/></marker>`).join('');
+  const paths = edges.map(e => `<path data-edge-id="${escapeHtml(e.id)}" d="${e.d}" fill="none" stroke="${escapeHtml(e.color)}" stroke-opacity="${EDGE_OPACITY}" stroke-width="${EDGE_WIDTH}"`
     + (e.dashed ? ` stroke-dasharray="${1.5 * EDGE_WIDTH} ${3 * EDGE_WIDTH}"` : '')
     + (e.arrow ? ` marker-end="url(#${ids.get(e.color)})"` : '') + '/>').join('');
   return `<svg class="skena-export-edges" xmlns="http://www.w3.org/2000/svg" width="${box.width}" height="${box.height}" viewBox="${box.left} ${box.top} ${box.width} ${box.height}" style="left:${box.left}px;top:${box.top}px"><defs>${defs}</defs>${paths}</svg>`;
 }
 
 function edgeLabels(edges: readonly ExportEdge[]): string {
-  return edges.filter(e => e.label).map(e => `<div class="skena-export-edge-label" style="left:${e.labelAt[0]}px;top:${e.labelAt[1]}px;border-color:${e.color}">${escapeHtml(e.label as string)}</div>`).join('');
+  return edges.filter(e => e.label).map(e => `<div class="skena-export-edge-label" style="left:${e.labelAt[0]}px;top:${e.labelAt[1]}px;border-color:${escapeHtml(e.color)}">${escapeHtml(e.label as string)}</div>`).join('');
 }
 
 function frames(box: PageBox, sections: readonly PageSection[]): string {
-  return sections.map(s => `<div class="skena-export-section" data-section-id="${escapeHtml(s.id)}" style="left:${box.left}px;top:${s.top}px;width:${box.width}px;height:${s.bottom - s.top}px;border-color:${s.color}">`
-    + `<div class="skena-export-section-title" style="color:${s.color}">${escapeHtml(s.label)} · ${escapeHtml(s.title)}`
+  return sections.map(s => `<div class="skena-export-section" data-section-id="${escapeHtml(s.id)}" style="left:${box.left}px;top:${s.top}px;width:${box.width}px;height:${s.bottom - s.top}px;border-color:${escapeHtml(s.color)}">`
+    + `<div class="skena-export-section-title" style="color:${escapeHtml(s.color)}">${escapeHtml(s.label)} · ${escapeHtml(s.title)}`
     + (s.kernelName ? `<span class="skena-export-section-kernel"> · ${escapeHtml(s.kernelName)}</span>` : '') + '</div></div>').join('');
 }
 
