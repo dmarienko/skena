@@ -192,3 +192,11 @@ test('12. a node with fields missing is drawn with the canvas defaults; a node t
   assert.match(bad, /<div class="skena-error"[^>]*>Export failed: [^<]+<\/div>/);
   assert.equal(r.html.match(/Export failed/g).length, 1);
 });
+
+test('13. a file node of a type the page does not show is not read', async () => {
+  // - the file does not exist: reading it would show the read error instead
+  const r = await exportNodes('unread', [box('u', 'file', 0, 0, { file: 'never-read.bin' })]);
+  const u = r.html.slice(r.html.indexOf('data-node-id="u"'));
+  assert.ok(u.includes('No preview available'));
+  assert.ok(!u.includes('ENOENT'));
+});

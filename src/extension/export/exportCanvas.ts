@@ -69,6 +69,10 @@ async function fileDataUrl(fsPath: string): Promise<string> {
   return `data:${mime};base64,${(await fs.readFile(fsPath)).toString('base64')}`;
 }
 
+// - the file types the page shows from the file's text; any other file is never read
+const SHOWN_TEXT_TYPES = new Set<FileType>(['markdown', 'python', 'yaml', 'html', 'notebook']);
+const NO_PREVIEW = '<div class="skena-unknown">No preview available</div>';
+
 // - lets the extension host's event loop run between two nodes; a large paper takes seconds to render
 const yieldToHost = () => new Promise<void>(resolve => setImmediate(resolve));
 
@@ -121,6 +125,7 @@ export async function exportCanvasHtml(canvasPath: string, deps: ExportDeps): Pr
       if (file.fileType === 'image') {
         return { fileType: 'image', title, body: `<img src="${await fileDataUrl(file.fsPath)}" alt="" style="width:100%;height:100%;object-fit:contain;display:block">` };
       }
+      if (!SHOWN_TEXT_TYPES.has(file.fileType)) return { fileType: file.fileType, title, body: NO_PREVIEW };
       const text = await fs.readFile(file.fsPath, 'utf-8');
       if (file.fileType === 'markdown') {
         const fm = extractFrontmatter(text);
@@ -137,7 +142,7 @@ export async function exportCanvasHtml(canvasPath: string, deps: ExportDeps): Pr
         const view = notebookHtml(nb, md, deps.notebookShowSource, s => code(s, lang), `skena-fig-${n.id}`, n.width - 2 * NODE_BORDER - 16, mdStyle);
         return { fileType: 'notebook', title, body: view.html, dir: path.dirname(file.fsPath), figures: view.figures };
       }
-      return { fileType: file.fileType, title, body: '<div class="skena-unknown">No preview available</div>' };
+      return { fileType: file.fileType, title, body: NO_PREVIEW };
     } catch (e) {
       return { fileType: file.fileType, title, body: `<div class="skena-error">Error: ${escapeHtml((e as Error).message)}</div>` };
     }
