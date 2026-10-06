@@ -1,0 +1,56 @@
+/* - the HTML export's own rules (src/extension/export/page.ts). The page also carries canvas.css
+   - and markdown.css, so the node classes look as they do on the canvas. */
+html, body { margin: 0; }
+body {
+  background: var(--vscode-editor-background, #1e1e1e);
+  color: var(--vscode-foreground, #cccccc);
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
+  font-size: var(--vscode-font-size, 13px);
+}
+.skena-export-page   { position: relative; overflow: hidden; }
+.skena-export-origin { position: absolute; }
+
+.skena-export-section { position: absolute; box-sizing: border-box; border: 1px solid; border-radius: 4px; }
+.skena-export-section-title { position: absolute; left: 12px; top: 8px; font: 600 14px system-ui, -apple-system, sans-serif; white-space: nowrap; }
+.skena-export-section-kernel { color: var(--sk-text2); font-weight: 400; }
+
+.skena-export-edges { position: absolute; overflow: visible; pointer-events: none; }
+.skena-export-edge-label {
+  position: absolute; transform: translate(-50%, -50%); z-index: 10; white-space: nowrap;
+  font-size: 10px; padding: 2px 7px; border-radius: 5px; border: 1.5px solid;
+  background: var(--vscode-editor-background); color: var(--vscode-foreground);
+}
+
+/* - a node far from the view is neither laid out nor painted until it comes near; its content is
+   - all there, so find-in-page and scrolling still reach it */
+.skena-export-node { position: absolute; box-sizing: border-box; content-visibility: auto; }
+.skena-export-node > .skena-node { box-sizing: border-box; }
+.skena-export-scroll { flex: 1; min-height: 0; overflow: auto; }
+.skena-export-head {
+  display: flex; align-items: center; gap: 5px; padding: 3px 40px 3px 14px;
+  font-size: 12px; white-space: nowrap; flex-shrink: 0; overflow: hidden; box-sizing: border-box;
+}
+.skena-export-file-head { display: flex; align-items: center; gap: 7px; padding: 6px 10px; min-height: 34px; flex-shrink: 0; box-sizing: border-box; }
+.skena-export-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* - NodeLabelBadge and its AI pill (colours from canvas/palette.ts) */
+.skena-export-label {
+  position: absolute; top: 0; right: 0; z-index: 10; width: 34px; height: 34px;
+  display: flex; align-items: center; justify-content: center;
+  font: 800 14px monospace; letter-spacing: 0.03em;
+  color: rgba(0, 255, 0, 0.92); background: rgba(17, 165, 191, 0.27); border-radius: 0 6px 0 8px;
+}
+.skena-export-ai {
+  position: absolute; bottom: 0; left: 0; z-index: 10; padding: 2px 6px;
+  font-size: 9px; font-weight: 600; color: #fff; background: rgba(100, 60, 220, 0.80); border-radius: 0 4px 0 6px;
+}
+
+/* - code cells: the editor font and background, line numbers in LINE_NUMBER_COLOR */
+.skena-export-code {
+  margin: 0; min-height: 100%; box-sizing: border-box; white-space: pre; tab-size: 4;
+  font-family: var(--vscode-editor-font-family, monospace); font-size: var(--vscode-editor-font-size, 12px); line-height: 1.3;
+  background: var(--vscode-editor-background);
+}
+.skena-export-ln { display: inline-block; width: var(--skena-export-gutter); margin-right: 6px; text-align: right; color: #90be065c; user-select: none; }
+
+.skena-export-missing { opacity: 0.6; font-size: 0.85em; font-style: italic; }
