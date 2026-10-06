@@ -40,6 +40,7 @@ import { executeCell, startKernel, shutdownKernel } from '../jupyter/client';
 import { renderOutput, hasVisibleOutput } from '../jupyter/output';
 import type { CollectedOutput } from '../jupyter/protocol';
 import { readEndpoint } from '../ipcEndpoint';
+import { postExport } from './exportRequest';
 import type { ExportReply } from '../../shared/types';
 
 // - "port:token" from the host (SKENA_RUN_IPC) → the 127.0.0.1 relay for live agent-run output
@@ -1714,29 +1715,33 @@ function exportHost(canvasPath: string): { port: number; token: string } | null 
   return null;
 }
 
+// - how long the tool waits for the extension's answer; a large canvas takes minutes to render
+const EXPORT_WAIT_MS = 30 * 60_000;
+
 async function canvasExportHtml(args: Record<string, unknown>): Promise<string> {
   const canvasPath = resolvePath(String(args.canvasPath ?? ''));
   if (!canvasPath.endsWith('.canvas')) throw new Error(`not a .canvas file: ${canvasPath}`);
   await fs.access(canvasPath);
-  const outPath = typeof args.outPath === 'string' && args.outPath.trim() ? resolvePath(args.outPath) : undefined;
+  // - a relative page path is read from the canvas's folder, not this server's working directory
+  const outPath = typeof args.outPath === 'string' && args.outPath.trim()
+    ? path.resolve(path.dirname(canvasPath), expandHome(args.outPath.trim()))
+    : undefined;
   if (outPath === canvasPath) throw new Error(`not writing the page to ${outPath}: it is the canvas being exported`);
   if (outPath && /\.canvas$/i.test(outPath)) throw new Error(`not writing the page to ${outPath}: that is a .canvas file`);
   const ipc = exportHost(canvasPath);
   if (!ipc) throw new Error(NO_EXPORT_HOST);
-  let res: Response;
-  try {
-    res = await fetch(`http://127.0.0.1:${ipc.port}/export`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-skena-token': ipc.token },
-      body: JSON.stringify({ canvasPath, outPath }),
-    });
-  } catch {
-    throw new Error(NO_EXPORT_HOST);
+  const res = await postExport(ipc.port, ipc.token, { canvasPath, outPath }, EXPORT_WAIT_MS);
+  if (res.kind === 'unreachable') throw new Error(NO_EXPORT_HOST);
+  if (res.kind === 'closed') throw new Error(`the skena extension closed the connection before it answered (${res.message}): was the VS Code window closed or reloaded? Call this again once it is open.`);
+  if (res.kind === 'timeout') {
+    // - exportCanvas.ts defaultHtmlPath: next to the canvas, same name
+    const target = outPath ?? path.join(path.dirname(canvasPath), `${path.basename(canvasPath, '.canvas')}.html`);
+    throw new Error(`the export is still running in VS Code (no answer after ${EXPORT_WAIT_MS / 60_000} min); the page appears at ${target} when it is done.`);
   }
   // - an extension older than this script has no /export and refuses it like a wrong token
   if (res.status === 403) throw new Error('the skena extension of this workspace refused the export: it may be older than this MCP script; reload the VS Code window');
-  if (!res.ok) throw new Error(`the skena extension answered HTTP ${res.status}`);
-  const reply = await res.json() as ExportReply;
+  if (res.status !== 200) throw new Error(`the skena extension answered HTTP ${res.status}`);
+  const reply = JSON.parse(res.body) as ExportReply;
   if (!reply.ok) throw new Error(reply.error);
   const missing = reply.missing.length
     ? `\n${reply.missing.length} images could not be read and show their address instead:\n${reply.missing.slice(0, 20).join('\n')}`
@@ -2103,7 +2108,7 @@ const TOOLS = [
       type: 'object',
       properties: {
         canvasPath: { type: 'string', description: 'Path to the .canvas file' },
-        outPath:    { type: 'string', description: 'Where to write the page; default: next to the canvas, same name, .html. An existing file is overwritten; a .canvas file never is.' },
+        outPath:    { type: 'string', description: 'Where to write the page: absolute, ~/..., or relative to the canvas\'s folder; default: next to the canvas, same name, .html. An existing file is overwritten; a .canvas file never is.' },
       },
       required: ['canvasPath'],
     },

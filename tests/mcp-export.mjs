@@ -1,4 +1,4 @@
-// - run: npm run build && npx esbuild src/extension/ipcEndpoint.ts --bundle --platform=node --format=esm --outfile=tests/.build/ipcEndpoint.mjs && node --test tests/mcp-export.mjs
+// - run: npm run build && npx esbuild src/extension/ipcEndpoint.ts --bundle --platform=node --format=esm --outfile=tests/.build/ipcEndpoint.mjs && npx esbuild src/extension/mcp/exportRequest.ts --bundle --platform=node --format=esm --outfile=tests/.build/exportRequest.mjs && node --test tests/mcp-export.mjs
 // - the MCP tool canvas_export_html against a fake relay; scratch files under the OS temp dir only
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { strict as assert } from 'node:assert';
 import { test, after } from 'node:test';
 import { writeEndpoint } from './.build/ipcEndpoint.mjs';
+import { postExport } from './.build/exportRequest.mjs';
 
 const REPO = new URL('..', import.meta.url).pathname;
 const TMP = mkdtempSync(join(tmpdir(), 'skena-mcp-export-'));
@@ -79,4 +80,44 @@ test('5. a page path that is a .canvas file, or the canvas itself, is refused be
     assert.match(await call({ SKENA_RUN_IPC: `${PORT}:t` }, { canvasPath: CANVAS, outPath }), /^Error: not writing the page to .*\.(canvas|CANVAS)/);
   }
   assert.equal(seen.length, before);
+});
+
+test('6. a relative page path is read from the canvas\'s folder, not the server\'s', async () => {
+  mkdirSync(join(WS, 'sub'), { recursive: true });
+  const canvas = join(WS, 'sub', 'b.canvas');
+  writeFileSync(canvas, JSON.stringify({ nodes: [], edges: [] }));
+  await call({ SKENA_RUN_IPC: `${PORT}:t` }, { canvasPath: canvas, outPath: 'pages/b.html' });
+  assert.deepEqual(seen.at(-1).body, { canvasPath: canvas, outPath: join(WS, 'sub', 'pages', 'b.html') });
+});
+
+// - a port nothing listens on: listen, read the port, close
+async function closedPort() {
+  const s = createServer();
+  await new Promise(r => s.listen(0, '127.0.0.1', r));
+  const port = s.address().port;
+  await new Promise(r => s.close(r));
+  return port;
+}
+
+test('7. the relay request tells an answer, no window, a window that closed, and an export still running apart', async () => {
+  const body = { canvasPath: '/w/a.canvas' };
+  const answered = await postExport(PORT, 'tok', body, 5_000);
+  assert.equal(answered.kind, 'answer');
+  assert.equal(answered.status, 200);
+  assert.equal(JSON.parse(answered.body).nodes, 3);
+  assert.deepEqual(await postExport(await closedPort(), 'tok', body, 5_000), { kind: 'unreachable', code: 'ECONNREFUSED' });
+  const dropping = createServer(req => req.socket.destroy());
+  const silent = createServer(() => {});
+  for (const s of [dropping, silent]) await new Promise(r => s.listen(0, '127.0.0.1', r));
+  assert.equal((await postExport(dropping.address().port, 'tok', body, 5_000)).kind, 'closed');
+  assert.deepEqual(await postExport(silent.address().port, 'tok', body, 300), { kind: 'timeout' });
+  silent.closeAllConnections(); silent.close(); dropping.close();
+});
+
+test('8. the tool says which: no window, or a window that dropped the request', async () => {
+  assert.match(await call({ SKENA_RUN_IPC: `${await closedPort()}:t` }, { canvasPath: CANVAS }), /^Error: no running skena extension found for this workspace/);
+  const dropping = createServer(req => req.socket.destroy());
+  await new Promise(r => dropping.listen(0, '127.0.0.1', r));
+  assert.match(await call({ SKENA_RUN_IPC: `${dropping.address().port}:t` }, { canvasPath: CANVAS }), /^Error: the skena extension closed the connection before it answered/);
+  dropping.close();
 });

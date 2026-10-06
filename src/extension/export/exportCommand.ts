@@ -48,7 +48,8 @@ export async function exportToFile(
   context: vscode.ExtensionContext, provider: SkenaEditorProvider, canvasPath: string, outPath?: string, progress?: ExportDeps['progress'],
 ): Promise<ExportReply> {
   try {
-    const target = outPath ?? defaultHtmlPath(canvasPath);
+    // - a relative page path is read from the canvas's folder, as the MCP tool reads it
+    const target = path.resolve(path.dirname(canvasPath), outPath ?? defaultHtmlPath(canvasPath));
     const r = await exportCanvasToFile(canvasPath, target, await exportDeps(context, provider, canvasPath, progress));
     return { ok: true, outPath: target, bytes: Buffer.byteLength(r.html), nodes: r.nodes, edges: r.edges, missing: r.missing };
   } catch (e) {
