@@ -17,7 +17,7 @@ import { codeCellHtml } from './codeHtml';
 import { escapeHtml, staticHtml } from './html';
 import { fileMarkdownHtml, nodeMarkdownHtml, rendererMarkdownHtml, rendersOnHost } from './markdown';
 import {
-  cellFigure, cellNodeHtml, chatNodeHtml, codeNodeHtml, fileNodeHtml, kernelNodeHtml, knowledgeNodeHtml, linkNodeHtml,
+  cellFigure, cellNodeHtml, chatNodeHtml, codeNodeHtml, errorNodeHtml, fileNodeHtml, kernelNodeHtml, knowledgeNodeHtml, linkNodeHtml,
   NODE_BORDER, noderefNodeHtml, notebookHtml, portalNodeHtml, textNodeHtml, type Figure, type FileView,
 } from './nodeHtml';
 import { buildPage, sectionFrames, type PageTheme } from './page';
@@ -114,8 +114,8 @@ export async function exportCanvasHtml(canvasPath: string, deps: ExportDeps): Pr
 
   // - a file node's view, the folder its images resolve from, and the figures of a notebook's plotly outputs
   const fileView = async (n: FileNode): Promise<FileView & { dir?: string; figures?: Figure[] }> => {
-    const title = filenameFromUri(n.file);
-    const file = deps.resolveFile(n.file, canvasDir);
+    const title = filenameFromUri(n.file ?? '');
+    const file = deps.resolveFile(n.file ?? '', canvasDir);
     if (!file) return { fileType: 'unknown', title, body: '<div class="skena-error">Error: NOT_FOUND</div>' };
     try {
       if (file.fileType === 'image') {
@@ -148,16 +148,16 @@ export async function exportCanvasHtml(canvasPath: string, deps: ExportDeps): Pr
   const render = async (n: CanvasNode): Promise<{ html: string; dir?: string; server?: string; figures?: Figure[] }> => {
     switch (n.type) {
       case 'text': {
-        const html = await nodeMarkdownHtml(n.text, factors, hl);
-        return { html: textNodeHtml(n, html, rendersOnHost(n.text, factors) ? '' : mdStyle) };
+        const text = n.text ?? '';
+        return { html: textNodeHtml(n, await nodeMarkdownHtml(text, factors, hl), rendersOnHost(text, factors) ? '' : mdStyle) };
       }
       case 'knowledge': {
-        const html = await nodeMarkdownHtml(n.text, factors, hl);
-        return { html: knowledgeNodeHtml(n, html, rendersOnHost(n.text, factors) ? '' : mdStyle), server: n.server };
+        const text = n.text ?? '';
+        return { html: knowledgeNodeHtml(n, await nodeMarkdownHtml(text, factors, hl), rendersOnHost(text, factors) ? '' : mdStyle), server: n.server };
       }
       case 'code': return { html: codeNodeHtml(n, codeCellHtml(n.code ?? '', codeTok, editorBg, deps.theme.dark)) };
       case 'cell': {
-        const md = n.format === 'markdown' ? await rendererMarkdownHtml(n.content) : null;
+        const md = n.format === 'markdown' ? await rendererMarkdownHtml(n.content ?? '') : null;
         const fig = cellFigure(n);
         return { html: cellNodeHtml(n, md, mdStyle), figures: fig ? [fig] : [] };
       }
@@ -177,11 +177,15 @@ export async function exportCanvasHtml(canvasPath: string, deps: ExportDeps): Pr
   const nodesHtml: string[] = [];
   const figures: Figure[] = [];
   for (const [i, n] of layout.nodes.entries()) {
-    const r = await render(n);
-    // - every node's html goes through the one pass that makes it static, its images put in
     const label = n.nodeLabel ?? n.id;
-    nodesHtml.push(await staticHtml(r.html, sources => resolveImages(sources, label, r.dir ?? canvasDir, r.server)));
-    figures.push(...r.figures ?? []);
+    try {
+      const r = await render(n);
+      // - every node's html goes through the one pass that makes it static, its images put in
+      nodesHtml.push(await staticHtml(r.html, sources => resolveImages(sources, label, r.dir ?? canvasDir, r.server)));
+      figures.push(...r.figures ?? []);
+    } catch (e) {
+      nodesHtml.push(errorNodeHtml(n, (e as Error).message));
+    }
     deps.progress?.(i + 1, layout.nodes.length);
     await yieldToHost();
   }

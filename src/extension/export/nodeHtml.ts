@@ -30,7 +30,7 @@ export function borderOf(node: CanvasNode): string {
 export function placeNode(node: CanvasNode, inner: string, badge = true): string {
   const label = badge && node.nodeLabel ? `<span class="skena-export-label">${escapeHtml(node.nodeLabel)}</span>` : '';
   const ai = node.createdBy === 'ai' ? '<span class="skena-export-ai">AI</span>' : '';
-  return `<div class="skena-export-node" data-node-id="${escapeHtml(node.id)}" data-label="${escapeHtml(node.nodeLabel ?? '')}"`
+  return `<div class="skena-export-node" data-node-id="${escapeHtml(String(node.id))}" data-label="${escapeHtml(String(node.nodeLabel ?? ''))}"`
     + ` style="left:${node.x}px;top:${node.y}px;width:${node.width}px;height:${node.height}px;contain-intrinsic-size:${node.width}px ${node.height}px">`
     + `${inner}${label}${ai}</div>`;
 }
@@ -59,10 +59,10 @@ export function knowledgeNodeHtml(node: KnowledgeNode, html: string, mdStyle = '
   const border = borderOf(node);
   const t = Date.parse(node.fetchedAt);
   const fetched = Number.isNaN(t) ? 'never fetched' : `fetched ${fmtDateTime(t)}`;
-  const head = `<div class="skena-export-head" title="${escapeHtml(node.error ?? node.uri)}" style="border-bottom:1px solid ${border}">`
-    + `<span style="opacity:0.7">${escapeHtml(node.server)}</span><span style="opacity:0.4">›</span>`
+  const head = `<div class="skena-export-head" title="${escapeHtml(node.error ?? node.uri ?? '')}" style="border-bottom:1px solid ${border}">`
+    + `<span style="opacity:0.7">${escapeHtml(node.server ?? '')}</span><span style="opacity:0.4">›</span>`
     + (node.changed ? `<span style="color:${border}">●</span>` : '')
-    + `<span class="skena-export-title">${escapeHtml(node.title)}</span><span style="opacity:0.4">·</span>`
+    + `<span class="skena-export-title">${escapeHtml(node.title ?? '')}</span><span style="opacity:0.4">·</span>`
     + `<span style="opacity:0.6">${fetched}</span>${node.error ? '<span style="opacity:0.6">!</span>' : ''}</div>`;
   return placeNode(node, card('knowledge', border, head + scroll(markdownDiv(html, mdStyle))));
 }
@@ -76,7 +76,7 @@ export function codeNodeHtml(node: CodeNode, linesHtml: string): string {
   const head = `<div class="skena-export-head" style="border-bottom:1px solid ${border};height:24px">`
     + `<span style="opacity:0.7">${escapeHtml(node.language ?? 'python')}</span>`
     + `<span style="margin-left:auto;font-size:14px;color:${node.lastStatus === 'error' ? '#e5484d' : border}">${glyph}</span></div>`;
-  const body = node.code.trim() ? linesHtml : '<div style="padding:8px;opacity:0.5;font-size:12px;font-style:italic">empty</div>';
+  const body = (node.code ?? '').trim() ? linesHtml : '<div style="padding:8px;opacity:0.5;font-size:12px;font-style:italic">empty</div>';
   return placeNode(node, card('code', border, head + scroll(body, '0'), 'background:var(--vscode-editorWidget-background)'));
 }
 
@@ -84,8 +84,8 @@ export function codeNodeHtml(node: CodeNode, linesHtml: string): string {
 export function cellNodeHtml(node: CellNode, markdownHtml: string | null, mdStyle = ''): string {
   let body: string;
   if (node.format === 'markdown') body = markdownDiv(markdownHtml ?? '', mdStyle);
-  else if (node.format === 'image') body = `<img src="${escapeHtml(node.content)}" alt="cell" style="max-width:100%;max-height:100%;object-fit:contain">`;
-  else if (node.format === 'html') body = `<div class="skena-cell-html">${capOutputHtml(node.content)}</div>`;
+  else if (node.format === 'image') body = `<img src="${escapeHtml(node.content ?? '')}" alt="cell" style="max-width:100%;max-height:100%;object-fit:contain">`;
+  else if (node.format === 'html') body = `<div class="skena-cell-html">${capOutputHtml(node.content ?? '')}</div>`;
   else {
     // - the plot fills the scroll box inside the border and its 6px 8px padding, as on the canvas
     body = plotlyEmbed(cellFigureId(node), node.width - 2 * NODE_BORDER - 16, node.height - 2 * NODE_BORDER - 12);
@@ -114,7 +114,7 @@ export function fileNodeHtml(node: FileNode, view: FileView): string {
   const border = borderOf(node);
   const tint = FILE_TYPE_COLORS[view.fileType] ?? FILE_TYPE_COLORS.unknown;
   const icon = FILE_TYPE_ICONS[view.fileType] ?? 'file';
-  const head = `<div class="skena-export-file-head" title="${escapeHtml(node.file)}" style="border-bottom:1px solid ${border}40;background:${tint}22">`
+  const head = `<div class="skena-export-file-head" title="${escapeHtml(node.file ?? '')}" style="border-bottom:1px solid ${border}40;background:${tint}22">`
     + `<span class="codicon codicon-${icon}" style="font-size:16px;opacity:0.7"></span>`
     + `<span class="skena-export-title" style="flex:1;font-size:16px;font-weight:600">${escapeHtml(view.title)}</span>`
     + (view.status ? statusBadge(view.status) : '')
@@ -129,12 +129,13 @@ function hostname(url: string): string {
 
 /** - a link: its host name and the address as text and as a plain link (no favicon, no thumbnail) */
 export function linkNodeHtml(node: LinkNode): string {
-  const body = `<div style="font-size:11px;opacity:0.6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(hostname(node.url))}</div>`
-    + `<a href="${escapeHtml(node.url)}" style="font-size:12px;word-break:break-all;opacity:0.85">${escapeHtml(node.url)}</a>`;
+  const url = node.url ?? '';
+  const body = `<div style="font-size:11px;opacity:0.6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(hostname(url))}</div>`
+    + `<a href="${escapeHtml(url)}" style="font-size:12px;word-break:break-all;opacity:0.85">${escapeHtml(url)}</a>`;
   return placeNode(node, card('link', borderOf(node), body, 'background:var(--vscode-editorWidget-background);padding:8px 10px;gap:6px'));
 }
 
-function canvasBasename(p: string): string {
+function canvasBasename(p = ''): string {
   const name = p.replace(/^(\.\.?\/)+/, '').split('/').pop() ?? p;
   return name.endsWith('.canvas') ? name.slice(0, -7) : name;
 }
@@ -154,7 +155,7 @@ export function noderefNodeHtml(node: NoderefNode): string {
   const inner = '<svg viewBox="0 0 100 100" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;overflow:visible">'
     + `<polygon points="50,1 99,50 50,99 1,50" fill="var(--vscode-editorWidget-background, #202020)" stroke="${border}" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>`
     + '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 18px"><div>'
-    + `<div style="font-size:12px;font-weight:700">${escapeHtml(canvasBasename(node.canvas))} › ${escapeHtml(node.label)}</div>`
+    + `<div style="font-size:12px;font-weight:700">${escapeHtml(canvasBasename(node.canvas))} › ${escapeHtml(node.label ?? '')}</div>`
     + (node.title ? `<div style="font-size:10px;opacity:0.6;margin-top:2px">${escapeHtml(node.title)}</div>` : '')
     + '</div></div>';
   return placeNode(node, inner);
@@ -177,7 +178,7 @@ export function kernelNodeHtml(node: KernelNode): string {
 export function chatNodeHtml(node: ChatNode): string {
   const border = borderOf(node);
   const head = `<div class="skena-export-head" style="border-bottom:1px solid ${border}40;font-weight:600">`
-    + `<span>💬</span><span>${escapeHtml(node.title)}</span><span style="margin-left:auto;opacity:0.5;font-weight:400">${escapeHtml(node.agent)}${node.model ? ` · ${escapeHtml(node.model)}` : ''}</span></div>`;
+    + `<span>💬</span><span>${escapeHtml(node.title ?? '')}</span><span style="margin-left:auto;opacity:0.5;font-weight:400">${escapeHtml(node.agent ?? '')}${node.model ? ` · ${escapeHtml(node.model)}` : ''}</span></div>`;
   return placeNode(node, card('chat', border, head, 'background:var(--vscode-editorWidget-background)'));
 }
 
@@ -188,7 +189,12 @@ const cellFigureId = (node: CellNode) => `skena-fig-${node.id}`;
 
 /** - the figure of a plotly output cell, null for the other formats */
 export function cellFigure(node: CellNode): Figure | null {
-  return node.format === 'plotly' ? { id: cellFigureId(node), json: node.content } : null;
+  return node.format === 'plotly' ? { id: cellFigureId(node), json: node.content ?? '' } : null;
+}
+
+/** - a node whose html could not be built: its box with the reason, so the rest of the page is still written */
+export function errorNodeHtml(node: CanvasNode, message: string): string {
+  return placeNode(node, card('error', '#e5484d', `<div class="skena-error">Export failed: ${escapeHtml(message)}</div>`));
 }
 
 // - a plotly figure's box: empty, the page's plotting script fills it when it scrolls near

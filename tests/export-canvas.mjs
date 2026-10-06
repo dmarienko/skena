@@ -172,3 +172,23 @@ test('11. markdown cells and notebook markdown cells: MarkdownRenderer\'s KaTeX 
   assert.equal(body.match(/class="katex-html"/g).length, 2);
   assert.equal(body.match(/<div class="skena-markdown" style="font-family:Georgia;font-size:15px">/g).length, 2);
 });
+
+test('12. a node with fields missing is drawn with the canvas defaults; a node that cannot be built shows why, and the rest is written', async () => {
+  const r = await exportNodes('bare', [
+    box('c', 'code', 0, 0),
+    box('k', 'knowledge', 700, 0, { server: 'crtx', uri: 'crtx://x', fetchedAt: '' }),
+    box('l', 'link', 1400, 0),
+    box('h', 'cell', 0, 400, { format: 'html' }),
+    box('m', 'cell', 700, 400, { format: 'markdown' }),
+    box('i', 'cell', 1400, 400, { format: 'image' }),
+    box('t', 'text', 0, 800),
+    box('p', 'portal', 700, 800),
+    box('r', 'noderef', 1400, 800),
+    box('h2', 'chat', 0, 1200),
+    box('bad', 'text', 1400, 1200, { text: 42 }),
+  ]);
+  assert.deepEqual(checkOffline(r.html, ['c', 'k', 'l', 'h', 'm', 'i', 't', 'p', 'r', 'h2', 'bad']).missingNodeIds, []);
+  const bad = r.html.slice(r.html.indexOf('data-node-id="bad"'));
+  assert.match(bad, /<div class="skena-error"[^>]*>Export failed: [^<]+<\/div>/);
+  assert.equal(r.html.match(/Export failed/g).length, 1);
+});
