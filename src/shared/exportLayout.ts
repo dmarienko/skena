@@ -16,7 +16,7 @@ export interface ExportLayout {
   nodes: CanvasNode[];
   /** - the edges whose two ends are both in `nodes` */
   edges: CanvasEdge[];
-  /** - every section, none folded; empty when the canvas has no sections */
+  /** - every section, none folded; empty only for a canvas with no node */
   lanes: DerivedLane[];
   /** - ids of the sections that are folded on the canvas */
   foldedLaneIds: string[];
@@ -25,21 +25,17 @@ export interface ExportLayout {
 /** The page's top-left corner in canvas coordinates, and its size. */
 export interface PageBox { left: number; top: number; width: number; height: number }
 
-function hasSections(canvas: CanvasData): boolean {
-  return (canvas.metadata?.sections?.length ?? 0) > 0 || canvas.nodes.some(n => (n as { type?: string }).type === 'section');
-}
-
 /**
- * The canvas as the export draws it. The file's data is not changed: labels, the section migration
- * and the unfolds are applied to copies. A canvas without sections gets none (the seed lane the
- * migration adds for the webview is dropped).
+ * The canvas as the export draws it. The section migration is the one the editor runs on open, so a
+ * canvas with nodes but no stored section gets the one section the canvas adds. The file's data is
+ * not changed: labels, the migration and the unfolds are applied to copies.
  */
 export function exportLayout(canvas: CanvasData, now: number): ExportLayout {
   const migrated = migrateSections(canvas, now);
   let nodes = ensureLabels(migrated.nodes).filter(n => !isGroup(n));
   const ids = new Set(nodes.map(n => n.id));
   const edges = migrated.edges.filter(e => ids.has(e.fromNode) && ids.has(e.toNode));
-  let lanes: SectionLane[] = hasSections(canvas) ? sortLanes(migrated.metadata?.sections ?? []) : [];
+  let lanes: SectionLane[] = sortLanes(migrated.metadata?.sections ?? []);
   const foldedLaneIds = lanes.filter(l => l.folded).map(l => l.id);
   for (const id of foldedLaneIds) {
     const r = unfoldLane(lanes, nodes, id);

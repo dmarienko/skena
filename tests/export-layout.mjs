@@ -47,10 +47,11 @@ test('3. the canvas passed in is not changed', () => {
   assert.equal(JSON.stringify(c), before);
 });
 
-test('4. a canvas without sections gets no section', () => {
-  const l = exportLayout({ nodes: [text('n1', 0, 0)], edges: [] }, 0);
-  assert.deepEqual(l.lanes, []);
+test('4. a canvas with nodes but no stored section gets the S1 the canvas adds on open; an empty one gets none', () => {
+  const l = exportLayout({ nodes: [text('n1', 0, 100)], edges: [] }, 7);
+  assert.deepEqual(l.lanes.map(s => [s.label, s.top, s.createdAt, s.memberIds]), [['S1', 0, 7, ['n1']]]);
   assert.deepEqual(l.foldedLaneIds, []);
+  assert.deepEqual(exportLayout({ nodes: [], edges: [] }, 7).lanes, []);
 });
 
 test('5. the page box holds the nodes, the section ranges and the extra points, plus the margin', () => {

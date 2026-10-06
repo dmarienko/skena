@@ -67,7 +67,12 @@ test('4. an edge between two sections is routed on its own, from side middle to 
   assert.equal(e.dashed, false);
 });
 
-test('5. an edge with no sides faces the other node', () => {
+test('5. a canvas with no stored section is routed in the section the canvas adds on open; an edge with no sides faces the other node', () => {
+  const nodes = [box('a', 'text', 100, 0, { width: 300, height: 200 }), box('b', 'text', 1000, 300, { width: 300, height: 200 }), box('c', 'text', 500, 150, { width: 300, height: 200 })];
+  const edges = [{ id: 'e', fromNode: 'a', fromSide: 'right', toNode: 'b', toSide: 'left' }, { id: 'f', fromNode: 'c', toNode: 'b' }];
+  const routes = canvas => exportEdges(exportLayout(canvas, 0)).map(e => e.points);
+  assert.deepEqual(routes({ nodes, edges: edges.slice(0, 1) }), [[[400, 100], [850, 100], [850, 400], [1000, 400]]]);
+  assert.deepEqual(routes({ nodes, edges }), routes({ nodes, edges, metadata: lanes([0]) }));
   const e = one({ nodes: [box('a', 'text', 0, 0), box('b', 'text', 900, 0)], edges: [{ id: 'e', fromNode: 'a', toNode: 'b' }] }, 'e');
   assert.deepEqual(e.points[0], [700, 150]);
   assert.deepEqual(e.points[e.points.length - 1], [900, 150]);
