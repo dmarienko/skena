@@ -25,6 +25,7 @@ import { spawn, type ChildProcess } from 'child_process';
 import type { ILLMClient, LLMMessage, LLMTool, LLMCallbacks, LLMContext, LLMUsage } from '../llm-client';
 import { loadKernelServers } from '../jupyter/manager';
 import { runIpc } from '../run-ipc';
+import { hashPath } from '../ipcEndpoint';
 import { effortArgs } from '../../shared/aiEffort';
 import { buildUserContent, type UserContent } from './userContent';
 
@@ -491,11 +492,4 @@ function harnessDirective(canvasPath: string): string {
     '',
     'When you reach an insight worth keeping, add it as a concise note connected to the currently focused node.',
   ].join('\n');
-}
-
-/** - short stable token from a path, for temp-file naming */
-function hashPath(p: string): string {
-  let h = 0;
-  for (let i = 0; i < p.length; i++) { h = (h * 31 + p.charCodeAt(i)) | 0; }
-  return (h >>> 0).toString(36);
 }

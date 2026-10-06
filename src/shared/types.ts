@@ -613,6 +613,11 @@ export interface AgentRunPersistResult {
   outputNodeId?: string;         // - authoritative output-node id (returned on 'start')
 }
 
+/** - the relay's answer to POST /export (the MCP tool canvas_export_html) */
+export type ExportReply =
+  | { ok: true; outPath: string; bytes: number; nodes: number; edges: number; missing: string[] }
+  | { ok: false; error: string };
+
 // - Webview → Host messages
 
 export interface MsgRequestFile {
