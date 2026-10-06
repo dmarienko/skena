@@ -62,8 +62,10 @@ const IMAGE_MIME: Record<string, string> = {
 const SERVER_URI = /^[a-z][a-z0-9+.-]*:\/\//i;
 const PLAIN_URI = /^(https?|data|blob|file|vscode-[a-z-]+):/i;
 
+// - only an image type is read and put in, as the canvas webview makes data urls only for those
 async function fileDataUrl(fsPath: string): Promise<string> {
-  const mime = IMAGE_MIME[path.extname(fsPath).toLowerCase()] ?? 'application/octet-stream';
+  const mime = IMAGE_MIME[path.extname(fsPath).toLowerCase()];
+  if (!mime) throw new Error('not an image file');
   return `data:${mime};base64,${(await fs.readFile(fsPath)).toString('base64')}`;
 }
 

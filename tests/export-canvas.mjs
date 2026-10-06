@@ -112,3 +112,20 @@ test('8. the page is never written over a canvas: the one exported, another .can
   const r = await exportCanvasToFile(CANVAS_PATH, page, deps);
   assert.equal(readFileSync(page, 'utf8'), r.html);
 });
+
+// - a canvas of its own under the scratch dir, exported with the same deps
+async function exportNodes(name, nodes, edges = [], metadata) {
+  const p = join(DIR, `${name}.canvas`);
+  writeFileSync(p, JSON.stringify({ nodes, edges, ...(metadata ? { metadata } : {}) }));
+  return exportCanvasHtml(p, deps);
+}
+
+test('9. an <img> that names a local file that is not an image is not put in; it is listed as missing', async () => {
+  writeFileSync(join(DIR, 'key.txt'), 'SECRET-KEY-123');
+  const r = await exportNodes('img-types', [box('t', 'text', 0, 0, { text: '<img src="key.txt" alt="k">\n\n![dot](dot.png)', nodeLabel: 'N1' })]);
+  assert.ok(!r.html.includes(Buffer.from('SECRET-KEY-123').toString('base64')));
+  assert.ok(!r.html.includes('application/octet-stream'));
+  assert.ok(r.html.includes('[image: k — key.txt]'));
+  assert.deepEqual(r.missing, ['N1 key.txt: not an image file']);
+  assert.ok(r.html.includes(`data:image/png;base64,${PNG.toString('base64')}`));
+});
