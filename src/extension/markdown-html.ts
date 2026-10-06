@@ -26,6 +26,7 @@ import remarkGfm           from 'remark-gfm';
 import remarkMath          from 'remark-math';
 import remarkRehype        from 'remark-rehype';
 import rehypeKatex         from 'rehype-katex';
+import rehypeRaw           from 'rehype-raw';
 import { toHtml }          from 'hast-util-to-html';
 import type { Root }       from 'hast';
 import { renderTypstSpans } from './typst-mdast';
@@ -181,4 +182,28 @@ export async function renderMarkdownToHtml(
     html = html.replace(`<p>${token}</p>`, blocks[k]).replace(token, blocks[k]);
   }
   return html;
+}
+
+// - the pipeline of the webview's MarkdownRenderer: react-markdown runs remark-gfm and remark-math,
+//   keeps raw html (rehype-raw) and renders math with rehype-katex in HTML output. A node the
+//   webview renders itself is rendered this way by the HTML export.
+let _webviewProcessor: ReturnType<typeof buildWebviewProcessor> | null = null;
+
+function buildWebviewProcessor() {
+  return unified()
+    .use(remarkParse)
+    .use(remarkGfm)
+    .use(remarkMath)
+    .use(remarkRehype, { allowDangerousHtml: true })
+    .use(rehypeRaw)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .use(rehypeKatex, { output: 'html', throwOnError: false } as any);
+}
+
+/** Markdown to HTML as the webview's MarkdownRenderer renders it: KaTeX HTML output, no Typst. */
+export async function renderMarkdownKatexHtml(content: string): Promise<string> {
+  const source = normalizeMath(content);
+  if (!_webviewProcessor) _webviewProcessor = buildWebviewProcessor();
+  const hast = await _webviewProcessor.run(_webviewProcessor.parse(source));
+  return toHtml(hast as Root);
 }

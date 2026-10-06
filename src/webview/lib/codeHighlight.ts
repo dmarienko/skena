@@ -12,34 +12,14 @@
 
 import { createHighlighter, type Highlighter } from 'shiki';
 import { useEffect, useState } from 'react';
+import { FACTORS_THEME, MARKDOWN_CODE_LANGS, hasCodeBlocks, highlightCodeBlocks } from '../../shared/markdownCodeBlocks';
 
-export const FACTORS_THEME = {
-  name: 'factors',
-  type: 'dark' as const,
-  // - shiki derives the <pre> bg/fg from these top-level fields; without them it falls
-  // - back to a red error colour (#ff161d / #ff0000). Keep in sync with colors[] below.
-  bg: '#0f161d',
-  fg: '#c7d1cc',
-  colors: { 'editor.background': '#0f161d', 'editor.foreground': '#c7d1cc' },
-  tokenColors: [
-    { scope: ['comment', 'punctuation.definition.comment'], settings: { foreground: '#56635d', fontStyle: 'italic' } },
-    { scope: ['keyword', 'storage.type', 'storage.modifier', 'keyword.control'], settings: { foreground: '#4cc8a0' } },
-    { scope: ['string', 'string.quoted', 'constant.character'], settings: { foreground: '#d9a23f' } },
-    { scope: ['constant.numeric', 'constant.language', 'constant.language.boolean'], settings: { foreground: '#e5707a' } },
-    { scope: ['entity.name.function', 'support.function', 'meta.function-call'], settings: { foreground: '#e8efeb' } },
-    { scope: ['entity.name.class', 'support.type', 'support.class', 'entity.name.type'], settings: { foreground: '#4cc8a0' } },
-    { scope: ['keyword.operator'], settings: { foreground: '#7c8a84' } },
-    { scope: ['variable.parameter', 'variable.other'], settings: { foreground: '#c7d1cc' } },
-  ],
-};
-
-const LANGS = ['python', 'javascript', 'typescript', 'bash', 'json', 'yaml', 'sql', 'rust', 'go', 'markdown'];
-const ALIAS: Record<string, string> = { sh: 'bash', zsh: 'bash', shell: 'bash', py: 'python', ts: 'typescript', js: 'javascript', yml: 'yaml', md: 'markdown', rs: 'rust', golang: 'go' };
+export { FACTORS_THEME };
 
 let _hl: Promise<Highlighter> | null = null;
 /** The one shiki highlighter of the markdown code blocks, shared with the code cells (codeCellTheme). */
 export function highlighter(): Promise<Highlighter> {
-  if (!_hl) _hl = createHighlighter({ themes: [FACTORS_THEME], langs: LANGS });
+  if (!_hl) _hl = createHighlighter({ themes: [FACTORS_THEME], langs: MARKDOWN_CODE_LANGS });
   return _hl;
 }
 
@@ -53,37 +33,13 @@ export function warmCodeHighlighter(): void {
   idle(() => { void highlighter(); });
 }
 
-// - the host escapes code content; undo it to recover the source shiki will re-highlight
-function decodeEntities(s: string): string {
-  return s
-    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'")
-    .replace(/&amp;/g, '&');   // - last, so &amp;lt; → &lt;
-}
-
-// - matches a fenced code block emitted by the host markdown pipeline
-const CODE_RE = /<pre><code class="[^"]*\blanguage-([\w+-]+)[^"]*">([\s\S]*?)<\/code><\/pre>/g;
-
 const cache = new Map<string, string>();   // - rawHtml → highlighted html
 
 async function highlightHtml(html: string): Promise<string> {
-  const matches = [...html.matchAll(CODE_RE)];
-  if (matches.length === 0) return html;
+  if (!hasCodeBlocks(html)) return html;
   let hl: Highlighter;
   try { hl = await highlighter(); } catch { return html; }
-  const loaded = new Set(hl.getLoadedLanguages());
-  let out = html;
-  // - splice from last match to first so earlier match indices stay valid
-  for (let i = matches.length - 1; i >= 0; i--) {
-    const m = matches[i];
-    const lang = ALIAS[m[1].toLowerCase()] ?? m[1].toLowerCase();
-    if (!loaded.has(lang)) continue;
-    let shiki: string;
-    try { shiki = hl.codeToHtml(decodeEntities(m[2]), { lang, theme: 'factors' }); }
-    catch { continue; }
-    out = out.slice(0, m.index) + shiki + out.slice(m.index! + m[0].length);
-  }
-  return out;
+  return highlightCodeBlocks(html, hl);
 }
 
 /**
