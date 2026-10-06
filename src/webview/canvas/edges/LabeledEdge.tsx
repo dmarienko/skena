@@ -30,42 +30,13 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { EdgeProps, BaseEdge, EdgeLabelRenderer, Position, useStore } from '@xyflow/react';
-import { routeOrthogonal, ORTHOGONAL_CORNER_R, NodeRect } from '../routing/orthogonal';
+import { routeOrthogonal, ORTHOGONAL_CORNER_R, type NodeRect } from '../../../shared/orthogonalRoute';
+import { edgeLabelPoint, waypointPath } from '../../../shared/edgePath';
 import { useZoomInvariantBorderWidth } from '../nodes/nodeShared';
 import { edgeKindColor, lighten, nodeBorderColor } from '../palette';
 import { useEdgeRoute } from '../EdgeRoutesContext';
 import { useThemeTick } from '../../theme';
 import type { EdgeKind } from '../../../shared/edgeRouting';
-
-// ─── SVG path builder ────────────────────────────────────────────────────────
-
-function roundedCorner(
-  from: [number, number],
-  via:  [number, number],
-  to:   [number, number],
-  r:    number,
-): string {
-  const d1x = from[0] - via[0], d1y = from[1] - via[1];
-  const d1   = Math.sqrt(d1x * d1x + d1y * d1y);
-  const d2x  = to[0]   - via[0], d2y = to[1]   - via[1];
-  const d2   = Math.sqrt(d2x * d2x + d2y * d2y);
-  if (d1 < 0.01 || d2 < 0.01) return `L ${via[0]},${via[1]}`;
-  const r1  = Math.min(r, d1 / 2);
-  const r2  = Math.min(r, d2 / 2);
-  const b1x = via[0] + (d1x / d1) * r1,  b1y = via[1] + (d1y / d1) * r1;
-  const b2x = via[0] + (d2x / d2) * r2,  b2y = via[1] + (d2y / d2) * r2;
-  return `L ${b1x},${b1y} Q ${via[0]},${via[1]} ${b2x},${b2y}`;
-}
-
-function waypointPath(pts: [number, number][], r: number): string {
-  if (pts.length < 2) return '';
-  let d = `M ${pts[0][0]},${pts[0][1]}`;
-  for (let i = 1; i < pts.length - 1; i++) {
-    d += ' ' + roundedCorner(pts[i - 1], pts[i], pts[i + 1], r);
-  }
-  d += ` L ${pts[pts.length - 1][0]},${pts[pts.length - 1][1]}`;
-  return d;
-}
 
 // - what this file needs of a React Flow node, taken structurally so it does not depend on the
 //   store's internal node type
@@ -180,10 +151,7 @@ export function LabeledEdgeComponent({
     ? route.points
     : routeOrthogonal(sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, obstacles(allNodes));
   const edgePath = waypointPath(pts, ORTHOGONAL_CORNER_R);
-  // - label at midpoint of the middle segment
-  const mi     = Math.max(1, Math.floor(pts.length / 2));
-  const labelX = (pts[mi - 1][0] + pts[mi][0]) / 2;
-  const labelY = (pts[mi - 1][1] + pts[mi][1]) / 2;
+  const [labelX, labelY] = edgeLabelPoint(pts);
 
   // - the zoom-invariant width of a 1 px line (the scaler node borders use, so edges thin out with
   //   the chrome rather than on their own). The scaler is linear in its base, so multiplying any

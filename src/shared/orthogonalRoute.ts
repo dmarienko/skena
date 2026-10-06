@@ -14,7 +14,7 @@
  * Exit and entry segments (source→ep, np→target) are always clear by construction.
  */
 
-import { Position } from '@xyflow/react';
+import type { Side } from './edgeRouting';
 
 export interface NodeRect {
   x: number;
@@ -34,9 +34,9 @@ const MARGIN   = PAD + 20; // - margin for boundary candidates (channels pass we
 // ─── geometry primitives ─────────────────────────────────────────────────────
 
 /** Exit point: `len` px from handle in the handle direction (default MIN_EXIT). */
-function exitPt(x: number, y: number, pos: Position, len: number = MIN_EXIT): Pt {
-  const dx = pos === Position.Right ? 1 : pos === Position.Left  ? -1 : 0;
-  const dy = pos === Position.Bottom ? 1 : pos === Position.Top   ? -1 : 0;
+function exitPt(x: number, y: number, pos: Side, len: number = MIN_EXIT): Pt {
+  const dx = pos === 'right'  ? 1 : pos === 'left' ? -1 : 0;
+  const dy = pos === 'bottom' ? 1 : pos === 'top'  ? -1 : 0;
   return [x + dx * len, y + dy * len];
 }
 
@@ -107,11 +107,11 @@ function tryZH(ep: Pt, np: Pt, cy: number, rects: NodeRect[]): Pt[] | null {
 /**
  * Route an orthogonal path from (sx,sy,sPos) to (tx,ty,tPos) avoiding rects.
  * Returns an array of waypoints: [[sx,sy], ..., [tx,ty]].
- * Use waypointPath(pts, ORTHOGONAL_CORNER_R) in LabeledEdge to render.
+ * Drawn with edgePath.waypointPath(pts, ORTHOGONAL_CORNER_R).
  */
 export function routeOrthogonal(
-  sx: number, sy: number, sPos: Position,
-  tx: number, ty: number, tPos: Position,
+  sx: number, sy: number, sPos: Side,
+  tx: number, ty: number, tPos: Side,
   rects: NodeRect[],
 ): Pt[] {
   const dist    = Math.hypot(tx - sx, ty - sy);
@@ -129,7 +129,7 @@ export function routeOrthogonal(
   // - exit direction → prefer ZV (horizontal-first).
   // - For vertical exits (Bottom/Top) continue in the exit direction → prefer ZH.
   // - This ensures fan-out edges always branch at a shared column/row at mid-distance.
-  const srcH = sPos === Position.Right || sPos === Position.Left;
+  const srcH = sPos === 'right' || sPos === 'left';
 
   // ── 1. Z at midpoint ─────────────────────────────────────────────────────────
   let mid: Pt[] | null = srcH
