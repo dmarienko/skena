@@ -194,6 +194,28 @@ export async function exportCanvasHtml(canvasPath: string, deps: ExportDeps): Pr
   return { html, nodes: layout.nodes.length, edges: edges.length, missing };
 }
 
+const CANVAS_FILE = /\.canvas$/i;
+
+// - a target that is a .canvas file, or names the canvas through a link, is refused before anything is rendered
+async function checkExportTarget(canvasPath: string, target: string): Promise<void> {
+  const real = (p: string) => fs.realpath(p).catch(() => path.resolve(p));
+  const [t, c] = await Promise.all([real(target), real(canvasPath)]);
+  if (t === c) throw new Error(`not writing the page to ${target}: it is the canvas being exported`);
+  if (CANVAS_FILE.test(target) || CANVAS_FILE.test(t)) throw new Error(`not writing the page to ${target}: that is a .canvas file`);
+}
+
+/**
+ * Exports `canvasPath` and writes the page to `target`. The command and the relay's /export both
+ * write through here, and it never writes over a canvas: not the one it reads, not another .canvas
+ * file, not a link to one.
+ */
+export async function exportCanvasToFile(canvasPath: string, target: string, deps: ExportDeps): Promise<ExportResult> {
+  await checkExportTarget(canvasPath, target);
+  const r = await exportCanvasHtml(canvasPath, deps);
+  await fs.writeFile(target, r.html, 'utf-8');
+  return r;
+}
+
 /** - the page the command and the MCP tool write when no path is given: next to the canvas, same name */
 export function defaultHtmlPath(canvasPath: string): string {
   return path.join(path.dirname(canvasPath), `${path.basename(canvasPath, '.canvas')}.html`);

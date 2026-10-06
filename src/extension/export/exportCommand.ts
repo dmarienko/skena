@@ -5,13 +5,12 @@
  */
 
 import * as vscode from 'vscode';
-import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { ExportReply } from '../../shared/types';
 import { FileResolver } from '../file-resolver';
 import { getVaults } from '../settings';
 import type { SkenaEditorProvider } from '../editor-provider';
-import { defaultHtmlPath, exportCanvasHtml, type ExportDeps } from './exportCanvas';
+import { defaultHtmlPath, exportCanvasToFile, type ExportDeps } from './exportCanvas';
 import { FALLBACK_THEME } from './page';
 
 // - an http(s) image for the page, as a data url; 15 s per image
@@ -50,8 +49,7 @@ export async function exportToFile(
 ): Promise<ExportReply> {
   try {
     const target = outPath ?? defaultHtmlPath(canvasPath);
-    const r = await exportCanvasHtml(canvasPath, await exportDeps(context, provider, canvasPath, progress));
-    await fs.writeFile(target, r.html, 'utf-8');
+    const r = await exportCanvasToFile(canvasPath, target, await exportDeps(context, provider, canvasPath, progress));
     return { ok: true, outPath: target, bytes: Buffer.byteLength(r.html), nodes: r.nodes, edges: r.edges, missing: r.missing };
   } catch (e) {
     return { ok: false, error: (e as Error).message };

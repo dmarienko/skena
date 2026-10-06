@@ -72,3 +72,11 @@ test('4. a path that is not a .canvas file is refused before anything is asked',
   assert.match(await call({ SKENA_RUN_IPC: `${PORT}:t` }, { canvasPath: join(WS, 'a.md') }), /^Error: not a \.canvas file/);
   assert.equal(seen.length, before);
 });
+
+test('5. a page path that is a .canvas file, or the canvas itself, is refused before anything is asked', async () => {
+  const before = seen.length;
+  for (const outPath of [join(WS, 'b.canvas'), join(WS, 'B.CANVAS'), CANVAS]) {
+    assert.match(await call({ SKENA_RUN_IPC: `${PORT}:t` }, { canvasPath: CANVAS, outPath }), /^Error: not writing the page to .*\.(canvas|CANVAS)/);
+  }
+  assert.equal(seen.length, before);
+});

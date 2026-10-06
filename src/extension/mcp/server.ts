@@ -1719,6 +1719,8 @@ async function canvasExportHtml(args: Record<string, unknown>): Promise<string> 
   if (!canvasPath.endsWith('.canvas')) throw new Error(`not a .canvas file: ${canvasPath}`);
   await fs.access(canvasPath);
   const outPath = typeof args.outPath === 'string' && args.outPath.trim() ? resolvePath(args.outPath) : undefined;
+  if (outPath === canvasPath) throw new Error(`not writing the page to ${outPath}: it is the canvas being exported`);
+  if (outPath && /\.canvas$/i.test(outPath)) throw new Error(`not writing the page to ${outPath}: that is a .canvas file`);
   const ipc = exportHost(canvasPath);
   if (!ipc) throw new Error(NO_EXPORT_HOST);
   let res: Response;
@@ -2101,7 +2103,7 @@ const TOOLS = [
       type: 'object',
       properties: {
         canvasPath: { type: 'string', description: 'Path to the .canvas file' },
-        outPath:    { type: 'string', description: 'Where to write the page; default: next to the canvas, same name, .html. An existing file is overwritten.' },
+        outPath:    { type: 'string', description: 'Where to write the page; default: next to the canvas, same name, .html. An existing file is overwritten; a .canvas file never is.' },
       },
       required: ['canvasPath'],
     },

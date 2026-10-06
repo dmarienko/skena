@@ -2,11 +2,11 @@
 // - a scratch canvas under the OS temp dir with one node of every type; no real .canvas file is read
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, extname, join, resolve } from 'node:path';
 import { buildExportAssets } from '../scripts/build-export-assets.mjs';
-import { defaultHtmlPath, exportCanvasHtml } from './.build/exportCanvas.mjs';
+import { defaultHtmlPath, exportCanvasHtml, exportCanvasToFile } from './.build/exportCanvas.mjs';
 import { checkOffline } from './.build/offlineCheck.mjs';
 import { FALLBACK_THEME } from './.build/exportPage.mjs';
 
@@ -97,4 +97,18 @@ test('6. the file node shows its frontmatter title and status', () => {
 
 test('7. the default page path is the canvas path with .html', () => {
   assert.equal(defaultHtmlPath('/a/b/factors-essentials.canvas'), '/a/b/factors-essentials.html');
+});
+
+test('8. the page is never written over a canvas: the one exported, another .canvas file, or a link to one', async () => {
+  const other = join(DIR, 'other.canvas');
+  const link = join(DIR, 'link.html');
+  symlinkSync(CANVAS_PATH, link);
+  for (const target of [CANVAS_PATH, other, join(DIR, 'UPPER.CANVAS'), link]) {
+    await assert.rejects(exportCanvasToFile(CANVAS_PATH, target, deps), /^Error: not writing the page to .*: (that is a \.canvas file|it is the canvas being exported)$/, target);
+  }
+  assert.equal(readFileSync(CANVAS_PATH, 'utf8'), JSON.stringify(CANVAS));
+  assert.ok(!existsSync(other));
+  const page = join(DIR, 'all.html');
+  const r = await exportCanvasToFile(CANVAS_PATH, page, deps);
+  assert.equal(readFileSync(page, 'utf8'), r.html);
 });
