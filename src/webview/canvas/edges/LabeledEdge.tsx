@@ -6,7 +6,7 @@
  *   (src/shared/edgeRouting.ts); this component only draws the polyline it finds in
  *   EdgeRoutesContext.  An edge with no entry there — the two ends in different sections,
  *   or a canvas with no sections — falls back to the per-edge orthogonal router
- *   (routing/orthogonal.ts), which produces PCB-style axis-aligned polylines that avoid all
+ *   (src/shared/orthogonalRoute.ts), which produces PCB-style axis-aligned polylines that avoid all
  *   node bounding boxes.  Corners are drawn with small quadratic-bezier rounds (8 px radius).
  *
  * Look:
