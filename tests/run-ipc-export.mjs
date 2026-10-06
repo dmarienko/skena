@@ -7,9 +7,10 @@ import { join } from 'node:path';
 import { runIpc } from './.build/runIpc.mjs';
 import { readEndpoint } from './.build/ipcEndpoint.mjs';
 
-// - the endpoint files go to a temp dir of this test, not the real one
+// - the endpoint files go to a temp dir of this test, not the real one (nor XDG_RUNTIME_DIR)
 const TMP = mkdtempSync(join(tmpdir(), 'skena-relay-'));
 process.env.TMPDIR = TMP;
+delete process.env.XDG_RUNTIME_DIR;
 
 const calls = [];
 runIpc.start(() => undefined);
