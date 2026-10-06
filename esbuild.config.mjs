@@ -14,6 +14,7 @@
 import * as esbuild from 'esbuild';
 import { copyFileSync, mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { buildExportAssets } from './scripts/build-export-assets.mjs';
 const require = createRequire(import.meta.url);
 
 // - copy plotly.js dist asset (lazy-loaded by the webview via <script>, NOT bundled)
@@ -114,6 +115,8 @@ if (watch) {
   ]);
   await Promise.all([extCtx.watch(), webCtx.watch(), mcpCtx.watch()]);
   copyPlotlyAsset();
+  // - written once; a stylesheet edited while watching reaches the export after the next build
+  buildExportAssets('.', 'dist/export-assets');
   console.log('Watching for changes...');
 } else {
   await Promise.all([
@@ -122,4 +125,5 @@ if (watch) {
     esbuild.build(mcpServerConfig),
   ]);
   copyPlotlyAsset();
+  buildExportAssets('.', 'dist/export-assets');
 }
