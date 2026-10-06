@@ -3,9 +3,10 @@
  * when the cell is opened: bracket colours by nesting pair, relative line numbers, a line-number
  * column of the same width, and each line cut into styled runs.
  *
- * The editor always tokenizes a code cell as python (CodeNode passes language="python"), so the
- * bracket rules follow Monaco 0.55's python grammar (basic-languages/python/python.js) and its
- * bracket pair colorizer (common/model/bracketPairsTextModelPart).
+ * The editor always tokenizes a code cell as python (CodeNode passes language="python"): with
+ * Monaco 0.55's python grammar (basic-languages/python/python.js) under the factors code theme, else
+ * with shiki's (codeCellShiki). The bracket rules follow that tokenizer and Monaco's bracket pair
+ * colorizer (common/model/bracketPairsTextModelPart).
  */
 
 /** One bracket the editor colours. `line` and `col` are 0-based. */
@@ -154,13 +155,14 @@ const PYTHON_RULES: Record<string, Rule[]> = {
 const OPENERS = '([{';
 const CLOSERS = ')]}';
 
+type FoundBracket = { line: number; col: number; ch: string };
+
 /**
- * Every bracket Monaco colours in `lines` (the cell text split at line breaks), with its nesting level.
- * Brackets inside strings and comments are left out. A closing bracket pairs with the nearest open
- * bracket of its kind; brackets opened after that one and still open are marked invalid (never closed).
+ * Every bracket Monaco colours in `lines` (the cell text split at line breaks) under its python
+ * tokenizer, with its nesting level. Brackets inside strings and comments are left out.
  */
 export function pythonBracketLevels(lines: readonly string[]): BracketMark[] {
-  const found: { line: number; col: number; ch: string }[] = [];
+  const found: FoundBracket[] = [];
   const stack: string[] = ['root'];
   for (let ln = 0; ln < lines.length; ln++) {
     const text = lines[ln];
@@ -185,7 +187,36 @@ export function pythonBracketLevels(lines: readonly string[]): BracketMark[] {
       pos += len;
     }
   }
+  return pairBrackets(found);
+}
 
+/**
+ * Every bracket Monaco colours when the editor's tokens of `lines` are `tokens` (per line, each token
+ * from its offset to the next one's), with its nesting level: Monaco takes brackets only from tokens of
+ * standard type other (0), so those in comments, strings and regexes are left out.
+ */
+export function tokenBracketLevels(
+  lines: readonly string[],
+  tokens: readonly (readonly { offset: number; type: number }[])[],
+): BracketMark[] {
+  const found: FoundBracket[] = [];
+  lines.forEach((text, ln) => {
+    const row = tokens[ln] ?? [];
+    row.forEach((t, k) => {
+      if (t.type !== 0) return;
+      const end = k + 1 < row.length ? row[k + 1].offset : text.length;
+      for (let i = t.offset; i < end; i++) {
+        const ch = text[i];
+        if (OPENERS.includes(ch) || CLOSERS.includes(ch)) found.push({ line: ln, col: i, ch });
+      }
+    });
+  });
+  return pairBrackets(found);
+}
+
+// - a closing bracket pairs with the nearest open bracket of its kind; brackets opened after that one and
+// - still open are marked invalid (never closed)
+function pairBrackets(found: readonly FoundBracket[]): BracketMark[] {
   const marks: BracketMark[] = [];
   const open: { kind: number; mark: number }[] = [];
   for (const b of found) {
