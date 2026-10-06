@@ -39,6 +39,8 @@ import { ownedOutputId } from '../../shared/outputLink';
 import { executeCell, startKernel, shutdownKernel } from '../jupyter/client';
 import { renderOutput, hasVisibleOutput } from '../jupyter/output';
 import type { CollectedOutput } from '../jupyter/protocol';
+import { readEndpoint } from '../ipcEndpoint';
+import type { ExportReply } from '../../shared/types';
 
 // - "port:token" from the host (SKENA_RUN_IPC) → the 127.0.0.1 relay for live agent-run output
 function parseRunIpc(raw: string | undefined): { port: number; token: string } | null {
@@ -1697,6 +1699,49 @@ async function canvasRemoveKernel(args: Record<string, unknown>): Promise<string
   }); // - withFileLock
 }
 
+const NO_EXPORT_HOST = 'no running skena extension found for this workspace. The page is rendered by the extension, which has Typst, the code theme setting and the knowledge server token: open the workspace in VS Code, open any .canvas in it once (that starts skena), and call this again.';
+
+// - the relay of the extension running this workspace: the AI companion passes it in SKENA_RUN_IPC;
+//   an MCP server started from .mcp.json reads the endpoint file the extension wrote (ipcEndpoint.ts)
+function exportHost(canvasPath: string): { port: number; token: string } | null {
+  const fromEnv = parseRunIpc(process.env.SKENA_RUN_IPC);
+  if (fromEnv) return fromEnv;
+  const dirs = [workspaceDirAbove(path.dirname(canvasPath)), process.cwd()].filter((d): d is string => !!d);
+  for (const dir of dirs) {
+    const ipc = parseRunIpc(readEndpoint(dir) ?? undefined);
+    if (ipc) return ipc;
+  }
+  return null;
+}
+
+async function canvasExportHtml(args: Record<string, unknown>): Promise<string> {
+  const canvasPath = resolvePath(String(args.canvasPath ?? ''));
+  if (!canvasPath.endsWith('.canvas')) throw new Error(`not a .canvas file: ${canvasPath}`);
+  await fs.access(canvasPath);
+  const outPath = typeof args.outPath === 'string' && args.outPath.trim() ? resolvePath(args.outPath) : undefined;
+  const ipc = exportHost(canvasPath);
+  if (!ipc) throw new Error(NO_EXPORT_HOST);
+  let res: Response;
+  try {
+    res = await fetch(`http://127.0.0.1:${ipc.port}/export`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-skena-token': ipc.token },
+      body: JSON.stringify({ canvasPath, outPath }),
+    });
+  } catch {
+    throw new Error(NO_EXPORT_HOST);
+  }
+  // - an extension older than this script has no /export and refuses it like a wrong token
+  if (res.status === 403) throw new Error('the skena extension of this workspace refused the export: it may be older than this MCP script; reload the VS Code window');
+  if (!res.ok) throw new Error(`the skena extension answered HTTP ${res.status}`);
+  const reply = await res.json() as ExportReply;
+  if (!reply.ok) throw new Error(reply.error);
+  const missing = reply.missing.length
+    ? `\n${reply.missing.length} images could not be read and show their address instead:\n${reply.missing.slice(0, 20).join('\n')}`
+    : '';
+  return `Exported ${reply.nodes} nodes and ${reply.edges} edges to ${reply.outPath} (${(reply.bytes / 1e6).toFixed(1)} MB).${missing}`;
+}
+
 // ─── tool definitions ─────────────────────────────────────────────────────────
 
 const TOOLS = [
@@ -2049,6 +2094,18 @@ const TOOLS = [
       required: ['canvasPath', 'cellRef'],
     },
   },
+  {
+    name: 'canvas_export_html',
+    description: 'Write the canvas as one self-contained HTML page that loads nothing from the network: every node at its canvas position and size with its label, sections as frames (folded ones drawn unfolded), edges with their labels, math (KaTeX, Typst), code cells in the skena.code.theme colours, output cells (html, images, plotly), knowledge nodes and markdown files in full, all fonts and images inlined. Read-only on the .canvas file. The page is rendered by the skena extension of the running VS Code window of this workspace; without one this tool says so.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        canvasPath: { type: 'string', description: 'Path to the .canvas file' },
+        outPath:    { type: 'string', description: 'Where to write the page; default: next to the canvas, same name, .html. An existing file is overwritten.' },
+      },
+      required: ['canvasPath'],
+    },
+  },
 ];
 
 // ─── MCP protocol ─────────────────────────────────────────────────────────────
@@ -2123,6 +2180,7 @@ async function dispatch(msg: JsonRpcMsg): Promise<void> {
         case 'canvas_reflow_section': text = await canvasReflowSection(args); break;
         case 'canvas_add_kernel':     text = await canvasAddKernel(args);     break;
         case 'canvas_remove_kernel':  text = await canvasRemoveKernel(args);  break;
+        case 'canvas_export_html':    text = await canvasExportHtml(args);    break;
         default: throw new Error(`Unknown tool: ${name}`);
       }
       ok(id, { content: [{ type: 'text', text }] });
