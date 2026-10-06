@@ -86,3 +86,19 @@ test('6. an edge colour stays inside its attributes', () => {
   assert.ok(html.includes('stroke="red&quot; onclick=&quot;x()" stroke-opacity'));
   assert.ok(html.includes('border-color:red&quot; onclick=&quot;x()">l</div>'));
 });
+
+test('7. a figure whose JSON does not parse shows the error in its box; the other figures are still plotted', () => {
+  const html = buildPage(input({ plotlyJs: 'window.Plotly={newPlot(){}};', figures: [{ id: 'bad', json: '{not json' }, { id: 'good', json: '{"data":[{"y":[1]}]}' }] }));
+  const script = html.slice(html.lastIndexOf('<script>') + 8, html.lastIndexOf('</script>'));
+  const json = id => html.match(new RegExp(`<script type="application/json" id="${id}">([^<]*)</script>`))[1];
+  const box = id => ({ dataset: { plotly: id, w: '100', h: '50' }, textContent: '', classList: { names: [], add(c) { this.names.push(c); } } });
+  const boxes = [box('bad'), box('good')];
+  const document = { querySelectorAll: () => boxes, getElementById: id => ({ textContent: json(id) }) };
+  class IntersectionObserver { constructor(cb) { this.cb = cb; } observe(el) { this.cb([{ isIntersecting: true, target: el }]); } unobserve() {} }
+  const plotted = [];
+  const Plotly = { newPlot: (el, data, layout) => plotted.push([el.dataset.plotly, data, layout.width, layout.height]) };
+  new Function('document', 'IntersectionObserver', 'Plotly', script)(document, IntersectionObserver, Plotly);
+  assert.deepEqual(plotted, [['good', [{ y: [1] }], 100, 50]]);
+  assert.match(boxes[0].textContent, /^Plot failed: /);
+  assert.deepEqual(boxes[0].classList.names, ['skena-error']);
+});

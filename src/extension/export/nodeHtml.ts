@@ -86,10 +86,12 @@ export function cellNodeHtml(node: CellNode, markdownHtml: string | null, mdStyl
   if (node.format === 'markdown') body = markdownDiv(markdownHtml ?? '', mdStyle);
   else if (node.format === 'image') body = `<img src="${escapeHtml(node.content ?? '')}" alt="cell" style="max-width:100%;max-height:100%;object-fit:contain">`;
   else if (node.format === 'html') body = `<div class="skena-cell-html">${capOutputHtml(node.content ?? '')}</div>`;
-  else {
+  else if (node.format === 'plotly') {
     // - the plot fills the scroll box inside the border and its 6px 8px padding, as on the canvas
     body = plotlyEmbed(cellFigureId(node), node.width - 2 * NODE_BORDER - 16, node.height - 2 * NODE_BORDER - 12);
   }
+  // - another format: CellNode draws nothing for it
+  else body = '';
   return placeNode(node, `<div class="skena-node skena-node--cell" style="border:${NODE_BORDER}px dashed ${borderOf(node)};height:100%;border-radius:6px;overflow:hidden;display:flex;flex-direction:column">${scroll(body, '6px 8px')}</div>`);
 }
 

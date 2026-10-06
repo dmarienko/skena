@@ -58,15 +58,21 @@ export function sectionFrames(lanes: readonly DerivedLane[], nodes: readonly Can
   });
 }
 
-// - plots a figure when its cell comes within 1000px of the view, at the size the canvas gives it
+// - plots a figure when its cell comes within 1000px of the view, at the size the canvas gives it;
+//   a figure that cannot be read or plotted shows the error in its box, and the others still plot
 const PLOT_SCRIPT = `(function () {
   var io = new IntersectionObserver(function (entries) {
     entries.forEach(function (e) {
       if (!e.isIntersecting) return;
       io.unobserve(e.target);
-      var fig = JSON.parse(document.getElementById(e.target.dataset.plotly).textContent);
-      var layout = Object.assign({}, fig.layout || {}, { width: Number(e.target.dataset.w), height: Number(e.target.dataset.h) });
-      Plotly.newPlot(e.target, fig.data, layout, { displaylogo: false, responsive: false });
+      try {
+        var fig = JSON.parse(document.getElementById(e.target.dataset.plotly).textContent);
+        var layout = Object.assign({}, fig.layout || {}, { width: Number(e.target.dataset.w), height: Number(e.target.dataset.h) });
+        Plotly.newPlot(e.target, fig.data, layout, { displaylogo: false, responsive: false });
+      } catch (err) {
+        e.target.classList.add('skena-error');
+        e.target.textContent = 'Plot failed: ' + err.message;
+      }
     });
   }, { rootMargin: '1000px' });
   document.querySelectorAll('[data-plotly]').forEach(function (el) { io.observe(el); });

@@ -104,3 +104,11 @@ test('10. values from the file stay inside their style attribute: the markdown f
   }
   for (const color of ['#ff0000', 'red', 'rgb(1 2 3 / 50%)']) assert.ok(textNodeHtml({ id: 't', type: 'text', text: '', color, ...at }, '').includes(`solid ${color};`), color);
 });
+
+test('11. an output cell of a format the canvas does not know draws nothing, as CellNode does', () => {
+  const cell = { id: 'u', type: 'cell', format: 'text', content: 'hello', ...at };
+  const html = cellNodeHtml(cell, null);
+  assert.ok(!html.includes('hello') && !html.includes('data-plotly') && !html.includes('<script'));
+  assert.ok(html.includes('<div class="skena-export-scroll" style="padding:6px 8px"></div>'));
+  assert.equal(cellFigure(cell), null);
+});
