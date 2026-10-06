@@ -14,7 +14,7 @@ import { codeTokenizer } from '../../webview/canvas/codeCellShiki';
 import { parseNotebook } from '../notebook-parser';
 import { exportEdges } from './edges';
 import { codeCellHtml } from './codeHtml';
-import { balanceHtml, decodeAttr, escapeHtml, imageSources, stripActiveHtml, swapImageSources } from './html';
+import { escapeHtml, staticHtml } from './html';
 import { fileMarkdownHtml, nodeMarkdownHtml, rendersOnHost } from './markdown';
 import {
   cellFigure, cellNodeHtml, chatNodeHtml, codeNodeHtml, fileNodeHtml, kernelNodeHtml, knowledgeNodeHtml, linkNodeHtml,
@@ -87,33 +87,33 @@ export async function exportCanvasHtml(canvasPath: string, deps: ExportDeps): Pr
   const mdStyle = [deps.mdFont?.family && `font-family:${deps.mdFont.family}`, deps.mdFont?.size && `font-size:${deps.mdFont.size}px`].filter(Boolean).join(';');
   const missing: string[] = [];
 
-  // - every <img> of `html` that is not a data url, read and put in; `dir` resolves a relative path
-  const inlineImages = async (html: string, label: string, dir: string, server?: string): Promise<string> => {
+  // - each image address of a node as a data url, or null when it cannot be read (listed in `missing`);
+  //   `dir` resolves a relative path, `server` is the knowledge server of a knowledge node
+  const resolveImages = async (sources: string[], label: string, dir: string, server?: string): Promise<Map<string, string | null>> => {
     const resolved = new Map<string, string | null>();
-    await Promise.all(imageSources(html).map(async src => {
-      const where = decodeAttr(src);
+    await Promise.all(sources.map(async where => {
       try {
         if (/^https?:/i.test(where)) {
           if (!deps.fetchImage) throw new Error('no network fetch given');
-          resolved.set(src, await deps.fetchImage(where));
+          resolved.set(where, await deps.fetchImage(where));
         } else if (SERVER_URI.test(where) && !PLAIN_URI.test(where)) {
           if (!server || !deps.knowledgeAsset) throw new Error('no knowledge server for this image');
-          resolved.set(src, await deps.knowledgeAsset(server, where));
+          resolved.set(where, await deps.knowledgeAsset(server, where));
         } else {
           const file = deps.resolveFile(where.replace(/^file:\/\//, ''), dir);
           if (!file) throw new Error('does not resolve');
-          resolved.set(src, await fileDataUrl(file.fsPath));
+          resolved.set(where, await fileDataUrl(file.fsPath));
         }
       } catch (e) {
-        resolved.set(src, null);
+        resolved.set(where, null);
         missing.push(`${label} ${where}: ${(e as Error).message}`);
       }
     }));
-    return resolved.size ? swapImageSources(html, resolved) : html;
+    return resolved;
   };
 
-  // - a file node's view, and the figures of a notebook's plotly outputs
-  const fileView = async (n: FileNode): Promise<FileView & { figures?: Figure[] }> => {
+  // - a file node's view, the folder its images resolve from, and the figures of a notebook's plotly outputs
+  const fileView = async (n: FileNode): Promise<FileView & { dir?: string; figures?: Figure[] }> => {
     const title = filenameFromUri(n.file);
     const file = deps.resolveFile(n.file, canvasDir);
     if (!file) return { fileType: 'unknown', title, body: '<div class="skena-error">Error: NOT_FOUND</div>' };
@@ -124,18 +124,18 @@ export async function exportCanvasHtml(canvasPath: string, deps: ExportDeps): Pr
       const text = await fs.readFile(file.fsPath, 'utf-8');
       if (file.fileType === 'markdown') {
         const fm = extractFrontmatter(text);
-        const html = await inlineImages(await fileMarkdownHtml(text, factors, hl), n.nodeLabel ?? n.id, path.dirname(file.fsPath));
-        return { fileType: 'markdown', title: fm.title ?? title, status: fm.status, type: fm.type, body: `<div class="skena-markdown">${stripActiveHtml(html)}</div>` };
+        const html = await fileMarkdownHtml(text, factors, hl);
+        return { fileType: 'markdown', title: fm.title ?? title, status: fm.status, type: fm.type, body: `<div class="skena-markdown">${html}</div>`, dir: path.dirname(file.fsPath) };
       }
       const code = (src: string, lang: string) => `<div class="skena-code" style="font-size:11px;line-height:1.5;overflow:auto">${hl.codeToHtml(src, { lang, theme: factors ? 'factors' : 'dark-plus' })}</div>`;
       if (file.fileType === 'python' || file.fileType === 'yaml') return { fileType: file.fileType, title, body: code(text, file.fileType) };
-      if (file.fileType === 'html') return { fileType: 'html', title, body: `<div class="skena-html"><template shadowrootmode="open">${stripActiveHtml(text)}</template></div>` };
+      if (file.fileType === 'html') return { fileType: 'html', title, body: `<div class="skena-html"><template shadowrootmode="open">${text}</template></div>`, dir: path.dirname(file.fsPath) };
       if (file.fileType === 'notebook') {
         const nb = parseNotebook(text);
         const md = await Promise.all(nb.cells.map(c => (c.type === 'markdown' ? nodeMarkdownHtml(c.source, factors, hl) : Promise.resolve(''))));
         const lang = hl.getLoadedLanguages().includes(nb.languageName) ? nb.languageName : 'python';
         const view = notebookHtml(nb, md, deps.notebookShowSource, s => code(s, lang), `skena-fig-${n.id}`, n.width - 2 * NODE_BORDER - 16);
-        return { fileType: 'notebook', title, body: await inlineImages(view.html, n.nodeLabel ?? n.id, path.dirname(file.fsPath)), figures: view.figures };
+        return { fileType: 'notebook', title, body: view.html, dir: path.dirname(file.fsPath), figures: view.figures };
       }
       return { fileType: file.fileType, title, body: '<div class="skena-unknown">No preview available</div>' };
     } catch (e) {
@@ -143,27 +143,27 @@ export async function exportCanvasHtml(canvasPath: string, deps: ExportDeps): Pr
     }
   };
 
-  // - one node's html, and the plotly figures its boxes name
-  const render = async (n: CanvasNode): Promise<{ html: string; figures?: Figure[] }> => {
-    const label = n.nodeLabel ?? n.id;
+  // - one node's html as its builder writes it; the folder and knowledge server its images resolve
+  //   from; the plotly figures its boxes name
+  const render = async (n: CanvasNode): Promise<{ html: string; dir?: string; server?: string; figures?: Figure[] }> => {
     switch (n.type) {
       case 'text': {
-        const html = await inlineImages(await nodeMarkdownHtml(n.text, factors, hl), label, canvasDir);
+        const html = await nodeMarkdownHtml(n.text, factors, hl);
         return { html: textNodeHtml(n, html, rendersOnHost(n.text, factors) ? '' : mdStyle) };
       }
       case 'knowledge': {
-        const html = await inlineImages(await nodeMarkdownHtml(n.text, factors, hl), label, canvasDir, n.server);
-        return { html: knowledgeNodeHtml(n, html, rendersOnHost(n.text, factors) ? '' : mdStyle) };
+        const html = await nodeMarkdownHtml(n.text, factors, hl);
+        return { html: knowledgeNodeHtml(n, html, rendersOnHost(n.text, factors) ? '' : mdStyle), server: n.server };
       }
       case 'code': return { html: codeNodeHtml(n, codeCellHtml(n.code ?? '', codeTok, editorBg, deps.theme.dark)) };
       case 'cell': {
         const md = n.format === 'markdown' ? await nodeMarkdownHtml(n.content, factors, hl) : null;
         const fig = cellFigure(n);
-        return { html: await inlineImages(cellNodeHtml(n, md), label, canvasDir), figures: fig ? [fig] : [] };
+        return { html: cellNodeHtml(n, md), figures: fig ? [fig] : [] };
       }
       case 'file': {
         const view = await fileView(n);
-        return { html: fileNodeHtml(n, view), figures: view.figures };
+        return { html: fileNodeHtml(n, view), dir: view.dir, figures: view.figures };
       }
       case 'link': return { html: linkNodeHtml(n) };
       case 'portal': return { html: portalNodeHtml(n) };
@@ -178,7 +178,9 @@ export async function exportCanvasHtml(canvasPath: string, deps: ExportDeps): Pr
   const figures: Figure[] = [];
   for (const [i, n] of layout.nodes.entries()) {
     const r = await render(n);
-    nodesHtml.push(balanceHtml(r.html));
+    // - every node's html goes through the one pass that makes it static, its images put in
+    const label = n.nodeLabel ?? n.id;
+    nodesHtml.push(await staticHtml(r.html, sources => resolveImages(sources, label, r.dir ?? canvasDir, r.server)));
     figures.push(...r.figures ?? []);
     deps.progress?.(i + 1, layout.nodes.length);
     await yieldToHost();

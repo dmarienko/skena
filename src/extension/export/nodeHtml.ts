@@ -2,7 +2,8 @@
  * One canvas node as static HTML at its canvas position, drawn after its webview component (the
  * same classes, borders and header rows) without anything that needs React Flow, Monaco or the
  * host: no handles, no resizer, no buttons. The bodies come in already rendered (markdown html,
- * code lines); the plain ones are built here. Pure.
+ * code lines); the plain ones are built here. Content goes in as it is: the export makes every
+ * node's html static afterwards (html.ts staticHtml). Pure.
  */
 
 import type { CanvasNode, CellNode, ChatNode, CodeNode, FileNode, FileType, KernelNode, KnowledgeNode, LinkNode, NoderefNode, PortalNode, TextNode } from '../../shared/types';
@@ -11,7 +12,7 @@ import { kernelColor } from '../../shared/kernelPalette';
 import { fmtDateTime } from '../../shared/dateTime';
 import { nodeBorderColor } from '../../webview/canvas/palette';
 import { canvasColor } from './edges';
-import { escapeHtml, stripActiveHtml } from './html';
+import { escapeHtml } from './html';
 import { capOutputHtml } from '../../shared/outputCap';
 import type { CellOutput, ParsedNotebook } from '../notebook-parser';
 
@@ -59,7 +60,7 @@ export function knowledgeNodeHtml(node: KnowledgeNode, html: string, mdStyle = '
     + (node.changed ? `<span style="color:${border}">●</span>` : '')
     + `<span class="skena-export-title">${escapeHtml(node.title)}</span><span style="opacity:0.4">·</span>`
     + `<span style="opacity:0.6">${fetched}</span>${node.error ? '<span style="opacity:0.6">!</span>' : ''}</div>`;
-  const md = `<div class="skena-markdown"${mdStyle ? ` style="${mdStyle}"` : ''}>${stripActiveHtml(html)}</div>`;
+  const md = `<div class="skena-markdown"${mdStyle ? ` style="${mdStyle}"` : ''}>${html}</div>`;
   return placeNode(node, card('knowledge', border, head + scroll(md)));
 }
 
@@ -81,7 +82,7 @@ export function cellNodeHtml(node: CellNode, markdownHtml: string | null): strin
   let body: string;
   if (node.format === 'markdown') body = `<div class="skena-markdown">${markdownHtml ?? ''}</div>`;
   else if (node.format === 'image') body = `<img src="${escapeHtml(node.content)}" alt="cell" style="max-width:100%;max-height:100%;object-fit:contain">`;
-  else if (node.format === 'html') body = `<div class="skena-cell-html">${stripActiveHtml(capOutputHtml(node.content))}</div>`;
+  else if (node.format === 'html') body = `<div class="skena-cell-html">${capOutputHtml(node.content)}</div>`;
   else {
     // - the plot fills the scroll box inside the border and its 6px 8px padding, as on the canvas
     body = plotlyEmbed(cellFigureId(node), node.width - 2 * NODE_BORDER - 16, node.height - 2 * NODE_BORDER - 12);
@@ -197,7 +198,7 @@ function notebookOutput(out: CellOutput, figId: string, plotWidth: number, figur
   switch (out.mimeType) {
     case 'image/png':
     case 'image/svg+xml': return wrap(`<img src="data:${out.mimeType};base64,${out.data}" alt="output" style="max-width:100%">`);
-    case 'text/html': return wrap(`<div class="skena-notebook__html-output">${stripActiveHtml(out.html)}</div>`);
+    case 'text/html': return wrap(`<div class="skena-notebook__html-output">${out.html}</div>`);
     case 'application/vnd.plotly.v1+json':
       figures.push({ id: figId, json: out.json });
       return wrap(plotlyEmbed(figId, plotWidth, 400), 'position:relative;height:400px');

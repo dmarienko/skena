@@ -21,9 +21,9 @@ test('2. a text note: the markdown html in a scroll box, in the text border colo
   assert.ok(html.includes('<div class="skena-markdown"><p>hello</p></div>'));
 });
 
-test('3. a knowledge node: server, title and fetch date, then the stored text without anything that runs', () => {
+test('3. a knowledge node: server, title and fetch date, then the stored text', () => {
   const node = { id: 'w', type: 'knowledge', server: 'crtx', uri: 'crtx://x', title: 'A <paper>', text: '', fetchedAt: '2026-10-06T09:18:30.018Z', nodeLabel: 'W1', ...at };
-  const html = knowledgeNodeHtml(node, '<p onclick="x()">body</p>');
+  const html = knowledgeNodeHtml(node, '<p>body</p>');
   assert.ok(html.includes('>crtx</span>'));
   assert.ok(html.includes('A &lt;paper&gt;'));
   assert.ok(/fetched 2026-10-0\d \d\d:\d\d/.test(html));
@@ -37,13 +37,12 @@ test('4. a code cell: language and status glyph in its header, the lines below',
   assert.ok(html.includes('<pre>LINES</pre>'));
 });
 
-test('5. output cells: an image inline, html without scripts, a plotly box with its plot size and its figure for the page', () => {
+test('5. output cells: an image inline, html as it is (the export makes it static), a plotly box with its plot size and its figure for the page', () => {
   const img = cellNodeHtml({ id: 'i', type: 'cell', format: 'image', content: 'data:image/png;base64,AA', ...at }, null);
   assert.ok(img.includes('<img src="data:image/png;base64,AA"'));
   assert.ok(img.includes('dashed #1f96bd'));
-  const html = cellNodeHtml({ id: 'h', type: 'cell', format: 'html', content: '<table><tr><td>1</td></tr></table><script>alert(1)</script>', ...at }, null);
-  assert.ok(html.includes('<div class="skena-cell-html"><table>'));
-  assert.ok(!html.includes('alert'));
+  const html = cellNodeHtml({ id: 'h', type: 'cell', format: 'html', content: '<table><tr><td>1</td></tr></table>', ...at }, null);
+  assert.ok(html.includes('<div class="skena-cell-html"><table><tr><td>1</td></tr></table></div>'));
   const fig = JSON.stringify({ data: [{ name: '</script>' }], layout: {} });
   const cell = { id: 'p', type: 'cell', format: 'plotly', content: fig, ...at };
   const plot = cellNodeHtml(cell, null);

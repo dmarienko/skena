@@ -47,7 +47,7 @@ const CANVAS = {
 const CANVAS_PATH = join(DIR, 'all.canvas');
 writeFileSync(CANVAS_PATH, JSON.stringify(CANVAS));
 
-const TYPES = { '.md': 'markdown', '.png': 'image' };
+const TYPES = { '.md': 'markdown', '.png': 'image', '.ipynb': 'notebook', '.html': 'html' };
 const deps = {
   assetDir: ASSETS, codeTheme: 'ayu-dark', mdTheme: 'factors', mdMaxWidth: 0, notebookShowSource: false, theme: FALLBACK_THEME,
   resolveFile: (uri, dir) => { const p = resolve(dir, uri); return { fsPath: p, fileType: TYPES[extname(p)] ?? 'unknown' }; },
@@ -128,4 +128,34 @@ test('9. an <img> that names a local file that is not an image is not put in; it
   assert.ok(r.html.includes('[image: k — key.txt]'));
   assert.deepEqual(r.missing, ['N1 key.txt: not an image file']);
   assert.ok(r.html.includes(`data:image/png;base64,${PNG.toString('base64')}`));
+});
+
+// - a notebook with one markdown cell and one code cell whose output is `html`
+const notebook = (md, html) => JSON.stringify({
+  nbformat: 4, nbformat_minor: 5, metadata: { kernelspec: { name: 'python3' }, language_info: { name: 'python' } },
+  cells: [
+    { cell_type: 'markdown', metadata: {}, source: md },
+    { cell_type: 'code', metadata: {}, execution_count: 1, source: 'x', outputs: [{ output_type: 'display_data', metadata: {}, data: { 'text/html': html } }] },
+  ],
+});
+
+test('10. nothing that runs or loads is left from any node: notes, cells, knowledge, notebooks, html files, links', async () => {
+  const bad = '<script>alert(1)</script><img src="dot.png" onerror="alert(2)"><a href="javascript:alert(3)">j</a><iframe src="https://example.com/f"></iframe>';
+  writeFileSync(join(DIR, 'bad.ipynb'), notebook(`md ${bad}`, bad));
+  writeFileSync(join(DIR, 'bad.html'), `<p>file</p>${bad}`);
+  const r = await exportNodes('active', [
+    box('t', 'text', 0, 0, { text: `note ${bad}` }),
+    box('m', 'cell', 700, 0, { format: 'markdown', content: `cell ${bad}` }),
+    box('h', 'cell', 1400, 0, { format: 'html', content: bad }),
+    box('k', 'knowledge', 0, 400, { server: 'crtx', uri: 'crtx://x', title: 'K', text: `k ${bad}`, fetchedAt: '' }),
+    box('n', 'file', 700, 400, { file: 'bad.ipynb' }),
+    box('f', 'file', 1400, 400, { file: 'bad.html' }),
+    box('l', 'link', 0, 800, { url: 'javascript:alert(4)' }),
+  ]);
+  const body = r.html.slice(r.html.indexOf('<body'));
+  for (const gone of ['<script', 'alert(1)', 'onerror', 'alert(2)', 'href="javascript:', '<iframe']) assert.ok(!body.includes(gone), gone);
+  assert.equal(body.match(/>j<\/a>/g).length, 7);
+  assert.ok(body.includes('javascript:alert(4)</a>'));
+  assert.deepEqual(checkOffline(r.html, []).remote, []);
+  assert.deepEqual(r.missing, []);
 });
