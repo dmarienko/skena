@@ -20,6 +20,7 @@ function input(extra = {}) {
     theme: { vars: { '--vscode-editor-background': '#000000', '--vscode-editor-font-family': '"JetBrains Mono", monospace' }, dark: true },
     mdTheme: 'factors',
     mdMaxWidth: 88,
+    figures: [],
     plotlyJs: null,
     ...extra,
   };
@@ -51,10 +52,13 @@ test('3. edges: one marker per arrow colour, the dotted output link, labels abov
   assert.ok(html.includes('<div class="skena-export-edge-label" style="left:50px;top:0px;border-color:#1f96bd">uses</div>'));
 });
 
-test('4. plotly comes once, with the plotting script, only when given; the page loads nothing remote', () => {
-  assert.ok(!buildPage(input()).includes('<script>'));
-  const html = buildPage(input({ plotlyJs: 'window.Plotly={newPlot(){}};' }));
+test('4. plotly comes once, with the plotting script, only when given; the figures after the nodes; the page loads nothing remote', () => {
+  assert.ok(!buildPage(input()).includes('<script'));
+  const figures = [{ id: 'skena-fig-c"1', json: '{"data":[{"name":"</script>"}]}' }];
+  const html = buildPage(input({ plotlyJs: 'window.Plotly={newPlot(){}};', figures }));
   assert.equal(html.match(/window\.Plotly=/g).length, 1);
+  assert.ok(html.includes('<script type="application/json" id="skena-fig-c&quot;1">{"data":[{"name":"\\u003c/script>"}]}</script><script>'));
+  assert.ok(html.indexOf('data-node-id="n1"') < html.indexOf('id="skena-fig-c'));
   assert.ok(html.includes('IntersectionObserver'));
   assert.deepEqual(checkOffline(html, ['n1']), { remote: [], missingNodeIds: [] });
   assert.throws(() => buildPage(input({ plotlyJs: 'x="</script>"' })));

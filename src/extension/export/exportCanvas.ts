@@ -17,8 +17,8 @@ import { codeCellHtml } from './codeHtml';
 import { balanceHtml, decodeAttr, escapeHtml, imageSources, stripActiveHtml, swapImageSources } from './html';
 import { fileMarkdownHtml, nodeMarkdownHtml, rendersOnHost } from './markdown';
 import {
-  cellNodeHtml, chatNodeHtml, codeNodeHtml, fileNodeHtml, kernelNodeHtml, knowledgeNodeHtml, linkNodeHtml,
-  NODE_BORDER, noderefNodeHtml, notebookHtml, portalNodeHtml, textNodeHtml, type FileView,
+  cellFigure, cellNodeHtml, chatNodeHtml, codeNodeHtml, fileNodeHtml, kernelNodeHtml, knowledgeNodeHtml, linkNodeHtml,
+  NODE_BORDER, noderefNodeHtml, notebookHtml, portalNodeHtml, textNodeHtml, type Figure, type FileView,
 } from './nodeHtml';
 import { buildPage, sectionFrames, type PageTheme } from './page';
 import { exportHighlighter } from './shikiHost';
@@ -112,7 +112,8 @@ export async function exportCanvasHtml(canvasPath: string, deps: ExportDeps): Pr
     return resolved.size ? swapImageSources(html, resolved) : html;
   };
 
-  const fileView = async (n: FileNode): Promise<FileView> => {
+  // - a file node's view, and the figures of a notebook's plotly outputs
+  const fileView = async (n: FileNode): Promise<FileView & { figures?: Figure[] }> => {
     const title = filenameFromUri(n.file);
     const file = deps.resolveFile(n.file, canvasDir);
     if (!file) return { fileType: 'unknown', title, body: '<div class="skena-error">Error: NOT_FOUND</div>' };
@@ -133,8 +134,8 @@ export async function exportCanvasHtml(canvasPath: string, deps: ExportDeps): Pr
         const nb = parseNotebook(text);
         const md = await Promise.all(nb.cells.map(c => (c.type === 'markdown' ? nodeMarkdownHtml(c.source, factors, hl) : Promise.resolve(''))));
         const lang = hl.getLoadedLanguages().includes(nb.languageName) ? nb.languageName : 'python';
-        const body = notebookHtml(nb, md, deps.notebookShowSource, s => code(s, lang), `skena-fig-${n.id}`, n.width - 2 * NODE_BORDER - 16);
-        return { fileType: 'notebook', title, body: await inlineImages(body, n.nodeLabel ?? n.id, path.dirname(file.fsPath)) };
+        const view = notebookHtml(nb, md, deps.notebookShowSource, s => code(s, lang), `skena-fig-${n.id}`, n.width - 2 * NODE_BORDER - 16);
+        return { fileType: 'notebook', title, body: await inlineImages(view.html, n.nodeLabel ?? n.id, path.dirname(file.fsPath)), figures: view.figures };
       }
       return { fileType: file.fileType, title, body: '<div class="skena-unknown">No preview available</div>' };
     } catch (e) {
@@ -142,35 +143,43 @@ export async function exportCanvasHtml(canvasPath: string, deps: ExportDeps): Pr
     }
   };
 
-  const render = async (n: CanvasNode): Promise<string> => {
+  // - one node's html, and the plotly figures its boxes name
+  const render = async (n: CanvasNode): Promise<{ html: string; figures?: Figure[] }> => {
     const label = n.nodeLabel ?? n.id;
     switch (n.type) {
       case 'text': {
         const html = await inlineImages(await nodeMarkdownHtml(n.text, factors, hl), label, canvasDir);
-        return textNodeHtml(n, html, rendersOnHost(n.text, factors) ? '' : mdStyle);
+        return { html: textNodeHtml(n, html, rendersOnHost(n.text, factors) ? '' : mdStyle) };
       }
       case 'knowledge': {
         const html = await inlineImages(await nodeMarkdownHtml(n.text, factors, hl), label, canvasDir, n.server);
-        return knowledgeNodeHtml(n, html, rendersOnHost(n.text, factors) ? '' : mdStyle);
+        return { html: knowledgeNodeHtml(n, html, rendersOnHost(n.text, factors) ? '' : mdStyle) };
       }
-      case 'code': return codeNodeHtml(n, codeCellHtml(n.code ?? '', codeTok, editorBg, deps.theme.dark));
+      case 'code': return { html: codeNodeHtml(n, codeCellHtml(n.code ?? '', codeTok, editorBg, deps.theme.dark)) };
       case 'cell': {
         const md = n.format === 'markdown' ? await nodeMarkdownHtml(n.content, factors, hl) : null;
-        return inlineImages(cellNodeHtml(n, md), label, canvasDir);
+        const fig = cellFigure(n);
+        return { html: await inlineImages(cellNodeHtml(n, md), label, canvasDir), figures: fig ? [fig] : [] };
       }
-      case 'file': return fileNodeHtml(n, await fileView(n));
-      case 'link': return linkNodeHtml(n);
-      case 'portal': return portalNodeHtml(n);
-      case 'noderef': return noderefNodeHtml(n);
-      case 'kernel': return kernelNodeHtml(n);
-      case 'chat': return chatNodeHtml(n);
-      default: return '';
+      case 'file': {
+        const view = await fileView(n);
+        return { html: fileNodeHtml(n, view), figures: view.figures };
+      }
+      case 'link': return { html: linkNodeHtml(n) };
+      case 'portal': return { html: portalNodeHtml(n) };
+      case 'noderef': return { html: noderefNodeHtml(n) };
+      case 'kernel': return { html: kernelNodeHtml(n) };
+      case 'chat': return { html: chatNodeHtml(n) };
+      default: return { html: '' };
     }
   };
 
   const nodesHtml: string[] = [];
+  const figures: Figure[] = [];
   for (const [i, n] of layout.nodes.entries()) {
-    nodesHtml.push(balanceHtml(await render(n)));
+    const r = await render(n);
+    nodesHtml.push(balanceHtml(r.html));
+    figures.push(...r.figures ?? []);
     deps.progress?.(i + 1, layout.nodes.length);
     await yieldToHost();
   }
@@ -179,7 +188,7 @@ export async function exportCanvasHtml(canvasPath: string, deps: ExportDeps): Pr
   const css = [await read('export-assets/katex.css'), await read('export-assets/codicon.css')];
   if (factors) css.push(await read('export-assets/ibm-plex.css'));
   css.push(await read('export-assets/skena.css'));
-  const plotlyJs = nodesHtml.some(h => h.includes('data-plotly=')) ? await read('plotly.min.js') : null;
+  const plotlyJs = figures.length ? await read('plotly.min.js') : null;
 
   const html = buildPage({
     title: path.basename(canvasPath, '.canvas'),
@@ -187,6 +196,7 @@ export async function exportCanvasHtml(canvasPath: string, deps: ExportDeps): Pr
     sections: sectionFrames(layout.lanes, layout.nodes, canvas.metadata?.kernels ?? []),
     nodesHtml,
     edges,
+    figures,
     css,
     theme: deps.theme,
     mdTheme: deps.mdTheme,

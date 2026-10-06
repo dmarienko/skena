@@ -11,7 +11,8 @@ import { kernelColor } from '../../shared/kernelPalette';
 import { fmtDateTime } from '../../shared/dateTime';
 import { THEME } from '../../webview/canvas/palette';
 import { EDGE_OPACITY, EDGE_WIDTH, type ExportEdge } from './edges';
-import { escapeHtml } from './html';
+import { escapeHtml, jsonForScript } from './html';
+import type { Figure } from './nodeHtml';
 
 export interface PageSection { id: string; label: string; title: string; color: string; kernelName: string | null; top: number; bottom: number }
 
@@ -30,6 +31,8 @@ export interface PageInput {
   mdTheme: 'vscode' | 'factors';
   /** - skena.markdownMaxWidth in characters; 0 = none */
   mdMaxWidth: number;
+  /** - the plotly figures the nodes' boxes name, written as JSON after the nodes */
+  figures: Figure[];
   /** - plotly.min.js, only when a plotly figure is on the page */
   plotlyJs: string | null;
 }
@@ -102,6 +105,7 @@ export function buildPage(p: PageInput): string {
     ...Object.entries(sk).map(([k, v]) => `--sk-${k}:${v}`),
     `--skena-md-maxw:${p.mdMaxWidth ? `${p.mdMaxWidth}ch` : 'none'}`,
   ].join(';');
+  const figures = p.figures.map(f => `<script type="application/json" id="${escapeHtml(f.id)}">${jsonForScript(f.json)}</script>`).join('');
   const plot = p.plotlyJs ? `<script>${p.plotlyJs}</script><script>${PLOT_SCRIPT}</script>` : '';
   return '<!doctype html>\n'
     + `<html lang="en" data-md-theme="${p.mdTheme}" style="${escapeHtml(vars)}"><head><meta charset="utf-8">`
@@ -111,7 +115,7 @@ export function buildPage(p: PageInput): string {
     + `<div class="skena-export-page" style="width:${p.box.width}px;height:${p.box.height}px">`
     + `<div class="skena-export-origin" style="left:${-p.box.left}px;top:${-p.box.top}px">`
     + frames(p.box, p.sections) + edgeLayer(p.box, p.edges) + p.nodesHtml.join('') + edgeLabels(p.edges)
-    + `</div></div>${plot}</body></html>\n`;
+    + `</div></div>${figures}${plot}</body></html>\n`;
 }
 
 /**

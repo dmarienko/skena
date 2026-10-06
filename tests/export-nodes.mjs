@@ -2,7 +2,7 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import {
-  cellNodeHtml, chatNodeHtml, codeNodeHtml, fileNodeHtml, kernelNodeHtml, knowledgeNodeHtml, linkNodeHtml,
+  cellFigure, cellNodeHtml, chatNodeHtml, codeNodeHtml, fileNodeHtml, kernelNodeHtml, knowledgeNodeHtml, linkNodeHtml,
   noderefNodeHtml, notebookHtml, placeNode, portalNodeHtml, textNodeHtml,
 } from './.build/exportNodes.mjs';
 
@@ -37,7 +37,7 @@ test('4. a code cell: language and status glyph in its header, the lines below',
   assert.ok(html.includes('<pre>LINES</pre>'));
 });
 
-test('5. output cells: an image inline, html without scripts, a plotly figure as escaped JSON with its plot size', () => {
+test('5. output cells: an image inline, html without scripts, a plotly box with its plot size and its figure for the page', () => {
   const img = cellNodeHtml({ id: 'i', type: 'cell', format: 'image', content: 'data:image/png;base64,AA', ...at }, null);
   assert.ok(img.includes('<img src="data:image/png;base64,AA"'));
   assert.ok(img.includes('dashed #1f96bd'));
@@ -45,10 +45,12 @@ test('5. output cells: an image inline, html without scripts, a plotly figure as
   assert.ok(html.includes('<div class="skena-cell-html"><table>'));
   assert.ok(!html.includes('alert'));
   const fig = JSON.stringify({ data: [{ name: '</script>' }], layout: {} });
-  const plot = cellNodeHtml({ id: 'p', type: 'cell', format: 'plotly', content: fig, ...at }, null);
+  const cell = { id: 'p', type: 'cell', format: 'plotly', content: fig, ...at };
+  const plot = cellNodeHtml(cell, null);
   assert.ok(plot.includes('data-plotly="skena-fig-p" data-w="678.6" data-h="282.6"'));
-  assert.ok(plot.includes('<script type="application/json" id="skena-fig-p">'));
-  assert.equal(plot.match(/<\/script>/g).length, 1);
+  assert.ok(!plot.includes('<script'));
+  assert.deepEqual(cellFigure(cell), { id: 'skena-fig-p', json: fig });
+  assert.equal(cellFigure({ ...cell, format: 'html' }), null);
 });
 
 test('6. a file node: the header title and the rendered body', () => {
@@ -83,11 +85,12 @@ test('9. a notebook: markdown cells as rendered, the outputs, the source only wh
     { type: 'code', source: 'x = 1', outputs: [] },
   ] };
   const code = s => `<pre>${s}</pre>`;
-  const html = notebookHtml(nb, ['<h1>T</h1>', '', ''], false, code, 'f', 600);
+  const { html, figures } = notebookHtml(nb, ['<h1>T</h1>', '', ''], false, code, 'f', 600);
+  assert.deepEqual(figures, []);
   assert.ok(html.includes('<div class="skena-markdown"><h1>T</h1></div>'));
   assert.ok(html.includes('<pre class="skena-notebook__text-output">1 &lt; 2</pre>'));
   assert.ok(!html.includes('print(1)') && !html.includes('x = 1'));
-  const withSource = notebookHtml(nb, ['<h1>T</h1>', '', ''], true, code, 'f', 600);
+  const withSource = notebookHtml(nb, ['<h1>T</h1>', '', ''], true, code, 'f', 600).html;
   assert.ok(withSource.includes('[4]</span><pre>print(1)</pre>'));
   assert.ok(withSource.includes('[ ]</span><pre>x = 1</pre>'));
 });

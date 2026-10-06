@@ -11,7 +11,7 @@ import { kernelColor } from '../../shared/kernelPalette';
 import { fmtDateTime } from '../../shared/dateTime';
 import { nodeBorderColor } from '../../webview/canvas/palette';
 import { canvasColor } from './edges';
-import { escapeHtml, jsonForScript, stripActiveHtml } from './html';
+import { escapeHtml, stripActiveHtml } from './html';
 import { capOutputHtml } from '../../shared/outputCap';
 import type { CellOutput, ParsedNotebook } from '../notebook-parser';
 
@@ -84,7 +84,7 @@ export function cellNodeHtml(node: CellNode, markdownHtml: string | null): strin
   else if (node.format === 'html') body = `<div class="skena-cell-html">${stripActiveHtml(capOutputHtml(node.content))}</div>`;
   else {
     // - the plot fills the scroll box inside the border and its 6px 8px padding, as on the canvas
-    body = plotlyEmbed(`skena-fig-${node.id}`, node.content, node.width - 2 * NODE_BORDER - 16, node.height - 2 * NODE_BORDER - 12);
+    body = plotlyEmbed(cellFigureId(node), node.width - 2 * NODE_BORDER - 16, node.height - 2 * NODE_BORDER - 12);
   }
   return placeNode(node, `<div class="skena-node skena-node--cell" style="border:${NODE_BORDER}px dashed ${borderOf(node)};height:100%;border-radius:6px;overflow:hidden;display:flex;flex-direction:column">${scroll(body, '6px 8px')}</div>`);
 }
@@ -177,19 +177,30 @@ export function chatNodeHtml(node: ChatNode): string {
   return placeNode(node, card('chat', border, head, 'background:var(--vscode-editorWidget-background)'));
 }
 
-// - a plotly figure: an empty box the page's plotting script fills when it scrolls near, and the figure as JSON
-export function plotlyEmbed(figId: string, json: string, w: number, h: number): string {
-  return `<div class="skena-plotly" data-plotly="${escapeHtml(figId)}" data-w="${w}" data-h="${h}" style="width:100%;height:100%"></div>`
-    + `<script type="application/json" id="${escapeHtml(figId)}">${jsonForScript(json)}</script>`;
+/** - a plotly figure on the page: the id its box names, and its JSON (the page writes it after the nodes) */
+export interface Figure { id: string; json: string }
+
+const cellFigureId = (node: CellNode) => `skena-fig-${node.id}`;
+
+/** - the figure of a plotly output cell, null for the other formats */
+export function cellFigure(node: CellNode): Figure | null {
+  return node.format === 'plotly' ? { id: cellFigureId(node), json: node.content } : null;
 }
 
-function notebookOutput(out: CellOutput, figId: string, plotWidth: number): string {
+// - a plotly figure's box: empty, the page's plotting script fills it when it scrolls near
+export function plotlyEmbed(figId: string, w: number, h: number): string {
+  return `<div class="skena-plotly" data-plotly="${escapeHtml(figId)}" data-w="${w}" data-h="${h}" style="width:100%;height:100%"></div>`;
+}
+
+function notebookOutput(out: CellOutput, figId: string, plotWidth: number, figures: Figure[]): string {
   const wrap = (inner: string, style = '') => `<div class="skena-notebook__output"${style ? ` style="${style}"` : ''}>${inner}</div>`;
   switch (out.mimeType) {
     case 'image/png':
     case 'image/svg+xml': return wrap(`<img src="data:${out.mimeType};base64,${out.data}" alt="output" style="max-width:100%">`);
     case 'text/html': return wrap(`<div class="skena-notebook__html-output">${stripActiveHtml(out.html)}</div>`);
-    case 'application/vnd.plotly.v1+json': return wrap(plotlyEmbed(figId, out.json, plotWidth, 400), 'position:relative;height:400px');
+    case 'application/vnd.plotly.v1+json':
+      figures.push({ id: figId, json: out.json });
+      return wrap(plotlyEmbed(figId, plotWidth, 400), 'position:relative;height:400px');
     case 'text/plain': return wrap(`<pre class="skena-notebook__text-output">${escapeHtml(out.text)}</pre>`);
     default: return wrap(`<div class="skena-notebook__placeholder">${escapeHtml(out.label)}</div>`);
   }
@@ -198,9 +209,11 @@ function notebookOutput(out: CellOutput, figId: string, plotWidth: number): stri
 /**
  * A notebook as NotebookRenderer shows it: markdown cells (`mdHtml[i]` holds cell i rendered), each
  * code cell's outputs, and its source with the execution count when `showSource`
- * (skena.notebook.showSourceCells). `codeHtml` colours a source as the file previews do.
+ * (skena.notebook.showSourceCells). `codeHtml` colours a source as the file previews do. The plotly
+ * outputs come back as figures for the page.
  */
-export function notebookHtml(nb: ParsedNotebook, mdHtml: readonly string[], showSource: boolean, codeHtml: (source: string) => string, figPrefix: string, plotWidth: number): string {
+export function notebookHtml(nb: ParsedNotebook, mdHtml: readonly string[], showSource: boolean, codeHtml: (source: string) => string, figPrefix: string, plotWidth: number): { html: string; figures: Figure[] } {
+  const figures: Figure[] = [];
   const cells = nb.cells.map((cell, i) => {
     if (cell.type === 'markdown') return `<div class="skena-notebook__cell"><div class="skena-markdown">${mdHtml[i] ?? ''}</div></div>`;
     if (cell.type === 'raw') return `<div class="skena-notebook__cell"><pre>${escapeHtml(cell.source)}</pre></div>`;
@@ -209,9 +222,9 @@ export function notebookHtml(nb: ParsedNotebook, mdHtml: readonly string[], show
       ? `<div class="skena-notebook__code-prompt"><span class="skena-notebook__execution-count">${cell.executionCount != null ? `[${cell.executionCount}]` : '[ ]'}</span>${codeHtml(cell.source)}</div>`
       : '';
     const outputs = cell.outputs.length
-      ? `<div class="skena-notebook__outputs-group">${cell.outputs.map((o, k) => notebookOutput(o, `${figPrefix}-${i}-${k}`, plotWidth)).join('')}</div>`
+      ? `<div class="skena-notebook__outputs-group">${cell.outputs.map((o, k) => notebookOutput(o, `${figPrefix}-${i}-${k}`, plotWidth, figures)).join('')}</div>`
       : '';
     return `<div class="skena-notebook__cell">${source}${outputs}</div>`;
   });
-  return `<div class="skena-notebook">${cells.join('')}</div>`;
+  return { html: `<div class="skena-notebook">${cells.join('')}</div>`, figures };
 }
