@@ -141,3 +141,33 @@ test('10. a fragment is closed inside itself; a template, SVG and MathML come ba
   ];
   for (const k of kept) assert.equal(await staticHtml(k), k);
 });
+
+test('11. the offline check reads the page as the browser does: meta refresh, base, svg references, css in attributes, entities, ">" in a value', () => {
+  const page = [
+    '<!doctype html><html style="--a:url(https://x.org/html.png)"><head><meta http-equiv="refresh" content="0; url=https://x.org/r">',
+    '<base href="https://x.org/"></head><body>',
+    '<svg><use href="https://x.org/s.svg#a"></use><use xlink:href="#g1"></use><rect fill="url(https://x.org/p.svg#g)"></rect></svg>',
+    '<div style="background-image:image-set(\'https://x.org/b.png\' 1x)"></div>',
+    '<div style="background:url(&quot;https://x.org/q.png&quot;)"></div>',
+    '<img alt="a>b" src="https://x.org/gt.png">',
+    '<img srcset="data:image/png;base64,//8AAA 1x, https://x.org/2x.png 2x">',
+    '<img src="crtx://lib/assets/a.png"><img src="data:image/png;base64,AA">',
+    '<template><img src="//x.org/t.png"></template>',
+    '<div data-node-id="n1"></div></body></html>',
+  ].join('');
+  assert.deepEqual(checkOffline(page, ['n1']), {
+    remote: [
+      'css https://x.org/html.png',
+      'meta content=0; url=https://x.org/r',
+      'base href=https://x.org/',
+      'use href=https://x.org/s.svg#a',
+      'css https://x.org/p.svg#g',
+      'css https://x.org/b.png',
+      'css https://x.org/q.png',
+      'img src=https://x.org/gt.png',
+      'img srcset=data:image/png;base64,//8AAA 1x, https://x.org/2x.png 2x',
+      'img src=//x.org/t.png',
+    ],
+    missingNodeIds: [],
+  });
+});
