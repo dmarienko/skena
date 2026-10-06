@@ -15,7 +15,7 @@ import { parseNotebook } from '../notebook-parser';
 import { exportEdges } from './edges';
 import { codeCellHtml } from './codeHtml';
 import { escapeHtml, staticHtml } from './html';
-import { fileMarkdownHtml, nodeMarkdownHtml, rendersOnHost } from './markdown';
+import { fileMarkdownHtml, nodeMarkdownHtml, rendererMarkdownHtml, rendersOnHost } from './markdown';
 import {
   cellFigure, cellNodeHtml, chatNodeHtml, codeNodeHtml, fileNodeHtml, kernelNodeHtml, knowledgeNodeHtml, linkNodeHtml,
   NODE_BORDER, noderefNodeHtml, notebookHtml, portalNodeHtml, textNodeHtml, type Figure, type FileView,
@@ -132,9 +132,9 @@ export async function exportCanvasHtml(canvasPath: string, deps: ExportDeps): Pr
       if (file.fileType === 'html') return { fileType: 'html', title, body: `<div class="skena-html"><template shadowrootmode="open">${text}</template></div>`, dir: path.dirname(file.fsPath) };
       if (file.fileType === 'notebook') {
         const nb = parseNotebook(text);
-        const md = await Promise.all(nb.cells.map(c => (c.type === 'markdown' ? nodeMarkdownHtml(c.source, factors, hl) : Promise.resolve(''))));
+        const md = await Promise.all(nb.cells.map(c => (c.type === 'markdown' ? rendererMarkdownHtml(c.source) : Promise.resolve(''))));
         const lang = hl.getLoadedLanguages().includes(nb.languageName) ? nb.languageName : 'python';
-        const view = notebookHtml(nb, md, deps.notebookShowSource, s => code(s, lang), `skena-fig-${n.id}`, n.width - 2 * NODE_BORDER - 16);
+        const view = notebookHtml(nb, md, deps.notebookShowSource, s => code(s, lang), `skena-fig-${n.id}`, n.width - 2 * NODE_BORDER - 16, mdStyle);
         return { fileType: 'notebook', title, body: view.html, dir: path.dirname(file.fsPath), figures: view.figures };
       }
       return { fileType: file.fileType, title, body: '<div class="skena-unknown">No preview available</div>' };
@@ -157,9 +157,9 @@ export async function exportCanvasHtml(canvasPath: string, deps: ExportDeps): Pr
       }
       case 'code': return { html: codeNodeHtml(n, codeCellHtml(n.code ?? '', codeTok, editorBg, deps.theme.dark)) };
       case 'cell': {
-        const md = n.format === 'markdown' ? await nodeMarkdownHtml(n.content, factors, hl) : null;
+        const md = n.format === 'markdown' ? await rendererMarkdownHtml(n.content) : null;
         const fig = cellFigure(n);
-        return { html: cellNodeHtml(n, md), figures: fig ? [fig] : [] };
+        return { html: cellNodeHtml(n, md, mdStyle), figures: fig ? [fig] : [] };
       }
       case 'file': {
         const view = await fileView(n);

@@ -44,10 +44,14 @@ function scroll(inner: string, padding = '6px 8px 6px 12px'): string {
   return `<div class="skena-export-scroll" style="padding:${padding}">${inner}</div>`;
 }
 
+// - rendered markdown in the class MarkdownRenderer gives it; `mdStyle` is the markdown.preview font it applies
+function markdownDiv(html: string, mdStyle: string): string {
+  return `<div class="skena-markdown"${mdStyle ? ` style="${mdStyle}"` : ''}>${html}</div>`;
+}
+
 /** - a text note: its markdown html; `mdStyle` is the markdown.preview font the webview path applies */
 export function textNodeHtml(node: TextNode, html: string, mdStyle = ''): string {
-  const md = `<div class="skena-markdown"${mdStyle ? ` style="${mdStyle}"` : ''}>${html}</div>`;
-  return placeNode(node, card('text', borderOf(node), scroll(md)));
+  return placeNode(node, card('text', borderOf(node), scroll(markdownDiv(html, mdStyle))));
 }
 
 /** - a knowledge node: the server › title · date row, then the whole stored text */
@@ -60,8 +64,7 @@ export function knowledgeNodeHtml(node: KnowledgeNode, html: string, mdStyle = '
     + (node.changed ? `<span style="color:${border}">●</span>` : '')
     + `<span class="skena-export-title">${escapeHtml(node.title)}</span><span style="opacity:0.4">·</span>`
     + `<span style="opacity:0.6">${fetched}</span>${node.error ? '<span style="opacity:0.6">!</span>' : ''}</div>`;
-  const md = `<div class="skena-markdown"${mdStyle ? ` style="${mdStyle}"` : ''}>${html}</div>`;
-  return placeNode(node, card('knowledge', border, head + scroll(md)));
+  return placeNode(node, card('knowledge', border, head + scroll(markdownDiv(html, mdStyle))));
 }
 
 const STATUS_GLYPH: Record<string, string> = { running: '◗', ok: '✓', error: '✗' };
@@ -77,10 +80,10 @@ export function codeNodeHtml(node: CodeNode, linesHtml: string): string {
   return placeNode(node, card('code', border, head + scroll(body, '0'), 'background:var(--vscode-editorWidget-background)'));
 }
 
-/** - an output cell; `markdownHtml` is the rendered content of a markdown cell, null for the others */
-export function cellNodeHtml(node: CellNode, markdownHtml: string | null): string {
+/** - an output cell; `markdownHtml` is the rendered content of a markdown cell (null for the others), in the `mdStyle` font */
+export function cellNodeHtml(node: CellNode, markdownHtml: string | null, mdStyle = ''): string {
   let body: string;
-  if (node.format === 'markdown') body = `<div class="skena-markdown">${markdownHtml ?? ''}</div>`;
+  if (node.format === 'markdown') body = markdownDiv(markdownHtml ?? '', mdStyle);
   else if (node.format === 'image') body = `<img src="${escapeHtml(node.content)}" alt="cell" style="max-width:100%;max-height:100%;object-fit:contain">`;
   else if (node.format === 'html') body = `<div class="skena-cell-html">${capOutputHtml(node.content)}</div>`;
   else {
@@ -210,13 +213,13 @@ function notebookOutput(out: CellOutput, figId: string, plotWidth: number, figur
 /**
  * A notebook as NotebookRenderer shows it: markdown cells (`mdHtml[i]` holds cell i rendered), each
  * code cell's outputs, and its source with the execution count when `showSource`
- * (skena.notebook.showSourceCells). `codeHtml` colours a source as the file previews do. The plotly
- * outputs come back as figures for the page.
+ * (skena.notebook.showSourceCells). `codeHtml` colours a source as the file previews do. Markdown
+ * cells are in the `mdStyle` font. The plotly outputs come back as figures for the page.
  */
-export function notebookHtml(nb: ParsedNotebook, mdHtml: readonly string[], showSource: boolean, codeHtml: (source: string) => string, figPrefix: string, plotWidth: number): { html: string; figures: Figure[] } {
+export function notebookHtml(nb: ParsedNotebook, mdHtml: readonly string[], showSource: boolean, codeHtml: (source: string) => string, figPrefix: string, plotWidth: number, mdStyle = ''): { html: string; figures: Figure[] } {
   const figures: Figure[] = [];
   const cells = nb.cells.map((cell, i) => {
-    if (cell.type === 'markdown') return `<div class="skena-notebook__cell"><div class="skena-markdown">${mdHtml[i] ?? ''}</div></div>`;
+    if (cell.type === 'markdown') return `<div class="skena-notebook__cell">${markdownDiv(mdHtml[i] ?? '', mdStyle)}</div>`;
     if (cell.type === 'raw') return `<div class="skena-notebook__cell"><pre>${escapeHtml(cell.source)}</pre></div>`;
     if (!showSource && cell.outputs.length === 0) return '';
     const source = showSource

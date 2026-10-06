@@ -114,10 +114,10 @@ test('8. the page is never written over a canvas: the one exported, another .can
 });
 
 // - a canvas of its own under the scratch dir, exported with the same deps
-async function exportNodes(name, nodes, edges = [], metadata) {
+async function exportNodes(name, nodes, edges = [], metadata, more = {}) {
   const p = join(DIR, `${name}.canvas`);
   writeFileSync(p, JSON.stringify({ nodes, edges, ...(metadata ? { metadata } : {}) }));
-  return exportCanvasHtml(p, deps);
+  return exportCanvasHtml(p, { ...deps, ...more });
 }
 
 test('9. an <img> that names a local file that is not an image is not put in; it is listed as missing', async () => {
@@ -158,4 +158,17 @@ test('10. nothing that runs or loads is left from any node: notes, cells, knowle
   assert.ok(body.includes('javascript:alert(4)</a>'));
   assert.deepEqual(checkOffline(r.html, []).remote, []);
   assert.deepEqual(r.missing, []);
+});
+
+test('11. markdown cells and notebook markdown cells: MarkdownRenderer\'s KaTeX HTML and font, never the host path', async () => {
+  const md = 'growth of 5% vs 7% a year, $x^2$';
+  writeFileSync(join(DIR, 'md.ipynb'), notebook(md, '<p>out</p>'));
+  const r = await exportNodes('md-cells', [
+    box('m', 'cell', 0, 0, { format: 'markdown', content: md }),
+    box('n', 'file', 700, 0, { file: 'md.ipynb' }),
+  ], [], undefined, { mdFont: { family: 'Georgia', size: 15 } });
+  const body = r.html.slice(r.html.indexOf('<body'));
+  assert.ok(!body.includes('<math'));
+  assert.equal(body.match(/class="katex-html"/g).length, 2);
+  assert.equal(body.match(/<div class="skena-markdown" style="font-family:Georgia;font-size:15px">/g).length, 2);
 });

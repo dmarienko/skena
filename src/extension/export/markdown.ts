@@ -1,6 +1,7 @@
 /**
  * A node's markdown as the canvas renders it: on the host (Typst and MathML, markdown-html.ts) when
- * useHostMarkdown would send it there, else as the webview's MarkdownRenderer does (KaTeX HTML).
+ * useHostMarkdown would send it there, else as the webview's MarkdownRenderer does (KaTeX HTML);
+ * markdown cells always as MarkdownRenderer does.
  * Under the factors markdown theme the fenced blocks of host html are coloured as the webview
  * colours them. No vscode import.
  */
@@ -20,6 +21,11 @@ export function rendersOnHost(text: string, factors: boolean): boolean {
 export async function nodeMarkdownHtml(text: string, factors: boolean, hl: BlockHighlighter | null): Promise<string> {
   if (!rendersOnHost(text, factors)) return renderMarkdownKatexHtml(text);
   return fileMarkdownHtml(text, factors, hl);
+}
+
+/** - a markdown output cell or a notebook's markdown cell: CellNode and NotebookRenderer render it with MarkdownRenderer itself, never on the host */
+export function rendererMarkdownHtml(text: string): Promise<string> {
+  return renderMarkdownKatexHtml(text);
 }
 
 /** - a markdown file: always the host renderer, as handleRequestFile renders it */
