@@ -1,17 +1,22 @@
 /**
  * CodeCellPreview — the read-only view of a code cell, drawn the way its Monaco editor draws the same
- * text: Monaco's python tokenizer and the skena-code theme for the colours, brackets coloured by
- * nesting pair, relative line numbers, indentation guides, and lines laid out like Monaco's view lines
- * (absolutely placed rows inside a translate3d layer, a separate layer for the line numbers).
+ * text: the editor's tokens and colours (the shiki code theme, or Monaco's python tokenizer and the
+ * skena-code theme under `factors`), brackets coloured by nesting pair, relative line numbers,
+ * indentation guides, and lines laid out like Monaco's view lines (absolutely placed rows inside a
+ * translate3d layer, a separate layer for the line numbers).
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 import {
-  bracketColor, codeGutter, magicRange, pythonBracketLevels, relativeLineNumbers, scaleAlpha, splitRuns,
+  bracketColor, codeGutter, magicRange, pythonBracketLevels, relativeLineNumbers, scaleAlpha, splitRuns, tokenBracketLevels,
   LINE_NUMBER_ACTIVE_COLOR, LINE_NUMBER_COLOR, type RunStyle,
 } from '../codeCellView';
 import { codeIndentation, indentGuideColors, indentGuides, skenaCodeTheme, tokenStyler } from '../codeCellMonaco';
+import { codeRunStyle, opaqueColor } from '../codeCellShiki';
+import {
+  CODE_THEME_EVENT, codeCellBackground, codeCellForeground, codeCellTokens, pythonTokenizerLoaded, whenPythonTokenizerReady,
+} from '../codeCellTheme';
 
 export interface CodeCellFont { family: string; size: number; lineHeight: number }
 
@@ -28,22 +33,6 @@ const LAYER_HINT = 'translate3d(0px, 0px, 0px)';
 /** The cell text as the editor splits it into lines. */
 export function codeCellLines(code: string): string[] {
   return code.replace(/\r\n?/g, '\n').split('\n');
-}
-
-// - Monaco loads its python tokenizer on first request; tokenize() gives plain tokens until then
-let pythonReady = false;
-let pythonReadyPromise: Promise<void> | null = null;
-
-/** Resolves once Monaco's python tokenizer is loaded. */
-export function whenPythonTokenizerReady(): Promise<void> {
-  if (!pythonReadyPromise) {
-    // - colorize awaits the tokenizer (TokenizationRegistry.getOrCreate) before it resolves
-    pythonReadyPromise = monaco.editor.colorize('', 'python', {}).then(
-      () => { pythonReady = true; },
-      err => { pythonReady = true; console.warn('[skena] python tokenizer', err); },
-    );
-  }
-  return pythonReadyPromise;
 }
 
 type LineTokens = { offset: number; type: string }[][];
@@ -92,7 +81,7 @@ interface CodeCellPreviewProps {
 }
 
 export function CodeCellPreview({ code, cursorLine, activeGuide, font, metrics, dark }: CodeCellPreviewProps): JSX.Element {
-  const [ready, setReady] = useState(pythonReady);
+  const [ready, setReady] = useState(pythonTokenizerLoaded);
   useEffect(() => {
     if (ready) return;
     let live = true;
@@ -107,23 +96,36 @@ export function CodeCellPreview({ code, cursorLine, activeGuide, font, metrics, 
     return () => window.removeEventListener('skena:mdTheme', on);
   }, []);
   const factors = document.documentElement.dataset.mdTheme === 'factors';
+  // - re-render when the code theme has loaded or the setting changed
+  const [, setCodeThemeTick] = useState(0);
+  useEffect(() => {
+    const on = () => setCodeThemeTick(t => t + 1);
+    window.addEventListener(CODE_THEME_EVENT, on);
+    return () => window.removeEventListener(CODE_THEME_EVENT, on);
+  }, []);
 
   const lines = useMemo(() => codeCellLines(code), [code]);
   const text = useMemo(() => lines.join('\n'), [lines]);
+  // - the shiki code theme's tokens, as the editor gets them; null when the editor uses Monaco's python tokenizer
+  const shikiTokens = codeCellTokens(lines, text);
   const bracketsByLine = useMemo(() => {
     const byLine = new Map<number, Map<number, string>>();
-    for (const mark of pythonBracketLevels(lines)) {
+    for (const mark of shikiTokens ? tokenBracketLevels(lines, shikiTokens) : pythonBracketLevels(lines)) {
       let row = byLine.get(mark.line);
       if (!row) byLine.set(mark.line, row = new Map());
       row.set(mark.col, bracketColor(mark, dark));
     }
     return byLine;
-  }, [lines, dark]);
+  }, [lines, dark, shikiTokens]);
   const indentation = useMemo(() => codeIndentation(lines), [lines]);
   const current = Math.min(Math.max(1, Math.floor(cursorLine) || 1), lines.length);
   const guides = useMemo(() => indentGuides(lines, indentation, activeGuide ? current : null), [lines, indentation, activeGuide, current]);
   const numbers = useMemo(() => relativeLineNumbers(lines.length, cursorLine), [lines.length, cursorLine]);
-  const tokens = ready ? pythonTokens(text) : null;
+  // - the editor mixes a code theme colour that has alpha with its background (codeCellShiki.opaqueColor)
+  const bg = codeCellBackground(dark);
+  const shikiFg = codeCellForeground();
+  // - Monaco's tokenize() runs the tokenizer the editor has: python's own only when no code theme is in use
+  const tokens = ready && !shikiFg ? pythonTokens(text) : null;
   const styler = stylerFor(dark, factors);
   const theme = skenaCodeTheme(dark, factors, '');
   const guideColors = indentGuideColors(theme);
@@ -138,7 +140,7 @@ export function CodeCellPreview({ code, cursorLine, activeGuide, font, metrics, 
   };
 
   return (
-    <div className="skena-code-cell-lines" style={{ position: 'relative', height, ...fontCss, color: styler('').color }}>
+    <div className="skena-code-cell-lines" style={{ position: 'relative', height, ...fontCss, color: shikiFg ? opaqueColor(shikiFg, bg) : styler('').color }}>
       {/* - margin: Monaco's .margin layer with its .margin-view-overlays rows */}
       <div style={{ position: 'absolute', left: 0, top: 0, width: contentLeft, height, transform: LAYER_HINT, contain: 'strict' }}>
         <div style={{ position: 'absolute', width: contentLeft, height, ...fontCss }}>
@@ -190,7 +192,9 @@ export function CodeCellPreview({ code, cursorLine, activeGuide, font, metrics, 
         </div>
         <div style={{ position: 'absolute', ...fontCss }}>
           {lines.map((line, i) => {
-            const lineTokens = tokens?.[i]?.map(t => ({ offset: t.offset, style: styler(t.type) })) ?? [];
+            const lineTokens = shikiTokens
+              ? shikiTokens[i].map(t => ({ offset: t.offset, style: codeRunStyle(t, bg) }))
+              : tokens?.[i]?.map(t => ({ offset: t.offset, style: styler(t.type) })) ?? [];
             const runs = splitRuns(line, lineTokens, bracketsByLine.get(i), magicRange(line));
             return (
               <div

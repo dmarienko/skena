@@ -12,7 +12,10 @@ import { guessIndentation } from 'monaco-editor/esm/vs/editor/common/model/inden
 import { GuidesTextModelPart } from 'monaco-editor/esm/vs/editor/common/model/guidesTextModelPart.js';
 import { LINE_NUMBER_ACTIVE_COLOR, LINE_NUMBER_COLOR, type RunStyle } from './codeCellView';
 
-/** The code cell editor's theme, `skena-code`: CodeNode defines it before each editor is created. */
+/**
+ * The code cell editor's theme, `skena-code`, under the factors code theme; under a shiki code theme
+ * its editor colours are kept and its token rules replaced (codeCellTheme defines it).
+ */
 export function skenaCodeTheme(dark: boolean, factors: boolean, background: string): editor.IStandaloneThemeData {
   // - match the markdown theme: when the factors theme is active, colour the editor tokens with the
   // - factors palette (teal keywords / amber strings / …). Otherwise a VS-Code-Dark+-ish default.

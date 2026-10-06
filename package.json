@@ -340,6 +340,12 @@
           "description": "Max line length (in characters) for rendered markdown nodes — widening a node past this keeps a readable text column instead of reflowing full width. 0 = unlimited. Try ~88.",
           "scope": "window"
         },
+        "skena.code.theme": {
+          "type": "string",
+          "default": "ayu-dark",
+          "markdownDescription": "Syntax colours of code cells: the id of a [shiki bundled theme](https://shiki.style/themes) (e.g. `ayu-dark`, `tokyo-night`, `dark-plus`, `one-dark-pro`), or `factors` for the colours code cells had before this setting (Monaco's python tokens; the factors palette when `skena.markdownTheme` is `factors`). Only the token colours change; the cell keeps the editor background, cursor, selection and line numbers. An unknown id falls back to `ayu-dark`.",
+          "scope": "window"
+        },
         "skena.vim.leader": {
           "type": "string",
           "default": ";",

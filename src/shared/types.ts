@@ -507,6 +507,7 @@ export type HostToWebview =
   | MsgSearchResults
   | MsgMarkdownConfig
   | MsgVimConfig
+  | MsgCodeConfig
   | MsgAddNodeResult
   | MsgAddNodeTrigger
   | MsgAddTextNodeTrigger
@@ -1023,6 +1024,17 @@ export interface VimConfig {
 export interface MsgVimConfig {
   type:   'vimConfig';
   config: VimConfig;
+}
+
+/** - skena.code.*: the code cells' colours */
+export interface CodeConfig {
+  /** - skena.code.theme as set: a shiki theme id or 'factors'; the webview resolves an unknown one */
+  theme: string;
+}
+
+export interface MsgCodeConfig {
+  type:   'codeConfig';
+  config: CodeConfig;
 }
 
 // ─── LOD ─────────────────────────────────────────────────────────────────────

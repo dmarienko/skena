@@ -20,6 +20,7 @@ import { MarkdownConfigContext, DEFAULT_MARKDOWN_CONFIG } from './context/Markdo
 import { warmCodeHighlighter } from './lib/codeHighlight';
 import { installThemeVars } from './theme';
 import { setVimSettings } from './canvas/vimSettings';
+import { setCodeTheme } from './canvas/codeCellTheme';
 
 type VsCodeApi = { postMessage: (msg: unknown) => void };
 
@@ -158,6 +159,9 @@ export function App(): JSX.Element {
         }
         case 'vimConfig':
           setVimSettings(msg.config);
+          break;
+        case 'codeConfig':
+          setCodeTheme(msg.config.theme);
           break;
         case 'fileContent':
         case 'fileError':

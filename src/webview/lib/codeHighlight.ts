@@ -37,7 +37,8 @@ const LANGS = ['python', 'javascript', 'typescript', 'bash', 'json', 'yaml', 'sq
 const ALIAS: Record<string, string> = { sh: 'bash', zsh: 'bash', shell: 'bash', py: 'python', ts: 'typescript', js: 'javascript', yml: 'yaml', md: 'markdown', rs: 'rust', golang: 'go' };
 
 let _hl: Promise<Highlighter> | null = null;
-function highlighter(): Promise<Highlighter> {
+/** The one shiki highlighter of the markdown code blocks, shared with the code cells (codeCellTheme). */
+export function highlighter(): Promise<Highlighter> {
   if (!_hl) _hl = createHighlighter({ themes: [FACTORS_THEME], langs: LANGS });
   return _hl;
 }

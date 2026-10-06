@@ -22,7 +22,7 @@
 import * as vscode from 'vscode';
 import * as fs     from 'fs/promises';
 import * as path   from 'path';
-import { VaultConfig, VimConfig } from '../shared/types';
+import { CodeConfig, VaultConfig, VimConfig } from '../shared/types';
 import type { KnowledgeServerConfig } from '../shared/knowledge/types';
 import type { SettingsRead } from './jupyter/config';
 import { parseSettingsJson } from './settingsJson';
@@ -154,4 +154,9 @@ export function getVimConfig(): VimConfig {
     leader:     cfg.get<string>('leader') ?? ';',
     jumpLabels: cfg.get<string>('jumpLabels') ?? 'asdfghjklqwertyuiopzxcvbnm',
   };
+}
+
+/** - skena.code.* for the webview: the code cells' theme, as set */
+export function getCodeConfig(): CodeConfig {
+  return { theme: vscode.workspace.getConfiguration('skena.code').get<string>('theme') ?? 'ayu-dark' };
 }

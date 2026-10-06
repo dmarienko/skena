@@ -26,11 +26,11 @@ import { applyVimClipboard, patchVimNewlineAndIndent, patchVimLastLine, patchVim
 import { installJumpLabels } from '../editorJumpLabels';
 import { ensureKernelCompletion, setActiveCodeCell } from './kernelCompletion';
 import {
-  CodeCellPreview, firstGlyphRect, previewGuides, previewLineRects, textContentRect, whenPythonTokenizerReady,
+  CodeCellPreview, firstGlyphRect, previewGuides, previewLineRects, textContentRect,
   type CodeCellFont, type CodeCellMetrics,
 } from './CodeCellPreview';
 import { codeGutter, magicRange, LINE_DECORATIONS_WIDTH, LINE_NUMBERS_MIN_CHARS } from '../codeCellView';
-import { skenaCodeTheme } from '../codeCellMonaco';
+import { defineCodeCellTheme, whenCodeTokenizerReady } from '../codeCellTheme';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -375,8 +375,8 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     }
     editorInstance.focus();
 
-    // - take the preview away once the editor has its python tokens (colours and the bracket pairs
-    // - Monaco reads from them) and has painted them. Any key, click or edit takes it away at once:
+    // - take the preview away once the editor has its tokens (colours and the bracket pairs Monaco
+    // - reads from them) and has painted them. Any key, click or edit takes it away at once:
     // - from then on the editor shows something the preview does not.
     let revealed = false;
     const reveal = (by: 'painted' | 'input' | 'timeout') => {
@@ -408,10 +408,10 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
       clearTimeout(revealTimer);
       revealOnInput.forEach(d => d.dispose());
     });
-    // - once the python tokenizer is loaded, forceTokenization (TextModel.tokenization, not in Monaco's
-    // - typings) tokenizes every line now instead of in idle time, and marks the model fully tokenized
-    // - so the bracket colours switch to the token-aware ones. Two frames later Monaco has painted them.
-    whenPythonTokenizerReady()
+    // - once the tokenizer of the code theme is in place, forceTokenization (TextModel.tokenization, not in
+    // - Monaco's typings) tokenizes every line now instead of in idle time, and marks the model fully
+    // - tokenized so the bracket colours switch to the token-aware ones. Two frames later Monaco has painted them.
+    whenCodeTokenizerReady()
       .then(() => {
         const model = editorInstance.getModel();
         if (model) (model as unknown as { tokenization: { forceTokenization(line: number): void } }).tokenization.forceTokenization(model.getLineCount());
@@ -428,7 +428,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
       // - hand the editor's scroll offset to the preview so it keeps the same visible frame
       // - (the preview shares the editor font + line-height, so scrollTop maps 1:1)
       setScrollPosition(`${id}-code`, editorInstance.getScrollTop());
-      // - the preview draws with Monaco's tokenizer, loaded by now, so it is complete in its first frame
+      // - the preview draws with the editor's tokenizer, loaded by now, so it is complete in its first frame
       if (debugCodeSwap()) {
         const ed = editorRects(editorInstance);
         swapLogRef.current = { direction: 'leave', leftAt: performance.now(), zoom: +ed.zoom.toFixed(4), editor: ed };
@@ -520,10 +520,8 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   const beforeMount = useCallback<BeforeMount>((monacoInstance) => {
     // - register the kernel-backed completion provider once (idempotent)
     ensureKernelCompletion(monacoInstance);
-    const bg = getComputedStyle(document.body).getPropertyValue('--vscode-editor-background').trim();
-    // - the preview draws its tokens with the same theme data (codeCellMonaco.skenaCodeTheme)
-    const factors = document.documentElement.dataset.mdTheme === 'factors';
-    monacoInstance.editor.defineTheme('skena-code', skenaCodeTheme(isDark, factors, bg));
+    // - the preview draws its tokens with the same colours (codeCellTheme)
+    defineCodeCellTheme(isDark);
   }, [isDark]);
 
   // - finish the debug log of a swap in the commit that takes the preview away (enter) or brings it

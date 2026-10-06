@@ -1,6 +1,6 @@
 /**
- * Types for the few Monaco 0.55 modules the code cell preview imports by path. They are not part of
- * Monaco's public typings; only what the preview calls is declared.
+ * Types for the few Monaco 0.55 modules the code cells import by path. They are not part of
+ * Monaco's public typings; only what the code cells use is declared.
  */
 
 declare module 'monaco-editor/esm/vs/editor/common/languages/supports/tokenization.js' {
@@ -50,4 +50,9 @@ declare module 'monaco-editor/esm/vs/editor/common/model/guidesTextModelPart.js'
     getLinesIndentGuides(startLineNumber: number, endLineNumber: number): number[];
     getActiveIndentGuide(lineNumber: number, minLineNumber: number, maxLineNumber: number): { startLineNumber: number; endLineNumber: number; indent: number };
   }
+}
+
+declare module 'monaco-editor/esm/vs/basic-languages/python/python.js' {
+  import type { languages } from 'monaco-editor';
+  export const language: languages.IMonarchLanguage;
 }

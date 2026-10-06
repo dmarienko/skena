@@ -9,6 +9,7 @@ import {
 import { INPUT_LINE_H, inputHeight } from './consoleLayout';
 import { ensureCanvasWordCompletion } from '../canvasWordCompletion';
 import { inJumpLabels, installJumpLabels } from '../editorJumpLabels';
+import { defineEditorTheme } from '../codeCellTheme';
 
 export interface ChatInputHandle {
   focus:  () => void;
@@ -161,12 +162,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(p
     return () => window.removeEventListener('keydown', handler, { capture: true });
   }, []);
 
-  // - Monaco themes are global: keep the same 'skena-editor' definition the node editors use;
-  // - the see-through background comes from chat-console.css
+  // - Monaco themes are global: keep the same 'skena-editor' definition the node editors use, with the
+  // - code cell token rules added (codeCellTheme); the see-through background comes from chat-console.css
   const handleBeforeMount: BeforeMount = useCallback((monacoInstance) => {
     ensureCanvasWordCompletion(monacoInstance);
     const bg = getComputedStyle(document.body).getPropertyValue('--vscode-editor-background').trim();
-    monacoInstance.editor.defineTheme('skena-editor', {
+    defineEditorTheme('skena-editor', {
       base:    'vs-dark',
       inherit: true,
       rules:   [],

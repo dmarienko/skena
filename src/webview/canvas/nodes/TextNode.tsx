@@ -42,6 +42,7 @@ import { nodeBorderColor } from '../palette';
 import { stripForHost, rememberWritten, classifyHostText } from '../vimClipboard';
 import { ensureCanvasWordCompletion } from '../canvasWordCompletion';
 import { installJumpLabels } from '../editorJumpLabels';
+import { defineEditorTheme } from '../codeCellTheme';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -807,7 +808,8 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
     const bg    = style.getPropertyValue('--vscode-editor-background').trim();
     const dark  = isDark;
 
-    monacoInstance.editor.defineTheme('skena-editor', {
+    // - with the code cell token rules added: Monaco applies one theme to every editor (codeCellTheme)
+    defineEditorTheme('skena-editor', {
       base:    dark ? 'vs-dark' : 'vs',
       inherit: true,
       rules: [
