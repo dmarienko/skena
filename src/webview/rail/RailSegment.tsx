@@ -3,15 +3,11 @@ import type { DerivedLane } from '../../shared/sectionLanes';
 import { useKernelState } from '../hooks/useKernelState';
 import { railItems, ICON_PX, BTN_H, DOT_BTN_H, DOT_PX, type RailSegment as Seg } from './railGeometry';
 import type { RailKernel } from './SectionRail';
+import { fmtDateTime } from '../../shared/dateTime';
 
 const FONT = 'system-ui, -apple-system, sans-serif';
 
-// - 'YYYY-MM-DD HH:MM' local time; the title of an untitled section
-export function fmtDateTime(ms: number): string {
-  const d = new Date(ms);
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
+export { fmtDateTime };
 
 const Chevron = ({ folded }: { folded: boolean }) => (
   <svg width={16} height={16} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"

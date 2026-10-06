@@ -7,6 +7,7 @@ import React, { useMemo } from 'react';
 import { FileType } from '../../shared/types';
 import { FILE_TYPE_COLORS, FILE_TYPE_ICONS, STATUS_COLORS } from '../../shared/constants';
 import { StatusBadge } from './StatusBadge';
+import { extractFrontmatter, filenameFromUri } from '../../shared/fileHeader';
 
 interface NodeHeaderProps {
   fileType:    FileType;
@@ -15,35 +16,6 @@ interface NodeHeaderProps {
   content:     string;
   accentColor: string;
   onOpen:      () => void;
-}
-
-interface Frontmatter {
-  title?:  string;
-  status?: string;
-  type?:   string;
-  score?:  string;
-}
-
-function extractFrontmatter(content: string): Frontmatter {
-  // - simple frontmatter parser (gray-matter runs in extension host)
-  // - here we do a lightweight regex parse for display only
-  const match = content.match(/^---\n([\s\S]*?)\n---/);
-  if (!match) return {};
-  const fm: Frontmatter = {};
-  for (const line of match[1].split('\n')) {
-    const [k, ...rest] = line.split(':');
-    const key = k?.trim();
-    const val = rest.join(':').trim().replace(/^["']|["']$/g, '');
-    if (key === 'title')  fm.title  = val;
-    if (key === 'status') fm.status = val;
-    if (key === 'type')   fm.type   = val;
-    if (key === 'score')  fm.score  = val;
-  }
-  return fm;
-}
-
-function filenameFromUri(uri: string): string {
-  return uri.split('/').pop()?.replace(/\.(md|ipynb|py|yaml|yml)$/, '') ?? uri;
 }
 
 export function NodeHeader({ fileType, uri, content, accentColor, onOpen }: NodeHeaderProps): JSX.Element {
