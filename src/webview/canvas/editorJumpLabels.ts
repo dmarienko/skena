@@ -139,9 +139,11 @@ function targetsFor(dir: JumpDir, lines: VisibleLine[], cursor: TextPos): TextPo
  * them. A leader that is not followed by a second leader is handed to vim then.
  *
  * Call once per editor, after initVimMode. The settings are read on every key: the chat input mounts
- * before the host has sent them.
+ * before the host has sent them. With `onLookup` (code cells) leader g and leader z call it instead
+ * of handing the leader to vim.
  */
-export function installJumpLabels(editor: MonacoEditor.IStandaloneCodeEditor, vim: VimAdapterInstance): void {
+export function installJumpLabels(editor: MonacoEditor.IStandaloneCodeEditor, vim: VimAdapterInstance, opts: { onLookup?: (what: 'definition' | 'references') => void } = {}): void {
+  const code = opts.onLookup !== undefined;
   const decorations = editor.createDecorationsCollection();
   const node = editor.getContainerDomNode();
   let held: LeaderState = 0;
@@ -152,7 +154,7 @@ export function installJumpLabels(editor: MonacoEditor.IStandaloneCodeEditor, vi
   const self = {
     take(e: KeyboardEvent) {
       if (shown || held === 0) return;
-      const step = leaderStep(held, keyOf(e), vimSettings().leader);
+      const step = leaderStep(held, keyOf(e), vimSettings().leader, code);
       if (step.do === 'release') release(step.held);
     },
   };
@@ -248,7 +250,7 @@ export function installJumpLabels(editor: MonacoEditor.IStandaloneCodeEditor, vi
     if (!editor.hasTextFocus()) return;
     if (held === 0 && !idleNormal(vimState(vim))) return;
     const { leader } = vimSettings();
-    const step = leaderStep(held, k, leader);
+    const step = leaderStep(held, k, leader, code);
     if (step.do === 'none') return;
     if (step.do === 'release') {
       // - the window listener has normally done this already; here for a key that did not reach it
@@ -259,6 +261,7 @@ export function installJumpLabels(editor: MonacoEditor.IStandaloneCodeEditor, vi
     e.stopPropagation();
     if (step.do === 'hold') { held = step.next; return; }
     held = 0;
+    if (step.do === 'definition' || step.do === 'references') { opts.onLookup?.(step.do); return; }
     show(step.dir);
   };
 

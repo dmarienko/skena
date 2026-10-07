@@ -19,12 +19,16 @@ export interface JumpKey { key: string; ctrl: boolean; meta: boolean; alt: boole
  * - `show`: leader leader + h/j/k/l; stop the key and show the labels
  * - `release`: any other key ends the sequence; the `held` leaders keep their own meaning, then the
  *   key goes on as usual
+ * - `definition`: leader + g in a code cell; stop the key and look up where the name is defined
+ * - `references`: leader + z in a code cell; stop the key and list the name's references
  */
 export type LeaderStep =
   | { do: 'none' }
   | { do: 'hold'; next: 1 | 2 }
   | { do: 'show'; dir: JumpDir }
-  | { do: 'release'; held: 1 | 2 };
+  | { do: 'release'; held: 1 | 2 }
+  | { do: 'definition' }
+  | { do: 'references' };
 
 export type JumpMatch =
   | { kind: 'jump'; index: number }
@@ -94,12 +98,20 @@ export function labelKey(labels: readonly string[], typed: string, k: JumpKey): 
   return matchKeys(labels, typed + k.key);
 }
 
-/** - one key of leader leader h/j/k/l, from `state` leaders held. Shift does not count as a modifier. */
-export function leaderStep(state: LeaderState, k: JumpKey, leader: string): LeaderStep {
+/**
+ * - one key of leader leader h/j/k/l, from `state` leaders held. Shift does not count as a modifier.
+ *   With `code` (a code cell's editor) leader g is go to definition and leader z find references.
+ */
+export function leaderStep(state: LeaderState, k: JumpKey, leader: string, code = false): LeaderStep {
   if (MODIFIER_KEYS.has(k.key)) return { do: 'none' };
   const plain = !k.ctrl && !k.meta && !k.alt;
   if (state === 0) return plain && k.key === leader ? { do: 'hold', next: 1 } : { do: 'none' };
-  if (state === 1) return plain && k.key === leader ? { do: 'hold', next: 2 } : { do: 'release', held: 1 };
+  if (state === 1) {
+    if (plain && k.key === leader) return { do: 'hold', next: 2 };
+    if (plain && code && k.key === 'g') return { do: 'definition' };
+    if (plain && code && k.key === 'z') return { do: 'references' };
+    return { do: 'release', held: 1 };
+  }
   return plain && DIRS.has(k.key) ? { do: 'show', dir: k.key as JumpDir } : { do: 'release', held: 2 };
 }
 

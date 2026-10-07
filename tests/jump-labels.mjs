@@ -195,3 +195,18 @@ test('23. after a typed first character a label shows only the characters still 
   assert.equal(labelRest('a', 'c'), null);
   assert.equal(labelRest('\u{20000}b', '\u{20000}'), 'b');
 });
+
+test('24. leader g and leader z are the code cell lookups, only where they are on and only after one leader', () => {
+  assert.deepEqual(leaderStep(1, key('g'), ';', true), { do: 'definition' });
+  assert.deepEqual(leaderStep(1, key('z'), ';', true), { do: 'references' });
+  for (const k of ['g', 'z']) {
+    assert.deepEqual(leaderStep(1, key(k), ';'), { do: 'release', held: 1 }, k);
+    assert.deepEqual(leaderStep(1, key(k), ';', false), { do: 'release', held: 1 }, k);
+    assert.deepEqual(leaderStep(2, key(k), ';', true), { do: 'release', held: 2 }, k);
+    assert.deepEqual(leaderStep(0, key(k), ';', true), { do: 'none' }, k);
+    assert.deepEqual(leaderStep(1, key(k.toUpperCase()), ';', true), { do: 'release', held: 1 }, k);
+    assert.deepEqual(leaderStep(1, key(k, { ctrl: true }), ';', true), { do: 'release', held: 1 }, k);
+  }
+  assert.deepEqual(leaderStep(1, key(';'), ';', true), { do: 'hold', next: 2 });
+  assert.deepEqual(leaderStep(1, key('Shift'), ';', true), { do: 'none' });
+});
