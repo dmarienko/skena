@@ -136,8 +136,10 @@ export function openReferencePeek(
   // - in the peek's list: j/k move, l/h open and close groups (each an arrow, then Enter, which selects
   //   and so previews, as VS Code's list keys do with selectionNavigation; Enter on a group does nothing,
   //   referencesWidget.js onEvent) and Enter goes to the place. Esc goes on to the peek, which closes on
-  //   it (referencesWidget.js, closeReferenceSearch). At capture on the editor's container, so neither
-  //   the list (its type-to-find) nor anything above it (the canvas's h/j/k/l) sees j, k, l, h or Enter.
+  //   it (referencesWidget.js, closeReferenceSearch). At capture on the editor's container, so the list
+  //   (its type-to-find) never sees j, k, l, h or Enter, and stopped there, so no listener on the way back
+  //   up does either. Capture listeners on the window run before this one: the canvas's pan keys and a
+  //   selected cell's keys skip a key while the focus is inside a .monaco-editor, as the peek is.
   const onKey = (e: KeyboardEvent) => {
     if (sent.has(e) || e.ctrlKey || e.metaKey || e.altKey || !(e.target instanceof Element) || !e.target.closest(LIST)) return;
     const arrow = ARROWS[e.key];
