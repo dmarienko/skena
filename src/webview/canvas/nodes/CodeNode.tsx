@@ -388,9 +388,12 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     editorInstance.onDidDispose(() => container.removeEventListener('keydown', onAnyKey, { capture: true }));
     // - leader z: the peek opens in the editor, the cell drawn tall enough for it
     const openPeek = (answer: ReferencesAnswer) => {
-      const box = nodeElRef.current?.offsetHeight ?? 0;
-      const lineHeight = editorInstance.getOption(monacoInstance.editor.EditorOption.lineHeight);
-      openReferencePeek(editorInstance, id, answer, peekBoxHeight(box, editorInstance.getLayoutInfo().height, lineHeight), px => {
+      const height = () => peekBoxHeight(
+        nodeElRef.current?.offsetHeight ?? 0,
+        editorInstance.getLayoutInfo().height,
+        editorInstance.getOption(monacoInstance.editor.EditorOption.lineHeight),
+      );
+      openReferencePeek(editorInstance, id, answer, height, px => {
         flushSync(() => setPeekBox(px));
         if (editorInstance.getModel()) editorInstance.layout();
       });

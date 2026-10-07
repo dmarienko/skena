@@ -95,15 +95,16 @@ export function closeReferencePeek(editor: MonacoEditor.ICodeEditor): boolean {
 }
 
 /**
- * Opens Monaco's reference peek in `editor` (cell `cellId`) on the host's answer. `height` is the cell's
- * height while it is open (null: its own), and `setHeight` draws the cell at a height and returns once
- * the editor has the new size: Monaco sizes the peek from the editor's height when it opens.
+ * Opens Monaco's reference peek in `editor` (cell `cellId`) on the host's answer, closing one already
+ * open there first. `height` measures the cell's height for the peek (null: its own) once that one has
+ * closed and the cell is back at its own size, and `setHeight` draws the cell at a height and returns
+ * once the editor has the new size: Monaco sizes the peek from the editor's height when it opens.
  */
 export function openReferencePeek(
   editor: MonacoEditor.IStandaloneCodeEditor,
   cellId: string,
   answer: ReferencesAnswer,
-  height: number | null,
+  height: () => number | null,
   setHeight: (px: number | null) => void,
 ): void {
   installOpener();
@@ -191,7 +192,8 @@ export function openReferencePeek(
   const disposed = editor.onDidDispose(() => finish(false));
   peeks.set(editor, { plan, cellId, finish });
 
-  if (height !== null) setHeight(height);
+  const px = height();
+  if (px !== null) setHeight(px);
   editor.trigger('skena', 'editor.action.referenceSearch.trigger', null);
   // - Monaco opens the peek in promise callbacks of the trigger; when there is none by the next task, none is coming
   setTimeout(() => { if (!seen) finish(true); }, 0);
