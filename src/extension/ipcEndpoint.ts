@@ -49,6 +49,17 @@ function ownDir(dir: string): void {
   }
 }
 
+/**
+ * - the per-user folder the endpoint files go in ($XDG_RUNTIME_DIR/skena, else skena-<user> in the
+ *   OS temp dir), created owner-only; throws when it is not this user's alone. Go to definition keeps
+ *   its joined files under it.
+ */
+export function userTempDir(tmp?: string): string {
+  const dir = endpointDirs(tmp)[0];
+  ownDir(dir);
+  return dir;
+}
+
 /** - `endpoint` is the relay's "port:token" */
 export function writeEndpoint(workspaceDir: string, endpoint: string, tmp?: string): void {
   const dir = endpointDirs(tmp)[0];
