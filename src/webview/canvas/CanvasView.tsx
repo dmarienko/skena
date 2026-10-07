@@ -60,6 +60,7 @@ import { EdgeFollowHints, type EdgeHint, type ShownHints } from './EdgeFollowHin
 import { cardContent, type CardContent } from './cardContent';
 import { loadedFileText } from '../hooks/useFileContent';
 import { G_BADGES_ATTR, gChordStep } from './gChord';
+import { WHEEL_IDLE_MS, createGestureTracker, type GestureTracker } from './gestureTracker';
 import { JumpTags, type ShownTags } from './JumpTags';
 import { MODIFIER_KEYS, assignLabels, labelKey, leaderStep, nodesInDirection, type JumpDir, type LeaderState } from './jumpLabels';
 import { vimSettings } from './vimSettings';
@@ -3553,6 +3554,31 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
     return () => window.removeEventListener('skena:nodeResize', handler);
   }, [setNodes, scheduleSave, pushHistory, runEngine]);
 
+  // - one pan or zoom, from its first start to its last end: data-skena-interacting is set for that
+  //   span (see canvas.css) and the viewport is saved once when it ends. A run of wheel notches counts
+  //   as one, though each notch sets the viewport and React Flow reports a start and an end for it.
+  const gestureRef = useRef<GestureTracker | null>(null);
+  useEffect(() => {
+    const g = createGestureTracker({
+      idleMs: WHEEL_IDLE_MS,
+      timers: { set: (fn, ms) => window.setTimeout(fn, ms), clear: h => window.clearTimeout(h as number) },
+      onStart: () => document.documentElement.setAttribute('data-skena-interacting', '1'),
+      onEnd: () => {
+        document.documentElement.removeAttribute('data-skena-interacting');
+        canvasRef.current = { ...canvasRef.current, viewport: rfRef.current.getViewport() };
+        scheduleSave();
+      },
+    });
+    gestureRef.current = g;
+    return () => {
+      g.dispose();
+      gestureRef.current = null;
+      document.documentElement.removeAttribute('data-skena-interacting');
+    };
+  }, [scheduleSave]);
+  const onMoveStart = useCallback(() => gestureRef.current?.moveStart(), []);
+  const onMoveEnd = useCallback(() => gestureRef.current?.moveEnd(), []);
+
   // ─── custom wheel zoom (smaller step, cursor-centred) ────────────────────────
 
   useEffect(() => {
@@ -3581,6 +3607,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       const ly = e.clientY - rect.top;
       // - clamp so cursor-centred wheel zoom can't reveal space above/left of the origin
       const c = clampCam(lx - (lx - tx) * scale, ly - (ly - ty) * scale, newZoom);
+      gestureRef.current?.wheel();
       rfRef.current.setViewport({ x: c.x, y: c.y, zoom: newZoom });
     };
 
@@ -4292,17 +4319,10 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
         // - viewport persistence: restore saved position/zoom. No fitView prop: the load effect fits
         //   through fitClamped on the same condition, and React Flow's own fit is unbounded.
         defaultViewport={initialViewport(canvas.viewport)}
-        // - save viewport to canvas JSON whenever the user stops panning/zooming
-        onMoveStart={() => {
-          // - promote nodes to GPU layers only while panning/zooming (see canvas.css);
-          // - at rest they render crisp at the real scale instead of a scaled cached texture
-          document.documentElement.setAttribute('data-skena-interacting', '1');
-        }}
-        onMoveEnd={(_e, viewport) => {
-          document.documentElement.removeAttribute('data-skena-interacting');
-          canvasRef.current = { ...canvasRef.current, viewport };
-          scheduleSave();
-        }}
+        // - the gesture span: GPU layer promotion only while moving (see canvas.css), so at rest
+        //   nodes render crisp at the real scale; the viewport is saved when the span ends
+        onMoveStart={onMoveStart}
+        onMoveEnd={onMoveEnd}
         minZoom={MIN_ZOOM}
         maxZoom={MAX_ZOOM}
         translateExtent={TRANSLATE_EXTENT}
