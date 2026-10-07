@@ -37,6 +37,16 @@ import 'monaco-editor/esm/vs/basic-languages/python/python.contribution.js';
 import { loader } from '@monaco-editor/react';
 loader.config({ monaco });
 
+// - step 3: Monaco drops its own cancellations (base/common/errors.js onUnexpectedError skips what
+//   isCancellationError matches) but leaves some promises it cancels uncaught: the word highlighter's
+//   50 ms Delayer rejects when its editor goes within 50 ms of taking the focus, as a code cell's does
+//   when the reference peek closes onto it and the jump then leaves for another cell. Those rejections
+//   are dropped here as Monaco drops them; any other still reaches the console.
+window.addEventListener('unhandledrejection', e => {
+  const r: unknown = e.reason;
+  if (r instanceof Error && r.name === 'Canceled' && r.message === 'Canceled') e.preventDefault();
+});
+
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
