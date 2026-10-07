@@ -82,26 +82,80 @@ function commentOut(line: string): string {
   return i < 0 ? line : `${line.slice(0, i)}#${line.slice(i + 1)}`;
 }
 
-function cellLines(code: string): string[] {
+/**
+ * - where Python's tokenizer stands at the end of a line: the closers of the open brackets (innermost
+ *   last), the quotes of the string it is in, and whether a backslash outside a string carries the
+ *   line on
+ */
+interface LexState { closers: string[]; quote: string | null; joined: boolean }
+const CLEAN: LexState = { closers: [], quote: null, joined: false };
+const CLOSER: Record<string, string> = { '(': ')', '[': ']', '{': '}' };
+
+/**
+ * - the state after `line`. A string prefix (r, b, f, u, t and their pairs) changes nothing here: in
+ *   every kind a backslash keeps the next character, quote or line end, inside the string. An f-string's
+ *   braces are not looked into. A one-line string still open at the line's end ends there, as the
+ *   tokenizer ends it, unless a backslash carries it on; a closer with nothing open is passed over.
+ */
+function lexLine(line: string, from: LexState): LexState {
+  const closers = [...from.closers];
+  let quote = from.quote;
+  let i = 0;
+  while (i < line.length) {
+    const ch = line[i];
+    if (quote !== null) {
+      if (ch === '\\') { i += 2; continue; }
+      if (line.startsWith(quote, i)) { i += quote.length; quote = null; continue; }
+      i++;
+      continue;
+    }
+    if (ch === '#') break;
+    if (ch === '\\' && i === line.length - 1) return { closers, quote, joined: true };
+    if (ch === '"' || ch === "'") {
+      quote = line.startsWith(ch.repeat(3), i) ? ch.repeat(3) : ch;
+      i += quote.length;
+      continue;
+    }
+    if (ch in CLOSER) closers.push(CLOSER[ch]);
+    else if (ch === ')' || ch === ']' || ch === '}') closers.pop();
+    i++;
+  }
+  // - i past the end: the line's last character was a backslash inside the string
+  if (quote !== null && quote.length === 1 && i === line.length) quote = null;
+  return { closers, quote, joined: false };
+}
+
+// - the cell's lines as the join writes them, and the line that closes what the last one leaves open
+function cellLines(code: string): { lines: string[]; closers: string } {
   const lines = code.split(/\r\n|\r|\n/);
   const first = lines.find(l => l.trim() !== '');
   const magic = first !== undefined ? CELL_MAGIC.exec(first) : null;
-  if (magic && !PYTHON_CELL_MAGICS.has(magic[1])) return lines.map(commentOut);
-  return lines.map(l => (MAGIC.test(l) ? commentOut(l) : l));
+  if (magic && !PYTHON_CELL_MAGICS.has(magic[1])) return { lines: lines.map(commentOut), closers: '' };
+  let st = CLEAN;
+  const out = lines.map(l => {
+    // - a magic only where a statement starts: `% name` inside brackets is the modulo of a name
+    const atStart = st.closers.length === 0 && st.quote === null && !st.joined;
+    const line = atStart && MAGIC.test(l) ? commentOut(l) : l;
+    st = lexLine(line, st);
+    return line;
+  });
+  return { lines: out, closers: (st.quote ?? '') + [...st.closers].reverse().join('') };
 }
 
 /**
  * The cells as one Python document: the `header` lines, then each cell's lines (split at CRLF, CR or
- * LF; magic and shell lines commented out, a whole cell under a non-Python cell magic too) followed by
- * one empty line; joined with LF. An empty cell is one empty line.
+ * LF; magic and shell lines that start a statement commented out, a whole cell under a non-Python cell
+ * magic too) followed by one line that closes the string and the brackets the cell leaves open (empty
+ * when it leaves none), so a half-written cell does not swallow the cells after it; joined with LF. An
+ * empty cell is one empty line.
  */
 export function joinCells(cells: readonly JoinCell[], header: readonly string[] = []): JoinedCells {
   const lines: string[] = [...header];
   const spans: JoinedCells['spans'] = [];
   for (const c of cells) {
     const own = cellLines(c.code);
-    spans.push({ id: c.id, first: lines.length, lines: own.length });
-    lines.push(...own, '');
+    spans.push({ id: c.id, first: lines.length, lines: own.lines.length });
+    lines.push(...own.lines, own.closers);
   }
   return { text: lines.join('\n'), spans };
 }

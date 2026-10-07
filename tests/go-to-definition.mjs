@@ -1,5 +1,6 @@
 // - run: npx esbuild src/shared/goToDefinition.ts --bundle --format=esm --outfile=tests/.build/goToDefinition.mjs && node --test tests/go-to-definition.mjs
 import { strict as assert } from 'node:assert';
+import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
 import {
   codeCellsInRunOrder, dottedNameAt, fileUri, fromJoined, isDottedName, joinCells, pickEntry, targetsFromKernel,
@@ -174,4 +175,108 @@ test('16. a definition on the cursor\'s own line counts only when none comes bef
   // - an earlier cell's definition beats the cursor's line
   const two = joinCells([{ id: 'A', code: 'df = 1' }, { id: 'B', code: 'df = df.copy()' }]);
   assert.deepEqual(targetsFromLocations([loc(0, 0), loc(2, 0)], DOC, two, { line: 2, character: 5 }), [{ kind: 'cell', cellId: 'A', line: 1, col: 1 }]);
+});
+
+// - the line the join puts after a cell: the closers of what the cell leaves open
+const closersOf = code => {
+  const j = joinCells([{ id: 'A', code }]);
+  return j.text.split('\n')[j.spans[0].lines];
+};
+
+test('17. after a cell, the line between cells closes the brackets and the string it leaves open', () => {
+  const cases = [
+    ['x = (', ')'],
+    ['foo(1, [2, {3: (4', ')}])'],
+    ['foo(\n  a,\n  b', ')'],
+    ['s = """abc', '"""'],
+    ["s = '''abc\n  more", "'''"],
+    ['x = ("""a\nb', '""")'],
+    ["x = ('abc\\", "')"],
+    ["s = 'abc\\", "'"],
+    ['"""a"""(', ')'],
+    ['x = 1)', ''],
+    ['x = 1', ''],
+    ['', ''],
+  ];
+  for (const [code, want] of cases) assert.equal(closersOf(code), want, JSON.stringify(code));
+});
+
+test('18. an unterminated one-line string ends at its line; brackets in strings and comments do not count; prefixes and escapes', () => {
+  const cases = [
+    ["'abc", ''],
+    ["foo('abc", ')'],
+    ['x = "(["', ''],
+    ["x = ')' + \"]\" + '{'", ''],
+    ['x = 1  # (see [this', ''],
+    ['foo(1,  # )\n  2', ')'],
+    ["z = (rb'\\\\', Rb\"(\", br'''x(''', U'[', F\"{y}\"", ')'],
+    ["u = f'''{x}(", "'''"],
+    ['s = "a\\"("', ''],
+    ["s = ('a\\'b'", ')'],
+    ['s = r"\\""', ''],
+    ["s = '''a ''' + '''b\n''' + [", ']'],
+    ['t = """ " \'\'\' "" """ + (', ')'],
+  ];
+  for (const [code, want] of cases) assert.equal(closersOf(code), want, JSON.stringify(code));
+});
+
+test('19. a line is a magic only at the start of a statement: not inside brackets, a string, or after a backslash', () => {
+  const lines = code => joinCells([{ id: 'A', code }]).text.split('\n');
+  assert.deepEqual(lines('x = (a\n% b)'), ['x = (a', '% b)', '']);
+  assert.deepEqual(lines('y = [1,\n  %time\n]'), ['y = [1,', '  %time', ']', '']);
+  assert.deepEqual(lines('z = 1 + \\\n%d'), ['z = 1 + \\', '%d', '']);
+  assert.deepEqual(lines('s = """\n%time\n!ls\n"""'), ['s = """', '%time', '!ls', '"""', '']);
+  assert.deepEqual(lines('x = (1,\n  2)\n%time f()\n!ls'), ['x = (1,', '  2)', '#time f()', '#ls', '']);
+});
+
+test('20. Python\'s own tokenizer: after the line between cells the next cell starts a statement at depth 0', () => {
+  const cells = [
+    'x = (', 'foo(1, [2, {3: (4', 's = """abc', "s = '''abc\n  more", 'x = ("""a\nb', "x = ('abc\\",
+    "z = (rb'\\\\', Rb\"(\", br'''x(''', U'[', F\"{y}\"", 'foo(1,  # )\n  2', 'x = (a\n% b', 'def f():\n    return g(',
+  ];
+  const texts = cells.map(code => joinCells([{ id: 'A', code }, { id: 'B', code: 'later = 1' }]).text);
+  const py = `
+import io, json, sys, tokenize
+out = []
+for text in json.load(sys.stdin):
+    try:
+        toks = list(tokenize.generate_tokens(io.StringIO(text + '\\n').readline))
+        at = [i for i, t in enumerate(toks) if t.string == 'later']
+        prev = toks[at[0] - 1].type if at else None
+        out.append('ok' if at and toks[at[0]].start[1] == 0 and prev in (tokenize.NEWLINE, tokenize.NL, tokenize.DEDENT) else 'later not at a statement start')
+    except Exception as e:
+        out.append(type(e).__name__ + ': ' + str(e))
+print(json.dumps(out))
+`;
+  const run = spawnSync(process.env.PYTHON ?? 'python3', ['-c', py], { input: JSON.stringify(texts), encoding: 'utf8' });
+  assert.equal(run.status, 0, run.stderr);
+  const got = JSON.parse(run.stdout);
+  cells.forEach((c, i) => assert.equal(got[i], 'ok', JSON.stringify(c)));
+});
+
+test('21. random cells, unbalanced ones too: every position maps both ways, each cell line keeps its length, the line between cells holds closers only', () => {
+  let seed = 7;
+  const rand = n => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+  const parts = ['a', 'x', ' ', '  ', '(', ')', '[', ']', '{', '}', '"', "'", '"""', "'''", '#', '%', '%%time', '!', '\\', '\n', '\r\n', '\r', 'f', 'r', 'b', '=', '.'];
+  const cellOf = () => Array.from({ length: rand(30) }, () => parts[rand(parts.length)]).join('');
+  for (let k = 0; k < 400; k++) {
+    const cells = Array.from({ length: 1 + rand(5) }, (_, i) => ({ id: `c${i}`, code: cellOf() }));
+    const j = joinCells(cells, ['# h']);
+    const doc = j.text.split('\n');
+    assert.equal(doc.length, 1 + cells.reduce((n, c) => n + c.code.split(/\r\n|\r|\n/).length + 1, 0));
+    for (const [i, c] of cells.entries()) {
+      const s = j.spans[i];
+      const own = c.code.split(/\r\n|\r|\n/);
+      assert.equal(s.lines, own.length);
+      assert.match(doc[s.first + s.lines], /^(?:"""|'''|"|')?[)\]}]*$/, JSON.stringify(c.code));
+      assert.equal(fromJoined(j, { line: s.first + s.lines, character: 0 }), null);
+      for (const [n, text] of own.entries()) {
+        assert.equal(doc[s.first + n].length, text.length);
+        for (let col = 1; col <= text.length + 1; col++) {
+          const p = toJoined(j, c.id, n + 1, col);
+          assert.deepEqual(fromJoined(j, p), { cellId: c.id, line: n + 1, col }, JSON.stringify({ code: c.code, n, col }));
+        }
+      }
+    }
+  }
 });
