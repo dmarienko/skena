@@ -75,7 +75,7 @@ looks up where the name under the cursor is defined and goes there.
 The joined file is a real `.py` file in `$XDG_RUNTIME_DIR/skena` (`/run/user/1000/skena`). In the
 factors window with the venv interpreter it resolved all five test names (`sharpe` → `metrics.py:5`,
 `run_walkforward` → `runner.py:98`, `REPO` → E1:30, `CACHE` → E1:29 and E15:28, `np.linalg.solve` →
-numpy `_linalg.py:364`) in 158–249 ms, mapped a shifted text back to the same cells, stayed clean
+numpy `_linalg.py:364`) in 126–249 ms, mapped a shifted text back to the same cells, stayed clean
 (not dirty) and listed 0 problems. An `untitled:` document resolved the same names but was dirty,
 listed 150 problems and left an Untitled tab; a notebook document returned cell definitions under an
 internal path that does not map back to cells.
