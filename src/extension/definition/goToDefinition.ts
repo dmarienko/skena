@@ -16,7 +16,7 @@ import { cellKernelView, kernelById, resolveCellKernel } from '../../shared/kern
 import { DEFINITION_KEY, DEFINITION_TIMEOUT_MS, definitionExpression, parseDefinitionValue } from '../jupyter/definitionSnippet';
 import type { KernelManager } from '../jupyter/manager';
 import { writeJoinedFile } from './joinedFile';
-import { pylanceLocations } from './pylanceLocations';
+import { hasPylance, pylanceLocations } from './pylanceLocations';
 
 // - `# type: ignore` first: Pylance reports no problems for the joined file (pyright: a file-level ignore)
 export const JOINED_HEADER = ['# type: ignore', '# - skena: the code cells of one canvas in run order, for go to definition and find references'];
@@ -43,15 +43,26 @@ async function kernelDefinition(name: string, cellId: string, canvas: CanvasData
   return answer.ok ? answer.def : null;
 }
 
-/** - where the name at the request's cursor is defined: Pylance first, the kernel when Pylance finds nothing */
+// - only the Pylance step's first failure in this window is logged
+let pylanceFailed = false;
+
+/**
+ * - where the name at the request's cursor is defined: Pylance first, the kernel when Pylance finds
+ *   nothing or its step fails (the joined file cannot be written or opened)
+ */
 export async function findDefinitions(msg: MsgGoToDefinition, canvas: CanvasData, canvasPath: string, manager: KernelManager): Promise<DefinitionTarget[]> {
   const cells = canvasCells(canvas, msg.cellNodeId, msg.code);
   const joined = joinCells(cells, JOINED_HEADER);
   const cursor = toJoined(joined, msg.cellNodeId, msg.line, msg.col);
-  if (cursor) {
-    const { uri, locs } = await pylanceLocations('vscode.executeDefinitionProvider', writeJoinedFile(canvasPath, joined.text), cursor);
-    const targets = targetsFromLocations(locs, uri, joined, cursor);
-    if (targets.length > 0) return targets;
+  if (cursor && hasPylance()) {
+    try {
+      const { uri, locs } = await pylanceLocations('vscode.executeDefinitionProvider', writeJoinedFile(canvasPath, joined.text), cursor);
+      const targets = targetsFromLocations(locs, uri, joined, cursor);
+      if (targets.length > 0) return targets;
+    } catch (err) {
+      if (!pylanceFailed) console.warn('[skena] go to definition: Pylance step failed, asking the kernel', err);
+      pylanceFailed = true;
+    }
   }
   if (!msg.name) return [];
   const def = await kernelDefinition(msg.name, msg.cellNodeId, canvas, manager);

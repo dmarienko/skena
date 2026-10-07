@@ -11,7 +11,7 @@ import { joinCells, toJoined } from '../../shared/goToDefinition';
 import { referencesFromLocations, type PeekFile, type ReferencesAnswer } from '../../shared/findReferences';
 import { JOINED_HEADER, canvasCells } from './goToDefinition';
 import { writeJoinedFile } from './joinedFile';
-import { pylanceLocations } from './pylanceLocations';
+import { hasPylance, pylanceLocations } from './pylanceLocations';
 
 // - the text Pylance read: an open document's (it may be edited and unsaved), else the file's on disk.
 //   openTextDocument is not used for the others: it would open them for Pylance, which then lists their
@@ -31,7 +31,7 @@ export async function findReferences(msg: MsgFindReferences, canvas: CanvasData,
   const cells = canvasCells(canvas, msg.cellNodeId, msg.code);
   const joined = joinCells(cells, JOINED_HEADER);
   const cursor = toJoined(joined, msg.cellNodeId, msg.line, msg.col);
-  if (!cursor) return { targets: [], cells: [], files: [] };
+  if (!cursor || !hasPylance()) return { targets: [], cells: [], files: [] };
   const file = writeJoinedFile(canvasPath, joined.text);
   const { uri, locs } = await pylanceLocations('vscode.executeReferenceProvider', file, cursor);
   const targets = referencesFromLocations(locs, uri, `${vscode.Uri.file(path.dirname(file)).toString()}/`, joined);

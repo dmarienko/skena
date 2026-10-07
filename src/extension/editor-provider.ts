@@ -701,7 +701,10 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           send({ type: 'definitionResult', reqId: msg.reqId, cellNodeId: msg.cellNodeId, targets });
           break;
         }
-        case 'showDefinitions': await showDefinitions(msg.targets, document.canvas, send); break;
+        case 'showDefinitions':
+          await showDefinitions(msg.targets, document.canvas, send)
+            .catch(err => { void vscode.window.showErrorMessage(`Go to definition: ${err instanceof Error ? err.message : String(err)}`); });
+          break;
         case 'findReferences': {
           // - the answer always goes back, empty on a failure, so the cell can show its note
           const answer = await findReferences(msg, document.canvas, document.uri.fsPath)
