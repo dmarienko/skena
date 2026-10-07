@@ -1,7 +1,7 @@
 // - run: npx esbuild src/extension/jupyter/protocol.ts --bundle --format=esm --outfile=tests/.build/jupyter-protocol.mjs && node --test tests/jupyter-protocol.mjs
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { buildExecuteRequest, parseReply, collectOutputs } from './.build/jupyter-protocol.mjs';
+import { buildExecuteRequest, buildSilentEvaluateRequest, parseEvaluateReply, parseReply, collectOutputs } from './.build/jupyter-protocol.mjs';
 
 const IDS = { msgId: 'm1', session: 's1', date: '2026-07-25T00:00:00Z' };
 
@@ -60,4 +60,21 @@ test('collectOutputs ignores replies for other msg ids', () => {
   ];
   const out = collectOutputs(seq, 'm1');
   assert.equal(out.streamText, '');
+});
+
+test('buildSilentEvaluateRequest runs no code, silently, without history, and sends the expressions', () => {
+  const r = buildSilentEvaluateRequest({ k: 'len(In)' }, IDS);
+  assert.equal(r.header.msg_type, 'execute_request');
+  assert.equal(r.header.msg_id, 'm1');
+  assert.equal(r.channel, 'shell');
+  assert.deepEqual(r.content, { code: '', silent: true, store_history: false, user_expressions: { k: 'len(In)' }, allow_stdin: false, stop_on_error: false });
+});
+
+test('parseEvaluateReply returns the user_expressions of our execute_reply only', () => {
+  const ue = { k: { status: 'ok', data: { 'text/plain': '6' }, metadata: {} } };
+  const reply = { parent_header: { msg_id: 'm1' }, header: { msg_type: 'execute_reply' }, content: { status: 'ok', user_expressions: ue } };
+  assert.deepEqual(parseEvaluateReply(reply, 'm1'), ue);
+  assert.equal(parseEvaluateReply(reply, 'other'), null);
+  assert.equal(parseEvaluateReply({ ...reply, header: { msg_type: 'status' } }, 'm1'), null);
+  assert.deepEqual(parseEvaluateReply({ ...reply, content: { status: 'error' } }, 'm1'), {});
 });

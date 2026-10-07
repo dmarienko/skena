@@ -59,6 +59,43 @@ export function buildExecuteRequest(code: string, ids: ExecuteIds): ExecuteReque
   };
 }
 
+/**
+ * Jupyter v5.3 execute_request that runs no code and evaluates `expressions` (user_expressions) in the
+ * user's namespace. silent: no output on iopub, no execution count; store_history false: no history.
+ */
+export function buildSilentEvaluateRequest(expressions: Record<string, string>, ids: ExecuteIds) {
+  return {
+    header: {
+      msg_id:   ids.msgId,
+      session:  ids.session,
+      username: 'skena',
+      msg_type: 'execute_request' as const,
+      version:  '5.3' as const,
+      date:     ids.date,
+    },
+    parent_header: {},
+    metadata:      {},
+    content: {
+      code:             '',
+      silent:           true,
+      store_history:    false,
+      user_expressions: expressions,
+      allow_stdin:      false,
+      stop_on_error:    false,
+    },
+    channel: 'shell' as const,
+  };
+}
+
+// - the user_expressions of the execute_reply for `ourMsgId` (key -> { status, data } or the error), else null
+export function parseEvaluateReply(raw: unknown, ourMsgId: string): Record<string, unknown> | null {
+  const m = raw as Record<string, any>;
+  if (m?.parent_header?.msg_id !== ourMsgId) return null;
+  if (m?.header?.msg_type !== 'execute_reply') return null;
+  const ue = m.content?.user_expressions;
+  return ue && typeof ue === 'object' ? ue as Record<string, unknown> : {};
+}
+
 export interface CompleteResult {
   matches:     string[];
   cursorStart: number;

@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { pickCanvasKernelServers, type KernelLookup, type KernelServerConfig } from './config';
 import { readLocalSettingsSync } from '../settings';
-import { listKernels, startKernel, executeCell, completeCode, inspectCode, restartKernel, shutdownKernel, interruptKernel, type LiveKernel } from './client';
+import { listKernels, startKernel, executeCell, completeCode, inspectCode, restartKernel, shutdownKernel, interruptKernel, kernelState, evaluateExpressions, type LiveKernel } from './client';
 import type { CollectedOutput, CompleteResult, InspectResult } from './protocol';
 import type { KernelStatusEntry } from '../../shared/types';
 
@@ -100,6 +100,26 @@ export class KernelManager {
     ids: { msgId: string; session: string; date: string },
   ): Promise<InspectResult> {
     return inspectCode(server, kernelId, code, cursorPos, ids);
+  }
+
+  /** - running and running nothing: no cell of this window runs on it and the server says idle */
+  async isIdle(server: KernelServerConfig, kernelId: string): Promise<boolean> {
+    if (this.running.has(kernelId)) return false;
+    try {
+      return (await kernelState(server, kernelId)) === 'idle';
+    } catch {
+      return false;
+    }
+  }
+
+  async evaluate(
+    server: KernelServerConfig,
+    kernelId: string,
+    expressions: Record<string, string>,
+    ids: { msgId: string; session: string; date: string },
+    timeoutMs: number,
+  ): Promise<Record<string, unknown> | null> {
+    return evaluateExpressions(server, kernelId, expressions, ids, timeoutMs);
   }
 
   async run(

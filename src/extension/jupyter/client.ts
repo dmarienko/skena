@@ -1,5 +1,5 @@
 import WebSocket from 'ws';
-import { buildExecuteRequest, collectOutputs, buildCompleteRequest, parseCompleteReply, buildInspectRequest, parseInspectReply, type CollectedOutput, type CompleteResult, type InspectResult } from './protocol';
+import { buildExecuteRequest, collectOutputs, buildCompleteRequest, parseCompleteReply, buildInspectRequest, parseInspectReply, buildSilentEvaluateRequest, parseEvaluateReply, type CollectedOutput, type CompleteResult, type InspectResult } from './protocol';
 import type { KernelServerConfig } from './config';
 
 export interface LiveKernel {
@@ -67,6 +67,17 @@ export async function listSessions(server: KernelServerConfig): Promise<Map<stri
     if (s.kernel?.id) byKernel.set(s.kernel.id, s.name || s.path || '');
   }
   return byKernel;
+}
+
+// - GET /api/kernels/{id} — the server's execution state of one kernel; null when it is gone
+export async function kernelState(server: KernelServerConfig, kernelId: string): Promise<LiveKernel['state'] | null> {
+  const res = await fetch(`${restBase(server.hubUrl)}/api/kernels/${kernelId}`, {
+    headers: { Authorization: `token ${server.token}` },
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`GET /api/kernels/${kernelId} ${res.status}`);
+  const k = (await res.json()) as { execution_state?: LiveKernel['state'] };
+  return k.execution_state ?? null;
 }
 
 // - POST /api/kernels/{id}/interrupt — stop a long-running cell without losing state
@@ -149,6 +160,34 @@ export async function inspectCode(
     });
     ws.on('error', () => finish(empty));
     ws.on('close', () => finish(empty));
+  });
+}
+
+// - open a WS, evaluate user_expressions in a silent execute_request, resolve with them; null on
+//   timeout, error or close. The kernel still runs a request it got after the timeout (silently).
+export async function evaluateExpressions(
+  server:    KernelServerConfig,
+  kernelId:  string,
+  expressions: Record<string, string>,
+  ids:       { msgId: string; session: string; date: string },
+  timeoutMs: number,
+): Promise<Record<string, unknown> | null> {
+  const url = `${wsBase(server.hubUrl)}/api/kernels/${kernelId}/channels?token=${encodeURIComponent(server.token)}`;
+  const ws = new WebSocket(url, { headers: { Authorization: `token ${server.token}` } });
+
+  return new Promise<Record<string, unknown> | null>(resolve => {
+    let done = false;
+    const finish = (r: Record<string, unknown> | null) => { if (done) return; done = true; clearTimeout(timer); try { ws.close(); } catch { /* noop */ } resolve(r); };
+    const timer = setTimeout(() => finish(null), timeoutMs);
+    ws.on('open', () => ws.send(JSON.stringify(buildSilentEvaluateRequest(expressions, ids))));
+    ws.on('message', raw => {
+      try {
+        const r = parseEvaluateReply(JSON.parse(raw.toString()), ids.msgId);
+        if (r) finish(r);
+      } catch { /* - ignore non-JSON frames */ }
+    });
+    ws.on('error', () => finish(null));
+    ws.on('close', () => finish(null));
   });
 }
 
