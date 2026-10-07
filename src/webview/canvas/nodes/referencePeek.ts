@@ -7,7 +7,8 @@
  * peek previews and lists them through the text model service, which only finds existing models), a
  * reference provider for this editor's model that returns the answer, and the cell drawn taller
  * (setHeight). Then editor.action.referenceSearch.trigger opens the peek. In its list j/k move and
- * preview, Enter goes to the place, Esc closes it (Monaco's closeReferenceSearch). Going to a place
+ * preview, l/h open and close groups, Enter goes to the place, Esc closes it (Monaco's
+ * closeReferenceSearch); its preview is read-only. Going to a place
  * passes through the editor opener below, which goes there as go to definition does. However the peek
  * closes, finish() undoes the rest.
  */
@@ -36,9 +37,16 @@ const peeks = new Map<MonacoEditor.ICodeEditor, Peek>();
 // - keys this module sends to the peek's list; its own key listener lets them through
 const sent = new WeakSet<Event>();
 
+type ListKey = 'ArrowDown' | 'ArrowUp' | 'ArrowRight' | 'ArrowLeft' | 'Enter';
+
+// - j/k/l/h in the peek's list, as the arrow and its key code: down and up move (listWidget.js
+//   KeyboardController); right opens a closed group or moves into an open one, left closes an open
+//   group or moves from a reference to its group (abstractTree.js onRightArrow, onLeftArrow)
+const ARROWS: Record<string, [ListKey, number]> = { j: ['ArrowDown', 40], k: ['ArrowUp', 38], l: ['ArrowRight', 39], h: ['ArrowLeft', 37] };
+
 // - a key as the list reads it: Monaco takes the key code from keyCode (keyboardEvent.js
 //   extractKeyCode), which a KeyboardEvent cannot be constructed with
-function press(target: EventTarget, key: 'ArrowDown' | 'ArrowUp' | 'Enter', keyCode: number): void {
+function press(target: EventTarget, key: ListKey, keyCode: number): void {
   const e = new KeyboardEvent('keydown', { key, code: key, bubbles: true, cancelable: true });
   Object.defineProperty(e, 'keyCode', { get: () => keyCode });
   sent.add(e);
@@ -121,16 +129,18 @@ export function openReferencePeek(
   });
 
   const container = editor.getContainerDomNode();
-  // - in the peek's list: j/k move (an arrow, then Enter, which selects and so previews, as VS Code's
-  //   list keys do with selectionNavigation) and Enter goes to the place. Esc goes on to the peek, which
-  //   closes on it (referencesWidget.js, closeReferenceSearch). At capture on the editor's container, so
-  //   the list never sees j, k or Enter.
+  // - in the peek's list: j/k move, l/h open and close groups (each an arrow, then Enter, which selects
+  //   and so previews, as VS Code's list keys do with selectionNavigation; Enter on a group does nothing,
+  //   referencesWidget.js onEvent) and Enter goes to the place. Esc goes on to the peek, which closes on
+  //   it (referencesWidget.js, closeReferenceSearch). At capture on the editor's container, so neither
+  //   the list (its type-to-find) nor anything above it (the canvas's h/j/k/l) sees j, k, l, h or Enter.
   const onKey = (e: KeyboardEvent) => {
     if (sent.has(e) || e.ctrlKey || e.metaKey || e.altKey || !(e.target instanceof Element) || !e.target.closest(LIST)) return;
-    if (e.key === 'j' || e.key === 'k') {
+    const arrow = ARROWS[e.key];
+    if (arrow) {
       e.preventDefault();
       e.stopPropagation();
-      press(e.target, e.key === 'j' ? 'ArrowDown' : 'ArrowUp', e.key === 'j' ? 40 : 38);
+      press(e.target, arrow[0], arrow[1]);
       press(e.target, 'Enter', 13);
     } else if (e.key === 'Enter') {
       e.preventDefault();
@@ -166,8 +176,10 @@ export function openReferencePeek(
     if (!isOpen()) { if (seen) finish(true); return; }
     if (seen) return;
     seen = true;
-    // - the preview is an editor of its own; a copy of another cell or a file is not saved anywhere,
-    //   so it is read-only
+    // - the preview is an editor of its own (referencesWidget.js, an EmbeddedCodeEditorWidget, which
+    //   getEditors lists); a copy of another cell or a file is saved nowhere, so it is read-only, and the
+    //   cell's own editor stays editable. Its updateOptions keeps readOnly when the cell's editor changes
+    //   its options, a layout included (embeddedCodeEditorWidget.js _onParentConfigurationChanged)
     for (const e of monaco.editor.getEditors()) if (e !== editor && dom.contains(e.getContainerDomNode())) e.updateOptions({ readOnly: true });
   });
   const overlays = dom.querySelector('.overlayWidgets');
