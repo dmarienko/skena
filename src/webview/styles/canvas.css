@@ -402,3 +402,9 @@ body.vscode-dark, body.vscode-high-contrast {
    - at the cell's own edges, inside the taller box */
 .react-flow__node:has(> .skena-node.skena-code-peek) { z-index: 3000 !important; }
 .react-flow__node:has(> .skena-node.skena-code-peek) .react-flow__handle { display: none; }
+
+/* - the code cell's editor box (@monaco-editor/react's <section>, a flex item of the editor column):
+   - with the default min-height it does not shrink below Monaco's own DOM, up to the whole column, and
+   - that DOM keeps the size it was last laid out at. After the cell was taller (a reference peek) the
+   - box then fills the column, the vim status line goes below the cell, and Monaco lays out to that box */
+.skena-code-editor { min-height: 0; }
