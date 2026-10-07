@@ -3542,7 +3542,7 @@ Kernel. With Pylance on, the kernel is asked only when Pylance has nothing; to c
 
 References (Pylance on). Before them, `cp /tmp/skena-check.canvas /tmp/skena-check.before`.
 - [ ] In E3 (11 lines, 250 px tall on 2026-10-07), cursor on `CACHE` in line 6, `;z`: E3 is drawn taller and Monaco's reference peek opens inside it under line 6, over the cells below; no other node moves and the view does not pan. The list starts on the reference in E3, line 6, with the preview on the left; the groups are E3 first, then the other cells that use `CACHE` in run order (E1, E5, E7, E9, E12, E15, E16, E26 on 2026-10-07), each with its count.
-- [ ] `j` and `k` move in the list and the preview follows; the vim status line stays empty, the cursor in E3 does not move, the canvas does not move. A group other than E3's starts collapsed; the right arrow (or a click) opens it.
+- [ ] `j` and `k` move in the list and the preview follows; the vim status line stays empty, the cursor in E3 does not move, the canvas does not move. A group other than E3's starts collapsed; `l` (or the right arrow, or a click) opens it, and `h` on an open group closes it (on a reference, `h` moves to its group).
 - [ ] Enter on the reference in E12: the peek closes, E3 is back at its size, E12 is selected and its editor opens at that line in normal mode. `Esc` out of the editor, then `` ` ` ``: back to E3.
 - [ ] `;z` again in E3 on `CACHE`, then Enter on the reference in E3 itself: the peek closes and the cursor is on that place in E3, in normal mode.
 - [ ] `;z` in E3, then double-click a reference in E9 in the list: the same as Enter.
@@ -3618,7 +3618,7 @@ Each is in the code as described; the user may want another choice.
 10. **Order of the peek's groups**: the asking cell first, then the other cells in run order, then the files by path. Monaco sorts groups by URI, so the order comes from the URIs (Task 12); VS Code's own order would be by URI as well.
 11. **A cell's group shows `/` after its label** (the URI path's directory, the standalone label service), and a file's group its full folder path, not one relative to the workspace.
 12. **The preview is read-only**, also for the asking cell: a copy of another cell or a file is saved nowhere, so an edit there would be lost.
-13. **`j`/`k` select as they move, so the preview follows** (as VS Code's list does); Monaco's own arrows in standalone only move the focus. Groups other than the starting one start collapsed (Monaco's tree default, `asyncDataTree.js:209`); no vim key opens them (the right arrow and a click do). Enter on a group row does nothing.
+13. **`j`/`k` select as they move, so the preview follows** (as VS Code's list does); Monaco's own arrows in standalone only move the focus. Groups other than the starting one start collapsed (Monaco's tree default, `asyncDataTree.js:209`); `l` opens a closed group (or moves into an open one) and `h` closes an open group (or moves from a reference to its group), as the right and left arrows do (user decision); a click opens one too. Enter on a group row does nothing.
 14. **The peek's height** is Monaco's default, 18 lines. Resizing the peek with its sash does not resize the cell.
 15. **Only the height grows.** A narrow cell gives a narrow peek (Monaco's preview needs 200 px and the list 100 px, `referencesWidget.js` split view); the cell is not drawn wider.
 16. **Edges and handles while the cell is taller**: edges keep their ends at the cell's own box; the cell's handles are hidden.
