@@ -10,10 +10,16 @@ import { memberCodeCellsInRunOrder, sortLanes, type LaneNodeGeom, type SectionLa
 const PART = String.raw`[\p{L}\p{Nl}_][\p{L}\p{Nl}\p{Mn}\p{Mc}\p{Nd}\p{Pc}]*`;
 const DOTTED = new RegExp(`^${PART}(?:\\.${PART})*$`, 'u');
 const NAME_CHAR = /[\p{L}\p{Nl}\p{Mn}\p{Mc}\p{Nd}\p{Pc}]/u;
+// - Python 3.12's keyword.kwlist; the soft keywords (match, case, type, _) are names
+const KEYWORDS: ReadonlySet<string> = new Set([
+  'False', 'None', 'True', 'and', 'as', 'assert', 'async', 'await', 'break', 'class', 'continue', 'def', 'del',
+  'elif', 'else', 'except', 'finally', 'for', 'from', 'global', 'if', 'import', 'in', 'is', 'lambda',
+  'nonlocal', 'not', 'or', 'pass', 'raise', 'return', 'try', 'while', 'with', 'yield',
+]);
 
-/** - names and dots only: the one kind of text the kernel is ever asked to evaluate */
+/** - names and dots only, no part a keyword: the one kind of text the kernel is ever asked to evaluate */
 export function isDottedName(s: string): boolean {
-  return DOTTED.test(s);
+  return DOTTED.test(s) && !s.split('.').some(p => KEYWORDS.has(p));
 }
 
 /** - the name under the cursor: `word` spans columns [start, end), 1-based */

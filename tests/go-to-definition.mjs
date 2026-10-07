@@ -280,3 +280,11 @@ test('21. random cells, unbalanced ones too: every position maps both ways, each
     }
   }
 });
+
+test('22. a keyword is not a name, alone or as a part; soft keywords are names', () => {
+  for (const kw of ['import', 'class', 'None', 'True', 'lambda', 'await', 'np.class', 'x.None.y']) assert.ok(!isDottedName(kw), kw);
+  for (const ok of ['match', 'case', 'type', '_', 'np.match', 'Import', 'none']) assert.ok(isDottedName(ok), ok);
+  assert.equal(dottedNameAt('import numpy as np', 1), null);
+  assert.equal(dottedNameAt('x = None', 5), null);
+  assert.equal(dottedNameAt('import numpy as np', 8).dotted, 'numpy');
+});
