@@ -9,6 +9,7 @@ import type { KnowledgeCapabilities, KnowledgeHit, KnowledgeQuery, KnowledgeText
 import type { RefreshOutcome } from './knowledge/refresh';
 import type { ChatAttachment } from './chatAttachments';
 import type { DefinitionTarget } from './goToDefinition';
+import type { ReferencesAnswer } from './findReferences';
 
 // ─── JSON Canvas spec types ───────────────────────────────────────────────────
 
@@ -395,6 +396,8 @@ export interface MsgInspect { type: 'inspect'; reqId: string; cellNodeId: string
 export interface MsgGoToDefinition { type: 'goToDefinition'; reqId: string; cellNodeId: string; code: string; line: number; col: number; name: string | null; }
 // - webview → host: open the one file target, or show the quick pick of several targets
 export interface MsgShowDefinitions { type: 'showDefinitions'; targets: DefinitionTarget[]; }
+// - leader z in a code cell: every reference of the name at line/col (1-based) of the live `code`
+export interface MsgFindReferences { type: 'findReferences'; reqId: string; cellNodeId: string; code: string; line: number; col: number; }
 
 /** - host → webview: session compaction is running (true) or finished (false) */
 export interface MsgFloatingChatCompacting { type: 'floatingChatCompacting'; active: boolean; }
@@ -549,6 +552,7 @@ export type HostToWebview =
   | MsgInspectResult
   | MsgDefinitionResult
   | MsgDefinitionGoto
+  | MsgReferencesResult
   | MsgKnowledgeServersResult
   | MsgKnowledgeSearchResult
   | MsgKnowledgeFetchResult
@@ -571,6 +575,8 @@ export interface MsgInspectResult { type: 'inspectResult'; reqId: string; found:
 export interface MsgDefinitionResult { type: 'definitionResult'; reqId: string; cellNodeId: string; targets: DefinitionTarget[]; }
 // - host → webview: the quick pick chose a cell; select it and open its editor at the line, as leader g does
 export interface MsgDefinitionGoto { type: 'definitionGoto'; cellNodeId: string; line: number; col: number; }
+// - host → webview: the references of a findReferences request, with the text of each cell and file they are in; no targets when none
+export interface MsgReferencesResult extends ReferencesAnswer { type: 'referencesResult'; reqId: string; cellNodeId: string; }
 
 export interface KernelStatusEntry {
   server:    string;
@@ -880,6 +886,7 @@ export type WebviewToHost =
   | MsgInspect
   | MsgGoToDefinition
   | MsgShowDefinitions
+  | MsgFindReferences
   | MsgKnowledgeServers
   | MsgKnowledgeSearch
   | MsgKnowledgeFetch

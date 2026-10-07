@@ -89,6 +89,7 @@ import { addChatNote } from '../shared/chatNote';
 import { copyNode, ownedOutputId } from '../shared/outputLink';
 import { youtubeId, YOUTUBE_NODE } from '../shared/youtube';
 import { findDefinitions, showDefinitions } from './definition/goToDefinition';
+import { findReferences } from './definition/findReferences';
 
 /**
  * A canvas as the editor opens it from disk: lifted to the origin, sections seeded, and an edge the
@@ -701,6 +702,13 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           break;
         }
         case 'showDefinitions': await showDefinitions(msg.targets, document.canvas, send); break;
+        case 'findReferences': {
+          // - the answer always goes back, empty on a failure, so the cell can show its note
+          const answer = await findReferences(msg, document.canvas, document.uri.fsPath)
+            .catch(err => { console.warn('[skena] find references', err); return { targets: [], cells: [], files: [] }; });
+          send({ type: 'referencesResult', reqId: msg.reqId, cellNodeId: msg.cellNodeId, ...answer });
+          break;
+        }
       }
     });
 
