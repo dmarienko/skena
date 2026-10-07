@@ -97,7 +97,10 @@ def where(name):
         return {'ok': False, 'error': 'not a dotted name'}
     obj = target(lookup(name))
     if inspect.ismodule(obj):
-        file = inspect.getsourcefile(obj)
+        try:
+            file = inspect.getsourcefile(obj)
+        except (OSError, TypeError):
+            file = None
         if not file:
             return {'ok': False, 'error': 'no source'}
         return {'ok': True, 'file': file, 'line': 1, 'col': 1, 'exists': os.path.isfile(file)}

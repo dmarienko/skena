@@ -14,7 +14,7 @@ const lineOf = text => readFileSync(FIXTURE, 'utf8').split('\n').findIndex(l => 
 // - every name in one python run; name -> the parsed answer and the raw text/plain
 const NAMES = [
   'fx.plain', 'fx.Box', 'fx.Box.area', 'fx.box.area', 'fx.box.side', 'fx.Box.make', 'fx.decorated', 'fx.Point', 'fx.box', 'fx',
-  'len', 'math.sqrt', 'array.array', 'in_cell', 'CellBox', 'CellPoint', 'nope', 'fx.nope', '\uff46\uff58.plain',
+  'len', 'math.sqrt', 'array.array', 'in_cell', 'CellBox', 'CellPoint', 'nope', 'fx.nope', '\uff46\uff58.plain', 'sys', 'math',
 ];
 const run = spawnSync(process.env.PYTHON ?? 'python3', [DRIVER], { input: JSON.stringify(NAMES.map(definitionExpression)), encoding: 'utf8' });
 const out = run.stdout.trim().split('\n').map(l => JSON.parse(l));
@@ -43,8 +43,8 @@ test('3. a dataclass; a value stands for its class; a module is its file at line
   assert.deepEqual(answers.fx, { ok: true, def: { file: FIXTURE, line: 1, col: 1, exists: true } });
 });
 
-test('4. builtins and C types have no source', () => {
-  for (const n of ['len', 'math.sqrt', 'array.array']) assert.deepEqual(answers[n], { ok: false, error: 'no source' }, n);
+test('4. builtins, C types and built-in or extension modules have no source', () => {
+  for (const n of ['len', 'math.sqrt', 'array.array', 'sys', 'math']) assert.deepEqual(answers[n], { ok: false, error: 'no source' }, n);
 });
 
 test('5. a function and a class of a cell: the temporary file, the cell text, the block; a cell class without methods has none before 3.14', () => {

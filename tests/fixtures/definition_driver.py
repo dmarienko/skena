@@ -12,7 +12,7 @@ import definition_fixture as fx
 main = types.ModuleType('__main__')
 sys.modules['__main__'] = main
 ns = main.__dict__
-ns.update({'fx': fx, 'functools': functools, 'array': array, 'math': math})
+ns.update({'fx': fx, 'functools': functools, 'array': array, 'math': math, 'sys': sys})
 # - a cell as ipykernel runs it: compiled under a temporary file name that is only in linecache
 CELL = 'import dataclasses, functools\n\n@functools.lru_cache\ndef in_cell(a):\n    return a + 1\n\nclass CellBox:\n    def grow(self):\n        return 2\n\n@dataclasses.dataclass\nclass CellPoint:\n    x: int = 0\n'
 NAME = os.path.join(tempfile.gettempdir(), 'ipykernel_4242', '2718281828.py')
