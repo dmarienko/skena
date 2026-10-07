@@ -135,12 +135,15 @@ const atOrBefore = (a: DocPos, b: DocPos) => a.line < b.line || (a.line === b.li
 /**
  * Pylance's locations as places to go. One in the joined document (`joinedUri`) goes to its cell and
  * is dropped on a line between cells; any other goes to its document. Of several in the joined
- * document only the last one that starts at or before `cursor` is kept, the definition a run in order
- * reaches; when none starts before it, all are kept. Repeats are dropped.
+ * document only one is kept, the definition a run in order reaches: the last one on a line before the
+ * cursor's; when there is none, the last one on the cursor's line at or before it (in `df = df.copy()`
+ * the right-hand df reaches an earlier df when there is one, else this line). When none starts before
+ * the cursor, all are kept. Repeats are dropped.
  */
 export function targetsFromLocations(locs: readonly DefLocation[], joinedUri: string, j: JoinedCells, cursor: DocPos): DefinitionTarget[] {
   const inDoc = locs.filter(l => l.uri === joinedUri);
-  const reaching = inDoc.filter(l => atOrBefore(l, cursor));
+  const earlier = inDoc.filter(l => l.line < cursor.line);
+  const reaching = earlier.length > 0 ? earlier : inDoc.filter(l => atOrBefore(l, cursor));
   const keep = new Set(reaching.length > 0 ? [reaching.reduce((a, b) => (atOrBefore(a, b) ? b : a))] : inDoc);
   const out: DefinitionTarget[] = [];
   const seen = new Set<string>();

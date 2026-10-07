@@ -164,3 +164,14 @@ test('15. quick pick: E7:12 for a cell; a file relative to its workspace folder,
   assert.deepEqual(at({ kind: 'file', uri: 'file:///usr/lib/x.py', line: 1, col: 1 }), { label: '/usr/lib/x.py:1', description: 'def solve(a, b):' });
   assert.deepEqual(at({ kind: 'file', uri: 'file:///home/u/projx/a.py', line: 1, col: 1 }), { label: '~/projx/a.py:1', description: 'def solve(a, b):' });
 });
+
+test('16. a definition on the cursor\'s own line counts only when none comes before that line', () => {
+  const j = joinCells([{ id: 'A', code: 'df = 1\ndf = df + 1' }]);
+  // - the right-hand df of line 2: Pylance gives both assignments
+  assert.deepEqual(targetsFromLocations([loc(0, 0), loc(1, 0)], DOC, j, { line: 1, character: 5 }), [{ kind: 'cell', cellId: 'A', line: 1, col: 1 }]);
+  const lone = joinCells([{ id: 'A', code: 'x = 0' }, { id: 'B', code: 'df = df.copy()' }]);
+  assert.deepEqual(targetsFromLocations([loc(2, 0)], DOC, lone, { line: 2, character: 5 }), [{ kind: 'cell', cellId: 'B', line: 1, col: 1 }]);
+  // - an earlier cell's definition beats the cursor's line
+  const two = joinCells([{ id: 'A', code: 'df = 1' }, { id: 'B', code: 'df = df.copy()' }]);
+  assert.deepEqual(targetsFromLocations([loc(0, 0), loc(2, 0)], DOC, two, { line: 2, character: 5 }), [{ kind: 'cell', cellId: 'A', line: 1, col: 1 }]);
+});
