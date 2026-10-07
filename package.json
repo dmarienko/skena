@@ -113,30 +113,6 @@
       {
         "command": "skena.exportHtml",
         "title": "Skena: Export canvas to HTML"
-      },
-      {
-        "command": "skena.definitionLookupTest",
-        "title": "Skena: Definition lookup test (dev)"
-      }
-    ],
-    "menus": {
-      "commandPalette": [
-        {
-          "command": "skena.definitionLookupTest",
-          "when": "skena.devBuild"
-        }
-      ]
-    },
-    "notebooks": [
-      {
-        "type": "skena-definition-spike",
-        "displayName": "Skena definition lookup test",
-        "selector": [
-          {
-            "filenamePattern": "*.skena-definition-spike"
-          }
-        ],
-        "priority": "option"
       }
     ],
     "keybindings": [
