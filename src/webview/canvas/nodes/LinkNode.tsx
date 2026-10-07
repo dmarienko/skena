@@ -7,7 +7,8 @@ import React from 'react';
 import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import { LinkNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
-import { HANDLE_STYLE, ZOOM_WIDTH_CLASS, focusRingStyle, useZoomVars, zoomInvariantWidth } from './nodeShared';
+import { HANDLE_STYLE, ZOOM_WIDTH_CLASS, bandInsetPadding, baseBorderWidth, focusRingStyle, useZoomVars } from './nodeShared';
+import { NodeBorder } from './NodeBorder';
 import { nodeBorderColor } from '../palette';
 import { youtubeId, youtubeThumbnail } from '../../../shared/youtube';
 
@@ -31,7 +32,7 @@ function getHostname(url: string): string {
 export function LinkNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as LinkNode & { accentColor?: string };
   const selectedStyle = focusRingStyle(selected);
-  const bw = zoomInvariantWidth(1.5);
+  const bw = baseBorderWidth(1.5);
   const zoomVars = useZoomVars();
   const borderColor = nodeBorderColor('link', node.accentColor);
   const favicon = getFaviconUrl(node.url);
@@ -51,7 +52,7 @@ export function LinkNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
         borderRadius:  6,
         overflow:      'hidden',
         background:    'var(--vscode-editorWidget-background)',
-        padding:       '8px 10px',
+        padding:       `${bandInsetPadding(8)} ${bandInsetPadding(10)}`,
         cursor:        'pointer',
         display:       'flex',
         flexDirection: 'column',
@@ -82,6 +83,7 @@ export function LinkNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
         <div style={{ fontSize: 12, wordBreak: 'break-all', opacity: 0.85 }}>{node.url}</div>
       )}
     </div>
+    <NodeBorder base={1.5} color={borderColor} />
     <NodeResizer
       minWidth={100} minHeight={60}
       isVisible={selected}

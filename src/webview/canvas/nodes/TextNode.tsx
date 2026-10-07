@@ -37,7 +37,8 @@ import { MarkdownRenderer } from '../../renderers/MarkdownRenderer';
 import { useHighlightedHtml } from '../../lib/codeHighlight';
 import { useHostMarkdown } from '../../hooks/useHostMarkdown';
 import { ScrollableContent } from '../../components/ScrollableContent';
-import { HANDLE_STYLE, ZOOM_WIDTH_CLASS, focusRingStyle, useZoomVars, zoomInvariantWidth } from './nodeShared';
+import { BAND_CLASS, HANDLE_STYLE, ZOOM_WIDTH_CLASS, bandHeldScroller, bandInsetPadding, baseBorderWidth, focusRingStyle, useBandVars, useZoomVars } from './nodeShared';
+import { NodeBorder } from './NodeBorder';
 import { nodeBorderColor } from '../palette';
 import { stripForHost, rememberWritten, classifyHostText } from '../vimClipboard';
 import { ensureCanvasWordCompletion } from '../canvasWordCompletion';
@@ -615,8 +616,9 @@ window.addEventListener('skena:clipboardContent', (e: Event) => {
 export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as TextNode & { accentColor?: string };
   const selectedStyle = focusRingStyle(selected);
-  const bw = zoomInvariantWidth(1.5);
+  const bw = baseBorderWidth(1.5);
   const zoomVars = useZoomVars();
+  const bandVars = useBandVars();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(node.text);
   const hostHtml = useHostMarkdown(draft);
@@ -980,6 +982,7 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
       style={{
         ...zoomVars,
         border:        `${bw} solid ${borderColor}`,
+        padding:       bandInsetPadding(),
         height:        '100%',
         borderRadius:  6,
         overflow:      'hidden',
@@ -1065,13 +1068,14 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
         </div>
       ) : (
         // - baseUri="." so relative image paths (./img.png) resolve against canvas dir
-        <ScrollableContent ref={scrollableRef} scrollKey={id} style={{ padding: '6px 8px 6px 12px' }}>
+        <ScrollableContent ref={scrollableRef} scrollKey={id} className={BAND_CLASS} style={{ ...bandVars, ...bandHeldScroller(6, 8, 6, 12) }}>
           {hostHtml !== null
             ? <div className="skena-markdown" dangerouslySetInnerHTML={{ __html: shownHtml ?? hostHtml }} />
             : <MarkdownRenderer content={draft} baseUri="." />}
         </ScrollableContent>
       )}
     </div>
+    <NodeBorder base={1.5} color={borderColor} />
     <NodeResizer
       minWidth={120} minHeight={80}
       isVisible={selected && !editing}

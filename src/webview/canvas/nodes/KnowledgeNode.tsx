@@ -12,7 +12,8 @@ import { MarkdownRenderer } from '../../renderers/MarkdownRenderer';
 import { useHighlightedHtml } from '../../lib/codeHighlight';
 import { useHostMarkdownOf } from '../../hooks/useHostMarkdown';
 import { ScrollableContent, getScrollPosition } from '../../components/ScrollableContent';
-import { HANDLE_STYLE, ZOOM_WIDTH_CLASS, focusRingStyle, useZoomVars, zoomInvariantWidth } from './nodeShared';
+import { BAND_CLASS, HANDLE_STYLE, ZOOM_WIDTH_CLASS, bandHeldScroller, bandInsetPadding, baseBorderWidth, focusRingStyle, useBandVars, useZoomVars } from './nodeShared';
+import { NodeBorder } from './NodeBorder';
 import { nodeBorderColor } from '../palette';
 import { sanitizeHtmlAttrs } from './knowledgeHtml';
 import { useKnowledgeAssets } from '../knowledgeAssets';
@@ -69,8 +70,9 @@ export function KnowledgeNodeComponent({ data, id, selected }: NodeProps): JSX.E
   const node = data as unknown as KnowledgeNode & { accentColor?: string };
   useMinuteTick();
   const selectedStyle = focusRingStyle(selected);
-  const bw = zoomInvariantWidth(1.5);
+  const bw = baseBorderWidth(1.5);
   const zoomVars = useZoomVars();
+  const bandVars = useBandVars();
   const borderColor = nodeBorderColor('knowledge', node.accentColor);
   // - a whole paper in the DOM is laid out and painted on every pan and zoom, so only the start of
   //   the text is rendered, cut at a block boundary, and it grows as the reader scrolls toward its
@@ -162,6 +164,7 @@ export function KnowledgeNodeComponent({ data, id, selected }: NodeProps): JSX.E
       style={{
         ...zoomVars,
         border:        `${bw} solid ${borderColor}`,
+        padding:       bandInsetPadding(),
         height:        '100%',
         borderRadius:  6,
         overflow:      'hidden',
@@ -202,14 +205,15 @@ export function KnowledgeNodeComponent({ data, id, selected }: NodeProps): JSX.E
       {/* - skena-knowledge-partial hides the footnote list while only the start is rendered */}
       <ScrollableContent
         ref={scrollRef} scrollKey={id} contentLoaded={reached || whole}
-        className={whole ? undefined : 'skena-knowledge-partial'}
-        style={{ padding: '6px 8px 6px 12px' }}
+        className={whole ? BAND_CLASS : `${BAND_CLASS} skena-knowledge-partial`}
+        style={{ ...bandVars, ...bandHeldScroller(6, 8, 6, 12) }}
       >
         {safeHtml !== null
           ? <div className="skena-markdown" dangerouslySetInnerHTML={{ __html: safeHtml }} />
           : <MarkdownRenderer content={shownText} baseUri="." />}
       </ScrollableContent>
     </div>
+    <NodeBorder base={1.5} color={borderColor} />
     <NodeResizer
       minWidth={120} minHeight={80}
       isVisible={selected}

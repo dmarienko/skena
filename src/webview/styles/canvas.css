@@ -38,6 +38,21 @@ body.vscode-dark, body.vscode-high-contrast {
 @property --skena-zoom { syntax: '<number>'; inherits: false; initial-value: 1; }
 @property --skena-ring-width { syntax: '<length>'; inherits: false; initial-value: 3.8px; }
 @property --skena-ring-offset { syntax: '<length>'; inherits: false; initial-value: 7px; }
+@property --skena-band-extra { syntax: '<length>'; inherits: false; initial-value: 0px; }
+
+/* - a node's visible border below zoom 1 (NodeBorder.tsx), over the node's box. data-skena-band is on
+     the root while the drawn border is wider than the node's own (useZoomVar): the node's own border is
+     then transparent, and at other times NodeBorder's is, so at zoom 1 and above the node paints
+     exactly as it lays out. z-index 0 keeps the running-cell marching ants inside it, under the resize
+     controls and handles. */
+.skena-node-border {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+:root[data-skena-band] .skena-node.skena-zoom-width { border-color: transparent !important; }
+:root:not([data-skena-band]) .skena-node-border { border-color: transparent !important; }
 
 /* ─── Node base card style ────────────────────────────────────────────────── */
 /*
@@ -120,14 +135,16 @@ body.vscode-dark, body.vscode-high-contrast {
 .react-flow__node.skena-pinned .skena-node::after {
   content: '';
   position: absolute;
-  inset: 0;
+  /* - inside the drawn border, which is wider than the node's own (NodeBorder.tsx) */
+  --skena-band-extra: inherit;
+  inset: var(--skena-band-extra);
   background: var(--skena-pinned-tint);
   border-radius: inherit;
   pointer-events: none;
   /* - above the node's own content (Monaco, iframes, images); the resize controls and
      - connection handles sit outside .skena-node in the DOM, in their own stacking
      - context, so this z-index never competes with them (same value, same reasoning
-     - as the running-cell border overlay further down, .skena-node--running::after) */
+     - as the running-cell border overlay further down, .skena-node-border--running::after) */
   z-index: 5;
 }
 
@@ -262,9 +279,8 @@ body.vscode-dark, body.vscode-high-contrast {
 .skena-cell-html .skena-w-label { font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; white-space: nowrap; }
 .skena-cell-html .skena-w-unsupported { opacity: 0.6; font-style: italic; font-size: 11px; }
 
-/* - running code cell: marching-ants border matching the animated run edge */
-.skena-node--running { position: relative; }
-.skena-node--running::after {
+/* - running code cell: marching-ants border matching the animated run edge, inside the drawn border */
+.skena-node-border--running::after {
   content: '';
   position: absolute;
   inset: 0;

@@ -35,7 +35,8 @@ import { CodeRenderer } from '../../renderers/CodeRenderer';
 import { ImageRenderer } from '../../renderers/ImageRenderer';
 import { HtmlShadow } from '../../renderers/HtmlShadow';
 import { useHighlightedHtml } from '../../lib/codeHighlight';
-import { HANDLE_STYLE, ZOOM_WIDTH_CLASS, focusRingStyle, useZoomVars, zoomInvariantWidth } from './nodeShared';
+import { BAND_CLASS, HANDLE_STYLE, ZOOM_WIDTH_CLASS, bandHeldScroller, bandInsetPadding, baseBorderWidth, focusRingStyle, useBandVars, useZoomVars } from './nodeShared';
+import { NodeBorder } from './NodeBorder';
 import { nodeBorderColor } from '../palette';
 
 function vscodePostMessage(msg: unknown) {
@@ -128,6 +129,7 @@ interface ZoomGateProps {
 
 function ZoomGate({ id, status, content, fileType, resourceUri, error, truncated, totalSize, file, html, sourceNodeId }: ZoomGateProps): JSX.Element {
   const zoom = useZoomLevel();
+  const bandVars = useBandVars();
 
   // - LOD: hide content only at 'minimal' zoom (< 0.3) where nodes are pixel-sized.
   // - 'overview' (0.3–0.8) now stays visible so .md file nodes behave like TextNodes.
@@ -138,7 +140,7 @@ function ZoomGate({ id, status, content, fileType, resourceUri, error, truncated
   const hidden = zoom === 'minimal';
 
   return (
-    <ScrollableContent scrollKey={id} hidden={hidden} contentLoaded={status === 'loaded'}>
+    <ScrollableContent scrollKey={id} hidden={hidden} contentLoaded={status === 'loaded'} className={BAND_CLASS} style={{ ...bandVars, ...bandHeldScroller(6, 8, 6, 8) }}>
       {status === 'loading' && <div className="skena-loading">Loading...</div>}
       {status === 'error'   && <div className="skena-error">{error === 'TOO_LARGE' ? 'File too large to preview' : `Error: ${error}`}</div>}
       {status === 'loaded'  && (
@@ -158,7 +160,7 @@ function ZoomGate({ id, status, content, fileType, resourceUri, error, truncated
 function FileNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as FileNode & { accentColor?: string };
   const selectedStyle = focusRingStyle(selected);
-  const bw = zoomInvariantWidth(1.5);
+  const bw = baseBorderWidth(1.5);
   const zoomVars = useZoomVars();
   const { status, content, fileType, resourceUri, error, truncated, totalSize, html } = useFileContent(node.file);
 
@@ -183,6 +185,7 @@ function FileNodeInner({ data, id, selected }: NodeProps): JSX.Element {
       style={{
         ...zoomVars,
         border:        `${bw} solid ${borderColor}`,
+        padding:       bandInsetPadding(),
         height:        '100%',
         display:       'flex',
         flexDirection: 'column',
@@ -208,6 +211,7 @@ function FileNodeInner({ data, id, selected }: NodeProps): JSX.Element {
         sourceNodeId={id}
       />
     </div>
+    <NodeBorder base={1.5} color={borderColor} />
     <NodeResizer
       minWidth={120} minHeight={80}
       isVisible={selected}

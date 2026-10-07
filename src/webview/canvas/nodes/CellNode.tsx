@@ -12,14 +12,16 @@ import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { MarkdownRenderer } from '../../renderers/MarkdownRenderer';
 import { PlotlyRenderer } from '../../renderers/PlotlyRenderer';
 import { ScrollableContent } from '../../components/ScrollableContent';
-import { HANDLE_STYLE, ZOOM_WIDTH_CLASS, focusRingStyle, useZoomVars, zoomInvariantWidth } from './nodeShared';
+import { BAND_CLASS, HANDLE_STYLE, ZOOM_WIDTH_CLASS, bandHeldScroller, bandInsetPadding, baseBorderWidth, focusRingStyle, useBandVars, useZoomVars } from './nodeShared';
+import { NodeBorder } from './NodeBorder';
 import { nodeBorderColor } from '../palette';
 
 export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as CellNode & { accentColor?: string };
   const selectedStyle = focusRingStyle(selected);
-  const bw = zoomInvariantWidth(1.5);
+  const bw = baseBorderWidth(1.5);
   const zoomVars = useZoomVars();
+  const bandVars = useBandVars();
   const borderColor = nodeBorderColor('cell', node.accentColor);
 
   // - cap oversized HTML (e.g. a huge dataframe) BEFORE it becomes DOM, so an existing giant cell
@@ -48,6 +50,7 @@ export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
         ...zoomVars,
         // - dashed, not solid: sets output cells apart from other node types at a glance
         border:        `${bw} dashed ${borderColor}`,
+        padding:       bandInsetPadding(),
         height:        '100%',
         borderRadius:  6,
         overflow:      'hidden',
@@ -58,13 +61,14 @@ export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
         ...selectedStyle,
       }}
     >
-      <ScrollableContent ref={scrollRef} scrollKey={id}>
+      <ScrollableContent ref={scrollRef} scrollKey={id} className={BAND_CLASS} style={{ ...bandVars, ...bandHeldScroller(6, 8, 6, 8) }}>
         {node.format === 'markdown' && <MarkdownRenderer content={node.content} />}
         {node.format === 'image'    && <img src={node.content} alt="cell" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />}
         {node.format === 'html'     && <div className="skena-cell-html" dangerouslySetInnerHTML={{ __html: htmlContent }} />}
         {node.format === 'plotly'   && <PlotlyRenderer json={node.content} />}
       </ScrollableContent>
     </div>
+    <NodeBorder base={1.5} color={borderColor} borderStyle="dashed" />
     <NodeResizer
       minWidth={100} minHeight={60}
       isVisible={selected}

@@ -13,7 +13,8 @@ import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 import { initVimMode } from 'monaco-vim';
 import { CodeNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
-import { HANDLE_STYLE, ZOOM_WIDTH_CLASS, focusRingStyle, useZoomVars, zoomInvariantWidth } from './nodeShared';
+import { HANDLE_STYLE, ZOOM_WIDTH_CLASS, bandInsetPadding, baseBorderWidth, focusRingStyle, useZoomVars } from './nodeShared';
+import { NodeBorder } from './NodeBorder';
 import { nodeBorderColor } from '../palette';
 import { makeCellKernelResolver } from '../../../shared/kernelBinding';
 import type { SectionLane } from '../../../shared/sectionLanes';
@@ -199,7 +200,7 @@ function cellKernelResolver(nodes: RFNode[], edges: Edge[], lanes: SectionLane[]
 
 function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as CodeNode & { accentColor?: string };
-  const bw = zoomInvariantWidth(1.5);
+  const bw = baseBorderWidth(1.5);
   const zoomVars = useZoomVars();
   const selectedStyle = focusRingStyle(selected);
   const borderColor = nodeBorderColor('code', node.accentColor);
@@ -552,11 +553,12 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
       <NodeLabelBadge label={node.nodeLabel} createdBy={(node as { createdBy?: string }).createdBy} />
       <div
         ref={nodeElRef}
-        className={`skena-node ${ZOOM_WIDTH_CLASS} skena-node--code${node.lastStatus === 'running' ? ' skena-node--running' : ''}`}
+        className={`skena-node ${ZOOM_WIDTH_CLASS} skena-node--code`}
         onContextMenu={onContextMenu}
         style={{
           ...zoomVars,
           border:        `${bw} solid ${borderColor}`,
+          padding:       bandInsetPadding(),
           height:        '100%',
           display:       'flex',
           flexDirection: 'column',
@@ -697,6 +699,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
         </div>,
         document.body,
       )}
+      <NodeBorder base={1.5} color={borderColor} running={node.lastStatus === 'running'} />
       <NodeResizer
         minWidth={160} minHeight={90} isVisible={selected && !editing}
         onResizeEnd={(_, p) => window.dispatchEvent(new CustomEvent('skena:nodeResize', {
