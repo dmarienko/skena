@@ -288,3 +288,11 @@ test('22. a keyword is not a name, alone or as a part; soft keywords are names',
   assert.equal(dottedNameAt('x = None', 5), null);
   assert.equal(dottedNameAt('import numpy as np', 8).dotted, 'numpy');
 });
+
+test('23. quick pick: a file in nested workspace folders is shown relative to the innermost', () => {
+  const pathOf = uri => decodeURIComponent(uri.replace(/^file:\/\//, ''));
+  const t = { kind: 'file', uri: 'file:///home/u/proj/src/m.py', line: 3, col: 1 };
+  for (const roots of [['/home/u', '/home/u/proj'], ['/home/u/proj/', '/home/u/']]) {
+    assert.equal(pickEntry(t, 'x', id => id, pathOf, roots, '/home/u').label, 'src/m.py:3', JSON.stringify(roots));
+  }
+});

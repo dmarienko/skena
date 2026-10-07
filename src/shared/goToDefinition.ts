@@ -276,14 +276,16 @@ export interface PickEntry { label: string; description: string }
 
 /**
  * The quick pick entry of a target. A cell by its label (E7); a file by its path relative to the
- * workspace folder that holds it, else with ~ for the home folder, else in full. `text` is the
- * target line's text.
+ * innermost workspace folder that holds it, else with ~ for the home folder, else in full. `text` is
+ * the target line's text.
  */
 export function pickEntry(t: DefinitionTarget, text: string, labelOf: (cellId: string) => string, filePath: (uri: string) => string, roots: readonly string[], home: string): PickEntry {
   const description = text.trim();
   if (t.kind === 'cell') return { label: `${labelOf(t.cellId)}:${t.line}`, description };
   const path = filePath(t.uri);
-  const root = roots.find(r => path.startsWith(r.endsWith('/') ? r : `${r}/`));
+  const root = roots
+    .filter(r => path.startsWith(r.endsWith('/') ? r : `${r}/`))
+    .reduce<string | undefined>((a, r) => (a === undefined || r.replace(/\/+$/, '').length > a.replace(/\/+$/, '').length ? r : a), undefined);
   const shown = root !== undefined
     ? path.slice(root.length).replace(/^\/+/, '')
     : home !== '' && path.startsWith(`${home}/`) ? `~/${path.slice(home.length + 1)}` : path;
