@@ -142,8 +142,10 @@ except Exception as e:
 `;
 
 /** - the expression that looks up `name`; throws unless `name` is names and dots only */
-export function definitionExpression(name: string): string {
-  if (!isDottedName(name)) throw new Error(`not a dotted name: ${JSON.stringify(name)}`);
+export function definitionExpression(raw: string): string {
+  // - Python stores identifiers NFKC-normalised (Ⅻ = 1 binds XII)
+  const name = raw.normalize('NFKC');
+  if (!isDottedName(name)) throw new Error(`not a dotted name: ${JSON.stringify(raw)}`);
   // - a JSON string is a valid Python string literal; globals() and locals() are those of the
   //   user_expressions eval, the user's namespace
   return `(lambda d: (exec(${JSON.stringify(DEFINITION_SOURCE)}, d), d['out'])[1])({'g': globals(), 'l': locals(), 'name': ${JSON.stringify(name)}})`;

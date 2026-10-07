@@ -14,7 +14,7 @@ const lineOf = text => readFileSync(FIXTURE, 'utf8').split('\n').findIndex(l => 
 // - every name in one python run; name -> the parsed answer and the raw text/plain
 const NAMES = [
   'fx.plain', 'fx.Box', 'fx.Box.area', 'fx.box.area', 'fx.box.side', 'fx.Box.make', 'fx.decorated', 'fx.Point', 'fx.box', 'fx',
-  'len', 'math.sqrt', 'array.array', 'in_cell', 'CellBox', 'CellPoint', 'nope', 'fx.nope',
+  'len', 'math.sqrt', 'array.array', 'in_cell', 'CellBox', 'CellPoint', 'nope', 'fx.nope', '\uff46\uff58.plain',
 ];
 const run = spawnSync(process.env.PYTHON ?? 'python3', [DRIVER], { input: JSON.stringify(NAMES.map(definitionExpression)), encoding: 'utf8' });
 const out = run.stdout.trim().split('\n').map(l => JSON.parse(l));
@@ -73,4 +73,9 @@ test('8. only names and dots are ever sent; an expression error is reported', ()
   for (const bad of ['fx.plain()', 'a[0]', 'x + y', '__import__("os")', 'a..b', '', '1x', 'import', 'fx.class', 'None']) assert.throws(() => definitionExpression(bad), /not a dotted name/, bad);
   assert.deepEqual(parseDefinitionValue({ status: 'error', ename: 'SyntaxError', evalue: 'invalid syntax' }), { ok: false, error: 'SyntaxError: invalid syntax' });
   assert.deepEqual(parseDefinitionValue(undefined), { ok: false, error: 'no reply' });
+});
+
+test('9. a name is sent NFKC-normalised, as Python stores identifiers: fullwidth fx is fx, \u216b is XII', () => {
+  assert.deepEqual(answers['\uff46\uff58.plain'], answers['fx.plain']);
+  assert.equal(definitionExpression('\u216b'), definitionExpression('XII'));
 });
