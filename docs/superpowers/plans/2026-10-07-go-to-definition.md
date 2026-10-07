@@ -1,46 +1,46 @@
-# Go to Definition from Code Cells Implementation Plan
+# Go to Definition and Find References from Code Cells Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Spec `docs/superpowers/specs/2026-10-07-go-to-definition-design.md` (`b4914f8`). In a code cell's editor, in vim normal mode, leader then `g` (`;g` by default) goes to where the dotted name under the cursor is defined: Pylance first, on the canvas's code cells joined in run order; the canvas's kernel when Pylance finds nothing and the kernel is idle. A definition in a cell selects that cell as `h/j/k/l` do and opens its editor at the line; one in a file opens beside the canvas; several go to a quick pick; none leaves a short note in the cell.
+**Goal:** Spec `docs/superpowers/specs/2026-10-07-go-to-definition-design.md` (`b5d38ab`). In a code cell's editor, in vim normal mode, leader then `g` (`;g` by default) goes to where the dotted name under the cursor is defined: Pylance first, on the canvas's code cells joined in run order; the canvas's kernel when Pylance finds nothing and the kernel is idle. A definition in a cell selects that cell as `h/j/k/l` do and opens its editor at the line; one in a file opens beside the canvas; several go to a quick pick; none leaves a short note in the cell. Leader then `z` (`;z`) lists every reference of the name, from Pylance on the same joined cells, in Monaco's own reference peek inside the cell's editor: `j`/`k` move in its list, Enter goes to the place as a definition does, Esc closes it; while it is open the cell is drawn taller over what lies below, and nothing moves.
 
-**Architecture:** Task 1 is a temporary command the user runs in a live window to choose the kind of document Pylance is asked about. The tasks after it are written for the kind "file": the joined cells are written to a `.py` file in the per-user temporary folder (`$XDG_RUNTIME_DIR/skena/definition`, else `<tmpdir>/skena-<user>/definition`), one file per canvas and text, opened with `openTextDocument` and never shown, and `vscode.executeDefinitionProvider` is asked at the cursor's place in it. The pure parts (`src/shared/goToDefinition.ts`) find the dotted name, join the cells, map positions both ways and turn answers into places to go; they are tested in node. The kernel part sends one silent `execute_request` with a `user_expressions` entry that looks the name up with `inspect` and answers JSON; it was run against a real ipykernel. In the webview, the existing jump-label key reader in each Monaco editor (`installJumpLabels`) takes leader `g` in code cells only; landing in a cell reuses `focusNodeById` and the `skena:enterEdit` event with a cursor.
+**Architecture:** Task 1 (the spike, done) chose the kind of document Pylance is asked about: a real `.py` file in the per-user temporary folder. The joined cells are written to `$XDG_RUNTIME_DIR/skena/definition` (else `<tmpdir>/skena-<user>/definition`), one file per canvas and text, opened with `openTextDocument` and never shown; `vscode.executeDefinitionProvider` or `vscode.executeReferenceProvider` is asked at the cursor's place in it. The pure parts (`src/shared/goToDefinition.ts`, `src/shared/findReferences.ts`) find the dotted name, join the cells, map positions both ways, turn answers into places to go, say what Monaco's peek is given and how tall the cell must be; they are tested in node, the peek's grouping against Monaco's own `ReferencesModel`. The kernel part sends one silent `execute_request` with a `user_expressions` entry that looks the name up with `inspect`; it was run against a real ipykernel. In the webview, the jump-label key reader in each Monaco editor (`installJumpLabels`) takes leader `g` and leader `z` in code cells only; landing in a cell reuses `focusNodeById` and the `skena:enterEdit` event with a cursor. The peek is Monaco's (`editor.action.referenceSearch.trigger`, already in the bundle): for the time it is open the webview creates a model per other cell and file, registers a reference provider that returns the host's answer, draws the cell taller, maps `j`/`k`/Enter in its list, and goes to an opened reference through `monaco.editor.registerEditorOpener`.
 
-**Tech Stack:** TypeScript 5, React 18, React Flow 12, Monaco 0.55.1 + monaco-vim 0.4.4, the VS Code extension API (`vscode.executeDefinitionProvider`, `showTextDocument`, `showQuickPick`), Pylance (`ms-python.vscode-pylance`), the Jupyter messaging protocol 5.3 over the Jupyter server's websocket (`ws`), Python 3 (`inspect`, `linecache`), esbuild bundles + `node --test` (each test file's line 1 holds its run command).
+**Tech Stack:** TypeScript 5, React 18, React Flow 12, Monaco 0.55.1 + monaco-vim 0.4.4, the VS Code extension API (`vscode.executeDefinitionProvider`, `vscode.executeReferenceProvider`, `showTextDocument`, `showQuickPick`), Pylance (`ms-python.vscode-pylance`), the Jupyter messaging protocol 5.3 over the Jupyter server's websocket (`ws`), Python 3 (`inspect`, `linecache`), esbuild bundles + `node --test` (each test file's line 1 holds its run command).
 
 ---
 
-## Task 1 is a spike. Tasks 2 to 12 start only after the user reports its result.
+## Task 1 (the spike) is done. Tasks 2 to 15 start now.
 
-Pylance cannot run outside a VS Code window here, so Task 1 builds a temporary command the user runs in an Extension Development Host. Its report settles what the spec leaves open: which kind of document Pylance resolves the workspace's imports in, whether a name defined in another cell comes back inside the joined document, whether closing the window asks to save anything, and how long the answers take. **Do not start Task 2 before the user has reported the result and chosen the kind.** The tasks are written for the kind "file"; "If the user chooses another kind" below says what changes.
+Task 1 was committed as `c2670d7`, and `11d5fbf` made its command read a picked `.canvas` file when no canvas tab has focus. The user ran it on 2026-10-07 and chose the kind "file"; the numbers are under "Spike result" at the end of this file. Task 2 reverts both commits. The tasks after it are written for the kind "file".
 
 ## Before you start
 
 - Work on branch `feature/spatial-notebook`. Stage files by name; commit only the files each task names. No attribution lines of any kind in commit messages.
 - `.vscode/skena-mcp.js` and the untracked `.vscode/numbered-bookmarks.json` are not yours. Never stage them. `npm run build` rewrites `.vscode/skena-mcp.js`; leave it unstaged. If `git status` shows uncommitted changes in a file this plan edits and you did not make them, stop and ask.
 - If `git commit` fails on `index.lock`, wait a few seconds and run it again. Never delete the lock file.
-- Line numbers in this plan are those of `771c94b`. Find each edit by the quoted text; the numbers may have moved.
-- Typecheck baseline at `771c94b` (FACT, run on a copy): `npx tsc --noEmit` reports 3 errors, all `Property 'fsPath' does not exist on type 'ResolvedUri'` in `src/extension/editor-provider.ts`. They are old. The typecheck command in this plan filters exactly those out:
+- Line numbers in this plan are those of `771c94b`. After Task 2 the source is that of `771c94b` again (FACT: `git revert --no-commit 11d5fbf c2670d7` on a clone at `b5d38ab` staged exactly the three spike files, and the staged `src/` and `package.json` equal `771c94b`'s). Find each edit by the quoted text; the numbers may have moved.
+- Typecheck baseline at `b5d38ab` (FACT, run on the repository): `npx tsc --noEmit` reports 3 errors, all `Property 'fsPath' does not exist on type 'ResolvedUri'` in `src/extension/editor-provider.ts` (lines 645-647). They are old. The typecheck command in this plan filters exactly those out:
 
   ```bash
   npx tsc --noEmit 2>&1 | grep "error TS" | grep -v "Property 'fsPath' does not exist on type 'ResolvedUri'"
   ```
 
-  Expected output: nothing.
-- `tests/jupyter-protocol.mjs` test 4 (`collectOutputs marks error status on error reply`) already fails at `771c94b` (FACT, run on a copy: it expects `ValueError: bad`, `collectOutputs` returns the traceback `x`). It is not this plan's; Task 8 expects it to keep failing.
-- `tests/kernel-definition.mjs` (Task 7) runs `python3` from `PATH` (set `PYTHON=` to use another). It installs nothing. FACT (my runs): its 8 tests pass with Python 3.10.12, 3.11.9, 3.12.12 (the factors venv) and 3.14.2.
-- Verification done for this plan (FACT): the code of Tasks 1 to 11 was applied to a copy of `771c94b` from this file by a script, task by task, running the commands written here; each test step failed and then passed as stated, the typecheck command printed nothing wherever a task runs it, `npm run build` succeeded in Tasks 1, 10 and 11, and after each commit `git status` showed only `.vscode/skena-mcp.js`. The manual checks (Task 1 Step 6, Task 12) have not been run.
+  Expected output: nothing. (Filtering by the file name instead, `grep -v "src/extension/editor-provider.ts"`, also prints nothing at every step; it would hide a new error in that file, which Tasks 10 and 13 edit.)
+- `tests/jupyter-protocol.mjs` test 4 (`collectOutputs marks error status on error reply`) already fails at `b5d38ab` (FACT, run on a copy: 5 tests, 4 pass). It is not this plan's; Task 8 expects it to keep failing.
+- `tests/kernel-definition.mjs` (Task 7) runs `python3` from `PATH` (set `PYTHON=` to use another). It installs nothing. FACT: its 8 tests passed with Python 3.10.12, 3.11.9, 3.12.12 (the factors venv) and 3.14.2 (the first plan's runs), and with Python 3.12.12 from `PATH` in the run below.
+- `tests/find-references.mjs` (Task 12) bundles Monaco's own `referencesModel.js` from `node_modules` for node; it needs nothing else.
+- Verification done for this plan (FACT, 2026-10-07): the plan was applied by a script, task by task from Task 2, to a `git archive` copy of `b5d38ab` (Task 2's revert replaced by the same change applied with `git apply -R --index`, an archive having no history), running the commands written here. Each test step failed and then passed as stated, the typecheck command printed nothing wherever a task runs it (and so did the file-name filter), `npm run build` succeeded in Tasks 10, 11 and 14, and after each commit `git status` showed nothing, or only `.vscode/skena-mcp.js` once a build had run. Nothing that needs a live VS Code window was run: Task 15 and the peek's behaviour in Task 14 are the user's.
 
 ## What is known before the spike
 
-From a web and source search (sources in brackets; "code" means read in the source, Pylance 2026.4.1 is closed source and its shipped bundle was searched):
+From a web and source search before Task 1 (sources in brackets; "code" means read in the source, Pylance 2026.4.1 is closed source and its shipped bundle was searched). The spike's measurements are under "Spike result"; where they differ, they win.
 
 - Pylance takes `file` and `untitled` Python documents, notebook cells (`vscode-notebook-cell`), and a few other schemes; not any other scheme unless the experimental setting `python.analysis.supportAllPythonDocuments` is on [code: Pylance 2026.4.1 `dist/extension.bundle.js` document selector].
 - A document is analysed when it is opened with `openTextDocument`; it does not need to be shown [code: vscode-languageclient sends `didOpen` for every open document that matches, `client/src/common/textSynchronization.ts`, https://github.com/microsoft/vscode-languageserver-node].
-- Which workspace (interpreter, settings) a file outside every folder gets: pyright's `_getBestWorkspaceForFile` gives it the only workspace when the window has one folder, and a `<default>` workspace when there are several [code: https://github.com/microsoft/pyright/blob/main/packages/pyright-internal/src/workspaceFactory.ts]. Untitled documents follow the same rule. So in a single-folder window the joined file uses the folder's interpreter (INFERENCE: Pylance is built on pyright; the spike checks it).
-- An untitled document created with content through the API is dirty from the start and is not released while dirty [code: `mainThreadDocuments.ts` "mark as dirty", `untitledTextEditorModel.ts`, https://github.com/microsoft/vscode]. There is no API to close a document [maintainer, https://github.com/microsoft/vscode/issues/187008]. INFERENCE (untested): on close, either a save prompt or a hot-exit backup that reopens as an "Untitled-N" tab next time.
-- `workspace.openNotebookDocument(type, data)` makes an untitled notebook, also dirty [code: `mainThreadNotebookDocuments.ts` "untitled notebooks with content are dirty by default"]. Pylance's notebook support (LSP 3.17 notebook sync) takes notebooks with `file` or `untitled` URIs and Python cells, of any notebook type [code: Pylance `dist/server.bundle.js` `notebookSelector`]. So a notebook of skena's own type saved as a file is a candidate that is not dirty (INFERENCE).
-- An empty answer right after Pylance starts was reported, with a sleep as the workaround [user report, https://github.com/microsoft/vscode/issues/133952]. No published latency figures were found.
+- Which workspace (interpreter, settings) a file outside every folder gets: pyright's `_getBestWorkspaceForFile` gives it the only workspace when the window has one folder, and a `<default>` workspace when there are several [code: https://github.com/microsoft/pyright/blob/main/packages/pyright-internal/src/workspaceFactory.ts]. The spike confirmed it for one folder: the venv's imports resolved.
+- An untitled document created with content through the API is dirty from the start and is not released while dirty [code: `mainThreadDocuments.ts` "mark as dirty", `untitledTextEditorModel.ts`, https://github.com/microsoft/vscode]. There is no API to close a document [maintainer, https://github.com/microsoft/vscode/issues/187008].
+- An empty answer right after Pylance starts was reported, with a sleep as the workaround [user report, https://github.com/microsoft/vscode/issues/133952].
 - Go to definition prefers `.py` sources over `.pyi` stubs and falls back to stubs when there is no source [release note, https://github.com/microsoft/pylance-release/releases/tag/2021.2.1; code: pyright `DefinitionFilter.PreferSource`].
 
 What the kernel part was checked against (FACT, the script in the Appendix, factors venv: Python 3.12.12, ipykernel 6.31.0, IPython 9.12.0, jupyter_client 8.8.0): after five cells ran (execution count 5), 19 silent requests each published only `status: busy` and `status: idle` on iopub, answered in 8 to 21 ms, left the execution count at 5 (the next cell got 6), left `len(In)` at 6 and the user namespace unchanged. A request sent while a 3-second cell ran was answered after 2822 ms. The outputs per name are in Task 7.
@@ -49,10 +49,10 @@ What the kernel part was checked against (FACT, the script in the Appendix, fact
 
 | File | Status | Responsibility |
 |---|---|---|
-| `src/extension/definitionLookupTest.ts` | create in Task 1, delete in Task 2 | The spike's command. |
+| `src/extension/definitionLookupTest.ts` | created in Task 1 (`c2670d7`, `11d5fbf`), deleted in Task 2 | The spike's command. |
 | `src/shared/goToDefinition.ts` | create | Pure. `isDottedName`, `dottedNameAt`, `codeCellsInRunOrder`, `joinCells`, `toJoined`, `fromJoined`, `targetsFromLocations`, `targetsFromKernel`, `fileUri`, `pickEntry`, the types. |
 | `tests/go-to-definition.mjs` | create | node:test for `goToDefinition.ts` (15 tests). |
-| `src/webview/canvas/jumpLabels.ts` | modify | `leaderStep` takes leader `g` where go to definition is on. |
+| `src/webview/canvas/jumpLabels.ts` | modify | `leaderStep` takes leader `g` and leader `z` in code cells. |
 | `tests/jump-labels.mjs` | modify | Test 24. |
 | `src/extension/jupyter/definitionSnippet.ts` | create | The Python lookup as a `user_expressions` expression; `parseDefinitionValue`. |
 | `tests/kernel-definition.mjs`, `tests/fixtures/definition_fixture.py`, `tests/fixtures/definition_driver.py` | create | Runs the expression in a real Python (8 tests). |
@@ -62,400 +62,29 @@ What the kernel part was checked against (FACT, the script in the Appendix, fact
 | `src/extension/ipcEndpoint.ts` | modify | Export `userTempDir`. |
 | `src/extension/definition/joinedFile.ts` | create | Writes the joined file per canvas and text; deletes old ones. |
 | `tests/joined-file.mjs` | create | 2 tests. |
-| `src/extension/definition/pylanceDefinitions.ts` | create | Asks `vscode.executeDefinitionProvider`, asks again while a new file gives nothing. |
-| `src/extension/definition/goToDefinition.ts` | create | `findDefinitions` (Pylance, then the kernel), `showDefinitions` (open beside, quick pick). |
-| `src/shared/types.ts` | modify | `MsgGoToDefinition`, `MsgShowDefinitions`, `MsgDefinitionResult`, `MsgDefinitionGoto`. |
-| `src/extension/editor-provider.ts` | modify | Two message cases. |
-| `src/webview/canvas/editorJumpLabels.ts` | modify | `onDefinition` option; `moveVimCursor` exported. |
-| `src/webview/canvas/nodes/cellDefinition.ts` | create | The webview's half: send the request, act on the answer, drop an answer that comes after another key. |
-| `src/webview/canvas/nodes/CodeNode.tsx` | modify | Leader `g`, the note, opening the editor at a cursor. |
-| `src/webview/App.tsx` | modify | Route `definitionResult` and `definitionGoto`. |
+| `src/extension/definition/pylanceLocations.ts` | create | Asks `vscode.executeDefinitionProvider` or `vscode.executeReferenceProvider`, asks again while a new file gives nothing. |
+| `src/extension/definition/goToDefinition.ts` | create | `findDefinitions` (Pylance, then the kernel), `showDefinitions` (open beside, quick pick), `canvasCells`. |
+| `src/shared/types.ts` | modify | `MsgGoToDefinition`, `MsgShowDefinitions`, `MsgDefinitionResult`, `MsgDefinitionGoto`; `MsgFindReferences`, `MsgReferencesResult`. |
+| `src/extension/editor-provider.ts` | modify | Three message cases. |
+| `src/webview/canvas/editorJumpLabels.ts` | modify | `onLookup` option; `moveVimCursor` exported. |
+| `src/webview/canvas/nodes/cellDefinition.ts` | create | The webview's half of both lookups: send the request, act on the answer, drop an answer that comes after another key. |
+| `src/webview/canvas/nodes/CodeNode.tsx` | modify | Leader `g` and `z`, the note, opening the editor at a cursor, the taller cell while the peek is open. |
+| `src/webview/App.tsx` | modify | Route `definitionResult`, `definitionGoto`, `referencesResult`. |
 | `src/webview/canvas/CanvasView.tsx` | modify | `skena:goToCell`: select the cell, unfold its section if folded, open its editor at the line. |
-| `src/webview/styles/canvas.css` | modify | `.skena-code-def-note`. |
-
-## If the user chooses another kind
-
-- **untitled** (only if Task 1 showed no save dialog and no restored "Untitled-N" tab): Task 9 is dropped. `pylanceDefinitions` keeps one untitled document per canvas in a `Map` (created with `openTextDocument({ language: 'python', content })`) and replaces its whole text with a `WorkspaceEdit` before each request; `asked` is keyed by the text instead of the file. `findDefinitions` passes the text instead of `writeJoinedFile(...)`. Everything else stays.
-- **notebook**: Task 9 writes `def-<canvas hash>-<text hash>.skena-definition` files holding one cell per code cell (`{ cells: [{ id, code }] }`), and `package.json` declares the notebook type `skena-definition` with a serializer registered at activation (the spike's `SpikeSerializer` and `contributes.notebooks` entry, kept). `pylanceDefinitions` opens it with `openNotebookDocument(uri)` and asks at the cursor's cell document (`notebook.cellAt(i).document.uri`), position = the cell's own line and column. `targetsFromLocations` gets a sibling that maps a `vscode-notebook-cell:` URI to a canvas cell through the cell's metadata `id`; `joinCells`, `toJoined` and `fromJoined` are no longer used by the host (keep or drop them with their tests 7 and 8), and magic lines need no commenting (Pylance's notebook mode reads IPython syntax). The kernel part, the keys, the webview and the quick pick stay.
-- **file, but imports do not resolve** (for example a multi-root window, where pyright gives a file outside every folder its `<default>` workspace): no change to the code here; the kernel still answers for names it has. Pointing Pylance at an interpreter for files outside the folder would need a folder for them, which the spec rules out.
+| `src/webview/styles/canvas.css` | modify | `.skena-code-def-note`; the taller cell over other nodes. |
+| `src/shared/findReferences.ts` | create | Pure. `referencesFromLocations`, `openCellUri`, `peekCellUri`, `peekPlan`, `openedTarget`, `peekBoxHeight`, the types. |
+| `tests/find-references.mjs`, `tests/fixtures/monaco-references-model.js` | create | node:test for `findReferences.ts` (5 tests), the peek's grouping checked with Monaco's `ReferencesModel`. |
+| `src/extension/definition/findReferences.ts` | create | `findReferences`: Pylance's references, with the text of each cell and file. |
+| `src/webview/canvas/nodes/referencePeek.ts` | create | Monaco's reference peek on the host's answer: models, provider, keys, opener, the taller cell, undone on close. |
+| `src/webview/canvas/nodes/NodeBorder.tsx` | modify | `height` prop. |
 
 ---
 
-### Task 1: Definition lookup test (spike; the user runs it)
+### Task 1: Definition lookup test (spike; done)
 
-**Files:**
-- Create: `src/extension/definitionLookupTest.ts`
-- Modify: `src/extension/extension.ts:16` (import), `src/extension/extension.ts:143` (register)
-- Modify: `package.json:112-116` (command, `menus`, `notebooks`)
+**Commits:** `c2670d7` (the command "Skena: Definition lookup test (dev)", `src/extension/definitionLookupTest.ts`, registered in `src/extension/extension.ts` only in an Extension Development Host, declared in `package.json` with a notebook type for the notebook kind), `11d5fbf` (the command reads a picked `.canvas` file, read-only, when no canvas tab has focus).
 
-The command exists only when the extension runs in an Extension Development Host (`context.extensionMode === vscode.ExtensionMode.Development`); the context key `skena.devBuild` hides it from the command palette otherwise. It reads the focused canvas from disk (`readCanvas`; edits reach the file within 500 ms), joins its code cells much as Task 5's `joinCells` will (header lines, each cell then an empty line, lines starting with `%` or `!` commented out), and for each kind ticked asks `vscode.executeDefinitionProvider` at the last place each typed name occurs in the cells, asking again every 250 ms for up to 10 s while the answer is empty. Each kind runs twice: on the canvas's text (v1) and on a second text (v2) that moves every cell 3 lines down (untitled, file) or one cell down (notebook); the answers mapped back to cells must be the same both times. It prints the VS Code, Pylance, Python and Jupyter extension versions, the workspace folders, the interpreter the Python extension has for the first folder, `files.hotExit`, each document's dirty and untitled state, and the number of problems VS Code holds for each document 3 s after the lookups.
-
-- [ ] **Step 1: Write the command**
-
-Create `src/extension/definitionLookupTest.ts`:
-
-```ts
-/**
- * TEMPORARY, go to definition plan Task 1 (removed in Task 2). "Skena: Definition lookup test (dev)"
- * exists only in an Extension Development Host. It joins the focused canvas's code cells in run order,
- * asks vscode.executeDefinitionProvider about the names the user types, for each kind of document
- * picked, and writes what came back, with timings, to the output channel "Skena definition lookup
- * test" and to report.txt in its folder. Kinds:
- * - untitled: openTextDocument({ language: 'python', content }), changed in place for the second text
- * - file:     a .py file per text in the per-user temporary folder, opened with openTextDocument
- * - notebook: a file per text of the notebook type skena-definition-spike (registered here), one cell
- *             per code cell; Pylance gets it through LSP notebook sync
- * Each kind runs the names on the canvas's text, then on a second text with 3 empty lines after the
- * header (untitled, file) or an empty first cell (notebook); a target that moves to another cell or
- * line between the two is a mapping error.
- */
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
-import * as vscode from 'vscode';
-import { readCanvas } from './canvas-io';
-import { SkenaEditorProvider } from './editor-provider';
-import { memberCodeCellsInRunOrder, sortLanes } from '../shared/sectionLanes';
-import type { CodeNode } from '../shared/types';
-
-export const SPIKE_NOTEBOOK = 'skena-definition-spike';
-const HEADER = ['# type: ignore', '# - skena: definition lookup test'];
-
-interface Cell { id: string; label: string; lines: string[] }
-interface Occurrence { name: string; cell: number; line: number; character: number }
-interface Loc { uri: vscode.Uri; line: number; character: number }
-
-class SpikeSerializer implements vscode.NotebookSerializer {
-  deserializeNotebook(content: Uint8Array): vscode.NotebookData {
-    const raw = new TextDecoder().decode(content);
-    const cells = (raw.trim() ? JSON.parse(raw).cells : []) as { id: string; label: string; code: string }[];
-    return new vscode.NotebookData(cells.map(c => {
-      const d = new vscode.NotebookCellData(vscode.NotebookCellKind.Code, c.code, 'python');
-      d.metadata = { id: c.id, label: c.label };
-      return d;
-    }));
-  }
-  serializeNotebook(data: vscode.NotebookData): Uint8Array {
-    const cells = data.cells.map(c => ({ id: c.metadata?.id ?? '', label: c.metadata?.label ?? '', code: c.value }));
-    return new TextEncoder().encode(JSON.stringify({ cells }));
-  }
-}
-
-export function registerDefinitionLookupTest(context: vscode.ExtensionContext): void {
-  void vscode.commands.executeCommand('setContext', 'skena.devBuild', true);
-  context.subscriptions.push(
-    vscode.workspace.registerNotebookSerializer(SPIKE_NOTEBOOK, new SpikeSerializer()),
-    vscode.commands.registerCommand('skena.definitionLookupTest', () => run()),
-  );
-}
-
-function spikeDir(): string {
-  const user = (() => { try { return os.userInfo().username; } catch { return 'user'; } })();
-  const base = process.env.XDG_RUNTIME_DIR ? path.join(process.env.XDG_RUNTIME_DIR, 'skena') : path.join(os.tmpdir(), `skena-${user}`);
-  const dir = path.join(base, 'definition-spike');
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  return dir;
-}
-
-// - the canvas's code cells in run order (sections top to bottom, then y, then x); magic and shell
-//   lines commented out, as the plan's joinCells does
-async function canvasCells(canvasPath: string): Promise<Cell[]> {
-  const canvas = await readCanvas(canvasPath);
-  const nodes = canvas.nodes as (CodeNode & { type: string })[];
-  const lanes = canvas.metadata?.sections ?? [];
-  const ids = lanes.length === 0
-    ? nodes.filter(n => n.type === 'code').sort((a, b) => a.y - b.y || a.x - b.x).map(n => n.id)
-    : sortLanes(lanes).flatMap(l => memberCodeCellsInRunOrder(nodes, lanes, l.id));
-  return ids.map(id => {
-    const n = nodes.find(x => x.id === id) as CodeNode;
-    const lines = (n.code ?? '').split(/\r\n|\r|\n/).map(l => (/^\s*(%|!)/.test(l) ? l.replace(/\S/, '#') : l));
-    return { id, label: n.nodeLabel ?? id, lines };
-  });
-}
-
-// - the last place `name` is written in the cells (not after a dot or a name character), at its last part
-function lastOccurrence(cells: Cell[], name: string): Occurrence | null {
-  const re = new RegExp(`(?<![\\w.])${name.replace(/\./g, '\\.')}(?!\\w)`, 'g');
-  let found: Occurrence | null = null;
-  cells.forEach((c, ci) => c.lines.forEach((text, li) => {
-    for (const m of text.matchAll(re)) found = { name, cell: ci, line: li, character: (m.index ?? 0) + name.lastIndexOf('.') + 1 };
-  }));
-  return found;
-}
-
-// - the joined text: header, `pad` empty lines, each cell then one empty line; and each cell's first line
-function joined(cells: Cell[], pad: number): { text: string; first: number[] } {
-  const lines = [...HEADER, ...Array(pad).fill('')];
-  const first: number[] = [];
-  for (const c of cells) { first.push(lines.length); lines.push(...c.lines, ''); }
-  return { text: lines.join('\n'), first };
-}
-
-async function ask(uri: vscode.Uri, pos: vscode.Position): Promise<{ firstMs: number; totalMs: number; attempts: number; locs: Loc[] }> {
-  const t0 = Date.now();
-  let firstMs = -1;
-  for (let attempts = 1; ; attempts++) {
-    const raw = await vscode.commands.executeCommand<(vscode.Location | vscode.LocationLink)[] | undefined>('vscode.executeDefinitionProvider', uri, pos);
-    if (firstMs < 0) firstMs = Date.now() - t0;
-    const locs = (raw ?? []).map(l => l instanceof vscode.Location
-      ? { uri: l.uri, line: l.range.start.line, character: l.range.start.character }
-      : { uri: l.targetUri, line: (l.targetSelectionRange ?? l.targetRange).start.line, character: (l.targetSelectionRange ?? l.targetRange).start.character });
-    if (locs.length > 0 || Date.now() - t0 > 10000) return { firstMs, totalMs: Date.now() - t0, attempts, locs };
-    await new Promise(r => setTimeout(r, 250));
-  }
-}
-
-async function fileLine(uri: vscode.Uri, line: number): Promise<string> {
-  try { return new TextDecoder().decode(await vscode.workspace.fs.readFile(uri)).split(/\r\n|\r|\n/)[line] ?? ''; } catch { return '?'; }
-}
-
-type Opened = {
-  uri: (o: Occurrence) => vscode.Uri;
-  pos: (o: Occurrence) => vscode.Position;
-  // - a location as `E7:12  text`, or null when it is not in the canvas's cells
-  cellOf: (l: Loc) => string | null;
-  docs: () => { uri: vscode.Uri; dirty: boolean; untitled: boolean }[];
-};
-
-async function openKind(kind: string, cells: Cell[], version: 1 | 2, dir: string, previous: Opened | null): Promise<Opened> {
-  if (kind === 'notebook') {
-    const nbCells = [...(version === 2 ? [{ id: '', label: '(empty)', code: '' }] : []), ...cells.map(c => ({ id: c.id, label: c.label, code: c.lines.join('\n') }))];
-    const file = path.join(dir, `joined-v${version}.${SPIKE_NOTEBOOK}`);
-    fs.writeFileSync(file, JSON.stringify({ cells: nbCells }), { mode: 0o600 });
-    const nb = await vscode.workspace.openNotebookDocument(vscode.Uri.file(file));
-    const shift = version === 2 ? 1 : 0;
-    return {
-      uri: o => nb.cellAt(o.cell + shift).document.uri,
-      pos: o => new vscode.Position(o.line, o.character),
-      cellOf: l => {
-        const c = nb.getCells().find(x => x.document.uri.toString() === l.uri.toString());
-        if (!c) return null;
-        return `${c.metadata?.label ?? '?'}:${l.line + 1}  ${c.document.lineAt(Math.min(l.line, c.document.lineCount - 1)).text.trim()}`;
-      },
-      docs: () => [{ uri: nb.uri, dirty: nb.isDirty, untitled: nb.isUntitled }, ...nb.getCells().map(c => ({ uri: c.document.uri, dirty: c.document.isDirty, untitled: c.document.isUntitled }))],
-    };
-  }
-  const j = joined(cells, version === 2 ? 3 : 0);
-  let doc: vscode.TextDocument;
-  if (kind === 'untitled') {
-    if (version === 1) {
-      doc = await vscode.workspace.openTextDocument({ language: 'python', content: j.text });
-    } else {
-      doc = await vscode.workspace.openTextDocument(previous!.uri({ name: '', cell: 0, line: 0, character: 0 }));
-      const edit = new vscode.WorkspaceEdit();
-      edit.insert(doc.uri, new vscode.Position(HEADER.length, 0), '\n\n\n');
-      await vscode.workspace.applyEdit(edit);
-    }
-  } else {
-    const file = path.join(dir, `joined-v${version}.py`);
-    fs.writeFileSync(file, j.text, { mode: 0o600 });
-    doc = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
-  }
-  const cellAtLine = (line: number) => {
-    for (let i = cells.length - 1; i >= 0; i--) if (line >= j.first[i] && line < j.first[i] + cells[i].lines.length) return i;
-    return -1;
-  };
-  return {
-    uri: () => doc.uri,
-    pos: o => new vscode.Position(j.first[o.cell] + o.line, o.character),
-    cellOf: l => {
-      if (l.uri.toString() !== doc.uri.toString()) return null;
-      const i = cellAtLine(l.line);
-      return i < 0 ? `(joined line ${l.line + 1}, between cells)` : `${cells[i].label}:${l.line - j.first[i] + 1}  ${doc.lineAt(l.line).text.trim()}`;
-    },
-    docs: () => [{ uri: doc.uri, dirty: doc.isDirty, untitled: doc.isUntitled }],
-  };
-}
-
-async function run(): Promise<void> {
-  const canvasPath = SkenaEditorProvider.activeCanvasPath();
-  if (!canvasPath) { void vscode.window.showWarningMessage('Definition lookup test: focus a canvas tab first.'); return; }
-  const input = await vscode.window.showInputBox({
-    title: 'Definition lookup test',
-    prompt: 'Names to look up, comma-separated; each is asked at its last place in the code cells (run order)',
-    placeHolder: 'sharpe, run_walkforward, panel, np.linalg.norm',
-  });
-  if (!input) return;
-  const picked = await vscode.window.showQuickPick(
-    [{ label: 'untitled', picked: true }, { label: 'file', picked: true }, { label: 'notebook', picked: true }],
-    { canPickMany: true, title: 'Document kinds to test' },
-  );
-  if (!picked || picked.length === 0) return;
-  const out = vscode.window.createOutputChannel('Skena definition lookup test');
-  const lines: string[] = [];
-  const log = (s: string) => { lines.push(s); out.appendLine(s); };
-  out.show(true);
-  const dir = spikeDir();
-  const cells = await canvasCells(canvasPath);
-  const names = input.split(',').map(s => s.trim()).filter(Boolean);
-  const ext = (id: string) => vscode.extensions.getExtension(id)?.packageJSON?.version ?? 'not installed';
-  let interpreter = '?';
-  try {
-    const py = await vscode.extensions.getExtension('ms-python.python')?.activate();
-    const folder = vscode.workspace.workspaceFolders?.[0]?.uri;
-    interpreter = py?.environments?.getActiveEnvironmentPath(folder)?.path ?? '?';
-  } catch (e) { interpreter = `error ${String(e)}`; }
-  log(`date ${new Date().toISOString()}  vscode ${vscode.version}  remote ${vscode.env.remoteName ?? 'none'}`);
-  log(`pylance ${ext('ms-python.vscode-pylance')}  python ext ${ext('ms-python.python')}  jupyter ext ${ext('ms-toolsai.jupyter')}`);
-  log(`workspace folders: ${(vscode.workspace.workspaceFolders ?? []).map(f => f.uri.fsPath).join(', ') || 'none'}`);
-  log(`interpreter (folder 1): ${interpreter}`);
-  log(`files.hotExit: ${vscode.workspace.getConfiguration('files').get('hotExit')}`);
-  log(`canvas ${canvasPath}: ${cells.length} code cells; folder ${dir}`);
-  const occ = names.map(n => lastOccurrence(cells, n) ?? n);
-  for (const o of occ) {
-    if (typeof o === 'string') log(`  ${o}: not in the code cells`);
-    else log(`  ${o.name}: asked at ${cells[o.cell].label}:${o.line + 1}:${o.character + 1}  ${cells[o.cell].lines[o.line].trim()}`);
-  }
-  for (const { label: kind } of picked) {
-    log('');
-    log(`== ${kind}`);
-    let previous: Opened | null = null;
-    const results: Record<string, string[]> = {};
-    for (const version of [1, 2] as const) {
-      let opened: Opened;
-      const t0 = Date.now();
-      try {
-        opened = await openKind(kind, cells, version, dir, previous);
-      } catch (e) { log(`  v${version}: could not open: ${String(e)}`); break; }
-      log(`  v${version}: opened in ${Date.now() - t0} ms: ${opened.docs()[0].uri.toString()}`);
-      for (const o of occ) {
-        if (typeof o === 'string') continue;
-        try {
-          const r = await ask(opened.uri(o), opened.pos(o));
-          const where = await Promise.all(r.locs.map(async l => opened.cellOf(l) ?? `${l.uri.scheme === 'file' ? l.uri.fsPath : l.uri.toString()}:${l.line + 1}:${l.character + 1}  ${(await fileLine(l.uri, l.line)).trim()}`));
-          log(`    ${o.name}: first answer ${r.firstMs} ms, ${r.locs.length} result(s) after ${r.totalMs} ms in ${r.attempts} call(s)`);
-          for (const w of where) log(`      -> ${w}`);
-          if (version === 1) results[o.name] = where;
-          else log(`      same as v1: ${JSON.stringify(where) === JSON.stringify(results[o.name]) ? 'yes' : 'NO'}`);
-        } catch (e) { log(`    ${o.name}: error ${String(e)}`); }
-      }
-      previous = opened;
-      await new Promise(r => setTimeout(r, 3000));
-      for (const d of opened.docs()) {
-        const diags = vscode.languages.getDiagnostics(d.uri);
-        log(`    ${d.uri.toString()}  dirty ${d.dirty}  untitled ${d.untitled}  problems ${diags.length}${diags.length ? ` (first: ${diags[0].message})` : ''}`);
-      }
-    }
-  }
-  fs.writeFileSync(path.join(dir, 'report.txt'), lines.join('\n') + '\n', { mode: 0o600 });
-  log('');
-  log(`written to ${path.join(dir, 'report.txt')}`);
-}
-```
-
-- [ ] **Step 2: Register it in development builds only**
-
-In `src/extension/extension.ts` (line 16), find:
-
-```ts
-import { runIpc } from './run-ipc';
-```
-
-replace with:
-
-```ts
-import { runIpc } from './run-ipc';
-import { registerDefinitionLookupTest } from './definitionLookupTest';
-```
-
-In `src/extension/extension.ts` (line 143), find:
-
-```ts
-  // - the relay's /export: the MCP tool canvas_export_html renders through this extension
-```
-
-replace with:
-
-```ts
-  // - TEMPORARY (go to definition plan, Task 1): the definition lookup test, in an Extension Development Host only
-  if (context.extensionMode === vscode.ExtensionMode.Development) registerDefinitionLookupTest(context);
-
-  // - the relay's /export: the MCP tool canvas_export_html renders through this extension
-```
-
-- [ ] **Step 3: Declare the command and the notebook type**
-
-In `package.json` (lines 112-116), find:
-
-```json
-      {
-        "command": "skena.exportHtml",
-        "title": "Skena: Export canvas to HTML"
-      }
-    ],
-```
-
-replace with:
-
-```json
-      {
-        "command": "skena.exportHtml",
-        "title": "Skena: Export canvas to HTML"
-      },
-      {
-        "command": "skena.definitionLookupTest",
-        "title": "Skena: Definition lookup test (dev)"
-      }
-    ],
-    "menus": {
-      "commandPalette": [
-        {
-          "command": "skena.definitionLookupTest",
-          "when": "skena.devBuild"
-        }
-      ]
-    },
-    "notebooks": [
-      {
-        "type": "skena-definition-spike",
-        "displayName": "Skena definition lookup test",
-        "selector": [
-          {
-            "filenamePattern": "*.skena-definition-spike"
-          }
-        ],
-        "priority": "option"
-      }
-    ],
-```
-
-- [ ] **Step 4: Typecheck, parse package.json, build**
-
-Run: `npx tsc --noEmit 2>&1 | grep "error TS" | grep -v "Property 'fsPath' does not exist on type 'ResolvedUri'"`
-Expected: nothing.
-
-Run: `node -e "JSON.parse(require('fs').readFileSync('package.json','utf8')); console.log('package.json parses')"`
-Expected: `package.json parses`.
-
-Run: `npm run build`
-Expected: three `⚡ Done in …` lines, no `✘ [ERROR]`.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add src/extension/definitionLookupTest.ts src/extension/extension.ts package.json
-git commit -m "chore(dev): definition lookup test for the go to definition spike"
-```
-
-Write down the commit hash; Task 2 reverts it.
-
-- [ ] **Step 6: The user runs the test**
-
-The implementer stops here and hands these steps to the user. Expected answers are not given: they are what the test is for.
-
-1. In VS Code on this repository, press Ctrl+F5 (launch config "Run Extension"; it builds and opens an Extension Development Host on `test/`).
-2. In the Extension Development Host: File > Open Folder… `/home/quant0/projects/factors` (one folder). Wait until the status bar shows the Python interpreter; if it is not `.venv/bin/python`, run "Python: Select Interpreter" and pick `./.venv/bin/python`.
-3. Open `research/review/factors-essentials.canvas` and click on the canvas so its tab has focus.
-4. Ctrl+Shift+P, "Skena: Definition lookup test (dev)". Names: `sharpe, run_walkforward, REPO, CACHE, np.linalg.solve`. Kinds: leave all three ticked. On this canvas (FACT, read from the file on 2026-10-07, run order as Task 5 computes it) the test asks `sharpe` at E27:17 (imported from `factors.backtest.metrics`), `run_walkforward` at E12:22 (from `factors.walkforward.runner`), `REPO` at E12:2 (assigned only at E1:30), `CACHE` at E26:14 (assigned at E1:29 and again at E15:28) and `np.linalg.solve` at E17:34. (`qhs_weights` and `factors.score.ic_blends` are not in factors' source any more: `grep -rn "def qhs_weights" src` finds nothing.)
-5. Wait for `written to …/report.txt` at the end of the output channel "Skena definition lookup test".
-6. Look at View > Problems: does it list entries for `joined-v1.py`, `joined-v2.py`, `Untitled-1` or the notebook cells?
-7. Close the Extension Development Host window. Did a dialog ask to save anything? Which name?
-8. Press Ctrl+F5 again, File > Open Recent > factors. Is there an "Untitled-N" tab holding joined code?
-9. Close any such tab without saving. Run the command again with only `file` and `notebook` ticked, then close the window. Did a dialog ask to save anything?
-
-Report back: the content of `report.txt` from both runs (the path is printed at the end), and the answers to 6, 7, 8 and 9.
-
-What the report allows the user to decide, per kind: whether the names from the venv (`sharpe`, `run_walkforward`, `np.linalg.solve`) come back as files; whether `REPO` comes back as `E1:30`; what `CACHE` gives (E1:29, E15:28, or both: the spec wants E15:28, and `targetsFromLocations` keeps the last one before the cursor whatever Pylance returns); whether v2 says `same as v1: yes` everywhere; the problem counts; save dialogs and restored tabs; and the timings (first answer, total until an answer). The user chooses the kind. Tasks 9 and 10 are written for "file".
+The command joined the canvas's code cells in run order, asked `vscode.executeDefinitionProvider` at the last place each typed name occurs, for three kinds of document (untitled, a `.py` file in the per-user temporary folder, a notebook of its own type), on the canvas's text and on a text shifted by 3 lines (one cell for the notebook), and wrote the answers, timings, dirty state and problem counts to `/run/user/1000/skena/definition-spike/report.txt`. The user's second run (factors folder, venv interpreter, `factors-essentials.canvas` read from disk) is under "Spike result". The user chose the kind "file".
 
 ---
 
@@ -465,56 +94,54 @@ What the report allows the user to decide, per kind: whether the names from the 
 - Delete: `src/extension/definitionLookupTest.ts`
 - Modify: `src/extension/extension.ts`, `package.json` (back to `771c94b`)
 
-- [ ] **Step 1: Revert the Task 1 commit**
+- [ ] **Step 1: Revert the two spike commits**
 
-Run: `git revert --no-commit <Task 1 commit hash>`
+Run: `git revert --no-commit 11d5fbf c2670d7`
 Then: `git status --short`
-Expected: `D  src/extension/definitionLookupTest.ts`, `M  src/extension/extension.ts`, `M  package.json` (plus the unstaged `.vscode` files).
-
-If the user chose "notebook", keep the serializer: see "If the user chooses another kind" before committing.
+Expected: `M  package.json`, `D  src/extension/definitionLookupTest.ts`, `M  src/extension/extension.ts` (plus the unstaged `.vscode` files).
 
 - [ ] **Step 2: Typecheck**
 
 Run: `npx tsc --noEmit 2>&1 | grep "error TS" | grep -v "Property 'fsPath' does not exist on type 'ResolvedUri'"`
 Expected: nothing.
 
-- [ ] **Step 3: Write the result into the plan and commit**
+- [ ] **Step 3: Commit**
 
-Put the user's answers and the chosen kind under "Spike result" at the end of this file (replace the line `Not run yet.`), and set `RETRY_MS` and `WAIT_MS` in Task 10 Step 2 from the measured times: `WAIT_MS` a little above the longest "N result(s) after … ms" of a fresh file, `RETRY_MS` 250 unless the report shows a reason for another value.
-
-The revert has already staged the three files; add the plan and commit:
+The revert has already staged the three files; its result is recorded under "Spike result" in this plan.
 
 ```bash
-git add docs/superpowers/plans/2026-10-07-go-to-definition.md
-git commit -m "chore(dev): remove the definition lookup test; record its result"
+git commit -m "chore(dev): remove the definition lookup test"
 ```
 
 ---
 
-### Task 3: Leader g: the key step and the editor key reader
+### Task 3: Leader g and leader z: the key step and the editor key reader
 
 **Files:**
 - Modify: `src/webview/canvas/jumpLabels.ts:16-27`, `src/webview/canvas/jumpLabels.ts:97-104`
 - Modify: `tests/jump-labels.mjs` (append at the end)
 - Modify: `src/webview/canvas/editorJumpLabels.ts:141-145`, `:155`, `:251`, `:260-262`
 
-`leaderStep` (`jumpLabels.ts:98`) reads one key of leader leader `h/j/k/l` for every Monaco editor and the canvas. It gets a fourth argument, `definition`: where it is true (code cells, Task 11), the leader then a plain `g` is `{ do: 'definition' }`. Where it is false (text notes, the chat input, the canvas), leader `g` is a `release` as today, so vim runs `;` and then `g`.
+`leaderStep` (`jumpLabels.ts:98`) reads one key of leader leader `h/j/k/l` for every Monaco editor and the canvas. It gets a fourth argument, `code`: where it is true (code cells, Tasks 11 and 14), the leader then a plain `g` is `{ do: 'definition' }` and the leader then a plain `z` is `{ do: 'references' }`. Where it is false (text notes, the chat input, the canvas), leader `g` and leader `z` are a `release` as today, so vim runs `;` and then the key.
 
-`installJumpLabels` (`editorJumpLabels.ts:144`) reads the keys at capture on the editor's container, before Monaco and monaco-vim, and its module-level window listener (`:31-34`) ends a held leader before later window listeners take the key; both call `leaderStep`. It gets an `onDefinition` option: when given, leader `g` stops the key and calls it. Nothing passes it until Task 11, so no editor changes behaviour in this task.
+`installJumpLabels` (`editorJumpLabels.ts:144`) reads the keys at capture on the editor's container, before Monaco and monaco-vim, and its module-level window listener (`:31-34`) ends a held leader before later window listeners take the key; both call `leaderStep`. It gets an `onLookup` option: when given, leader `g` and leader `z` stop the key and call it with `'definition'` or `'references'`. Nothing passes it until Task 11, so no editor changes behaviour in this task.
 
 - [ ] **Step 1: Write the failing test**
 
 Append to the end of `tests/jump-labels.mjs`, after one blank line:
 
 ```js
-test('24. leader g is go to definition only where it is on (code cells), and only after one leader', () => {
+test('24. leader g and leader z are the code cell lookups, only where they are on and only after one leader', () => {
   assert.deepEqual(leaderStep(1, key('g'), ';', true), { do: 'definition' });
-  assert.deepEqual(leaderStep(1, key('g'), ';'), { do: 'release', held: 1 });
-  assert.deepEqual(leaderStep(1, key('g'), ';', false), { do: 'release', held: 1 });
-  assert.deepEqual(leaderStep(2, key('g'), ';', true), { do: 'release', held: 2 });
-  assert.deepEqual(leaderStep(0, key('g'), ';', true), { do: 'none' });
-  assert.deepEqual(leaderStep(1, key('G'), ';', true), { do: 'release', held: 1 });
-  assert.deepEqual(leaderStep(1, key('g', { ctrl: true }), ';', true), { do: 'release', held: 1 });
+  assert.deepEqual(leaderStep(1, key('z'), ';', true), { do: 'references' });
+  for (const k of ['g', 'z']) {
+    assert.deepEqual(leaderStep(1, key(k), ';'), { do: 'release', held: 1 }, k);
+    assert.deepEqual(leaderStep(1, key(k), ';', false), { do: 'release', held: 1 }, k);
+    assert.deepEqual(leaderStep(2, key(k), ';', true), { do: 'release', held: 2 }, k);
+    assert.deepEqual(leaderStep(0, key(k), ';', true), { do: 'none' }, k);
+    assert.deepEqual(leaderStep(1, key(k.toUpperCase()), ';', true), { do: 'release', held: 1 }, k);
+    assert.deepEqual(leaderStep(1, key(k, { ctrl: true }), ';', true), { do: 'release', held: 1 }, k);
+  }
   assert.deepEqual(leaderStep(1, key(';'), ';', true), { do: 'hold', next: 2 });
   assert.deepEqual(leaderStep(1, key('Shift'), ';', true), { do: 'none' });
 });
@@ -546,14 +173,16 @@ replace with:
 ```ts
  * - `release`: any other key ends the sequence; the `held` leaders keep their own meaning, then the
  *   key goes on as usual
- * - `definition`: leader + g where go to definition is on (code cells); stop the key and look it up
+ * - `definition`: leader + g in a code cell; stop the key and look up where the name is defined
+ * - `references`: leader + z in a code cell; stop the key and list the name's references
  */
 export type LeaderStep =
   | { do: 'none' }
   | { do: 'hold'; next: 1 | 2 }
   | { do: 'show'; dir: JumpDir }
   | { do: 'release'; held: 1 | 2 }
-  | { do: 'definition' };
+  | { do: 'definition' }
+  | { do: 'references' };
 ```
 
 In `src/webview/canvas/jumpLabels.ts` (lines 97-104), find:
@@ -574,15 +203,17 @@ replace with:
 ```ts
 /**
  * - one key of leader leader h/j/k/l, from `state` leaders held. Shift does not count as a modifier.
- *   With `definition` (code cells) leader g is go to definition.
+ *   With `code` (a code cell's editor) leader g is go to definition and leader z find references.
  */
-export function leaderStep(state: LeaderState, k: JumpKey, leader: string, definition = false): LeaderStep {
+export function leaderStep(state: LeaderState, k: JumpKey, leader: string, code = false): LeaderStep {
   if (MODIFIER_KEYS.has(k.key)) return { do: 'none' };
   const plain = !k.ctrl && !k.meta && !k.alt;
   if (state === 0) return plain && k.key === leader ? { do: 'hold', next: 1 } : { do: 'none' };
   if (state === 1) {
     if (plain && k.key === leader) return { do: 'hold', next: 2 };
-    return plain && definition && k.key === 'g' ? { do: 'definition' } : { do: 'release', held: 1 };
+    if (plain && code && k.key === 'g') return { do: 'definition' };
+    if (plain && code && k.key === 'z') return { do: 'references' };
+    return { do: 'release', held: 1 };
   }
   return plain && DIRS.has(k.key) ? { do: 'show', dir: k.key as JumpDir } : { do: 'release', held: 2 };
 }
@@ -593,7 +224,7 @@ export function leaderStep(state: LeaderState, k: JumpKey, leader: string, defin
 Run: `npx esbuild src/webview/canvas/jumpLabels.ts --bundle --format=esm --outfile=tests/.build/jumpLabels.mjs && node --test tests/jump-labels.mjs`
 Expected: `# tests 24`, `# pass 24`, `# fail 0`.
 
-- [ ] **Step 5: The editor key reader takes leader g when asked to**
+- [ ] **Step 5: The editor key reader takes leader g and leader z when asked to**
 
 In `src/webview/canvas/editorJumpLabels.ts` (lines 141-145), find:
 
@@ -609,11 +240,11 @@ replace with:
 
 ```ts
  * Call once per editor, after initVimMode. The settings are read on every key: the chat input mounts
- * before the host has sent them. With `onDefinition` (code cells) leader g calls it instead of
- * handing the leader to vim.
+ * before the host has sent them. With `onLookup` (code cells) leader g and leader z call it instead
+ * of handing the leader to vim.
  */
-export function installJumpLabels(editor: MonacoEditor.IStandaloneCodeEditor, vim: VimAdapterInstance, opts: { onDefinition?: () => void } = {}): void {
-  const definition = opts.onDefinition !== undefined;
+export function installJumpLabels(editor: MonacoEditor.IStandaloneCodeEditor, vim: VimAdapterInstance, opts: { onLookup?: (what: 'definition' | 'references') => void } = {}): void {
+  const code = opts.onLookup !== undefined;
   const decorations = editor.createDecorationsCollection();
 ```
 
@@ -626,7 +257,7 @@ In `src/webview/canvas/editorJumpLabels.ts` (line 155), find:
 replace with:
 
 ```ts
-      const step = leaderStep(held, keyOf(e), vimSettings().leader, definition);
+      const step = leaderStep(held, keyOf(e), vimSettings().leader, code);
 ```
 
 In `src/webview/canvas/editorJumpLabels.ts` (line 251), find:
@@ -638,7 +269,7 @@ In `src/webview/canvas/editorJumpLabels.ts` (line 251), find:
 replace with:
 
 ```ts
-    const step = leaderStep(held, k, leader, definition);
+    const step = leaderStep(held, k, leader, code);
 ```
 
 In `src/webview/canvas/editorJumpLabels.ts` (lines 260-262), find:
@@ -654,7 +285,7 @@ replace with:
 ```ts
     if (step.do === 'hold') { held = step.next; return; }
     held = 0;
-    if (step.do === 'definition') { opts.onDefinition?.(); return; }
+    if (step.do === 'definition' || step.do === 'references') { opts.onLookup?.(step.do); return; }
     show(step.dir);
 ```
 
@@ -667,7 +298,7 @@ Expected: nothing.
 
 ```bash
 git add src/webview/canvas/jumpLabels.ts tests/jump-labels.mjs src/webview/canvas/editorJumpLabels.ts
-git commit -m "feat(definition): leader g key step for code cells"
+git commit -m "feat(definition): leader g and leader z key step for code cells"
 ```
 
 ---
@@ -817,7 +448,7 @@ git commit -m "feat(definition): the dotted name under the cursor"
 
 Run order is the spec's: section by section in the canvas's section order (`sortLanes`, by y), each section's cells as `memberCodeCellsInRunOrder` orders them for Run Section (`src/shared/sectionLanes.ts:343`: top to bottom, then left to right). A canvas without sections: every code cell by y, then x.
 
-The joined text: header lines (Task 10 passes `# type: ignore` first, pyright's comment for ignoring a whole file; the spike reports whether problems still show), then each cell's lines followed by one empty line. Lines are split at CRLF, CR or LF, so a cell saved with CRLF maps line for line. An IPython magic or shell line (`%name`, `%%name`, `!cmd`, the rule of `magicRange` in `src/webview/canvas/codeCellView.ts:251`) is commented out by turning its first non-blank character into `#`, so no column moves; a cell under a cell magic whose body is not Python (`%%bash`, `%%html`, `%%writefile` …; Python bodies: `time`, `timeit`, `capture`, `prun`) is commented out whole. An empty cell is one empty line. Lines between cells and header lines map to no cell.
+The joined text: header lines (Task 10 passes `# type: ignore` first, pyright's comment for ignoring a whole file; the spike's joined file with that first line listed 0 problems), then each cell's lines followed by one empty line. Lines are split at CRLF, CR or LF, so a cell saved with CRLF maps line for line. An IPython magic or shell line (`%name`, `%%name`, `!cmd`, the rule of `magicRange` in `src/webview/canvas/codeCellView.ts:251`) is commented out by turning its first non-blank character into `#`, so no column moves; a cell under a cell magic whose body is not Python (`%%bash`, `%%html`, `%%writefile` …; Python bodies: `time`, `timeit`, `capture`, `prun`) is commented out whole. An empty cell is one empty line. Lines between cells and header lines map to no cell.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1012,7 +643,7 @@ git commit -m "feat(definition): code cells joined in run order, positions both 
 - Modify: `src/shared/goToDefinition.ts` (append at the end)
 - Modify: `tests/go-to-definition.mjs` (import; append at the end)
 
-`targetsFromLocations`: a location inside the joined file goes to its cell, any other to its document. The spec says a name defined in several cells resolves to the latest earlier one in run order; Pylance on one joined file may return assignments after the cursor too (the spike shows what it returns), so of several locations inside the joined file only the last one at or before the cursor is kept; when none is before it, all are kept (a function defined in a later cell).
+`targetsFromLocations`: a location inside the joined file goes to its cell, any other to its document. The spec says a name defined in several cells resolves to the latest earlier one in run order; Pylance on one joined file returns every assignment it finds (the spike: `CACHE` asked in E26 gave E1:29 and E15:28) and may return ones after the cursor too, so of several locations inside the joined file only the last one at or before the cursor is kept; when none is before it, all are kept (a function defined in a later cell).
 
 `targetsFromKernel`: the kernel names an ipykernel temporary file for anything defined in a cell (`<TMPDIR>/ipykernel_<pid>/<number>.py`, not on disk; FACT, real kernel). Its text is the cell as the kernel compiled it, after IPython turned magics into calls (`%time x = 1` became `get_ipython().run_line_magic('time', 'x = 1')`; FACT, real kernel). So a cell whose text equals the kernel's copy (lines compared without trailing blanks, trailing empty lines ignored) is the answer at the kernel's line; else every cell that holds the definition's block (decorators and body, from `getsourcelines`) as consecutive lines, at its def line. A cell edited after it ran can still be found by its unchanged function; a function found in two cells gives two places (quick pick).
 
@@ -1904,7 +1535,7 @@ git commit -m "feat(jupyter): silent user_expressions evaluation and a kernel's 
 - Create: `src/extension/definition/joinedFile.ts`
 - Test: `tests/joined-file.mjs`
 
-Written for the kind "file" (Task 1). The folder is the one the relay endpoint files already use (`ipcEndpoint.ts:24-29`, `ownDir` `:39-50`: `$XDG_RUNTIME_DIR/skena` when set, else `skena-<user>` in the OS temp dir, created owner-only, refused when it is another user's), with a `definition` folder under it. One file per canvas and text, `def-<hashPath(canvas)>-<sha1(text) 12 hex>.py`, written once: VS Code never holds an edited copy of it, so nothing asks to be saved and nothing goes to hot exit, and Pylance always reads the text the lookup was made for. The `-` in the name keeps it from being importable by another file. Past `KEEP` (4) files of one canvas, the oldest are deleted.
+The kind the spike chose (Task 1). The folder is the one the relay endpoint files already use (`ipcEndpoint.ts:24-29`, `ownDir` `:39-50`: `$XDG_RUNTIME_DIR/skena` when set, else `skena-<user>` in the OS temp dir, created owner-only, refused when it is another user's), with a `definition` folder under it. One file per canvas and text, `def-<hashPath(canvas)>-<sha1(text) 12 hex>.py`, written once: VS Code never holds an edited copy of it, so nothing asks to be saved and nothing goes to hot exit, and Pylance always reads the text the lookup was made for. The `-` in the name keeps it from being importable by another file. Past `KEEP` (4) files of one canvas, the oldest are deleted.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -2046,7 +1677,7 @@ git commit -m "feat(definition): joined file per canvas and text in the per-user
 
 **Files:**
 - Modify: `src/shared/types.ts:10`, `:391`, `:543`, `:561`, `:868`
-- Create: `src/extension/definition/pylanceDefinitions.ts`
+- Create: `src/extension/definition/pylanceLocations.ts`
 - Create: `src/extension/definition/goToDefinition.ts`
 - Modify: `src/extension/editor-provider.ts:90`, `:694`
 
@@ -2058,7 +1689,7 @@ Messages (checked: completion uses `complete`/`completeResult` with a `reqId`, `
 
 `findDefinitions`: the canvas's code cells in run order with the asking cell's live code, joined under `# type: ignore` (pyright's ignore for a whole file), written by `writeJoinedFile`, and Pylance asked at the cursor's place. Places from Pylance end the lookup. Otherwise, when there is a dotted name, the cell's kernel (`resolveCellKernel`: an edge-bound kernel, else the section's, the same as Run) is asked if it has a live id and `isIdle`; no kernel, a kernel not started, a busy kernel, no answer in 3 s or `ok: false` all give no places.
 
-`pylanceDefinitions`: `openTextDocument` (never shown), then `vscode.executeDefinitionProvider` at the position; a `Location` or a `LocationLink` (`targetSelectionRange`, else `targetRange`) becomes `{ uri, line, character }`. For a file not asked about before in this window an empty answer is asked again every `RETRY_MS` until `WAIT_MS` (Pylance may still be reading the new file); a file asked about before gets one call. Not installed: no places.
+`pylanceLocations`: `openTextDocument` (never shown), then the command it is given at the position: `vscode.executeDefinitionProvider` here, `vscode.executeReferenceProvider` for find references (Task 13); a `Location` or a `LocationLink` (`targetSelectionRange`, else `targetRange`) becomes `{ uri, line, character, endLine, endCharacter }` (definitions use the start only). For a file not asked about before in this window an empty answer is asked again every `RETRY_MS` (250 ms) until `WAIT_MS` (600 ms) (Pylance may still be reading the new file); a file asked about before gets one call. Not installed: no places. The two times come from the spike: a fresh joined file's first answer took 164-249 ms, the window's first lookup 581 ms, and no call came back empty (Spike result). `canvasCells` is exported for Task 13.
 
 `showDefinitions`: one file opens with `showTextDocument(doc, { viewColumn: ViewColumn.Beside, selection })`: the group to the right of the canvas's group, created if there is none; the canvas stays visible. Several places: `showQuickPick` with `pickEntry` labels and the target line's text (cells from the canvas, files read once each with `vscode.workspace.fs.readFile`); a picked file opens the same way, a picked cell goes back as `definitionGoto`.
 
@@ -2144,34 +1775,43 @@ replace with:
 
 - [ ] **Step 2: Asking Pylance**
 
-Create `src/extension/definition/pylanceDefinitions.ts` (set `RETRY_MS` and `WAIT_MS` from the spike's report, Task 2 Step 3):
+Create `src/extension/definition/pylanceLocations.ts`:
 
 ```ts
 /**
- * Pylance's definitions at a position of the joined file (vscode.executeDefinitionProvider). Pylance
- * may answer nothing while it starts or reads a file it has just been given, so for a file not asked
- * about before in this window an empty answer is asked again every RETRY_MS until WAIT_MS has passed;
- * a file asked about before gets one call. Without Pylance installed there is no answer.
+ * Pylance's answer at a position of the joined file: where the name there is defined
+ * (vscode.executeDefinitionProvider) or every reference of it (vscode.executeReferenceProvider).
+ * Pylance may answer nothing while it starts or reads a file it has just been given, so for a file not
+ * asked about before in this window an empty answer is asked again every RETRY_MS until WAIT_MS has
+ * passed; a file asked about before gets one call. Without Pylance installed there is no answer.
  */
 import * as vscode from 'vscode';
-import type { DefLocation, DocPos } from '../../shared/goToDefinition';
+import type { DocPos } from '../../shared/goToDefinition';
 
-/** - set from the spike's timings (Task 1) */
+/**
+ * - from the spike (Task 1, 2026-10-07, factors window): a fresh joined file's first answer came in
+ *   164-249 ms, the window's first lookup (an untitled document) in 581 ms, and no call came back empty
+ */
 export const RETRY_MS = 250;
-export const WAIT_MS = 2000;
+export const WAIT_MS = 600;
+
+export type PylanceCommand = 'vscode.executeDefinitionProvider' | 'vscode.executeReferenceProvider';
+
+/** - one location of an answer: its document's URI string, 0-based start and end */
+export interface PylanceLocation { uri: string; line: number; character: number; endLine: number; endCharacter: number }
 
 const PYLANCE = 'ms-python.vscode-pylance';
 // - the joined files asked about in this window
 const asked = new Set<string>();
 
-function toDefLocation(l: vscode.Location | vscode.LocationLink): DefLocation {
-  if (l instanceof vscode.Location) return { uri: l.uri.toString(), line: l.range.start.line, character: l.range.start.character };
-  const r = l.targetSelectionRange ?? l.targetRange;
-  return { uri: l.targetUri.toString(), line: r.start.line, character: r.start.character };
+function toLocation(l: vscode.Location | vscode.LocationLink): PylanceLocation {
+  const uri = l instanceof vscode.Location ? l.uri : l.targetUri;
+  const r = l instanceof vscode.Location ? l.range : l.targetSelectionRange ?? l.targetRange;
+  return { uri: uri.toString(), line: r.start.line, character: r.start.character, endLine: r.end.line, endCharacter: r.end.character };
 }
 
-/** - the file's URI string (to tell its own locations apart) and Pylance's locations for `pos` in it */
-export async function pylanceDefinitions(file: string, pos: DocPos): Promise<{ uri: string; locs: DefLocation[] }> {
+/** - the file's URI string (to tell its own locations apart) and Pylance's answer to `command` at `pos` in it */
+export async function pylanceLocations(command: PylanceCommand, file: string, pos: DocPos): Promise<{ uri: string; locs: PylanceLocation[] }> {
   const uri = vscode.Uri.file(file);
   if (!vscode.extensions.getExtension(PYLANCE)) return { uri: uri.toString(), locs: [] };
   const doc = await vscode.workspace.openTextDocument(uri);
@@ -2179,8 +1819,8 @@ export async function pylanceDefinitions(file: string, pos: DocPos): Promise<{ u
   const end = Date.now() + (asked.has(file) ? 0 : WAIT_MS);
   asked.add(file);
   for (;;) {
-    const raw = await vscode.commands.executeCommand<(vscode.Location | vscode.LocationLink)[] | undefined>('vscode.executeDefinitionProvider', doc.uri, at);
-    const locs = (raw ?? []).map(toDefLocation);
+    const raw = await vscode.commands.executeCommand<(vscode.Location | vscode.LocationLink)[] | undefined>(command, doc.uri, at);
+    const locs = (raw ?? []).map(toLocation);
     if (locs.length > 0 || Date.now() >= end) return { uri: doc.uri.toString(), locs };
     await new Promise(resolve => setTimeout(resolve, RETRY_MS));
   }
@@ -2210,13 +1850,13 @@ import { cellKernelView, kernelById, resolveCellKernel } from '../../shared/kern
 import { DEFINITION_KEY, DEFINITION_TIMEOUT_MS, definitionExpression, parseDefinitionValue } from '../jupyter/definitionSnippet';
 import type { KernelManager } from '../jupyter/manager';
 import { writeJoinedFile } from './joinedFile';
-import { pylanceDefinitions } from './pylanceDefinitions';
+import { pylanceLocations } from './pylanceLocations';
 
 // - `# type: ignore` first: Pylance reports no problems for the joined file (pyright: a file-level ignore)
-export const JOINED_HEADER = ['# type: ignore', '# - skena: the code cells of one canvas in run order, for go to definition'];
+export const JOINED_HEADER = ['# type: ignore', '# - skena: the code cells of one canvas in run order, for go to definition and find references'];
 
-// - the canvas's Python code cells in run order, the asking cell with its live text
-function canvasCells(canvas: CanvasData, cellId: string, liveCode: string): JoinCell[] {
+/** - the canvas's Python code cells in run order, the asking cell with its live text */
+export function canvasCells(canvas: CanvasData, cellId: string, liveCode: string): JoinCell[] {
   const nodes = canvas.nodes as (CodeNode & { type: string })[];
   const byId = new Map(nodes.map(n => [n.id, n]));
   return codeCellsInRunOrder(nodes, canvas.metadata?.sections ?? [])
@@ -2243,7 +1883,7 @@ export async function findDefinitions(msg: MsgGoToDefinition, canvas: CanvasData
   const joined = joinCells(cells, JOINED_HEADER);
   const cursor = toJoined(joined, msg.cellNodeId, msg.line, msg.col);
   if (cursor) {
-    const { uri, locs } = await pylanceDefinitions(writeJoinedFile(canvasPath, joined.text), cursor);
+    const { uri, locs } = await pylanceLocations('vscode.executeDefinitionProvider', writeJoinedFile(canvasPath, joined.text), cursor);
     const targets = targetsFromLocations(locs, uri, joined, cursor);
     if (targets.length > 0) return targets;
   }
@@ -2345,7 +1985,7 @@ Expected: three `⚡ Done in …` lines, no `✘ [ERROR]`. Leave the rewritten `
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/shared/types.ts src/extension/definition/pylanceDefinitions.ts src/extension/definition/goToDefinition.ts src/extension/editor-provider.ts
+git add src/shared/types.ts src/extension/definition/pylanceLocations.ts src/extension/definition/goToDefinition.ts src/extension/editor-provider.ts
 git commit -m "feat(definition): host asks Pylance, then the idle kernel; opens files and the quick pick"
 ```
 
@@ -2362,15 +2002,17 @@ git commit -m "feat(definition): host asks Pylance, then the idle kernel; opens 
 - Modify: `src/webview/styles/canvas.css` (append after the last line, 381)
 
 Checked at `771c94b`:
-- Keys: `installJumpLabels` (`editorJumpLabels.ts:144`) reads keys at capture on the editor's container, before Monaco and monaco-vim; a module-level window listener at capture (`:31-34`) ends a held leader before later window listeners take the key; the leader counts only in vim normal mode with nothing typed (`idleNormal`, `:47-49`). CodeNode calls it in `onEditorMount` (`CodeNode.tsx:369`); TextNode and ChatInput call it too and are not changed, so leader `g` keeps its meaning there.
+- Keys: `installJumpLabels` (`editorJumpLabels.ts:144`) reads keys at capture on the editor's container, before Monaco and monaco-vim; a module-level window listener at capture (`:31-34`) ends a held leader before later window listeners take the key; the leader counts only in vim normal mode with nothing typed (`idleNormal`, `:47-49`). CodeNode calls it in `onEditorMount` (`CodeNode.tsx:369`); TextNode and ChatInput call it too and are not changed, so leader `g` and leader `z` keep their meaning there.
 - The jump's cursor move (`jump`, `:219-228`) also resets vim's remembered column (`lastHPos`) and last motion, so a `j` after it starts from the new column; it becomes `moveVimCursor`, used for the definition's cursor too.
 - Opening a cell's editor: `skena:enterEdit` with the cell id (`CodeNode.tsx:470-477`; sent by Enter, `i` and new cells, `CanvasView.tsx:3116`, `:3911`). The editor restores the saved view state and the preview's scroll offset in `onEditorMount` (`:370-377`), then takes focus. A new monaco-vim editor starts in normal mode.
 - Selecting a node as `h/j/k/l` do: `focusNodeById` (`CanvasView.tsx:1839-1845`): the `` ` `` register (`recordPreviousPosition`), `lastFocusedNodeId`, selection, `skena:focusNode`, and the smallest pan (`revealNode`). A node in a folded section is hidden and not rendered (`hiddenByFold`, `:915-922`); `goToSection` unfolds through `foldLaneRef.current(id)` (`:1937`), and a new cell gets `skena:enterEdit` 80 ms after it is added so that it has mounted (`:3907-3912`).
 - No React Flow `onlyRenderVisibleElements`: every node that is not hidden is mounted.
 
-The note: `no definition found for <name>` (the dotted name, else the word), or `no name under the cursor` when the cursor is on no name (then nothing is asked). It sits over the editor's bottom right, above the vim status line, positioned absolutely so the cell keeps its size, and goes away on the next key in the cell and when the editor closes.
+The note: `no definition found for <name>` (the dotted name, else the word). With no name under the cursor (a blank, an operator, a number) nothing is asked and nothing is shown (user). The note sits over the editor's bottom right, above the vim status line, positioned absolutely so the cell keeps its size, and goes away on the next key in the cell and when the editor closes.
 
-An answer is dropped when a key was pressed in the cell after the request, or the cell lost focus: otherwise keys typed while waiting (`dd`, say) would land in the other cell's editor once it opened. The key listener sits on the editor's container at capture, added before the jump labels' listener there: listeners on one element run in the order they were added, and `stopPropagation` does not stop the others, so it sees every key, a leader the jump labels stop included, and it runs before leader `g` can show a note. A key counts only if its `timeStamp` is after the request was made.
+An answer is dropped when a key was pressed in the cell after the request, or the cell lost focus: otherwise keys typed while waiting (`dd`, say) would land in the other cell's editor once it opened. The key listener sits on the editor's container at capture, added before the jump labels' listener there: listeners on one element run in the order they were added, and `stopPropagation` does not stop the others, so it sees every key, a leader the jump labels stop included. A key counts only if its `timeStamp` is after the request was made, so the `g` that asks clears the previous note and drops the previous lookup, not its own.
+
+Leader `z` is read in code cells from this task on (`onLookup`) and does nothing until Task 14.
 
 - [ ] **Step 1: The cursor move, shared**
 
@@ -2443,9 +2085,10 @@ Create `src/webview/canvas/nodes/cellDefinition.ts`:
 /**
  * Go to definition in a code cell (leader g), the webview's half. The dotted name under the cursor goes
  * to the host (goToDefinition); its answer (definitionResult) selects a cell here (skena:goToCell,
- * CanvasView), or goes back to the host to open a file or show a quick pick (showDefinitions). An
- * answer that arrives after another key in the cell or after the cell lost focus is dropped: the user
- * has moved on, and keys typed meanwhile must not land in another cell.
+ * CanvasView), or goes back to the host to open a file or show a quick pick (showDefinitions). With no
+ * name under the cursor nothing is asked and nothing shown (user). An answer that arrives after
+ * another key in the cell or after the cell lost focus is dropped: the user has moved on, and keys
+ * typed meanwhile must not land in another cell.
  */
 import type { editor as MonacoEditor } from 'monaco-editor';
 import { dottedNameAt } from '../../../shared/goToDefinition';
@@ -2487,14 +2130,14 @@ export function requestDefinition(editor: MonacoEditor.IStandaloneCodeEditor, ce
   const model = editor.getModel();
   if (!pos || !model) return;
   const at = dottedNameAt(model.getLineContent(pos.lineNumber), pos.column);
-  if (!at) { note('no name under the cursor'); return; }
+  if (!at) return;
   const reqId = `def-${++counter}`;
   pending.set(cellId, { reqId, name: at.dotted ?? at.word, since: performance.now(), stale: false, note });
   vscodePostMessage({ type: 'goToDefinition', reqId, cellNodeId: cellId, code: model.getValue(), line: pos.lineNumber, col: pos.column, name: at.dotted });
 }
 
 /** - a key in the cell, or the cell losing focus, at `when` (an event's timeStamp): a lookup asked before it is dropped */
-export function dropDefinition(cellId: string, when: number): void {
+export function dropLookup(cellId: string, when: number): void {
   const p = pending.get(cellId);
   if (p && when > p.since) p.stale = true;
 }
@@ -2512,7 +2155,7 @@ replace with:
 
 ```tsx
 import { installJumpLabels, moveVimCursor } from '../editorJumpLabels';
-import { dropDefinition, requestDefinition } from './cellDefinition';
+import { dropLookup, requestDefinition } from './cellDefinition';
 ```
 
 In `src/webview/canvas/nodes/CodeNode.tsx` (line 279), find:
@@ -2565,13 +2208,13 @@ replace with:
 
 ```tsx
     // - any key clears the note and drops a lookup still running. Added before the jump labels' listener
-    //   on the same container at capture, so it runs first: a leader they stop still counts, and the
-    //   note leader g shows at once (no name under the cursor) is not cleared by that same key
+    //   on the same container at capture, so it runs first and sees a leader they stop
     const container = editorInstance.getContainerDomNode();
-    const onAnyKey = (e: KeyboardEvent) => { setNote(null); dropDefinition(id, e.timeStamp); };
+    const onAnyKey = (e: KeyboardEvent) => { setNote(null); dropLookup(id, e.timeStamp); };
     container.addEventListener('keydown', onAnyKey, { capture: true });
     editorInstance.onDidDispose(() => container.removeEventListener('keydown', onAnyKey, { capture: true }));
-    installJumpLabels(editorInstance, vimMode, { onDefinition: () => requestDefinition(editorInstance, id, setNote) });
+    // - leader z (find references) does nothing yet
+    installJumpLabels(editorInstance, vimMode, { onLookup: what => { if (what === 'definition') requestDefinition(editorInstance, id, setNote); } });
     if (savedViewState.current) editorInstance.restoreViewState(savedViewState.current);
     // - the preview is still on screen over the editor; start at its scroll offset (it shares the
     // - editor's font and line height, so the offsets map 1:1) so nothing moves when it goes
@@ -2618,7 +2261,7 @@ replace with:
 
 ```tsx
     editorInstance.onDidBlurEditorText(() => {
-      dropDefinition(id, performance.now());
+      dropLookup(id, performance.now());
       setTimeout(() => {
 ```
 
@@ -2777,11 +2420,1106 @@ git commit -m "feat(definition): leader g in code cells, the note, landing in a 
 
 ---
 
-### Task 12: Manual checks (the user runs these)
+### Task 12: Find references, the pure part: places, the peek's models and order, the taller cell
+
+**Files:**
+- Create: `src/shared/findReferences.ts`
+- Create: `tests/fixtures/monaco-references-model.js`
+- Test: `tests/find-references.mjs`
+
+The spec: leader `z` lists every reference of the name from Pylance over the same joined file (`vscode.executeReferenceProvider`), mapped back to cells and files, in Monaco's reference peek, grouped by cell or file.
+
+`referencesFromLocations` maps Pylance's locations as `targetsFromLocations` does for definitions, with two differences: every reference is kept (there is no "the one before the cursor"), and a reference keeps its end, which the peek highlights. A reference in another file of the joined files' folder is dropped: Pylance searches the documents open in the window, and older joined texts of this or another canvas stay open for a while after `openTextDocument` (there is no API to close one), so a name imported from the workspace (`sharpe`) would otherwise come back once per older joined file.
+
+What the peek is given (`peekPlan`). Monaco's peek groups references by model URI and sorts the groups by the URI string (`referencesModel.js:120`, `:237`); a group shows the last part of the URI's path and the rest of the path as its description (`referencesTree.js:113`); the peek starts on the reference whose URI shares the longest prefix with the editor's model URI, then the nearest by line and column (`referencesModel.js:189-216`). So:
+- the asking cell's references stay on its editor's own model, whose URI is `canvas-cell://0/<label>` (Task 14 gives the editor that URI): its group comes first and the peek starts on the reference under the cursor;
+- every other cell gets a copy model at `canvas-cell://1<run order, 5 digits>/<label>`: after the asking cell, in run order;
+- a file keeps its `file://` URI: `canvas-cell` sorts before `file`, so files come last, by path.
+
+Each group then reads `E12  /` for a cell (the description is the path's directory, `/`) and `metrics.py  /home/…/backtest` for a file (the standalone label service shows a `file` URI's full path, `standaloneServices.js:584-594`).
+
+`openedTarget` turns a reference Monaco opens (its model URI and position) back into a cell or file target, which Task 14 hands to the same code as a definition.
+
+`peekBoxHeight`: Monaco draws the peek inside the editor, after the cursor's line, clipped by the editor's own box (an overlay widget without `allowEditorOverflow`, `overlayWidgets.js:57`, `:73`; `view.js:177`). It asks for 18 lines (`referencesWidget.js:147`, `:259`) and gets `min(18, max(12, 0.8 × the editor's height in lines))` (`zoneWidget.js:248-249`, `:264`). So the editor needs `ceil(18 / 0.8) = 23` lines for the whole peek, and at least the peek, the cursor's line and the next (20). A cell whose editor is shorter is drawn taller by the difference; a taller one keeps its size.
+
+The grouping test runs Monaco's own `ReferencesModel`, bundled for node from `node_modules/monaco-editor` (FACT: it bundles to 192 KB and runs in node 20 without a DOM; with a copy URI that leaves out the run order, test 2 fails).
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `tests/fixtures/monaco-references-model.js`:
+
+```js
+// - Monaco's own grouping of references, for tests/find-references.mjs: the peek lists them as this model groups and sorts them
+export { ReferencesModel } from 'monaco-editor/esm/vs/editor/contrib/gotoSymbol/browser/referencesModel.js';
+export { URI } from 'monaco-editor/esm/vs/base/common/uri.js';
+```
+
+Create `tests/find-references.mjs`:
+
+```js
+// - run: npx esbuild src/shared/findReferences.ts --bundle --format=esm --outfile=tests/.build/findReferences.mjs && npx esbuild tests/fixtures/monaco-references-model.js --bundle --format=esm --platform=node --outfile=tests/.build/monacoReferencesModel.mjs && node --test tests/find-references.mjs
+import { strict as assert } from 'node:assert';
+import { test } from 'node:test';
+import { openedTarget, peekBoxHeight, peekCellUri, peekPlan, referencesFromLocations } from './.build/findReferences.mjs';
+import { ReferencesModel, URI } from './.build/monacoReferencesModel.mjs';
+
+// - the joined text of three cells (header line 0): A on lines 1-2, B on 4-5, C on 7
+const J = { text: '', spans: [{ id: 'A', first: 1, lines: 2 }, { id: 'B', first: 4, lines: 2 }, { id: 'C', first: 7, lines: 1 }] };
+const DOC = 'file:///run/user/1000/skena/definition/def-abc-111111111111.py';
+const DIR = 'file:///run/user/1000/skena/definition/';
+const ref = (line, character, length = 4, uri = DOC) => ({ uri, line, character, endLine: line, endCharacter: character + length });
+
+test('1. references: in the joined document to their cell with the range; between cells, another joined file and repeats dropped; files kept', () => {
+  const lib = 'file:///home/u/proj/src/m.py';
+  const old = 'file:///run/user/1000/skena/definition/def-abc-222222222222.py';
+  assert.deepEqual(referencesFromLocations([ref(2, 4), ref(5, 0), ref(3, 0), ref(0, 2), ref(9, 4, 4, old), ref(11, 4, 6, lib), ref(5, 0)], DOC, DIR, J), [
+    { kind: 'cell', cellId: 'A', line: 2, col: 5, endLine: 2, endCol: 9 },
+    { kind: 'cell', cellId: 'B', line: 2, col: 1, endLine: 2, endCol: 5 },
+    { kind: 'file', uri: lib, line: 12, col: 5, endLine: 12, endCol: 11 },
+  ]);
+});
+
+// - E7 asks (its editor's model is EDITOR); E9 runs 3rd and E10 12th, the other way round from their labels' order; two files
+const EDITOR = 'canvas-cell://0/E7';
+const ANSWER = {
+  targets: [
+    { kind: 'file', uri: 'file:///home/u/proj/src/b.py', line: 3, col: 1, endLine: 3, endCol: 4 },
+    { kind: 'cell', cellId: 'c9', line: 1, col: 1, endLine: 1, endCol: 4 },
+    { kind: 'cell', cellId: 'c7', line: 2, col: 5, endLine: 2, endCol: 8 },
+    { kind: 'cell', cellId: 'c10', line: 5, col: 1, endLine: 5, endCol: 4 },
+    { kind: 'file', uri: 'file:///home/u/proj/src/a.py', line: 9, col: 1, endLine: 9, endCol: 4 },
+    { kind: 'cell', cellId: 'c7', line: 1, col: 1, endLine: 1, endCol: 4 },
+  ],
+  cells: [
+    { id: 'c7', label: 'E7', order: 7, code: 'abc = 1\nx = abc' },
+    { id: 'c9', label: 'E9', order: 3, code: 'abc' },
+    { id: 'c10', label: 'E10', order: 12, code: '\n\n\n\nabc' },
+  ],
+  files: [{ uri: 'file:///home/u/proj/src/a.py', text: 'a' }, { uri: 'file:///home/u/proj/src/b.py', text: 'b' }],
+};
+
+test('2. the peek lists the asking cell first, the other cells in run order, then the files, and starts on the reference under the cursor', () => {
+  const plan = peekPlan(ANSWER, 'c7', EDITOR);
+  assert.deepEqual(plan.models.map(m => m.uri), [peekCellUri(3, 'E9'), peekCellUri(12, 'E10'), 'file:///home/u/proj/src/a.py', 'file:///home/u/proj/src/b.py']);
+  assert.deepEqual(plan.models.map(m => m.language), ['python', 'python', undefined, undefined]);
+  const model = new ReferencesModel(plan.locations.map(l => ({ uri: URI.parse(l.uri), range: l.range })), 'References');
+  assert.deepEqual(model.groups.map(g => [URI.parse(g.uri.toString()).path.split('/').pop(), g.children.length]), [['E7', 2], ['E9', 1], ['E10', 1], ['a.py', 1], ['b.py', 1]]);
+  const start = model.nearestReference(URI.parse(EDITOR), { lineNumber: 2, column: 6 });
+  assert.equal(start.uri.toString(), EDITOR);
+  assert.equal(start.range.startLineNumber, 2);
+});
+
+test('3. a reference opened in the peek goes to its cell (the asking one included) or its file', () => {
+  const plan = peekPlan(ANSWER, 'c7', EDITOR);
+  assert.deepEqual(openedTarget(plan, EDITOR, 2, 5), { kind: 'cell', cellId: 'c7', line: 2, col: 5 });
+  assert.deepEqual(openedTarget(plan, peekCellUri(12, 'E10'), 5, 1), { kind: 'cell', cellId: 'c10', line: 5, col: 1 });
+  assert.deepEqual(openedTarget(plan, 'file:///home/u/proj/src/a.py', 9, 1), { kind: 'file', uri: 'file:///home/u/proj/src/a.py', line: 9, col: 1 });
+  assert.equal(openedTarget(plan, 'canvas-cell://0/E8', 1, 1), null);
+});
+
+test('4. a file whose text did not come is listed and opened, with no model', () => {
+  const plan = peekPlan({ ...ANSWER, files: [] }, 'c7', EDITOR);
+  assert.equal(plan.models.length, 2);
+  assert.equal(plan.locations.filter(l => l.uri.startsWith('file:')).length, 2);
+  assert.deepEqual(openedTarget(plan, 'file:///home/u/proj/src/b.py', 3, 1), { kind: 'file', uri: 'file:///home/u/proj/src/b.py', line: 3, col: 1 });
+});
+
+test('5. a cell shorter than the peek needs is drawn taller by the difference; a tall one keeps its size', () => {
+  // - 18 lines: the editor needs 23 lines of 19 px = 437 px
+  assert.equal(peekBoxHeight(160, 114, 19), 160 + 437 - 114);
+  assert.equal(peekBoxHeight(600, 437, 19), null);
+  assert.equal(peekBoxHeight(600, 500, 19), null);
+  // - a peek of 10 lines: 13 lines (ceil(10 / 0.8)) beat 12 (the peek, the cursor's line and the next)
+  assert.equal(peekBoxHeight(100, 60, 20, 10), 100 + 260 - 60);
+});
+```
+
+- [ ] **Step 2: Run them to see them fail**
+
+Run: `npx esbuild src/shared/findReferences.ts --bundle --format=esm --outfile=tests/.build/findReferences.mjs && npx esbuild tests/fixtures/monaco-references-model.js --bundle --format=esm --platform=node --outfile=tests/.build/monacoReferencesModel.mjs && node --test tests/find-references.mjs`
+
+Expected: esbuild stops with `✘ [ERROR] Could not resolve "src/shared/findReferences.ts"`.
+
+- [ ] **Step 3: Write the module**
+
+Create `src/shared/findReferences.ts`:
+
+```ts
+/**
+ * Find references from a code cell (leader z), the pure part: Pylance's references on the joined cells
+ * as places in cells and files, what Monaco's reference peek is given for them (a model per cell and
+ * file, a location per reference, whose URIs put the asking cell first, the other cells in run order,
+ * then the files), the place a reference opened in the peek goes to, and how tall the cell is drawn
+ * while the peek is open. Bundled into the host and the webview; no vscode or monaco import.
+ */
+import { fromJoined, type DefinitionTarget, type JoinedCells } from './goToDefinition';
+
+/** - one reference from vscode.executeReferenceProvider: its document's URI string, 0-based start and end */
+export interface RefLocation { uri: string; line: number; character: number; endLine: number; endCharacter: number }
+
+/** - a reference: a cell's or a file's 1-based range, the end column exclusive (as Monaco's ranges) */
+export type ReferenceTarget =
+  | { kind: 'cell'; cellId: string; line: number; col: number; endLine: number; endCol: number }
+  | { kind: 'file'; uri: string; line: number; col: number; endLine: number; endCol: number };
+
+/**
+ * Pylance's references as places. One in the joined document (`joinedUri`) goes to its cell; it is
+ * dropped on a line between cells and when it ends outside the cell it starts in. One in another file
+ * of the joined files' folder (`joinedDir`, a URI string ending in /: an older text of some canvas,
+ * still open in the window) is dropped. Any other goes to its file. Repeats are dropped.
+ */
+export function referencesFromLocations(locs: readonly RefLocation[], joinedUri: string, joinedDir: string, j: JoinedCells): ReferenceTarget[] {
+  const out: ReferenceTarget[] = [];
+  const seen = new Set<string>();
+  const add = (t: ReferenceTarget, key: string) => {
+    if (!seen.has(key)) { seen.add(key); out.push(t); }
+  };
+  for (const l of locs) {
+    if (l.uri === joinedUri) {
+      const a = fromJoined(j, { line: l.line, character: l.character });
+      const b = fromJoined(j, { line: l.endLine, character: l.endCharacter });
+      if (!a || !b || a.cellId !== b.cellId) continue;
+      add({ kind: 'cell', cellId: a.cellId, line: a.line, col: a.col, endLine: b.line, endCol: b.col }, `c ${a.cellId} ${a.line} ${a.col}`);
+      continue;
+    }
+    if (l.uri.startsWith(joinedDir)) continue;
+    add({ kind: 'file', uri: l.uri, line: l.line + 1, col: l.character + 1, endLine: l.endLine + 1, endCol: l.endCharacter + 1 }, `f ${l.uri} ${l.line} ${l.character}`);
+  }
+  return out;
+}
+
+/** - a cell that holds references: its label, its place in run order (0-based), its code as Pylance read it */
+export interface PeekCell { id: string; label: string; order: number; code: string }
+/** - a file that holds references, with its text */
+export interface PeekFile { uri: string; text: string }
+/** - the host's answer to a find references request */
+export interface ReferencesAnswer { targets: ReferenceTarget[]; cells: PeekCell[]; files: PeekFile[] }
+
+/** - the scheme of the code cells' model URIs */
+export const CELL_SCHEME = 'canvas-cell';
+
+/**
+ * - the model URI of the open code cell's editor (CodeNode). Monaco's peek groups references by URI
+ *   and sorts the groups by it (referencesModel.js), so authority 0 puts the cell's own group first;
+ *   the scheme sorts before file:, so cells come before files. The group shows the path's last part.
+ */
+export function openCellUri(label: string): string {
+  return `${CELL_SCHEME}://0/${encodeURIComponent(label)}`;
+}
+
+/** - the model URI of a copy of another cell for the peek: authority 1 and the run order, so after the open cell and in run order */
+export function peekCellUri(order: number, label: string): string {
+  return `${CELL_SCHEME}://1${String(order).padStart(5, '0')}/${encodeURIComponent(label)}`;
+}
+
+/** - a 1-based range, end column exclusive (Monaco's IRange) */
+export interface PeekRange { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number }
+
+/** - what Monaco's peek is given, and what each of its model URIs stands for */
+export interface PeekPlan {
+  /** - the models to create before the peek opens: a copy of each other cell, and each file */
+  models:    { uri: string; text: string; language?: string }[];
+  /** - every reference as Monaco takes it: a model URI and a range */
+  locations: { uri: string; range: PeekRange }[];
+  /** - model URI -> the cell or file it stands for */
+  owners:    Record<string, { kind: 'cell'; cellId: string } | { kind: 'file'; uri: string }>;
+}
+
+/**
+ * The peek for `answer`, asked in `cellId`, whose editor's model is `editorUri`: its references stay
+ * on that model (the peek then starts on the reference under the cursor, referencesModel.js
+ * nearestReference); every other cell gets a copy at peekCellUri; a file keeps its own URI, and its
+ * text is its model (a file whose text did not come gets none: the peek shows no preview for it).
+ */
+export function peekPlan(answer: ReferencesAnswer, cellId: string, editorUri: string): PeekPlan {
+  const plan: PeekPlan = { models: [], locations: [], owners: { [editorUri]: { kind: 'cell', cellId } } };
+  const cellUri = new Map<string, string>([[cellId, editorUri]]);
+  for (const c of answer.cells) {
+    if (c.id === cellId) continue;
+    const uri = peekCellUri(c.order, c.label);
+    cellUri.set(c.id, uri);
+    plan.models.push({ uri, text: c.code, language: 'python' });
+    plan.owners[uri] = { kind: 'cell', cellId: c.id };
+  }
+  for (const f of answer.files) plan.models.push({ uri: f.uri, text: f.text });
+  for (const t of answer.targets) {
+    const uri = t.kind === 'file' ? t.uri : cellUri.get(t.cellId);
+    if (uri === undefined) continue;
+    if (t.kind === 'file') plan.owners[uri] = { kind: 'file', uri };
+    plan.locations.push({ uri, range: { startLineNumber: t.line, startColumn: t.col, endLineNumber: t.endLine, endColumn: t.endCol } });
+  }
+  return plan;
+}
+
+/** - where a reference opened in the peek (a model URI and a 1-based position) goes; null for a URI the peek did not get from here */
+export function openedTarget(plan: PeekPlan, uri: string, line: number, col: number): DefinitionTarget | null {
+  const owner = plan.owners[uri];
+  if (!owner) return null;
+  return owner.kind === 'cell' ? { kind: 'cell', cellId: owner.cellId, line, col } : { kind: 'file', uri: owner.uri, line, col };
+}
+
+/** - the lines Monaco's reference peek asks for (referencesWidget.js LayoutData) */
+export const PEEK_LINES = 18;
+
+/**
+ * How tall to draw a code cell while its reference peek is open, in canvas px; null when it is tall
+ * enough. Monaco draws the peek inside the editor, after the cursor's line, and gives it
+ * min(lines, max(12, 0.8 x the editor's height in lines)) (zoneWidget.js _getMaximumHeightInLines).
+ * So the editor needs ceil(lines / 0.8) lines for the whole peek, and at least the peek, the cursor's
+ * line and the next. `box` is the cell's height, `editor` the editor's.
+ */
+export function peekBoxHeight(box: number, editor: number, lineHeight: number, lines = PEEK_LINES): number | null {
+  const need = lineHeight * Math.max(lines + 2, Math.ceil(lines / 0.8));
+  return editor >= need ? null : box + need - editor;
+}
+```
+
+- [ ] **Step 4: Run the tests**
+
+Run: `npx esbuild src/shared/findReferences.ts --bundle --format=esm --outfile=tests/.build/findReferences.mjs && npx esbuild tests/fixtures/monaco-references-model.js --bundle --format=esm --platform=node --outfile=tests/.build/monacoReferencesModel.mjs && node --test tests/find-references.mjs`
+Expected: `# tests 5`, `# pass 5`, `# fail 0`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/shared/findReferences.ts tests/fixtures/monaco-references-model.js tests/find-references.mjs
+git commit -m "feat(references): references as places, the peek's models and order, the taller cell"
+```
+
+---
+
+### Task 13: Find references, the host: Pylance's references with the text of each cell and file
+
+**Files:**
+- Modify: `src/shared/types.ts` (after Task 10's lines)
+- Create: `src/extension/definition/findReferences.ts`
+- Modify: `src/extension/editor-provider.ts` (after Task 10's cases)
+
+Messages:
+- `findReferences` (webview → host): `reqId`, the cell, its live code, the cursor's 1-based line and column.
+- `referencesResult` (host → webview): the references, and for the peek's preview the code of each cell they are in (with its label and place in run order) and the text of each file. A file's text is the open document's when it is open (it may be unsaved), else read from disk; `openTextDocument` is not used for the others, because a document opened that way is open for Pylance, which then lists its problems.
+
+`findReferences` uses the same joined file as go to definition (`writeJoinedFile`, same text, same file) and `pylanceLocations` with `vscode.executeReferenceProvider`. Pylance only: the kernel is not asked (spec). VS Code asks providers with `includeDeclaration: true` (FACT for Monaco's copy of the same command, `goToSymbol.js:58`, `:107`; INFERENCE that VS Code 1.141 does the same), so the definitions are in the list.
+
+- [ ] **Step 1: The messages**
+
+In `src/shared/types.ts`, find:
+
+```ts
+import type { DefinitionTarget } from './goToDefinition';
+```
+
+replace with:
+
+```ts
+import type { DefinitionTarget } from './goToDefinition';
+import type { ReferencesAnswer } from './findReferences';
+```
+
+In `src/shared/types.ts`, find:
+
+```ts
+export interface MsgShowDefinitions { type: 'showDefinitions'; targets: DefinitionTarget[]; }
+```
+
+replace with:
+
+```ts
+export interface MsgShowDefinitions { type: 'showDefinitions'; targets: DefinitionTarget[]; }
+// - leader z in a code cell: every reference of the name at line/col (1-based) of the live `code`
+export interface MsgFindReferences { type: 'findReferences'; reqId: string; cellNodeId: string; code: string; line: number; col: number; }
+```
+
+In `src/shared/types.ts`, find:
+
+```ts
+  | MsgDefinitionResult
+  | MsgDefinitionGoto
+```
+
+replace with:
+
+```ts
+  | MsgDefinitionResult
+  | MsgDefinitionGoto
+  | MsgReferencesResult
+```
+
+In `src/shared/types.ts`, find:
+
+```ts
+export interface MsgDefinitionGoto { type: 'definitionGoto'; cellNodeId: string; line: number; col: number; }
+```
+
+replace with:
+
+```ts
+export interface MsgDefinitionGoto { type: 'definitionGoto'; cellNodeId: string; line: number; col: number; }
+// - host → webview: the references of a findReferences request, with the text of each cell and file they are in; no targets when none
+export interface MsgReferencesResult extends ReferencesAnswer { type: 'referencesResult'; reqId: string; cellNodeId: string; }
+```
+
+In `src/shared/types.ts`, find:
+
+```ts
+  | MsgGoToDefinition
+  | MsgShowDefinitions
+```
+
+replace with:
+
+```ts
+  | MsgGoToDefinition
+  | MsgShowDefinitions
+  | MsgFindReferences
+```
+
+- [ ] **Step 2: The host's half**
+
+Create `src/extension/definition/findReferences.ts`:
+
+```ts
+/**
+ * Find references from a code cell, the host's half: Pylance's references at the cursor's place in the
+ * canvas's code cells joined in run order (the same joined file as go to definition), as places in
+ * cells and files, with the text of each cell and file they are in for the webview's peek. Pylance
+ * only; the kernel is not asked.
+ */
+import * as path from 'path';
+import * as vscode from 'vscode';
+import type { CanvasData, MsgFindReferences } from '../../shared/types';
+import { joinCells, toJoined } from '../../shared/goToDefinition';
+import { referencesFromLocations, type PeekFile, type ReferencesAnswer } from '../../shared/findReferences';
+import { JOINED_HEADER, canvasCells } from './goToDefinition';
+import { writeJoinedFile } from './joinedFile';
+import { pylanceLocations } from './pylanceLocations';
+
+// - the text Pylance read: an open document's (it may be edited and unsaved), else the file's on disk.
+//   openTextDocument is not used for the others: it would open them for Pylance, which then lists their
+//   problems
+async function documentText(uri: string): Promise<string | null> {
+  const open = vscode.workspace.textDocuments.find(d => d.uri.toString() === uri);
+  if (open) return open.getText();
+  try {
+    return new TextDecoder().decode(await vscode.workspace.fs.readFile(vscode.Uri.parse(uri)));
+  } catch {
+    return null;
+  }
+}
+
+/** - every reference of the name at the request's cursor; none when Pylance has none */
+export async function findReferences(msg: MsgFindReferences, canvas: CanvasData, canvasPath: string): Promise<ReferencesAnswer> {
+  const cells = canvasCells(canvas, msg.cellNodeId, msg.code);
+  const joined = joinCells(cells, JOINED_HEADER);
+  const cursor = toJoined(joined, msg.cellNodeId, msg.line, msg.col);
+  if (!cursor) return { targets: [], cells: [], files: [] };
+  const file = writeJoinedFile(canvasPath, joined.text);
+  const { uri, locs } = await pylanceLocations('vscode.executeReferenceProvider', file, cursor);
+  const targets = referencesFromLocations(locs, uri, `${vscode.Uri.file(path.dirname(file)).toString()}/`, joined);
+  const order = new Map(cells.map((c, i) => [c.id, i]));
+  const labelOf = (id: string) => canvas.nodes.find(n => n.id === id)?.nodeLabel ?? id;
+  const cellIds = [...new Set(targets.flatMap(t => (t.kind === 'cell' ? [t.cellId] : [])))];
+  const fileUris = [...new Set(targets.flatMap(t => (t.kind === 'file' ? [t.uri] : [])))];
+  const files = await Promise.all(fileUris.map(async u => ({ uri: u, text: await documentText(u) })));
+  return {
+    targets,
+    cells: cellIds.flatMap(id => {
+      const i = order.get(id);
+      return i === undefined ? [] : [{ id, label: labelOf(id), order: i, code: cells[i].code }];
+    }),
+    files: files.filter((f): f is PeekFile => f.text !== null),
+  };
+}
+```
+
+- [ ] **Step 3: The message case**
+
+In `src/extension/editor-provider.ts`, find:
+
+```ts
+import { findDefinitions, showDefinitions } from './definition/goToDefinition';
+```
+
+replace with:
+
+```ts
+import { findDefinitions, showDefinitions } from './definition/goToDefinition';
+import { findReferences } from './definition/findReferences';
+```
+
+In `src/extension/editor-provider.ts`, find:
+
+```ts
+        case 'showDefinitions': await showDefinitions(msg.targets, document.canvas, send); break;
+      }
+```
+
+replace with:
+
+```ts
+        case 'showDefinitions': await showDefinitions(msg.targets, document.canvas, send); break;
+        case 'findReferences': {
+          // - the answer always goes back, empty on a failure, so the cell can show its note
+          const answer = await findReferences(msg, document.canvas, document.uri.fsPath)
+            .catch(err => { console.warn('[skena] find references', err); return { targets: [], cells: [], files: [] }; });
+          send({ type: 'referencesResult', reqId: msg.reqId, cellNodeId: msg.cellNodeId, ...answer });
+          break;
+        }
+      }
+```
+
+- [ ] **Step 4: Typecheck**
+
+Run: `npx tsc --noEmit 2>&1 | grep "error TS" | grep -v "Property 'fsPath' does not exist on type 'ResolvedUri'"`
+Expected: nothing.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/shared/types.ts src/extension/definition/findReferences.ts src/extension/editor-provider.ts
+git commit -m "feat(references): host asks Pylance for references, with the text of each cell and file"
+```
+
+---
+
+### Task 14: Find references, the webview: Monaco's reference peek in the cell
+
+**Files:**
+- Modify: `src/webview/canvas/nodes/cellDefinition.ts`
+- Create: `src/webview/canvas/nodes/referencePeek.ts`
+- Modify: `src/webview/canvas/nodes/NodeBorder.tsx:1-31`
+- Modify: `src/webview/canvas/nodes/CodeNode.tsx` (after Task 11's changes)
+- Modify: `src/webview/App.tsx` (after Task 11's case)
+- Modify: `src/webview/styles/canvas.css` (append after the last line)
+
+The peek is Monaco's own, already in the bundle: `index.tsx:20` imports `python.contribution.js`, which imports `basic-languages/_.contribution.js`, which imports `goToCommands.js` (`:25`, the Peek References action) and `standaloneReferenceSearch.js` (`:71`, the references controller with the list's own keys on) (FACT: the built `dist/webview.js` at `b5d38ab` holds `editor.action.referenceSearch.trigger` and `editor.contrib.referencesController`). The Monaco facts each step relies on are listed with file and line under "Monaco API the peek relies on".
+
+How the webview drives it (`referencePeek.ts`):
+- **Its data.** For the time the peek is open: a model per other cell and per file (`monaco.editor.createModel`; the peek reads them through the standalone text model service, which only finds existing models, `standaloneServices.js:125-129`), and a reference provider for the python models of the `canvas-cell` scheme that returns the answer for this editor's model (`monaco.languages.registerReferenceProvider`). The provider exists only while the peek is open: whenever one exists, Monaco offers Go to References and Peek in the editor's context menu (the actions' precondition `hasReferenceProvider`, `goToCommands.js:577`), and the context key follows the registration at once (`codeEditorWidget.js:1676`, `:1726`). Then `editor.trigger('skena', 'editor.action.referenceSearch.trigger', null)`: `trigger` hands a command that is not an editor action to the command service (`codeEditorWidget.js:763-818`), and the action runs on the focused editor (`editorExtensions.js:274-293`), the cell's, which has the focus since leader `z`. With `openInPeek` it always opens the peek (`goToCommands.js:139`; `alternativeReferenceCommand` defaults to `''`, `editorOptions.js:796`, so a single reference under the cursor still shows the peek).
+- **The taller cell.** Before the trigger CodeNode draws the cell at `peekBoxHeight` (Task 12) with `flushSync` and calls `editor.layout()`: Monaco sizes the peek from the editor's height when it opens (`zoneWidget.js:248-264`). Only the inner `.skena-node` box and `NodeBorder` grow; React Flow's node wrapper keeps the canvas's size (it has a fixed `style.height`, `CanvasView.tsx:153-163`), so nothing is measured, saved or laid out again, and the edges keep their ends. `reportHeight` (the layout engine's code height) is skipped while the peek is open. The wrapper is raised over every other node by a CSS rule on `:has(> .skena-code-peek)` with `!important`, which beats React Flow's inline `z-index` (a selected node is at 1000, `@xyflow/system` `SELECTED_NODE_Z`; skena's edge labels at 1000, `canvas.css:33`); the cell's handles are hidden meanwhile. On close the cell goes back to `height: 100%`.
+- **Keys in the list.** monaco-vim reads keys through `editor.onKeyDown` (`monaco-vim/src/cm_adapter.ts:372`), which only the editor's own text input fires (`nativeEditContext.js:96-98`, `textAreaEditContext.js:211-212`); the jump labels and CodeNode's Esc read nothing either while the text has no focus (`editorJumpLabels.ts:248`). The list handles its own keys: arrows move the focus only, Enter selects (`listWidget.js:241-335`); a selection from the keyboard opens the reference in the preview only (`listService.js:465-474`, `referencesWidget.js:368-378`); Monaco has no `list.focusDown` command in 0.55.1 (grep finds none), so unlike VS Code the preview does not follow the arrows. A listener at capture on the editor's container, while the peek is open, maps `j`/`k` to an arrow then an Enter sent to the list (`KeyboardEvent` with `keyCode` set, which the list reads, `keyboardEvent.js:16`), so the preview follows, and a real Enter to Monaco's `openReference` command (`referencesController.js:374-380`: closes the peek, then opens the focused reference). Esc goes on to the peek, which closes on it (`referencesWidget.js:320-327` sends it to `closeReferenceSearch`, `referencesController.js:326-340`), and the editor gets the focus back (`closeWidget`, `:211-221`) in normal mode.
+- **Going to a reference.** Enter, a double-click in the list (`listService.js:489-503` → `goto` → `_gotoReference`, `referencesController.js:223-254`) and a double-click in the preview (`open`) all open the reference through the code editor service with the cell's editor as source. `monaco.editor.registerEditorOpener` (`standaloneEditor.js:382-401`; openers registered later are asked first, `abstractCodeEditorService.js:111-123`) takes the ones this peek gave: it closes the peek (also when Monaco has only hidden it, as a double-click does before it opens), puts the cell back to its size, and goes there as a definition does: a cell through `skena:goToCell` (Task 11: selected as `h/j/k/l` do, its editor opened at the line in normal mode, the `` ` `` register), a file through `showDefinitions` (Task 10: beside the canvas).
+- **The preview** is read-only: a copy of another cell or a file is saved nowhere.
+- **However it closes** (Esc, a reference opened, the cell leaving edit mode), a `MutationObserver` on the editor's `.overlayWidgets` (the peek is one of its children while open, `zoneWidget.js:291`, `overlayWidgets.js:73`) or the editor's disposal ends it: the models and the provider are disposed and the cell gets its size back.
+- **Focus.** The peek's list and preview are inside the editor's DOM, so focus going there is a text blur (`onDidBlurEditorText`) that must not leave edit mode, and focus leaving them later is a widget blur only (`onDidBlurEditorWidget`; widget focus is focus anywhere in the editor's DOM, `view.js:72`, `:686`). CodeNode leaves edit mode on either, when the focus is outside the editor's DOM. With the cursor back in the text and the peek still open, the first Esc closes the peek and the next one leaves the editor.
+
+- [ ] **Step 1: The request**
+
+In `src/webview/canvas/nodes/cellDefinition.ts`, find:
+
+```ts
+/**
+ * Go to definition in a code cell (leader g), the webview's half. The dotted name under the cursor goes
+ * to the host (goToDefinition); its answer (definitionResult) selects a cell here (skena:goToCell,
+ * CanvasView), or goes back to the host to open a file or show a quick pick (showDefinitions). With no
+ * name under the cursor nothing is asked and nothing shown (user). An answer that arrives after
+ * another key in the cell or after the cell lost focus is dropped: the user has moved on, and keys
+ * typed meanwhile must not land in another cell.
+ */
+import type { editor as MonacoEditor } from 'monaco-editor';
+import { dottedNameAt } from '../../../shared/goToDefinition';
+import type { MsgDefinitionResult } from '../../../shared/types';
+```
+
+replace with:
+
+```ts
+/**
+ * Go to definition (leader g) and find references (leader z) in a code cell, the webview's half. The
+ * name under the cursor goes to the host (goToDefinition, findReferences). A definition answer
+ * (definitionResult) selects a cell here (skena:goToCell, CanvasView), or goes back to the host to
+ * open a file or show a quick pick (showDefinitions); a references answer (referencesResult) opens
+ * the cell's reference peek (referencePeek.ts). No answer: a note in the cell. With no name under the
+ * cursor nothing is asked and nothing shown (user). An answer that arrives after another key in the
+ * cell or after the cell lost focus is dropped: the user has moved on, and keys typed meanwhile must
+ * not land in another cell.
+ */
+import type { editor as MonacoEditor } from 'monaco-editor';
+import { dottedNameAt } from '../../../shared/goToDefinition';
+import type { ReferencesAnswer } from '../../../shared/findReferences';
+import type { MsgDefinitionResult, MsgReferencesResult } from '../../../shared/types';
+```
+
+In `src/webview/canvas/nodes/cellDefinition.ts`, find:
+
+```ts
+// - one lookup per cell at a time; `since` is performance.now() when it was asked
+interface Pending { reqId: string; name: string; since: number; stale: boolean; note: (text: string) => void }
+```
+
+replace with:
+
+```ts
+// - one lookup per cell at a time; `since` is performance.now() when it was asked; `open` for references
+interface Pending { reqId: string; name: string; since: number; stale: boolean; note: (text: string) => void; open?: (answer: ReferencesAnswer) => void }
+```
+
+In `src/webview/canvas/nodes/cellDefinition.ts`, find:
+
+```ts
+    vscodePostMessage({ type: 'showDefinitions', targets: r.targets });
+  });
+}
+```
+
+replace with:
+
+```ts
+    vscodePostMessage({ type: 'showDefinitions', targets: r.targets });
+  });
+  window.addEventListener('skena:referencesResult', (e: Event) => {
+    const r = (e as CustomEvent<MsgReferencesResult>).detail;
+    const p = pending.get(r.cellNodeId);
+    if (!p || p.reqId !== r.reqId) return;
+    pending.delete(r.cellNodeId);
+    if (p.stale) return;
+    if (r.targets.length === 0) { p.note(`no references found for ${p.name}`); return; }
+    p.open?.(r);
+  });
+}
+```
+
+In `src/webview/canvas/nodes/cellDefinition.ts`, find:
+
+```ts
+/** - a key in the cell, or the cell losing focus, at `when` (an event's timeStamp): a lookup asked before it is dropped */
+```
+
+replace with:
+
+```ts
+/** - leader z in `cellId`'s editor: ask the host for every reference of the name under the cursor; `open` shows them */
+export function requestReferences(editor: MonacoEditor.IStandaloneCodeEditor, cellId: string, note: (text: string) => void, open: (answer: ReferencesAnswer) => void): void {
+  listen();
+  const pos = editor.getPosition();
+  const model = editor.getModel();
+  if (!pos || !model) return;
+  const at = dottedNameAt(model.getLineContent(pos.lineNumber), pos.column);
+  if (!at) return;
+  const reqId = `ref-${++counter}`;
+  pending.set(cellId, { reqId, name: at.dotted ?? at.word, since: performance.now(), stale: false, note, open });
+  vscodePostMessage({ type: 'findReferences', reqId, cellNodeId: cellId, code: model.getValue(), line: pos.lineNumber, col: pos.column });
+}
+
+/** - a key in the cell, or the cell losing focus, at `when` (an event's timeStamp): a lookup asked before it is dropped */
+```
+
+- [ ] **Step 2: The peek**
+
+Create `src/webview/canvas/nodes/referencePeek.ts`:
+
+```ts
+/**
+ * Find references in a code cell (leader z), shown as Monaco's own reference peek inside the cell's
+ * editor. The bundle already holds the peek: basic-languages/_.contribution.js (imported through
+ * python.contribution.js in index.tsx) imports goToCommands.js and standaloneReferenceSearch.js.
+ *
+ * The host's answer becomes, for the time the peek is open: a model per other cell and per file (the
+ * peek previews and lists them through the text model service, which only finds existing models), a
+ * reference provider for this editor's model that returns the answer, and the cell drawn taller
+ * (setHeight). Then editor.action.referenceSearch.trigger opens the peek. In its list j/k move and
+ * preview, Enter goes to the place, Esc closes it (Monaco's closeReferenceSearch). Going to a place
+ * passes through the editor opener below, which goes there as go to definition does. However the peek
+ * closes, finish() undoes the rest.
+ */
+import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
+import type { editor as MonacoEditor } from 'monaco-editor';
+import { openedTarget, peekPlan, type PeekPlan, type ReferencesAnswer } from '../../../shared/findReferences';
+import type { DefinitionTarget } from '../../../shared/goToDefinition';
+
+function vscodePostMessage(msg: unknown) {
+  (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
+}
+
+// - ReferencesController (referencesController.js): its id, and closeWidget, a public method of the class
+const CONTROLLER = 'editor.contrib.referencesController';
+type ReferencesController = MonacoEditor.IEditorContribution & { closeWidget(focusEditor?: boolean): void };
+// - the class of the peek's container (referencesWidget.js _fillBody) and of its list (div.ref-tree)
+const PEEK = '.reference-zone-widget';
+const LIST = `${PEEK} .ref-tree`;
+
+interface Peek {
+  plan:   PeekPlan;
+  finish: (restore: boolean) => void;
+}
+const peeks = new Map<MonacoEditor.ICodeEditor, Peek>();
+
+// - keys this module sends to the peek's list; its own key listener lets them through
+const sent = new WeakSet<Event>();
+
+// - a key as the list reads it: Monaco takes the key code from keyCode (keyboardEvent.js
+//   extractKeyCode), which a KeyboardEvent cannot be constructed with
+function press(target: EventTarget, key: 'ArrowDown' | 'ArrowUp' | 'Enter', keyCode: number): void {
+  const e = new KeyboardEvent('keydown', { key, code: key, bubbles: true, cancelable: true });
+  Object.defineProperty(e, 'keyCode', { get: () => keyCode });
+  sent.add(e);
+  target.dispatchEvent(e);
+}
+
+function goTo(t: DefinitionTarget): void {
+  if (t.kind === 'cell') window.dispatchEvent(new CustomEvent('skena:goToCell', { detail: { id: t.cellId, line: t.line, col: t.col } }));
+  else vscodePostMessage({ type: 'showDefinitions', targets: [t] });
+}
+
+let openerInstalled = false;
+
+// - Monaco opens a reference (Enter, a double-click) through the code editor service, with the editor
+//   the peek is in as source; openers registered later are asked first (abstractCodeEditorService.js)
+function installOpener(): void {
+  if (openerInstalled) return;
+  openerInstalled = true;
+  monaco.editor.registerEditorOpener({
+    openCodeEditor(source, resource, at) {
+      const peek = peeks.get(source);
+      if (!peek) return false;
+      const pos = at === undefined ? { lineNumber: 1, column: 1 } : 'startLineNumber' in at ? { lineNumber: at.startLineNumber, column: at.startColumn } : at;
+      const target = openedTarget(peek.plan, resource.toString(), pos.lineNumber, pos.column);
+      if (!target) return false;
+      peek.finish(true);
+      goTo(target);
+      return true;
+    },
+  });
+}
+
+/** - this editor's peek is open */
+export function referencePeekOpen(editor: MonacoEditor.ICodeEditor): boolean {
+  return peeks.has(editor);
+}
+
+/** - closes this editor's peek; false when none is open */
+export function closeReferencePeek(editor: MonacoEditor.ICodeEditor): boolean {
+  const peek = peeks.get(editor);
+  peek?.finish(true);
+  return peek !== undefined;
+}
+
+/**
+ * Opens Monaco's reference peek in `editor` (cell `cellId`) on the host's answer. `height` is the cell's
+ * height while it is open (null: its own), and `setHeight` draws the cell at a height and returns once
+ * the editor has the new size: Monaco sizes the peek from the editor's height when it opens.
+ */
+export function openReferencePeek(
+  editor: MonacoEditor.IStandaloneCodeEditor,
+  cellId: string,
+  answer: ReferencesAnswer,
+  height: number | null,
+  setHeight: (px: number | null) => void,
+): void {
+  installOpener();
+  closeReferencePeek(editor);
+  const model = editor.getModel();
+  const dom = editor.getDomNode();
+  if (!model || !dom) return;
+  const raw = peekPlan(answer, cellId, model.uri.toString());
+  // - the URIs as Monaco writes them, so the opener finds the ones it is handed
+  const norm = (u: string) => monaco.Uri.parse(u).toString();
+  const plan: PeekPlan = {
+    ...raw,
+    owners: Object.fromEntries(Object.entries(raw.owners).map(([u, o]) => [norm(u), o])),
+  };
+  const models = plan.models.map(m => {
+    const uri = monaco.Uri.parse(m.uri);
+    monaco.editor.getModel(uri)?.dispose();
+    return monaco.editor.createModel(m.text, m.language, uri);
+  });
+  const locations = plan.locations.map(l => ({ uri: monaco.Uri.parse(l.uri), range: l.range }));
+  const own = model.uri.toString();
+  // - only while the peek is open: whenever a provider exists Monaco offers Go to References and Peek in
+  //   the editor's context menu (goToCommands.js)
+  const provider = monaco.languages.registerReferenceProvider({ language: 'python', scheme: model.uri.scheme }, {
+    provideReferences: m => (m.uri.toString() === own ? locations : []),
+  });
+
+  const container = editor.getContainerDomNode();
+  // - in the peek's list: j/k move (an arrow, then Enter, which selects and so previews, as VS Code's
+  //   list keys do with selectionNavigation) and Enter goes to the place. Esc goes on to the peek, which
+  //   closes on it (referencesWidget.js, closeReferenceSearch). At capture on the editor's container, so
+  //   the list never sees j, k or Enter.
+  const onKey = (e: KeyboardEvent) => {
+    if (sent.has(e) || e.ctrlKey || e.metaKey || e.altKey || !(e.target instanceof Element) || !e.target.closest(LIST)) return;
+    if (e.key === 'j' || e.key === 'k') {
+      e.preventDefault();
+      e.stopPropagation();
+      press(e.target, e.key === 'j' ? 'ArrowDown' : 'ArrowUp', e.key === 'j' ? 40 : 38);
+      press(e.target, 'Enter', 13);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      // - referencesController.js openReference: closes the peek, then opens the focused reference
+      editor.trigger('skena', 'openReference', null);
+    }
+  };
+  container.addEventListener('keydown', onKey, { capture: true });
+
+  const isOpen = () => dom.querySelector(PEEK) !== null;
+  let seen = false;
+  let done = false;
+  const finish = (restore: boolean) => {
+    if (done) return;
+    done = true;
+    peeks.delete(editor);
+    observer.disconnect();
+    disposed.dispose();
+    container.removeEventListener('keydown', onKey, { capture: true });
+    if (restore) {
+      // - also when the peek is only hidden: a double-click hides it before it opens the reference, and
+      //   shows it again afterwards if it is still there (referencesController.js _gotoReference)
+      editor.getContribution<ReferencesController>(CONTROLLER)?.closeWidget(false);
+      setHeight(null);
+    }
+    provider.dispose();
+    models.forEach(m => m.dispose());
+  };
+  // - the peek is an overlay widget of the editor (zoneWidget.js addOverlayWidget): one child of
+  //   .overlayWidgets while it is open
+  const observer = new MutationObserver(() => {
+    if (!isOpen()) { if (seen) finish(true); return; }
+    if (seen) return;
+    seen = true;
+    // - the preview is an editor of its own; a copy of another cell or a file is not saved anywhere,
+    //   so it is read-only
+    for (const e of monaco.editor.getEditors()) if (e !== editor && dom.contains(e.getContainerDomNode())) e.updateOptions({ readOnly: true });
+  });
+  const overlays = dom.querySelector('.overlayWidgets');
+  if (overlays) observer.observe(overlays, { childList: true });
+  // - the editor goes (the cell left edit mode): the peek went with it, the cell keeps its own size
+  const disposed = editor.onDidDispose(() => finish(false));
+  peeks.set(editor, { plan, finish });
+
+  if (height !== null) setHeight(height);
+  editor.trigger('skena', 'editor.action.referenceSearch.trigger', null);
+  // - Monaco opens the peek in promise callbacks of the trigger; when there is none by the next task, none is coming
+  setTimeout(() => { if (!seen) finish(true); }, 0);
+}
+```
+
+- [ ] **Step 3: NodeBorder follows the taller cell**
+
+In `src/webview/canvas/nodes/NodeBorder.tsx`, find:
+
+```tsx
+ * inside the node is laid out again. pointer-events: none, so the node and its scrollbars take the
+ * pointer as before.
+ */
+```
+
+replace with:
+
+```tsx
+ * inside the node is laid out again. pointer-events: none, so the node and its scrollbars take the
+ * pointer as before. `height` draws it that tall from the node's top instead of the node's height (a
+ * code cell drawn taller while its reference peek is open).
+ */
+```
+
+In `src/webview/canvas/nodes/NodeBorder.tsx`, find:
+
+```tsx
+export function NodeBorder({ base, color, borderStyle = 'solid', radius = 6, running = false }: {
+  base: number;
+  color: string;
+  borderStyle?: 'solid' | 'dashed';
+  radius?: number | string;
+  running?: boolean;
+}): JSX.Element {
+```
+
+replace with:
+
+```tsx
+export function NodeBorder({ base, color, borderStyle = 'solid', radius = 6, running = false, height }: {
+  base: number;
+  color: string;
+  borderStyle?: 'solid' | 'dashed';
+  radius?: number | string;
+  running?: boolean;
+  height?: number;
+}): JSX.Element {
+```
+
+In `src/webview/canvas/nodes/NodeBorder.tsx`, find:
+
+```tsx
+      style={{ ...zoomVars, border: `${zoomInvariantWidth(base)} ${borderStyle} ${color}`, borderRadius: radius }}
+```
+
+replace with:
+
+```tsx
+      style={{ ...zoomVars, border: `${zoomInvariantWidth(base)} ${borderStyle} ${color}`, borderRadius: radius, ...(height !== undefined ? { bottom: 'auto', height } : {}) }}
+```
+
+- [ ] **Step 4: The code cell**
+
+In `src/webview/canvas/nodes/CodeNode.tsx` (line 8), find:
+
+```tsx
+import { createPortal } from 'react-dom';
+```
+
+replace with:
+
+```tsx
+import { createPortal, flushSync } from 'react-dom';
+```
+
+In `src/webview/canvas/nodes/CodeNode.tsx`, find:
+
+```tsx
+import { dropLookup, requestDefinition } from './cellDefinition';
+```
+
+replace with:
+
+```tsx
+import { dropLookup, requestDefinition, requestReferences } from './cellDefinition';
+import { closeReferencePeek, openReferencePeek, referencePeekOpen } from './referencePeek';
+import { openCellUri, peekBoxHeight, type ReferencesAnswer } from '../../../shared/findReferences';
+```
+
+In `src/webview/canvas/nodes/CodeNode.tsx`, find:
+
+```tsx
+  // - leader g's note in the cell (no definition found …); gone on the next key
+  const [note, setNote] = useState<string | null>(null);
+```
+
+replace with:
+
+```tsx
+  // - leader g's note in the cell (no definition found …); gone on the next key
+  const [note, setNote] = useState<string | null>(null);
+  // - the cell's height while its reference peek is open (leader z), drawn over what lies below; null: its own
+  const [peekBox, setPeekBox] = useState<number | null>(null);
+```
+
+In `src/webview/canvas/nodes/CodeNode.tsx` (lines 289-291), find:
+
+```tsx
+  const reportHeight = useCallback(() => {
+    const ed = editorRef.current;
+    if (!ed) return;
+```
+
+replace with:
+
+```tsx
+  const reportHeight = useCallback(() => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    // - the open peek's lines are the editor's content too, not the cell's text
+    if (referencePeekOpen(ed)) return;
+```
+
+In `src/webview/canvas/nodes/CodeNode.tsx`, find:
+
+```tsx
+    // - leader z (find references) does nothing yet
+    installJumpLabels(editorInstance, vimMode, { onLookup: what => { if (what === 'definition') requestDefinition(editorInstance, id, setNote); } });
+```
+
+replace with:
+
+```tsx
+    // - leader z: the peek opens in the editor, the cell drawn tall enough for it
+    const openPeek = (answer: ReferencesAnswer) => {
+      const box = nodeElRef.current?.offsetHeight ?? 0;
+      const lineHeight = editorInstance.getOption(monacoInstance.editor.EditorOption.lineHeight);
+      openReferencePeek(editorInstance, id, answer, peekBoxHeight(box, editorInstance.getLayoutInfo().height, lineHeight), px => {
+        flushSync(() => setPeekBox(px));
+        if (editorInstance.getModel()) editorInstance.layout();
+      });
+    };
+    installJumpLabels(editorInstance, vimMode, {
+      onLookup: what => (what === 'definition' ? requestDefinition(editorInstance, id, setNote) : requestReferences(editorInstance, id, setNote, openPeek)),
+    });
+```
+
+In `src/webview/canvas/nodes/CodeNode.tsx`, find:
+
+```tsx
+      setEditing(false);
+      setEditorShown(false);
+      setNote(null);
+    };
+```
+
+replace with:
+
+```tsx
+      setEditing(false);
+      setEditorShown(false);
+      setNote(null);
+      setPeekBox(null);
+    };
+```
+
+In `src/webview/canvas/nodes/CodeNode.tsx`, find:
+
+```tsx
+    editorInstance.onDidBlurEditorText(() => {
+      dropLookup(id, performance.now());
+      setTimeout(() => {
+        if (!editorInstance.getModel()) return;
+        if (vimStatusRef.current && vimStatusRef.current.contains(document.activeElement)) return;
+        leaveEdit();
+      }, 0);
+    });
+```
+
+replace with:
+
+```tsx
+    // - The reference peek's list and preview are inside the editor's own DOM: focus going there is a
+    //   text blur that stays, and focus leaving them is a widget blur only. Both blurs of one move run once.
+    let blurQueued = false;
+    const leaveIfFocusLeft = () => {
+      if (blurQueued) return;
+      blurQueued = true;
+      setTimeout(() => {
+        blurQueued = false;
+        if (!editorInstance.getModel()) return;
+        const active = document.activeElement;
+        if (vimStatusRef.current && vimStatusRef.current.contains(active)) return;
+        if (active && editorInstance.getDomNode()?.contains(active)) return;
+        leaveEdit();
+      }, 0);
+    };
+    editorInstance.onDidBlurEditorText(() => {
+      dropLookup(id, performance.now());
+      leaveIfFocusLeft();
+    });
+    editorInstance.onDidBlurEditorWidget(leaveIfFocusLeft);
+```
+
+In `src/webview/canvas/nodes/CodeNode.tsx` (line 466), find:
+
+```tsx
+      if (e.browserEvent.key === 'Escape' && !vimIsEditing) leaveEdit();
+```
+
+replace with:
+
+```tsx
+      // - with the reference peek open the first Esc closes it, the next one leaves the editor
+      if (e.browserEvent.key === 'Escape' && !vimIsEditing && !closeReferencePeek(editorInstance)) leaveEdit();
+```
+
+In `src/webview/canvas/nodes/CodeNode.tsx` (line 556), find:
+
+```tsx
+        className={`skena-node ${ZOOM_WIDTH_CLASS} skena-node--code`}
+```
+
+replace with:
+
+```tsx
+        className={`skena-node ${ZOOM_WIDTH_CLASS} skena-node--code${peekBox !== null ? ' skena-code-peek' : ''}`}
+```
+
+In `src/webview/canvas/nodes/CodeNode.tsx` (line 562), find:
+
+```tsx
+          height:        '100%',
+```
+
+replace with:
+
+```tsx
+          height:        peekBox ?? '100%',
+```
+
+In `src/webview/canvas/nodes/CodeNode.tsx` (line 611), find:
+
+```tsx
+                defaultLanguage="python"
+```
+
+replace with:
+
+```tsx
+                defaultLanguage="python"
+                // - the model URI the reference peek lists this cell's own references under (findReferences.ts)
+                defaultPath={openCellUri(node.nodeLabel ?? id)}
+```
+
+In `src/webview/canvas/nodes/CodeNode.tsx` (line 702), find:
+
+```tsx
+      <NodeBorder base={1.5} color={borderColor} running={node.lastStatus === 'running'} />
+```
+
+replace with:
+
+```tsx
+      <NodeBorder base={1.5} color={borderColor} running={node.lastStatus === 'running'} height={peekBox ?? undefined} />
+```
+
+`defaultPath` sets the editor's model URI when it is created and only then (`@monaco-editor/react` 4.7.0 `dist/index.mjs`: the model is `getModel(Uri.parse(path || defaultPath)) || createModel(value, language, uri)`, and it is disposed when the editor goes, `keepCurrentModel` being false), so a label changed while the cell is open does not swap the model.
+
+- [ ] **Step 5: Routing the answer; the taller cell over the others**
+
+In `src/webview/App.tsx`, find:
+
+```tsx
+        case 'definitionGoto':
+          window.dispatchEvent(new CustomEvent('skena:goToCell', { detail: { id: msg.cellNodeId, line: msg.line, col: msg.col } }));
+          break;
+```
+
+replace with:
+
+```tsx
+        case 'definitionGoto':
+          window.dispatchEvent(new CustomEvent('skena:goToCell', { detail: { id: msg.cellNodeId, line: msg.line, col: msg.col } }));
+          break;
+        case 'referencesResult':
+          window.dispatchEvent(new CustomEvent('skena:referencesResult', { detail: msg }));
+          break;
+```
+
+Append to the end of `src/webview/styles/canvas.css`, after one blank line:
+
+```css
+/* - a code cell drawn taller while its reference peek is open (CodeNode.tsx): over every other node
+   - (a selected node is at 1000, edge labels at 1000), and without its connection handles, which stay
+   - at the cell's own edges, inside the taller box */
+.react-flow__node:has(> .skena-node.skena-code-peek) { z-index: 3000 !important; }
+.react-flow__node:has(> .skena-node.skena-code-peek) .react-flow__handle { display: none; }
+```
+
+- [ ] **Step 6: Typecheck, build, the key and reference tests**
+
+Run: `npx tsc --noEmit 2>&1 | grep "error TS" | grep -v "Property 'fsPath' does not exist on type 'ResolvedUri'"`
+Expected: nothing.
+
+Run: `npm run build`
+Expected: three `⚡ Done in …` lines, no `✘ [ERROR]`.
+
+Run: `grep -c "skena-code-peek" dist/webview.css`
+Expected: `2`.
+
+Run: `npx esbuild src/webview/canvas/jumpLabels.ts --bundle --format=esm --outfile=tests/.build/jumpLabels.mjs && node --test tests/jump-labels.mjs`
+Expected: `# pass 24`, `# fail 0`.
+
+Run: `npx esbuild src/shared/findReferences.ts --bundle --format=esm --outfile=tests/.build/findReferences.mjs && npx esbuild tests/fixtures/monaco-references-model.js --bundle --format=esm --platform=node --outfile=tests/.build/monacoReferencesModel.mjs && node --test tests/find-references.mjs`
+Expected: `# pass 5`, `# fail 0`.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/webview/canvas/nodes/cellDefinition.ts src/webview/canvas/nodes/referencePeek.ts src/webview/canvas/nodes/NodeBorder.tsx src/webview/canvas/nodes/CodeNode.tsx src/webview/App.tsx src/webview/styles/canvas.css
+git commit -m "feat(references): leader z opens Monaco's reference peek in the cell"
+```
+
+---
+
+### Task 15: Manual checks (the user runs these)
 
 **Files:** none. The implementer reports this task as not run.
 
-Ctrl+F5, open the factors folder in the Extension Development Host (as in Task 1), `.venv` interpreter, open `research/review/factors-essentials.canvas`. Settings at their defaults (leader `;`). A kernel bound to the canvas's sections and started (run E1 once). On 2026-10-07 the file has S1 to S5 folded (FACT, read from the file; E1 to E8 are in S1, E9 to E14 in S3, E15 to E27 in S5, E17 in S6): unfold S1, S3 and S5 first.
+Ctrl+F5 (launch config "Run Extension"; it builds and opens an Extension Development Host). In it, File > Open Folder… `/home/quant0/projects/factors` (one folder), `.venv/bin/python` as the interpreter. The checks add cells, so they run on a copy of the canvas, not on the canvas the user works in: `cp research/review/factors-essentials.canvas /tmp/skena-check.canvas`, then File > Open File… `/tmp/skena-check.canvas`. Settings at their defaults (leader `;`). A kernel bound to the canvas's sections and started (run E1 once). On 2026-10-07 the canvas has S1 to S5 folded (FACT, read from the file; E1 to E8 are in S1, E9 to E14 in S3, E15 to E27 in S5, E17 in S6): unfold S1, S3 and S5 first.
 
 Pylance:
 - [ ] Open E12 (`Enter`), `Esc` to normal mode, put the cursor on `REPO` in line 2, `;g`: E1 is selected, the view pans by the smallest move that shows it, E1's editor opens with the cursor on `REPO` at line 30, in normal mode (the status line is empty). `Esc` out of the editor, then `` ` ` ``: back to E12.
@@ -2791,7 +3529,7 @@ Pylance:
 - [ ] In E3 (before E15 in run order), cursor on `CACHE` in line 6, `;g`: E1 opens at line 29.
 - [ ] In a cell, write `aa = 1` on one line and `print(aa)` two lines below, `Esc`, cursor on the second `aa`, `;g`: the cursor moves up to the first `aa` in the same editor, which stays open in normal mode.
 - [ ] A function defined in two cells (paste the same `def` into two cells, call it in a third): a quick pick titled "Go to definition" lists `E…:line  def …` entries if Pylance gives both; picking one selects that cell and opens it at the line. `Esc` in the quick pick does nothing.
-- [ ] Cursor on a blank or on `=`: `;g` shows `no name under the cursor` at the editor's bottom right; the next key removes it.
+- [ ] Cursor on a blank or on `=`: `;g` does nothing: no note, no lookup, the cursor stays.
 - [ ] Cursor on a name defined nowhere (type `undefined_thing` in a cell): `;g` shows `no definition found for undefined_thing`; the next key removes it.
 
 Kernel. With Pylance on, the kernel is asked only when Pylance has nothing; to check the kernel's answers, disable Pylance for the workspace (Extensions view, Pylance, Disable (Workspace)) and reload the window. Re-enable it at the end.
@@ -2802,11 +3540,28 @@ Kernel. With Pylance on, the kernel is asked only when Pylance has nothing; to c
 - [ ] Start a cell with `import time; time.sleep(20)` and during it `;g` on `helper_k`: the note appears at once (the busy kernel is not asked); when the sleep ends no output appears in any other cell.
 - [ ] Shut the kernel down (kernel node menu): `;g` on `helper_k` gives the note.
 
+References (Pylance on). Before them, `cp /tmp/skena-check.canvas /tmp/skena-check.before`.
+- [ ] In E3 (11 lines, 250 px tall on 2026-10-07), cursor on `CACHE` in line 6, `;z`: E3 is drawn taller and Monaco's reference peek opens inside it under line 6, over the cells below; no other node moves and the view does not pan. The list starts on the reference in E3, line 6, with the preview on the left; the groups are E3 first, then the other cells that use `CACHE` in run order (E1, E5, E7, E9, E12, E15, E16, E26 on 2026-10-07), each with its count.
+- [ ] `j` and `k` move in the list and the preview follows; the vim status line stays empty, the cursor in E3 does not move, the canvas does not move. A group other than E3's starts collapsed; the right arrow (or a click) opens it.
+- [ ] Enter on the reference in E12: the peek closes, E3 is back at its size, E12 is selected and its editor opens at that line in normal mode. `Esc` out of the editor, then `` ` ` ``: back to E3.
+- [ ] `;z` again in E3 on `CACHE`, then Enter on the reference in E3 itself: the peek closes and the cursor is on that place in E3, in normal mode.
+- [ ] `;z` in E3, then double-click a reference in E9 in the list: the same as Enter.
+- [ ] `;z` in E3, then `Esc` in the list: the peek closes, E3 is back at its size, the cursor is where it was, in normal mode. Then `node -e 'const r=f=>JSON.parse(require("fs").readFileSync(f,"utf8")).nodes;const b=new Map(r("/tmp/skena-check.canvas").map(n=>[n.id,n]));for(const n of r("/tmp/skena-check.before")){const m=b.get(n.id);if(!m||["x","y","width","height"].some(k=>n[k]!==m[k]))console.log(n.id)}'` prints nothing (no node moved or changed size in the file).
+- [ ] `;z` in E3, click back into E3's text (the peek stays open), `Esc`: the peek closes; a second `Esc` leaves the editor.
+- [ ] `;z` in E3, then click on an empty part of the canvas: E3's editor closes and E3 is back at its size.
+- [ ] In E26 (43 lines, 850 px tall), `;z` on `CACHE` in line 14: the peek opens with no change to E26's size.
+- [ ] In E27, cursor on `sharpe` in `sharpe(p, 365)`, `;z`: the cell groups come first (E27, then E1, E11, E13, E14, E15), then file groups, among them `metrics.py`; Enter on its reference opens `src/factors/backtest/metrics.py` beside the canvas at line 5, and E27 is back at its size.
+- [ ] Type into the peek's preview: nothing changes (Monaco says the editor is read-only).
+- [ ] Right-click in a cell's text with no peek open: the menu has no "Go to References" and no "Peek".
+- [ ] `;z` on a blank: nothing happens. `;z` on `undefined_thing`: either the note `no references found for undefined_thing` or a peek with that one place (what Pylance answers for an undefined name is not known).
+- [ ] At canvas zoom about 0.5, `;z` in E3: the peek is drawn at the canvas's scale inside the taller E3, and E3's border follows the taller box.
+- [ ] After the reference checks, View > Problems lists nothing from `$XDG_RUNTIME_DIR/skena/definition/` or from the files the references were in.
+
 Keys and other editors:
-- [ ] In a text note in normal mode, `fa`, then `;` then `g`: vim's `;` (repeat find) then `g` as before; no note, no lookup. The same in the chat input.
-- [ ] In a code cell in insert mode, typing `;g` inserts `;g`.
+- [ ] In a text note in normal mode, `fa`, then `;` then `g`: vim's `;` (repeat find) then `g` as before; no note, no lookup. The same with `;` then `z`, and the same in the chat input.
+- [ ] In a code cell in insert mode, typing `;g` inserts `;g`, and `;z` inserts `;z`.
 - [ ] `;;l` jump labels still work in a code cell.
-- [ ] `;g` then immediately `j` before the answer arrives: the cursor moves down in the cell; no jump happens afterwards.
+- [ ] `;g` then immediately `j` before the answer arrives: the cursor moves down in the cell; no jump happens afterwards. The same with `;z`: no peek opens afterwards.
 - [ ] Fold S1 (it holds E1), keep S3 open, then in E12 `;g` on `REPO`: S1 unfolds, E1 is selected and its editor opens at line 30.
 
 Files and saving:
@@ -2821,14 +3576,14 @@ If a check fails, write down the cell label, the keys pressed and what was seen.
 
 | Spec item | Where |
 |---|---|
-| Leader then `g` in a code cell's editor, vim normal mode; `;g` by default | `leaderStep` `definition` (Task 3, test 24); `installJumpLabels` `onDefinition` (Task 3), passed by CodeNode (Task 11); normal mode through `idleNormal` |
+| Leader then `g` in a code cell's editor, vim normal mode; `;g` by default | `leaderStep` `definition` (Task 3, test 24); `installJumpLabels` `onLookup` (Task 3), passed by CodeNode (Task 11); normal mode through `idleNormal` |
 | The name: identifier under the cursor with the dotted names before it | `dottedNameAt` (Task 4, tests 2-5) |
-| Only code cells; text notes and chat unchanged; leader + anything else as today | `definition` passed only by CodeNode (Task 11); test 24 lines 2-3 |
+| Only code cells; text notes and chat unchanged; leader + anything else as today | `onLookup` passed only by CodeNode (Task 11); test 24 |
 | Keys read the way jump labels read them | the same capture listener and `leaderStep` (Task 3 Step 5) |
 | Pylance on the cells joined in run order, section by section | `codeCellsInRunOrder`, `joinCells` (Task 5, tests 6-8); joined file (Task 9); `findDefinitions` (Task 10) |
-| `vscode.executeDefinitionProvider` at the cursor's place, result mapped back to a cell and line | `toJoined`, `pylanceDefinitions`, `targetsFromLocations` (Tasks 5, 6, 10; tests 8-10) |
-| Imports through the workspace's interpreter | the spike (Task 1) checks it for the chosen kind; see "If the user chooses another kind" |
-| Several cells define a name: the latest earlier one in run order | `targetsFromLocations` keeps the last location at or before the cursor (test 9) |
+| `vscode.executeDefinitionProvider` at the cursor's place, result mapped back to a cell and line | `toJoined`, `pylanceLocations`, `targetsFromLocations` (Tasks 5, 6, 10; tests 8-10) |
+| Imports through the workspace's interpreter | the spike: the venv's names resolved in the file kind (Spike result) |
+| Several cells define a name: the latest earlier one in run order | `targetsFromLocations` keeps the last location at or before the cursor (test 9); the spike: Pylance returned both `CACHE` assignments (E1:29, E15:28) |
 | Kernel only when Pylance returns nothing, only if running and idle, never queued | `findDefinitions` order; `isIdle` (Task 8); timeout 3 s |
 | Identifiers and dots only; `getsourcefile`/`getsourcelines`; decorators unwrapped | `isDottedName` + `definitionExpression` throws (Task 7 test 8); the Python lookup (tests 1-5; real kernel) |
 | A cell's temporary file matched to a cell by source text | `targetsFromKernel` (Task 6 tests 11-13) |
@@ -2837,30 +3592,61 @@ If a check fails, write down the cell label, the keys pressed and what was seen.
 | File target: the group beside the canvas, created if none; cursor and reveal | `showTextDocument` with `ViewColumn.Beside` and `selection` (Task 10) |
 | Several answers: quick pick `file:line` or `E7:line` with the line's text | `pickEntry` (test 15), `showDefinitions` (Task 10) |
 | No answer: `no definition found for <name>`, gone on the next key | `cellDefinition.ts` + CodeNode note (Task 11) |
-| Unknowns settled by a spike the user runs | Task 1 |
-| Tests: dotted name, joining and mapping both ways (CRLF, empty cells), choosing among results, kernel temp file → cell, file → file, leader g, quick pick entries; the snippet against a real Python | `tests/go-to-definition.mjs` (15), `tests/jump-labels.mjs` (24), `tests/kernel-definition.mjs` (8), `tests/joined-file.mjs` (2), `tests/jupyter-protocol.mjs` (+2) |
-| Out of scope: `gd`, peek, references, hover, text notes, markdown code blocks, other notebooks, other languages | none of these are implemented |
+| No name under the cursor: nothing happens, no note (user) | `requestDefinition` and `requestReferences` return before asking (Tasks 11, 14); manual checks |
+| An instance: go to its class (user) | the kernel lookup's `target` (Task 7, `sq` → `class Shape`, test 3 `fx.box`) |
+| Leader then `z`: every reference of the name, Pylance only, same joined file, mapped to cells and files | `leaderStep` `references` (Task 3, test 24); `findReferences` with `vscode.executeReferenceProvider` (Task 13); `referencesFromLocations` (Task 12, test 1) |
+| Shown as Monaco's own reference peek in the cell's editor: preview left, list grouped by cell or file right | `editor.action.referenceSearch.trigger` on the host's answer (Task 14); the grouping and order (Task 12, test 2, Monaco's `ReferencesModel`) |
+| `j`/`k` move in the list, Enter goes to the place as a definition does, Esc closes the peek | `referencePeek.ts` keys and editor opener → `skena:goToCell` / `showDefinitions` (Task 14); `openedTarget` (Task 12, test 3); Esc is Monaco's |
+| A cell shorter than the peek needs is drawn taller over what lies below; no node moves, layout unchanged; back to its size on close | `peekBoxHeight` (Task 12, test 5); the inner box, `NodeBorder` and a CSS z-index while open, `reportHeight` skipped (Task 14) |
+| No references: `no references found for <name>` | `cellDefinition.ts` (Task 14) |
+| Unknowns settled by a spike the user runs | Task 1, Spike result |
+| Tests: dotted name, joining and mapping both ways (CRLF, empty cells), choosing among results, kernel temp file → cell, file → file, leader g, quick pick entries; the snippet against a real Python | `tests/go-to-definition.mjs` (15), `tests/jump-labels.mjs` (24), `tests/kernel-definition.mjs` (8), `tests/joined-file.mjs` (2), `tests/jupyter-protocol.mjs` (+2), `tests/find-references.mjs` (5) |
+| Out of scope: `gd`, hover, text notes, markdown code blocks, other notebooks, other languages | none of these are implemented |
 
 ## Points the spec does not settle, or that differ from it
 
 Each is in the code as described; the user may want another choice.
-1. **Which document kind** Pylance is asked about: the spike (Task 1) decides; the tasks are written for a file per canvas and text in the per-user temporary folder.
-2. **No name under the cursor** (a blank, an operator, a number): the note says `no name under the cursor` and nothing is asked. The spec only names the `no definition found` note.
-3. **A chain through a call or subscript** (`df.groupby(k).mean`): Pylance is still asked at the cursor; the kernel is not (it would have to evaluate the call). The note then names the word (`mean`).
-4. **A value stands for its class** in the kernel lookup (`sq = Shape()`, `sq` goes to `class Shape`). The spec does not say what an instance resolves to; without this, `sq` would give the note.
-5. **The last attribute is read without running it** (`inspect.getattr_static`), so `obj.prop` goes to the property's getter; the spec accepts running a property. Attributes before the last are read normally (`a.prop.x` runs `prop`).
-6. **A kernel answer that matches no cell** (the function's lines were changed since it ran) gives the note; a function made by `exec` has no source for `inspect` and gives the note too. When the kernel names a real file on disk, that file opens.
-7. **An answer that arrives after another key in the cell, or after the cell lost focus, is dropped.** Without this, keys typed while waiting would land in the other cell's editor.
-8. **A cell in a folded section** is reached by unfolding its section first.
-9. **Waiting for Pylance**: for a joined file not asked about before in this window, an empty answer is asked again every `RETRY_MS` for up to `WAIT_MS` (values from the spike); otherwise one call. A name only the kernel knows therefore waits up to `WAIT_MS` before the kernel is asked, once per new text.
-10. **Magic and shell lines** are commented out in the joined text; a cell under a non-Python cell magic is commented out whole. Names defined by them (`x = !ls`, `%time x = 1`) are not seen by Pylance.
-11. **The joined file shows no problems** because its first line is `# type: ignore`; the spike reports whether that holds.
-12. **Multi-root windows** are not covered by the spike: pyright gives a file outside every folder its `<default>` workspace there, so imports may not resolve.
-13. **No indicator while a lookup runs.**
+1. **A chain through a call or subscript** (`df.groupby(k).mean`): Pylance is still asked at the cursor; the kernel is not (it would have to evaluate the call). The note then names the word (`mean`).
+2. **The last attribute is read without running it** (`inspect.getattr_static`), so `obj.prop` goes to the property's getter; the spec accepts running a property. Attributes before the last are read normally (`a.prop.x` runs `prop`).
+3. **A kernel answer that matches no cell** (the function's lines were changed since it ran) gives the note; a function made by `exec` has no source for `inspect` and gives the note too. When the kernel names a real file on disk, that file opens.
+4. **An answer that arrives after another key in the cell, or after the cell lost focus, is dropped** (definitions and references). Without this, keys typed while waiting would land in the other cell's editor.
+5. **A cell in a folded section** is reached by unfolding its section first.
+6. **Waiting for Pylance**: for a joined file not asked about before in this window, an empty answer is asked again every 250 ms for up to 600 ms; otherwise one call. The spike's slowest first answer was 581 ms and no call came back empty, so the retry itself is unmeasured. A name only the kernel knows waits up to 600 ms before the kernel is asked, once per new text. No timing was measured for references.
+7. **Magic and shell lines** are commented out in the joined text; a cell under a non-Python cell magic is commented out whole. Names defined by them (`x = !ls`, `%time x = 1`) are not seen by Pylance.
+8. **Multi-root windows** are not covered by the spike: pyright gives a file outside every folder its `<default>` workspace there, so imports may not resolve.
+9. **No indicator while a lookup runs.**
+10. **Order of the peek's groups**: the asking cell first, then the other cells in run order, then the files by path. Monaco sorts groups by URI, so the order comes from the URIs (Task 12); VS Code's own order would be by URI as well.
+11. **A cell's group shows `/` after its label** (the URI path's directory, the standalone label service), and a file's group its full folder path, not one relative to the workspace.
+12. **The preview is read-only**, also for the asking cell: a copy of another cell or a file is saved nowhere, so an edit there would be lost.
+13. **`j`/`k` select as they move, so the preview follows** (as VS Code's list does); Monaco's own arrows in standalone only move the focus. Groups other than the starting one start collapsed (Monaco's tree default, `asyncDataTree.js:209`); no vim key opens them (the right arrow and a click do). Enter on a group row does nothing.
+14. **The peek's height** is Monaco's default, 18 lines. Resizing the peek with its sash does not resize the cell.
+15. **Only the height grows.** A narrow cell gives a narrow peek (Monaco's preview needs 200 px and the list 100 px, `referencesWidget.js` split view); the cell is not drawn wider.
+16. **Edges and handles while the cell is taller**: edges keep their ends at the cell's own box; the cell's handles are hidden.
+17. **Esc with the cursor in the text and the peek open** closes the peek; the next Esc leaves the editor (without this, Esc in normal mode would close the editor and the peek with it).
+18. **References in older joined files are dropped** (Task 12); a reference in a file outside the workspace (numpy, say) is kept and shown with its full path.
+19. **The text of every file with a reference is sent whole** to the webview; a name used in many large files sends them all. No limit is set.
+
+## Monaco API the peek relies on (monaco-editor 0.55.1, `node_modules/monaco-editor/esm/vs/`)
+
+Read in the shipped source on 2026-10-07. "editor/" below is `node_modules/monaco-editor/esm/vs/editor/`.
+
+- **The peek is in the bundle already.** `basic-languages/python/python.contribution.js:1` imports `../_.contribution.js`, which imports `editor/contrib/gotoSymbol/browser/goToCommands.js` (`:25`) and `editor/standalone/browser/referenceSearch/standaloneReferenceSearch.js` (`:71`); `src/webview/index.tsx:20` imports the python contribution. The standalone controller is created with the list's own keys on (`standaloneReferenceSearch.js:23-36`, `super(true, …)`).
+- **Showing the peek with our data.** `editor.action.referenceSearch.trigger` (`goToCommands.js:568-587`) asks the reference providers (`getReferencesAtPosition`, `goToSymbol.js:56-68`, with `includeDeclaration: true`) and, with `openInPeek`, always opens the peek (`goToCommands.js:139`, `:194-198` → `ReferencesController.toggleWidget`, `referencesController.js:66`). Its precondition is `hasReferenceProvider` (`goToCommands.js:577`), set at once when a provider is registered (`codeEditorWidget.js:1676`, `:1726`). A single reference under the cursor would run `alternativeReferenceCommand` instead, which defaults to `''` (`goToCommands.js:103-108`, `editorOptions.js:796`). `editor.trigger` hands a command that is not an editor action to the command service (`codeEditorWidget.js:763-818`); the action runs on the focused editor (`editorExtensions.js:274-293`). `editor.action.peekLocations` (`goToCommands.js:652-666`) takes the locations as arguments but needs several of them, which `trigger` cannot pass (one `payload`), so a provider is used.
+- **Models.** The peek resolves every URI through the text model service (`referencesWidget.js:482`, `referencesModel.js` `FileReferences.resolve`), which in standalone only returns an existing model and rejects with `Model not found` otherwise (`standaloneServices.js:125-129`). Public: `monaco.editor.createModel`, `getModel`, `ITextModel.dispose` (`editor.api.d.ts:1029`, `:1066`).
+- **Groups and labels.** `ReferencesModel` sorts by `extUri.compare` of the URIs, then by range, and groups by URI (`referencesModel.js:120`, `:237`); the start reference shares the longest URI prefix with the editor's model, then is the nearest (`referencesModel.js:189-216`); a group row shows `getUriBasenameLabel` and `getUriLabel(dirname)` (`referencesTree.js:113`), which in standalone are the path's last part and the path (`file:` the full path) (`standaloneServices.js:584-594`).
+- **Opening a result.** The list opens on Enter-selection with `pinned: false` (preview only, `listService.js:465-474`) and on double-click with `pinned: true` (`listService.js:489-503`); the widget turns them into `show` and `goto` (`referencesWidget.js:368-378`); `goto` in peek mode runs `_gotoReference`, which hides the peek, opens the reference through `ICodeEditorService.openCodeEditor` with the peek's editor as source, and shows the peek again if that returns the same editor and the widget still exists (`referencesController.js:223-254`). The command `openReference` closes the peek, then opens the focused reference the same way (`referencesController.js:256-266`, `:374-380`). `monaco.editor.registerEditorOpener` (`editor.api.d.ts:1156-1175`, `standaloneEditor.js:382-401`) adds a handler that is asked before the standalone one (`abstractCodeEditorService.js:111-123`, `unshift`); without one, a URI of another model opens nothing (`standaloneCodeEditorService.js:52-88`). The controller's `closeWidget(focusEditor)` is a public method of the class (`referencesController.js:211-221`), reached with `editor.getContribution('editor.contrib.referencesController')` (`:41`, `editor.api.d.ts:6147`).
+- **Keys in the list.** monaco-vim listens on `editor.onKeyDown` (`monaco-vim/src/cm_adapter.ts:372`), fired only from the editor's own text input (`editor/browser/controller/editContext/native/nativeEditContext.js:96-98`, `textArea/textAreaEditContext.js:211-212`). The list's keyboard controller exists when `keyboardSupport` is on (`base/browser/ui/list/listWidget.js:1145`): Enter selects the focus, the arrows move the focus, Escape clears a selection (`listWidget.js:241-335`); it reads `keyCode` (`base/browser/keyboardEvent.js:16`). Monaco 0.55.1 has no `list.focusDown` command. Esc in the list goes to the keybinding service from a capture listener on the list's container (`referencesWidget.js:320-327`) and `closeReferenceSearch` takes it (`referencesController.js:326-340`). The context key `referenceSearchVisible` (`referencesController.js:38`) has no public reader, so the webview watches the DOM.
+- **Size and place.** The peek is a view zone plus an overlay widget after the cursor's line (`zoneWidget.js:291`); an overlay widget without `allowEditorOverflow` lives inside the editor's `overflow-guard` element (`_overflowGuardContainer`; `editor/browser/viewParts/overlayWidgets/overlayWidgets.js:57`, `:73`; `editor/browser/view.js:177`), so the editor's box clips it. It asks for 18 lines (`referencesWidget.js:147`, `:259`) and gets at most `max(12, 0.8 × editor height in lines)` (`zoneWidget.js:248-249`, `:264`), measured when it opens. Widget focus is focus anywhere in the editor's DOM or its overflow widget node (`view.js:72`, `:686`, `:697`).
 
 ## Spike result
 
-Not run yet.
+User's second run, 2026-10-07 14:56 UTC (FACT, `/run/user/1000/skena/definition-spike/report.txt`): VS Code 1.141.0-insider over SSH, Pylance 2026.4.1, Python extension 2026.8.0, Jupyter extension 2025.9.1, one folder `/home/quant0/projects/factors`, interpreter `.venv/bin/python3`, `files.hotExit: off`; `factors-essentials.canvas` read from disk, 27 code cells. Names asked at their last place in run order: `sharpe` E27:17, `run_walkforward` E12:22, `REPO` E12:2, `CACHE` E26:14, `np.linalg.solve` E17:34.
+
+- **file** (a `.py` in `/run/user/1000/skena/definition-spike`; chosen by the user): all five resolved, each in one call. `sharpe` → `src/factors/backtest/metrics.py:5`, `run_walkforward` → `src/factors/walkforward/runner.py:98`, `REPO` → E1:30, `CACHE` → E1:29 and E15:28 (two results), `np.linalg.solve` → `.venv/…/numpy/linalg/_linalg.py:364`. First answers 126-249 ms (v1, a fresh file: 164-249 ms; v2: 126-223 ms). The text shifted by 3 lines (v2) mapped to the same cells and lines for all five. Both files: dirty false, untitled false, 0 problems (first line `# type: ignore`). Opened in 229 ms (v1) and 114 ms (v2).
+- **untitled**: the same five answers, same mapping in v2, first answers 100-581 ms (581 ms for `sharpe`, the window's first lookup). The document was dirty, listed 150 problems (first: "Statement ends with an unnecessary semicolon"), and the user saw an Untitled tab. Dropped for that.
+- **notebook** (a file of the spike's own notebook type): the imported names resolved (79-175 ms), but `REPO` and `CACHE` came back under `joined-v1.skena-definition-spike.py` (an internal path that maps to no cell; v2 "same as v1: NO"), and `CACHE` gave one result instead of two. Dropped for that.
+
+Choice (user): the kind "file", as Tasks 9 and 10 are written. Wait times set from these numbers: `RETRY_MS` 250, `WAIT_MS` 600 (Task 10).
 
 ## Appendix: the real-kernel check
 
