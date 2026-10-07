@@ -88,6 +88,7 @@ import { placeOutput, sectionEngineNodes, markKeepRowOnLoad, layoutAround } from
 import { addChatNote } from '../shared/chatNote';
 import { copyNode, ownedOutputId } from '../shared/outputLink';
 import { youtubeId, YOUTUBE_NODE } from '../shared/youtube';
+import { findDefinitions, showDefinitions } from './definition/goToDefinition';
 
 /**
  * A canvas as the editor opens it from disk: lifted to the origin, sections seeded, and an edge the
@@ -692,6 +693,14 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         }
         case 'complete': await this.handleComplete(msg, manager, document, send); break;
         case 'inspect':  await this.handleInspect(msg, manager, document, send); break;
+        case 'goToDefinition': {
+          // - the answer always goes back, empty on a failure, so the cell can show its note
+          const targets = await findDefinitions(msg, document.canvas, document.uri.fsPath, manager)
+            .catch(err => { console.warn('[skena] go to definition', err); return []; });
+          send({ type: 'definitionResult', reqId: msg.reqId, cellNodeId: msg.cellNodeId, targets });
+          break;
+        }
+        case 'showDefinitions': await showDefinitions(msg.targets, document.canvas, send); break;
       }
     });
 

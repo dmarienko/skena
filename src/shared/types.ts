@@ -8,6 +8,7 @@ import type { SectionLane } from './sectionLanes';
 import type { KnowledgeCapabilities, KnowledgeHit, KnowledgeQuery, KnowledgeText } from './knowledge/types';
 import type { RefreshOutcome } from './knowledge/refresh';
 import type { ChatAttachment } from './chatAttachments';
+import type { DefinitionTarget } from './goToDefinition';
 
 // ─── JSON Canvas spec types ───────────────────────────────────────────────────
 
@@ -389,6 +390,11 @@ export interface MsgRemoveKernel { type: 'removeKernel'; kernelRef: string; }   
 export interface MsgComplete { type: 'complete'; reqId: string; cellNodeId: string; code: string; cursorPos: number; }
 // - webview asks the host for kernel introspection at a cursor (hover / signature help)
 export interface MsgInspect { type: 'inspect'; reqId: string; cellNodeId: string; code: string; cursorPos: number; }
+// - leader g in a code cell: where is the name at line/col (1-based) of the live `code` defined. `name`
+//   is the dotted name there, null when its chain holds a call or subscript (the kernel is not asked then)
+export interface MsgGoToDefinition { type: 'goToDefinition'; reqId: string; cellNodeId: string; code: string; line: number; col: number; name: string | null; }
+// - webview → host: open the one file target, or show the quick pick of several targets
+export interface MsgShowDefinitions { type: 'showDefinitions'; targets: DefinitionTarget[]; }
 
 /** - host → webview: session compaction is running (true) or finished (false) */
 export interface MsgFloatingChatCompacting { type: 'floatingChatCompacting'; active: boolean; }
@@ -541,6 +547,8 @@ export type HostToWebview =
   | MsgDoDelete
   | MsgCompleteResult
   | MsgInspectResult
+  | MsgDefinitionResult
+  | MsgDefinitionGoto
   | MsgKnowledgeServersResult
   | MsgKnowledgeSearchResult
   | MsgKnowledgeFetchResult
@@ -559,6 +567,10 @@ export interface MsgDoDelete { type: 'doDelete'; confirmed: boolean; }
 export interface MsgCompleteResult { type: 'completeResult'; reqId: string; matches: string[]; cursorStart: number; cursorEnd: number; }
 // - host → webview: kernel introspection text for a pending inspect request
 export interface MsgInspectResult { type: 'inspectResult'; reqId: string; found: boolean; text: string; }
+// - host → webview: where a goToDefinition request's name is defined; empty when nowhere
+export interface MsgDefinitionResult { type: 'definitionResult'; reqId: string; cellNodeId: string; targets: DefinitionTarget[]; }
+// - host → webview: the quick pick chose a cell; select it and open its editor at the line, as leader g does
+export interface MsgDefinitionGoto { type: 'definitionGoto'; cellNodeId: string; line: number; col: number; }
 
 export interface KernelStatusEntry {
   server:    string;
@@ -866,6 +878,8 @@ export type WebviewToHost =
   | MsgConfirmDelete
   | MsgComplete
   | MsgInspect
+  | MsgGoToDefinition
+  | MsgShowDefinitions
   | MsgKnowledgeServers
   | MsgKnowledgeSearch
   | MsgKnowledgeFetch
