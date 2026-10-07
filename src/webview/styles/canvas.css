@@ -32,6 +32,13 @@ body.vscode-dark, body.vscode-high-contrast {
 /* - edge label portal must sit above elevated SVG edge paths (elevateEdgesOnSelect) */
 .react-flow__edgelabel-renderer { z-index: 1000; }
 
+/* - the canvas zoom and the focus ring sizes, set inline by useZoomVars and useZoomVar (nodeShared.ts)
+     on the elements with .skena-zoom-width. Not inherited: a zoom change restyles those elements, never what is inside
+     a node. The initial values are those of zoom 1. */
+@property --skena-zoom { syntax: '<number>'; inherits: false; initial-value: 1; }
+@property --skena-ring-width { syntax: '<length>'; inherits: false; initial-value: 3.8px; }
+@property --skena-ring-offset { syntax: '<length>'; inherits: false; initial-value: 7px; }
+
 /* ─── Node base card style ────────────────────────────────────────────────── */
 /*
  * All nodes share this card appearance.
@@ -112,7 +119,7 @@ body.vscode-dark, body.vscode-high-contrast {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.16);
 }
 
-/* - focus ring: handled by useSelectedStyle hook (outline on .skena-node inline style) */
+/* - focus ring: focusRingStyle in nodeShared.ts (outline on .skena-node inline style) */
 
 /* - space-pinned: a blue tint over the whole node (--skena-pinned-tint), not a ring, so
    - it still reads when the node also has the focus (the focus band is an inline

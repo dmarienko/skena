@@ -150,7 +150,7 @@ export const OUTPUT_DEFAULT_H = 300;
  *            14  vim status bar, a fixed 14px
  *            = 38, taken to 39 as a small margin. The node border is not in it: `.skena-node` is
  *            content-box, so it sits outside the height reportHeight measures, and its width is
- *            zoom-dependent anyway (useZoomInvariantBorderWidth(1.5) is 1.5 * BORDER_WIDTH_SCALE
+ *            zoom-dependent anyway (zoomInvariantWidth(1.5) is 1.5 * BORDER_WIDTH_SCALE
  *            1.8 = 2.7 at zoom 1, more zoomed out). Monaco's `padding` option is
  *            { top: 0, bottom: 0 } and adds nothing.
  */

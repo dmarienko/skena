@@ -12,7 +12,7 @@ import { MarkdownRenderer } from '../../renderers/MarkdownRenderer';
 import { useHighlightedHtml } from '../../lib/codeHighlight';
 import { useHostMarkdownOf } from '../../hooks/useHostMarkdown';
 import { ScrollableContent, getScrollPosition } from '../../components/ScrollableContent';
-import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
+import { HANDLE_STYLE, ZOOM_WIDTH_CLASS, focusRingStyle, useZoomVars, zoomInvariantWidth } from './nodeShared';
 import { nodeBorderColor } from '../palette';
 import { sanitizeHtmlAttrs } from './knowledgeHtml';
 import { useKnowledgeAssets } from '../knowledgeAssets';
@@ -68,8 +68,9 @@ const BUTTON_STYLE: React.CSSProperties = {
 export function KnowledgeNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as KnowledgeNode & { accentColor?: string };
   useMinuteTick();
-  const selectedStyle = useSelectedStyle(selected);
-  const bw = useZoomInvariantBorderWidth(1.5);
+  const selectedStyle = focusRingStyle(selected);
+  const bw = zoomInvariantWidth(1.5);
+  const zoomVars = useZoomVars();
   const borderColor = nodeBorderColor('knowledge', node.accentColor);
   // - a whole paper in the DOM is laid out and painted on every pan and zoom, so only the start of
   //   the text is rendered, cut at a block boundary, and it grows as the reader scrolls toward its
@@ -157,9 +158,10 @@ export function KnowledgeNodeComponent({ data, id, selected }: NodeProps): JSX.E
     <>
     <NodeLabelBadge label={node.nodeLabel} createdBy={(node as { createdBy?: string }).createdBy} />
     <div
-      className="skena-node skena-node--knowledge"
+      className={`skena-node skena-node--knowledge ${ZOOM_WIDTH_CLASS}`}
       style={{
-        border:        `${bw}px solid ${borderColor}`,
+        ...zoomVars,
+        border:        `${bw} solid ${borderColor}`,
         height:        '100%',
         borderRadius:  6,
         overflow:      'hidden',

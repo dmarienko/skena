@@ -37,7 +37,7 @@ import { MarkdownRenderer } from '../../renderers/MarkdownRenderer';
 import { useHighlightedHtml } from '../../lib/codeHighlight';
 import { useHostMarkdown } from '../../hooks/useHostMarkdown';
 import { ScrollableContent } from '../../components/ScrollableContent';
-import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
+import { HANDLE_STYLE, ZOOM_WIDTH_CLASS, focusRingStyle, useZoomVars, zoomInvariantWidth } from './nodeShared';
 import { nodeBorderColor } from '../palette';
 import { stripForHost, rememberWritten, classifyHostText } from '../vimClipboard';
 import { ensureCanvasWordCompletion } from '../canvasWordCompletion';
@@ -614,8 +614,9 @@ window.addEventListener('skena:clipboardContent', (e: Event) => {
 
 export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as TextNode & { accentColor?: string };
-  const selectedStyle = useSelectedStyle(selected);
-  const bw = useZoomInvariantBorderWidth(1.5);
+  const selectedStyle = focusRingStyle(selected);
+  const bw = zoomInvariantWidth(1.5);
+  const zoomVars = useZoomVars();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(node.text);
   const hostHtml = useHostMarkdown(draft);
@@ -975,9 +976,10 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
     <NodeLabelBadge label={node.nodeLabel} createdBy={(node as any).createdBy} />
     <div
       ref={wrapperRef}
-      className="skena-node skena-node--text"
+      className={`skena-node skena-node--text ${ZOOM_WIDTH_CLASS}`}
       style={{
-        border:        `${bw}px solid ${borderColor}`,
+        ...zoomVars,
+        border:        `${bw} solid ${borderColor}`,
         height:        '100%',
         borderRadius:  6,
         overflow:      'hidden',

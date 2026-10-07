@@ -35,7 +35,7 @@ import { CodeRenderer } from '../../renderers/CodeRenderer';
 import { ImageRenderer } from '../../renderers/ImageRenderer';
 import { HtmlShadow } from '../../renderers/HtmlShadow';
 import { useHighlightedHtml } from '../../lib/codeHighlight';
-import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
+import { HANDLE_STYLE, ZOOM_WIDTH_CLASS, focusRingStyle, useZoomVars, zoomInvariantWidth } from './nodeShared';
 import { nodeBorderColor } from '../palette';
 
 function vscodePostMessage(msg: unknown) {
@@ -157,8 +157,9 @@ function ZoomGate({ id, status, content, fileType, resourceUri, error, truncated
 
 function FileNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as FileNode & { accentColor?: string };
-  const selectedStyle = useSelectedStyle(selected);
-  const bw = useZoomInvariantBorderWidth(1.5);
+  const selectedStyle = focusRingStyle(selected);
+  const bw = zoomInvariantWidth(1.5);
+  const zoomVars = useZoomVars();
   const { status, content, fileType, resourceUri, error, truncated, totalSize, html } = useFileContent(node.file);
 
   const openInEditor = useCallback(() => {
@@ -178,9 +179,10 @@ function FileNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     <>
     <NodeLabelBadge label={node.nodeLabel} createdBy={(node as any).createdBy} />
     <div
-      className="skena-node skena-node--file"
+      className={`skena-node skena-node--file ${ZOOM_WIDTH_CLASS}`}
       style={{
-        border:        `${bw}px solid ${borderColor}`,
+        ...zoomVars,
+        border:        `${bw} solid ${borderColor}`,
         height:        '100%',
         display:       'flex',
         flexDirection: 'column',

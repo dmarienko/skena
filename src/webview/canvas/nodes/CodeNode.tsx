@@ -13,7 +13,7 @@ import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 import { initVimMode } from 'monaco-vim';
 import { CodeNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
-import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
+import { HANDLE_STYLE, ZOOM_WIDTH_CLASS, focusRingStyle, useZoomVars, zoomInvariantWidth } from './nodeShared';
 import { nodeBorderColor } from '../palette';
 import { makeCellKernelResolver } from '../../../shared/kernelBinding';
 import type { SectionLane } from '../../../shared/sectionLanes';
@@ -199,8 +199,9 @@ function cellKernelResolver(nodes: RFNode[], edges: Edge[], lanes: SectionLane[]
 
 function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as CodeNode & { accentColor?: string };
-  const bw = useZoomInvariantBorderWidth(1.5);
-  const selectedStyle = useSelectedStyle(selected);
+  const bw = zoomInvariantWidth(1.5);
+  const zoomVars = useZoomVars();
+  const selectedStyle = focusRingStyle(selected);
   const borderColor = nodeBorderColor('code', node.accentColor);
   const [code, setCode] = useState(node.code ?? '');
   // - editing: the editor is mounted. editorShown: it has tokenized and painted its lines, so the
@@ -551,10 +552,11 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
       <NodeLabelBadge label={node.nodeLabel} createdBy={(node as { createdBy?: string }).createdBy} />
       <div
         ref={nodeElRef}
-        className={`skena-node skena-node--code${node.lastStatus === 'running' ? ' skena-node--running' : ''}`}
+        className={`skena-node ${ZOOM_WIDTH_CLASS} skena-node--code${node.lastStatus === 'running' ? ' skena-node--running' : ''}`}
         onContextMenu={onContextMenu}
         style={{
-          border:        `${bw}px solid ${borderColor}`,
+          ...zoomVars,
+          border:        `${bw} solid ${borderColor}`,
           height:        '100%',
           display:       'flex',
           flexDirection: 'column',

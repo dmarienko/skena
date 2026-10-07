@@ -54,6 +54,7 @@ import { KernelNodeComponent } from './nodes/KernelNode';
 import { CodeNodeComponent }   from './nodes/CodeNode';
 import { KnowledgeNodeComponent } from './nodes/KnowledgeNode';
 import { LabeledEdgeComponent } from './edges/LabeledEdge';
+import { useZoomVar } from './nodes/nodeShared';
 import { HelperLines } from './HelperLines';
 import { SectionSeparators } from './SectionSeparators';
 import { EdgeFollowHints, type EdgeHint, type ShownHints } from './EdgeFollowHints';
@@ -1426,6 +1427,8 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
   }, [pushHistory]);
 
   const rfInstance = useReactFlow();
+  // - node borders, the focus ring and edge widths follow the zoom in CSS, not by re-rendering
+  useZoomVar();
   const { screenToFlowPosition } = rfInstance;
   // - keep a ref so the stable navigation useEffect can call setCenter / getViewport
   const rfRef = useRef(rfInstance);

@@ -32,7 +32,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { EdgeProps, BaseEdge, EdgeLabelRenderer, Position, useStore } from '@xyflow/react';
 import { routeOrthogonal, ORTHOGONAL_CORNER_R, type NodeRect } from '../../../shared/orthogonalRoute';
 import { edgeLabelPoint, waypointPath } from '../../../shared/edgePath';
-import { useZoomInvariantBorderWidth } from '../nodes/nodeShared';
+import { ZOOM_WIDTH_CLASS, useZoomVars, zoomInvariantWidth } from '../nodes/nodeShared';
 import { edgeKindColor, lighten, nodeBorderColor } from '../palette';
 import { useEdgeRoute } from '../EdgeRoutesContext';
 import { useThemeTick } from '../../theme';
@@ -153,10 +153,12 @@ export function LabeledEdgeComponent({
   const edgePath = waypointPath(pts, ORTHOGONAL_CORNER_R);
   const [labelX, labelY] = edgeLabelPoint(pts);
 
-  // - the zoom-invariant width of a 1 px line (the scaler node borders use, so edges thin out with
-  //   the chrome rather than on their own). The scaler is linear in its base, so multiplying any
-  //   length by it gives that length through the same zoom-invariant factor the width went through.
-  const sw = useZoomInvariantBorderWidth(EDGE_WIDTH_PX);
+  // - the zoom-invariant width of a 1 px line, as a CSS length (the scaler node borders use, so edges
+  //   thin out with the chrome rather than on their own). The scaler is linear in its base, so
+  //   multiplying any length by it gives that length through the same zoom-invariant factor the width
+  //   went through. The browser works it out from --skena-zoom on the path, so a zoom re-renders nothing.
+  const sw = zoomInvariantWidth(EDGE_WIDTH_PX);
+  const zoomVars = useZoomVars();
   // - edgeKindColor reads the VS Code theme kind once, at this render; the tick re-renders on a swap
   useThemeTick();
   const kind = route?.kind ?? 'context';
@@ -170,17 +172,18 @@ export function LabeledEdgeComponent({
   const edgeColor = animated ? lighten(baseColor, RUNNING_LIGHTEN) : baseColor;
   // - an edge of the focused node, then a running one, then the selected edge: each widens the last
   const focused = focusedId !== null && (source === focusedId || target === focusedId);
-  const width = sw * (focused ? FOCUS_WIDTH : 1) * (animated ? RUNNING_WIDTH : 1);
+  const widthFactor = (focused ? FOCUS_WIDTH : 1) * (animated ? RUNNING_WIDTH : 1);
   const dash = DASH_BY_KIND[kind];
   const lineStyle: React.CSSProperties = {
     ...style,
+    ...zoomVars,
     stroke: edgeColor,
     strokeOpacity: focused ? 1 : EDGE_OPACITY,
-    ...(dash ? { strokeDasharray: `${dash[0] * sw} ${dash[1] * sw}` } : {}),
+    ...(dash ? { strokeDasharray: `calc(${sw} * ${dash[0]}) calc(${sw} * ${dash[1]})` } : {}),
   };
   const activeStyle: React.CSSProperties = selected
-    ? { ...lineStyle, strokeWidth: width * 1.6, filter: `drop-shadow(0 0 4px ${edgeColor})` }
-    : { ...lineStyle, strokeWidth: width };
+    ? { ...lineStyle, strokeWidth: `calc(${sw} * ${widthFactor * 1.6})`, filter: `drop-shadow(0 0 4px ${edgeColor})` }
+    : { ...lineStyle, strokeWidth: `calc(${sw} * ${widthFactor})` };
 
   // - React Flow resolves an edge's markerEnd object into a url() before this component sees it, so an
   //   arrow whose colour was decided here needs a marker of its own
@@ -220,7 +223,7 @@ export function LabeledEdgeComponent({
           </marker>
         </defs>
       )}
-      <BaseEdge id={id} path={edgePath} style={activeStyle} markerEnd={ownArrow ? `url(#${arrowId})` : markerEnd} />
+      <BaseEdge id={id} path={edgePath} className={ZOOM_WIDTH_CLASS} style={activeStyle} markerEnd={ownArrow ? `url(#${arrowId})` : markerEnd} />
 
       <EdgeLabelRenderer>
         {editing ? (

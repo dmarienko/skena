@@ -12,13 +12,14 @@ import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { MarkdownRenderer } from '../../renderers/MarkdownRenderer';
 import { PlotlyRenderer } from '../../renderers/PlotlyRenderer';
 import { ScrollableContent } from '../../components/ScrollableContent';
-import { HANDLE_STYLE, useSelectedStyle, useZoomInvariantBorderWidth } from './nodeShared';
+import { HANDLE_STYLE, ZOOM_WIDTH_CLASS, focusRingStyle, useZoomVars, zoomInvariantWidth } from './nodeShared';
 import { nodeBorderColor } from '../palette';
 
 export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as CellNode & { accentColor?: string };
-  const selectedStyle = useSelectedStyle(selected);
-  const bw = useZoomInvariantBorderWidth(1.5);
+  const selectedStyle = focusRingStyle(selected);
+  const bw = zoomInvariantWidth(1.5);
+  const zoomVars = useZoomVars();
   const borderColor = nodeBorderColor('cell', node.accentColor);
 
   // - cap oversized HTML (e.g. a huge dataframe) BEFORE it becomes DOM, so an existing giant cell
@@ -42,10 +43,11 @@ export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
     <>
     <NodeLabelBadge label={node.nodeLabel} />
     <div
-      className="skena-node skena-node--cell"
+      className={`skena-node skena-node--cell ${ZOOM_WIDTH_CLASS}`}
       style={{
+        ...zoomVars,
         // - dashed, not solid: sets output cells apart from other node types at a glance
-        border:        `${bw}px dashed ${borderColor}`,
+        border:        `${bw} dashed ${borderColor}`,
         height:        '100%',
         borderRadius:  6,
         overflow:      'hidden',

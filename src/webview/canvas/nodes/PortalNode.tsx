@@ -7,7 +7,7 @@ import React from 'react';
 import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import { PortalNode } from '../../../shared/types';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
-import { useZoomInvariantBorderWidth } from './nodeShared';
+import { ZOOM_WIDTH_CLASS, useZoomVars, zoomInvariantWidth } from './nodeShared';
 import { nodeBorderColor } from '../palette';
 
 function vscodePostMessage(msg: unknown) {
@@ -23,15 +23,18 @@ function canvasBasename(p: string): string {
 export function PortalNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as PortalNode & { accentColor?: string };
   const borderColor = nodeBorderColor('portal', node.accentColor);
-  const bw = useZoomInvariantBorderWidth(2);
+  const bw = zoomInvariantWidth(2);
+  const zoomVars = useZoomVars();
 
   const open = () => vscodePostMessage({ type: 'openFile', uri: node.canvas });
   return (
     <>
     <NodeLabelBadge label={node.nodeLabel} createdBy={(node as any).createdBy} />
     <div
+      className={ZOOM_WIDTH_CLASS}
       style={{
-        border:         `${bw}px solid ${borderColor}`,
+        ...zoomVars,
+        border:         `${bw} solid ${borderColor}`,
         height:         '100%',
         borderRadius:   '50%',              // - circle shape
         overflow:       'hidden',           // - clip content to circle
