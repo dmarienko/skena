@@ -1,7 +1,10 @@
 // - run: npx esbuild src/shared/goToDefinition.ts --bundle --format=esm --outfile=tests/.build/goToDefinition.mjs && node --test tests/go-to-definition.mjs
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { codeCellsInRunOrder, dottedNameAt, fromJoined, isDottedName, joinCells, toJoined } from './.build/goToDefinition.mjs';
+import {
+  codeCellsInRunOrder, dottedNameAt, fileUri, fromJoined, isDottedName, joinCells, pickEntry, targetsFromKernel,
+  targetsFromLocations, toJoined,
+} from './.build/goToDefinition.mjs';
 
 // - the 1-based column of the n-th (0-based) occurrence of `part` in `line`
 const colOf = (line, part, n = 0) => {
@@ -98,4 +101,66 @@ test('8. positions both ways: cell line/col (1-based) <-> joined line/character 
   assert.equal(fromJoined(j, { line: 3, character: 0 }), null);   // - between A and E
   assert.equal(toJoined(j, 'A', 3, 1), null);
   assert.equal(toJoined(j, 'Z', 1, 1), null);
+});
+
+const J = joinCells([{ id: 'A', code: 'x = 1\ny = 2' }, { id: 'B', code: 'x = 3\nprint(x)' }, { id: 'C', code: 'x = 4' }]);
+const DOC = 'file:///run/user/1000/skena/def.py';
+const loc = (line, character, uri = DOC) => ({ uri, line, character });
+
+test('9. Pylance: a definition in the joined document goes to its cell; of several the last one before the cursor', () => {
+  const cursor = { line: 4, character: 6 };   // - the x of print(x) in B
+  assert.deepEqual(targetsFromLocations([loc(0, 0), loc(3, 0), loc(6, 0)], DOC, J, cursor), [{ kind: 'cell', cellId: 'B', line: 1, col: 1 }]);
+  assert.deepEqual(targetsFromLocations([loc(6, 0)], DOC, J, { line: 0, character: 0 }), [{ kind: 'cell', cellId: 'C', line: 1, col: 1 }]);
+});
+
+test('10. Pylance: a definition in a file goes to the file; none before the cursor keeps all; repeats and gaps dropped', () => {
+  const lib = 'file:///venv/lib/numpy/linalg/_linalg.py';
+  assert.deepEqual(targetsFromLocations([loc(363, 4, lib), loc(363, 4, lib)], DOC, J, { line: 0, character: 0 }), [{ kind: 'file', uri: lib, line: 364, col: 5 }]);
+  assert.deepEqual(targetsFromLocations([loc(3, 0), loc(6, 0)], DOC, J, { line: 0, character: 0 }), [
+    { kind: 'cell', cellId: 'B', line: 1, col: 1 }, { kind: 'cell', cellId: 'C', line: 1, col: 1 },
+  ]);
+  assert.deepEqual(targetsFromLocations([loc(2, 0)], DOC, J, { line: 4, character: 0 }), []);
+});
+
+// - what the kernel sent for after_magic in a real ipykernel 6.31 (IPython 9.12): the cell as compiled,
+//   its %time line already turned into a call
+const KCELL = "get_ipython().run_line_magic('time', 'x = 1')\ndef after_magic():\n    return 2\n";
+const kdef = (over = {}) => ({ file: '/tmp/ipykernel_1/2.py', line: 2, col: 5, exists: false, cell: KCELL, start: 2, count: 2, ...over });
+
+test('11. kernel: the cell whose text is the kernel copy (CRLF, trailing blanks ignored), at the kernel line', () => {
+  const cells = [{ id: 'A', code: 'z = 0' }, { id: 'B', code: "get_ipython().run_line_magic('time', 'x = 1')\r\ndef after_magic():   \r\n    return 2\r\n\r\n" }];
+  assert.deepEqual(targetsFromKernel(kdef(), cells), [{ kind: 'cell', cellId: 'B', line: 2, col: 5 }]);
+});
+
+test('12. kernel: else every cell holding the block, at its def line; a decorated def counts from the decorator', () => {
+  const cells = [
+    { id: 'A', code: '%time x = 1\ndef after_magic():\n    return 2' },
+    { id: 'B', code: '# copy\n\n\ndef after_magic():\n    return 2' },
+  ];
+  assert.deepEqual(targetsFromKernel(kdef(), cells), [{ kind: 'cell', cellId: 'A', line: 2, col: 5 }, { kind: 'cell', cellId: 'B', line: 4, col: 5 }]);
+  const deco = { file: '/tmp/ipykernel_1/3.py', line: 3, col: 5, exists: false, cell: 'import f\n@f.wrap\ndef g():\n    pass\n', start: 2, count: 3 };
+  assert.deepEqual(targetsFromKernel(deco, [{ id: 'C', code: 'x = 1\n@f.wrap\ndef g():\n    pass' }]), [{ kind: 'cell', cellId: 'C', line: 3, col: 5 }]);
+});
+
+test('13. kernel: a cell file found nowhere gives nothing; a file on disk is the file', () => {
+  assert.deepEqual(targetsFromKernel(kdef(), [{ id: 'A', code: 'def after_magic():\n    return 3' }]), []);
+  const file = { file: '/home/u/p/src/m.py', line: 5, col: 5, exists: true };
+  assert.deepEqual(targetsFromKernel(file, []), [{ kind: 'file', uri: 'file:///home/u/p/src/m.py', line: 5, col: 5 }]);
+});
+
+test('14. file URIs from kernel paths: segments encoded, Windows drives kept', () => {
+  assert.equal(fileUri('/home/u/my dir/a#b.py'), 'file:///home/u/my%20dir/a%23b.py');
+  assert.equal(fileUri('C:\\Users\\u\\a.py'), 'file:///C:/Users/u/a.py');
+});
+
+test('15. quick pick: E7:12 for a cell; a file relative to its workspace folder, else ~, else in full', () => {
+  const labelOf = id => ({ A: 'E7' })[id] ?? id;
+  const pathOf = uri => decodeURIComponent(uri.replace(/^file:\/\//, ''));
+  const roots = ['/home/u/proj'];
+  const at = (t, text = '    def solve(a, b):') => pickEntry(t, text, labelOf, pathOf, roots, '/home/u');
+  assert.deepEqual(at({ kind: 'cell', cellId: 'A', line: 12, col: 5 }, 'def f():'), { label: 'E7:12', description: 'def f():' });
+  assert.deepEqual(at({ kind: 'file', uri: 'file:///home/u/proj/src/m.py', line: 3, col: 1 }), { label: 'src/m.py:3', description: 'def solve(a, b):' });
+  assert.deepEqual(at({ kind: 'file', uri: 'file:///home/u/.venv/lib/np.py', line: 364, col: 5 }), { label: '~/.venv/lib/np.py:364', description: 'def solve(a, b):' });
+  assert.deepEqual(at({ kind: 'file', uri: 'file:///usr/lib/x.py', line: 1, col: 1 }), { label: '/usr/lib/x.py:1', description: 'def solve(a, b):' });
+  assert.deepEqual(at({ kind: 'file', uri: 'file:///home/u/projx/a.py', line: 1, col: 1 }), { label: '~/projx/a.py:1', description: 'def solve(a, b):' });
 });

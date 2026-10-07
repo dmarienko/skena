@@ -121,3 +121,108 @@ export function fromJoined(j: JoinedCells, pos: DocPos): { cellId: string; line:
   const s = j.spans.find(x => pos.line >= x.first && pos.line < x.first + x.lines);
   return s ? { cellId: s.id, line: pos.line - s.first + 1, col: pos.character + 1 } : null;
 }
+
+/** - a place to go: a line of a code cell, or of a file (by URI string); 1-based line and column */
+export type DefinitionTarget =
+  | { kind: 'cell'; cellId: string; line: number; col: number }
+  | { kind: 'file'; uri: string; line: number; col: number };
+
+/** - one location from vscode.executeDefinitionProvider: its document's URI string and 0-based start */
+export interface DefLocation { uri: string; line: number; character: number }
+
+const atOrBefore = (a: DocPos, b: DocPos) => a.line < b.line || (a.line === b.line && a.character <= b.character);
+
+/**
+ * Pylance's locations as places to go. One in the joined document (`joinedUri`) goes to its cell and
+ * is dropped on a line between cells; any other goes to its document. Of several in the joined
+ * document only the last one that starts at or before `cursor` is kept, the definition a run in order
+ * reaches; when none starts before it, all are kept. Repeats are dropped.
+ */
+export function targetsFromLocations(locs: readonly DefLocation[], joinedUri: string, j: JoinedCells, cursor: DocPos): DefinitionTarget[] {
+  const inDoc = locs.filter(l => l.uri === joinedUri);
+  const reaching = inDoc.filter(l => atOrBefore(l, cursor));
+  const keep = new Set(reaching.length > 0 ? [reaching.reduce((a, b) => (atOrBefore(a, b) ? b : a))] : inDoc);
+  const out: DefinitionTarget[] = [];
+  const seen = new Set<string>();
+  const add = (t: DefinitionTarget) => {
+    const key = t.kind === 'cell' ? `c ${t.cellId} ${t.line} ${t.col}` : `f ${t.uri} ${t.line} ${t.col}`;
+    if (!seen.has(key)) { seen.add(key); out.push(t); }
+  };
+  for (const l of locs) {
+    if (l.uri !== joinedUri) { add({ kind: 'file', uri: l.uri, line: l.line + 1, col: l.character + 1 }); continue; }
+    if (!keep.has(l)) continue;
+    const c = fromJoined(j, l);
+    if (c) add({ kind: 'cell', ...c });
+  }
+  return out;
+}
+
+/** - the kernel's answer (definitionSnippet.ts); `cell`, `start` and `count` only for a cell's temporary file */
+export interface KernelDefinition {
+  file:   string;
+  /** - 1-based line and column of the name on its def or class line (line 1, column 1 for a module) */
+  line:   number;
+  col:    number;
+  /** - the file is on disk */
+  exists: boolean;
+  /** - the whole cell as the kernel compiled it, the 1-based line the definition's block starts on, its line count */
+  cell?:  string;
+  start?: number;
+  count?: number;
+}
+
+const trimEnd = (s: string) => s.replace(/\s+$/, '');
+const splitLines = (s: string) => s.split(/\r\n|\r|\n/);
+
+/**
+ * Where the kernel's answer goes. A cell's temporary file is found among the cells: the cells whose
+ * text equals the kernel's copy (lines compared without trailing blanks, trailing empty lines
+ * ignored) at the kernel's line; else every place a cell holds the definition's block (decorators
+ * and body) as consecutive lines, at its def line. None found and the file is on disk: the file.
+ * A file that is not a cell's: the file.
+ */
+export function targetsFromKernel(def: KernelDefinition, cells: readonly JoinCell[]): DefinitionTarget[] {
+  const file: DefinitionTarget[] = def.exists ? [{ kind: 'file', uri: fileUri(def.file), line: def.line, col: def.col }] : [];
+  if (def.cell === undefined || def.start === undefined || def.count === undefined) return file;
+  const norm = (s: string) => {
+    const ls = splitLines(s).map(trimEnd);
+    while (ls.length > 0 && ls[ls.length - 1] === '') ls.pop();
+    return ls;
+  };
+  const kernelLines = norm(def.cell);
+  const block = kernelLines.slice(def.start - 1, def.start - 1 + def.count);
+  const offset = def.line - def.start;
+  const lines = cells.map(c => norm(c.code));
+  const same = cells.flatMap((c, i) => (lines[i].join('\n') === kernelLines.join('\n') ? [{ kind: 'cell' as const, cellId: c.id, line: def.line, col: def.col }] : []));
+  if (same.length > 0) return same;
+  if (block.length === 0) return file;
+  const hits = cells.flatMap((c, i) => lines[i].flatMap((_, at) =>
+    block.every((b, k) => lines[i][at + k] === b) ? [{ kind: 'cell' as const, cellId: c.id, line: at + 1 + offset, col: def.col }] : []));
+  return hits.length > 0 ? hits : file;
+}
+
+/** - a file path from the kernel as a URI string: file:// with each segment encoded; Windows drive paths too */
+export function fileUri(path: string): string {
+  const p = path.replace(/\\/g, '/');
+  const withRoot = /^[A-Za-z]:\//.test(p) ? `/${p}` : p;
+  return `file://${withRoot.split('/').map(seg => encodeURIComponent(seg).replace(/%3A/g, ':')).join('/')}`;
+}
+
+/** - what a quick pick shows for a target: `E7:12` or `path:12`, and the line's text without its indentation */
+export interface PickEntry { label: string; description: string }
+
+/**
+ * The quick pick entry of a target. A cell by its label (E7); a file by its path relative to the
+ * workspace folder that holds it, else with ~ for the home folder, else in full. `text` is the
+ * target line's text.
+ */
+export function pickEntry(t: DefinitionTarget, text: string, labelOf: (cellId: string) => string, filePath: (uri: string) => string, roots: readonly string[], home: string): PickEntry {
+  const description = text.trim();
+  if (t.kind === 'cell') return { label: `${labelOf(t.cellId)}:${t.line}`, description };
+  const path = filePath(t.uri);
+  const root = roots.find(r => path.startsWith(r.endsWith('/') ? r : `${r}/`));
+  const shown = root !== undefined
+    ? path.slice(root.length).replace(/^\/+/, '')
+    : home !== '' && path.startsWith(`${home}/`) ? `~/${path.slice(home.length + 1)}` : path;
+  return { label: `${shown}:${t.line}`, description };
+}
