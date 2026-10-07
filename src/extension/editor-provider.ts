@@ -702,7 +702,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           break;
         }
         case 'showDefinitions':
-          await showDefinitions(msg.targets, document.canvas, send)
+          await showDefinitions(msg.targets, document.canvas, msg.cellNodeId, send)
             .catch(err => { void vscode.window.showErrorMessage(`Go to definition: ${err instanceof Error ? err.message : String(err)}`); });
           break;
         case 'findReferences': {

@@ -95,8 +95,11 @@ async function lineTexts(targets: DefinitionTarget[], canvas: CanvasData): Promi
   }));
 }
 
-/** - one file target opens beside the canvas; several go to a quick pick, and a picked cell back to the webview */
-export async function showDefinitions(targets: DefinitionTarget[], canvas: CanvasData, send: (m: HostToWebview) => void): Promise<void> {
+/**
+ * - one file target opens beside the canvas; several go to a quick pick, and a picked cell back to the
+ *   webview with `from`, the cell that asked
+ */
+export async function showDefinitions(targets: DefinitionTarget[], canvas: CanvasData, from: string, send: (m: HostToWebview) => void): Promise<void> {
   if (targets.length === 0) return;
   if (targets.length === 1 && targets[0].kind === 'file') { await openFileTarget(targets[0]); return; }
   const texts = await lineTexts(targets, canvas);
@@ -110,5 +113,5 @@ export async function showDefinitions(targets: DefinitionTarget[], canvas: Canva
   if (!picked) return;
   const t = picked.target;
   if (t.kind === 'file') await openFileTarget(t);
-  else send({ type: 'definitionGoto', cellNodeId: t.cellId, line: t.line, col: t.col });
+  else send({ type: 'definitionGoto', cellNodeId: t.cellId, line: t.line, col: t.col, from });
 }

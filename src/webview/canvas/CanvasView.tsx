@@ -52,6 +52,7 @@ import { PortalNodeComponent } from './nodes/PortalNode';
 import { NoderefNodeComponent } from './nodes/NoderefNode';
 import { KernelNodeComponent } from './nodes/KernelNode';
 import { CodeNodeComponent }   from './nodes/CodeNode';
+import { noteInCell } from './nodes/cellDefinition';
 import { KnowledgeNodeComponent } from './nodes/KnowledgeNode';
 import { LabeledEdgeComponent } from './edges/LabeledEdge';
 import { useZoomVar } from './nodes/nodeShared';
@@ -179,6 +180,9 @@ const RECENT_OUTPUT_MS = 4000;
 
 // - quiet time after the last canvas change before the completion word list is rebuilt
 const WORDS_REBUILD_MS = 400;
+
+// - how long go to definition waits for a cell of a section it unfolds to mount before giving up on its editor
+const GO_TO_CELL_WAIT_MS = 1000;
 
 // - the label map of a disarmed chord, so disarming allocates nothing
 const EMPTY_LABELS: ReadonlyMap<string, string> = new Map();
@@ -4266,23 +4270,49 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
     return () => window.removeEventListener('skena:focusNodeRequest', handler);
   }, [focusNodeById]);
 
-  // - go to definition landed in a code cell (cellDefinition.ts, or the host's quick pick): select it
-  //   as h/j/k/l do (smallest pan, the `` ` `` register), then open its editor at the line. A cell in
-  //   a folded section unfolds it first and waits for the cell to mount, as a new cell does.
+  // - go to definition landed in a code cell (cellDefinition.ts, referencePeek.ts, or the host's quick
+  //   pick): select it as h/j/k/l do (smallest pan, the `` ` `` register), then open its editor at the
+  //   line. A cell in a folded section unfolds it first; it is selected once it is drawn and its editor
+  //   opened once it has mounted (its enterEdit listener takes the request), tried until
+  //   GO_TO_CELL_WAIT_MS. A cell deleted meanwhile is noted in the cell that asked (`from`), if that
+  //   one is still there.
   useEffect(() => {
+    let stop: (() => void) | null = null;
     const handler = (e: Event) => {
-      const { id, line, col } = (e as CustomEvent<{ id: string; line: number; col: number }>).detail;
-      const open = () => {
-        focusNodeById(id);
-        window.dispatchEvent(new CustomEvent('skena:enterEdit', { detail: { id, cursor: { line, col } } }));
+      const { id, line, col, from } = (e as CustomEvent<{ id: string; line: number; col: number; from?: string }>).detail;
+      stop?.();
+      const exists = (nid: string) => nodesRef.current.some(n => n.id === nid);
+      if (!exists(id)) {
+        if (from !== undefined && exists(from)) noteInCell(from, 'that cell no longer exists');
+        return;
+      }
+      let focused = false;
+      // - true when there is nothing more to do: the editor took the request, or the cell is gone
+      const attempt = (): boolean => {
+        if (!exists(id)) return true;
+        if (!focused) {
+          if (!document.querySelector(`.react-flow__node[data-id="${CSS.escape(id)}"]`)) return false;
+          focusNodeById(id);
+          focused = true;
+        }
+        const detail = { id, cursor: { line, col }, taken: false };
+        window.dispatchEvent(new CustomEvent('skena:enterEdit', { detail }));
+        return detail.taken;
       };
       const lane = derivedLanesRef.current.find(l => (l.folded ?? []).includes(id));
-      if (!lane) { open(); return; }
-      foldLaneRef.current(lane.id);   // - the same action unfolds
-      setTimeout(open, 80);
+      if (lane) foldLaneRef.current(lane.id);   // - the same action unfolds
+      if (attempt()) return;
+      const until = performance.now() + GO_TO_CELL_WAIT_MS;
+      const timer = window.setInterval(() => {
+        if (attempt()) { stop?.(); return; }
+        if (performance.now() < until) return;
+        if (!focused) focusNodeById(id);
+        stop?.();
+      }, 30);
+      stop = () => { window.clearInterval(timer); stop = null; };
     };
     window.addEventListener('skena:goToCell', handler);
-    return () => window.removeEventListener('skena:goToCell', handler);
+    return () => { stop?.(); window.removeEventListener('skena:goToCell', handler); };
   }, [focusNodeById]);
 
   // - the same for a reference to a section (S3): the host found the label; it is read here against

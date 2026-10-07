@@ -30,6 +30,8 @@ const LIST = `${PEEK} .ref-tree`;
 
 interface Peek {
   plan:   PeekPlan;
+  /** - the cell the peek is open in */
+  cellId: string;
   finish: (restore: boolean) => void;
 }
 const peeks = new Map<MonacoEditor.ICodeEditor, Peek>();
@@ -53,9 +55,10 @@ function press(target: EventTarget, key: ListKey, keyCode: number): void {
   target.dispatchEvent(e);
 }
 
-function goTo(t: DefinitionTarget): void {
-  if (t.kind === 'cell') window.dispatchEvent(new CustomEvent('skena:goToCell', { detail: { id: t.cellId, line: t.line, col: t.col } }));
-  else vscodePostMessage({ type: 'showDefinitions', targets: [t] });
+// - `from`: the cell the peek was open in, where a note goes when the target cell is gone
+function goTo(t: DefinitionTarget, from: string): void {
+  if (t.kind === 'cell') window.dispatchEvent(new CustomEvent('skena:goToCell', { detail: { id: t.cellId, line: t.line, col: t.col, from } }));
+  else vscodePostMessage({ type: 'showDefinitions', targets: [t], cellNodeId: from });
 }
 
 let openerInstalled = false;
@@ -73,7 +76,7 @@ function installOpener(): void {
       const target = openedTarget(peek.plan, resource.toString(), pos.lineNumber, pos.column);
       if (!target) return false;
       peek.finish(true);
-      goTo(target);
+      goTo(target, peek.cellId);
       return true;
     },
   });
@@ -186,7 +189,7 @@ export function openReferencePeek(
   if (overlays) observer.observe(overlays, { childList: true });
   // - the editor goes (the cell left edit mode): the peek went with it, the cell keeps its own size
   const disposed = editor.onDidDispose(() => finish(false));
-  peeks.set(editor, { plan, finish });
+  peeks.set(editor, { plan, cellId, finish });
 
   if (height !== null) setHeight(height);
   editor.trigger('skena', 'editor.action.referenceSearch.trigger', null);

@@ -216,7 +216,7 @@ export function App(): JSX.Element {
           window.dispatchEvent(new CustomEvent('skena:definitionResult', { detail: msg }));
           break;
         case 'definitionGoto':
-          window.dispatchEvent(new CustomEvent('skena:goToCell', { detail: { id: msg.cellNodeId, line: msg.line, col: msg.col } }));
+          window.dispatchEvent(new CustomEvent('skena:goToCell', { detail: { id: msg.cellNodeId, line: msg.line, col: msg.col, from: msg.from } }));
           break;
         case 'referencesResult':
           window.dispatchEvent(new CustomEvent('skena:referencesResult', { detail: msg }));

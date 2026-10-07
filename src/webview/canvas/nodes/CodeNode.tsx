@@ -522,11 +522,13 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   }, [id, editorFont]);
 
   // - a freshly-created code cell (autoEdit) or Enter-on-selected fires skena:enterEdit → edit mode.
-  //   Go to definition adds a cursor: the editor opens there, or an open one moves there.
+  //   Go to definition adds a cursor: the editor opens there, or an open one moves there. `taken` tells
+  //   the sender the cell has mounted and got it.
   useEffect(() => {
     const onEnter = (e: Event) => {
-      const d = (e as CustomEvent<{ id: string; cursor?: { line: number; col: number } }>).detail;
+      const d = (e as CustomEvent<{ id: string; cursor?: { line: number; col: number }; taken?: boolean }>).detail;
       if (d?.id !== id) return;
+      d.taken = true;
       const ed = editorRef.current;
       if (d.cursor && ed?.getModel() && vimRef.current) {
         moveVimCursor(ed, vimRef.current, d.cursor);

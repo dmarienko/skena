@@ -394,8 +394,9 @@ export interface MsgInspect { type: 'inspect'; reqId: string; cellNodeId: string
 // - leader g in a code cell: where is the name at line/col (1-based) of the live `code` defined. `name`
 //   is the dotted name there, null when its chain holds a call or subscript (the kernel is not asked then)
 export interface MsgGoToDefinition { type: 'goToDefinition'; reqId: string; cellNodeId: string; code: string; line: number; col: number; name: string | null; }
-// - webview → host: open the one file target, or show the quick pick of several targets
-export interface MsgShowDefinitions { type: 'showDefinitions'; targets: DefinitionTarget[]; }
+// - webview → host: open the one file target, or show the quick pick of several targets; `cellNodeId`
+//   is the cell that asked, handed back in definitionGoto
+export interface MsgShowDefinitions { type: 'showDefinitions'; targets: DefinitionTarget[]; cellNodeId: string; }
 // - leader z in a code cell: every reference of the name at line/col (1-based) of the live `code`
 export interface MsgFindReferences { type: 'findReferences'; reqId: string; cellNodeId: string; code: string; line: number; col: number; }
 
@@ -573,8 +574,9 @@ export interface MsgCompleteResult { type: 'completeResult'; reqId: string; matc
 export interface MsgInspectResult { type: 'inspectResult'; reqId: string; found: boolean; text: string; }
 // - host → webview: where a goToDefinition request's name is defined; empty when nowhere
 export interface MsgDefinitionResult { type: 'definitionResult'; reqId: string; cellNodeId: string; targets: DefinitionTarget[]; }
-// - host → webview: the quick pick chose a cell; select it and open its editor at the line, as leader g does
-export interface MsgDefinitionGoto { type: 'definitionGoto'; cellNodeId: string; line: number; col: number; }
+// - host → webview: the quick pick chose a cell; select it and open its editor at the line, as leader g
+//   does. `from` is the cell that asked: a note goes there when the chosen cell is gone
+export interface MsgDefinitionGoto { type: 'definitionGoto'; cellNodeId: string; line: number; col: number; from: string; }
 // - host → webview: the references of a findReferences request, with the text of each cell and file they are in; no targets when none
 export interface MsgReferencesResult extends ReferencesAnswer { type: 'referencesResult'; reqId: string; cellNodeId: string; }
 
