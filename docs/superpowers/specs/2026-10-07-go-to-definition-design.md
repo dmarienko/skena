@@ -1,6 +1,6 @@
-# Go to definition from code cells — design
+# Go to definition and find references from code cells — design
 
-Decided with the user on 2026-10-07.
+Decided with the user on 2026-10-07. References added the same day (user).
 
 ## What it does
 
@@ -44,6 +44,23 @@ looks up where the name under the cursor is defined and goes there.
   text); picking one goes there.
 - **No answer:** a short note in the cell, `no definition found for <name>`, that goes away on the next
   key.
+- **No name under the cursor** (a space, an operator): nothing happens, no note (user).
+- **An instance** (kernel answer for a variable holding an object): go to its class (user).
+
+## Find references: leader `z` (user)
+
+- In a code cell's editor, vim normal mode, leader then `z` lists every reference of the name under
+  the cursor, from Pylance over the same joined file (`vscode.executeReferenceProvider`), mapped back
+  to cells and files. Pylance only; no kernel step.
+- Shown as Monaco's own reference peek inside the cell's editor, as VS Code shows
+  `editor.action.referenceSearch.trigger`: a preview of the selected place on the left, the list
+  grouped by cell or file on the right (mock-up option A,
+  https://claude.ai/artifact/3fDCjAKPDFni8A9XoUopnr).
+- `j`/`k` move in the list (user), Enter goes to the selected place exactly as a definition does (a cell
+  opens at the line in normal mode; a file opens beside the canvas), Esc closes the peek.
+- A cell shorter than the peek needs is drawn taller while the peek is open, over whatever lies below
+  it; no node moves and the layout is not changed; it returns to its size on close (user).
+- No references: the same short note as for definitions, `no references found for <name>`.
 
 ## Unknowns to settle first (a spike, in the plan's first task)
 
@@ -53,9 +70,19 @@ looks up where the name under the cursor is defined and goes there.
   in the user's repo) and the plan says how Pylance is pointed at the workspace's interpreter for it.
 - These need a live VS Code window; the user runs the spike's check.
 
+## Spike result (2026-10-07, user's live run, `report.txt`)
+
+The joined file is a real `.py` file in `$XDG_RUNTIME_DIR/skena` (`/run/user/1000/skena`). In the
+factors window with the venv interpreter it resolved all five test names (`sharpe` → `metrics.py:5`,
+`run_walkforward` → `runner.py:98`, `REPO` → E1:30, `CACHE` → E1:29 and E15:28, `np.linalg.solve` →
+numpy `_linalg.py:364`) in 158–249 ms, mapped a shifted text back to the same cells, stayed clean
+(not dirty) and listed 0 problems. An `untitled:` document resolved the same names but was dirty,
+listed 150 problems and left an Untitled tab; a notebook document returned cell definitions under an
+internal path that does not map back to cells.
+
 ## Out of scope
 
-`gd` and other vim keys, peek views, find references, hover, go to definition from text notes or
+`gd` and other vim keys, hover, go to definition from text notes or
 markdown code blocks, definitions in notebooks other than this canvas, other languages than Python.
 
 ## Tests
