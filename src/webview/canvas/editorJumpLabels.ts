@@ -120,6 +120,20 @@ function onScreen(editor: MonacoEditor.IStandaloneCodeEditor, targets: TextPos[]
   });
 }
 
+/**
+ * Puts the cursor at `t` (1-based) as a vim motion would: vim keeps the column of the last vertical
+ * move for the next j/k (moveByLines), so without resetting it a j right after would go back to that
+ * old column.
+ */
+export function moveVimCursor(editor: MonacoEditor.IStandaloneCodeEditor, vim: VimAdapterInstance, t: TextPos): void {
+  editor.setPosition({ lineNumber: t.line, column: t.col });
+  const s = vimState(vim);
+  if (s) {
+    s.lastMotion = null;
+    s.lastHPos = t.col - 1;
+  }
+}
+
 function targetsFor(dir: JumpDir, lines: VisibleLine[], cursor: TextPos): TextPos[] {
   switch (dir) {
     case 'l': return wordStarts(lines, cursor, 'forward');
@@ -218,17 +232,6 @@ export function installJumpLabels(editor: MonacoEditor.IStandaloneCodeEditor, vi
     draw();
   };
 
-  const jump = (t: TextPos) => {
-    editor.setPosition({ lineNumber: t.line, column: t.col });
-    // - vim keeps the column of the last vertical move for the next j/k (moveByLines); without this a
-    //   j right after the jump would go back to that old column
-    const s = vimState(vim);
-    if (s) {
-      s.lastMotion = null;
-      s.lastHPos = t.col - 1;
-    }
-  };
-
   const readKey = (e: KeyboardEvent) => {
     const k = keyOf(e);
     if (shown) {
@@ -244,7 +247,7 @@ export function installJumpLabels(editor: MonacoEditor.IStandaloneCodeEditor, vi
       }
       const target = m.kind === 'jump' ? shown.targets[m.index] : null;
       hide();
-      if (target) jump(target);
+      if (target) moveVimCursor(editor, vim, target);
       return;
     }
     if (!editor.hasTextFocus()) return;

@@ -4266,6 +4266,25 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
     return () => window.removeEventListener('skena:focusNodeRequest', handler);
   }, [focusNodeById]);
 
+  // - go to definition landed in a code cell (cellDefinition.ts, or the host's quick pick): select it
+  //   as h/j/k/l do (smallest pan, the `` ` `` register), then open its editor at the line. A cell in
+  //   a folded section unfolds it first and waits for the cell to mount, as a new cell does.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { id, line, col } = (e as CustomEvent<{ id: string; line: number; col: number }>).detail;
+      const open = () => {
+        focusNodeById(id);
+        window.dispatchEvent(new CustomEvent('skena:enterEdit', { detail: { id, cursor: { line, col } } }));
+      };
+      const lane = derivedLanesRef.current.find(l => (l.folded ?? []).includes(id));
+      if (!lane) { open(); return; }
+      foldLaneRef.current(lane.id);   // - the same action unfolds
+      setTimeout(open, 80);
+    };
+    window.addEventListener('skena:goToCell', handler);
+    return () => window.removeEventListener('skena:goToCell', handler);
+  }, [focusNodeById]);
+
   // - the same for a reference to a section (S3): the host found the label; it is read here against
   //   the live stack order. Marked pending like a node, so a first open does not restore its last focus
   useEffect(() => {

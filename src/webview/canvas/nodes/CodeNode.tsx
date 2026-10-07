@@ -24,7 +24,8 @@ import { useKernels } from '../KernelsContext';
 import { G_BADGES_ATTR } from '../gChord';
 import { ScrollableContent, setScrollPosition } from '../../components/ScrollableContent';
 import { applyVimClipboard, patchVimNewlineAndIndent, patchVimLastLine, patchVimBlockCursorBlink, patchVimVisualCursor, patchVimExternalSelection, patchVimDeleteLastLine, patchVimJoin, bindSuggestNav } from './TextNode';
-import { installJumpLabels } from '../editorJumpLabels';
+import { installJumpLabels, moveVimCursor } from '../editorJumpLabels';
+import { dropLookup, requestDefinition } from './cellDefinition';
 import { ensureKernelCompletion, setActiveCodeCell } from './kernelCompletion';
 import {
   CodeCellPreview, firstGlyphRect, previewGuides, previewLineRects, textContentRect,
@@ -277,6 +278,12 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   }, [editing]);
 
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
+  // - the vim adapter of the open editor (moveVimCursor needs it)
+  const vimRef = useRef<ReturnType<typeof initVimMode> | null>(null);
+  // - where the next editor opens its cursor (go to definition); the saved view state otherwise
+  const pendingCursorRef = useRef<{ line: number; col: number } | null>(null);
+  // - leader g's note in the cell (no definition found …); gone on the next key
+  const [note, setNote] = useState<string | null>(null);
   const vimStatusRef = useRef<HTMLDivElement | null>(null);
   const nodeElRef = useRef<HTMLDivElement | null>(null);
   // - what this cell's text needs right now, in px: Monaco's content height plus the chrome around
@@ -355,6 +362,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     bindSuggestNav(editorInstance, monacoInstance);
     // - vim mode (same editor experience as text nodes); status bar shows the mode
     const vimMode = initVimMode(editorInstance, vimStatusRef.current ?? undefined);
+    vimRef.current = vimMode;
     // - wire vim y/p to the host clipboard relay (webview sandbox blocks navigator.clipboard);
     // - MUST run after initVimMode (which can recreate the register controller). Also patch
     // - vim o/O newline. Both operate on monaco-vim's global singleton.
@@ -366,7 +374,14 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     patchVimExternalSelection();
     patchVimDeleteLastLine();
     patchVimJoin(editorInstance, vimStatusRef.current);
-    installJumpLabels(editorInstance, vimMode);
+    // - any key clears the note and drops a lookup still running. Added before the jump labels' listener
+    //   on the same container at capture, so it runs first and sees a leader they stop
+    const container = editorInstance.getContainerDomNode();
+    const onAnyKey = (e: KeyboardEvent) => { setNote(null); dropLookup(id, e.timeStamp); };
+    container.addEventListener('keydown', onAnyKey, { capture: true });
+    editorInstance.onDidDispose(() => container.removeEventListener('keydown', onAnyKey, { capture: true }));
+    // - leader z (find references) does nothing yet
+    installJumpLabels(editorInstance, vimMode, { onLookup: what => { if (what === 'definition') requestDefinition(editorInstance, id, setNote); } });
     if (savedViewState.current) editorInstance.restoreViewState(savedViewState.current);
     // - the preview is still on screen over the editor; start at its scroll offset (it shares the
     // - editor's font and line height, so the offsets map 1:1) so nothing moves when it goes
@@ -374,6 +389,13 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     if (previewEl) {
       editorInstance.setScrollTop(previewEl.scrollTop);
       editorInstance.setScrollLeft(previewEl.scrollLeft);
+    }
+    // - opened by go to definition: the definition's line, scrolled into view, over the preview's offset
+    const cursor = pendingCursorRef.current;
+    pendingCursorRef.current = null;
+    if (cursor) {
+      moveVimCursor(editorInstance, vimMode, cursor);
+      editorInstance.revealPositionInCenterIfOutsideViewport({ lineNumber: cursor.line, column: cursor.col });
     }
     editorInstance.focus();
 
@@ -437,12 +459,14 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
       }
       setEditing(false);
       setEditorShown(false);
+      setNote(null);
     };
     // - click / tab away from the editor → leave edit mode back to the preview. BUT a blur
     // - into the vim command/search prompt (`/`, `?`, `:` — monaco-vim renders it into our
     // - status bar) is still "editing"; defer so activeElement is the new target, and stay.
     // - Skip entirely if the editor was already disposed (e.g. Esc-exit already ran leaveEdit).
     editorInstance.onDidBlurEditorText(() => {
+      dropLookup(id, performance.now());
       setTimeout(() => {
         if (!editorInstance.getModel()) return;
         if (vimStatusRef.current && vimStatusRef.current.contains(document.activeElement)) return;
@@ -467,10 +491,21 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     });
   }, [id, editorFont]);
 
-  // - a freshly-created code cell (autoEdit) or Enter-on-selected fires skena:enterEdit → edit mode
+  // - a freshly-created code cell (autoEdit) or Enter-on-selected fires skena:enterEdit → edit mode.
+  //   Go to definition adds a cursor: the editor opens there, or an open one moves there.
   useEffect(() => {
     const onEnter = (e: Event) => {
-      if ((e as CustomEvent).detail?.id === id) startEdit();
+      const d = (e as CustomEvent<{ id: string; cursor?: { line: number; col: number } }>).detail;
+      if (d?.id !== id) return;
+      const ed = editorRef.current;
+      if (d.cursor && ed?.getModel() && vimRef.current) {
+        moveVimCursor(ed, vimRef.current, d.cursor);
+        ed.revealPositionInCenterIfOutsideViewport({ lineNumber: d.cursor.line, column: d.cursor.col });
+        ed.focus();
+        return;
+      }
+      if (d.cursor) pendingCursorRef.current = d.cursor;
+      startEdit();
     };
     window.addEventListener('skena:enterEdit', onEnter);
     return () => window.removeEventListener('skena:enterEdit', onEnter);
@@ -649,6 +684,8 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
               <div ref={vimStatusRef} className="skena-code-vim-status" style={{ fontSize: 10, opacity: 0.6, padding: '0 6px', fontFamily: 'var(--vscode-editor-font-family, monospace)', height: 14, lineHeight: '14px', flexShrink: 0, overflow: 'hidden', whiteSpace: 'nowrap' }} />
             </div>
           )}
+          {/* - over the editor's bottom right, above the vim status line; absolute, so the cell keeps its size */}
+          {editing && note && <div className="skena-code-def-note">{note}</div>}
           {(!editing || !editorShown) && (
             /* - read-only highlighted preview; ScrollableContent gives the wheel-guard so it
                - actually scrolls (a bare nowheel div doesn't). Double-click (or Enter) to edit.

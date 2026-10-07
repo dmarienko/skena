@@ -379,3 +379,20 @@ body.vscode-dark, body.vscode-high-contrast {
   white-space: pre;
   user-select: none;
 }
+
+/* - leader g's note in a code cell (CodeNode.tsx): over the editor's bottom right, above the 14px vim
+   - status line; pointer-transparent, gone on the next key */
+.skena-code-def-note {
+  position: absolute;
+  right: 8px;
+  bottom: 16px;
+  z-index: 2;
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+  background: var(--vscode-editorWidget-background, #252526);
+  color: var(--vscode-editorWidget-foreground, inherit);
+  font: 11px/16px var(--vscode-editor-font-family, monospace);
+  white-space: nowrap;
+  pointer-events: none;
+}

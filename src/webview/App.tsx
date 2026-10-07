@@ -212,6 +212,12 @@ export function App(): JSX.Element {
         case 'inspectResult':
           window.dispatchEvent(new CustomEvent('skena:inspectResult', { detail: msg }));
           break;
+        case 'definitionResult':
+          window.dispatchEvent(new CustomEvent('skena:definitionResult', { detail: msg }));
+          break;
+        case 'definitionGoto':
+          window.dispatchEvent(new CustomEvent('skena:goToCell', { detail: { id: msg.cellNodeId, line: msg.line, col: msg.col } }));
+          break;
         case 'subCanvasCreated':
           window.dispatchEvent(new CustomEvent('skena:subCanvasCreated', { detail: msg }));
           break;
