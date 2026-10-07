@@ -171,8 +171,15 @@ async function openKind(kind: string, cells: Cell[], version: 1 | 2, dir: string
 }
 
 async function run(): Promise<void> {
-  const canvasPath = SkenaEditorProvider.activeCanvasPath();
-  if (!canvasPath) { void vscode.window.showWarningMessage('Definition lookup test: focus a canvas tab first.'); return; }
+  // - with no canvas tab focused, the file is picked and only read, so a canvas open in another
+  //   window is never opened here
+  const canvasPath = SkenaEditorProvider.activeCanvasPath() ?? (await vscode.window.showOpenDialog({
+    title: 'Definition lookup test: canvas to read',
+    canSelectMany: false,
+    filters: { Canvas: ['canvas'] },
+    defaultUri: vscode.workspace.workspaceFolders?.[0]?.uri,
+  }))?.[0]?.fsPath;
+  if (!canvasPath) return;
   const input = await vscode.window.showInputBox({
     title: 'Definition lookup test',
     prompt: 'Names to look up, comma-separated; each is asked at its last place in the code cells (run order)',
