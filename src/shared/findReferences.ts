@@ -74,15 +74,25 @@ export interface PeekPlan {
   models:    { uri: string; text: string; language?: string }[];
   /** - every reference as Monaco takes it: a model URI and a range */
   locations: { uri: string; range: PeekRange }[];
-  /** - model URI -> the cell or file it stands for */
-  owners:    Record<string, { kind: 'cell'; cellId: string } | { kind: 'file'; uri: string }>;
+  /**
+   * - model URI -> the cell or file it stands for; `cols`, for a file whose text did not come: the
+   *   column of the reference on each line (its model shows a whole line there, from column 1)
+   */
+  owners:    Record<string, { kind: 'cell'; cellId: string } | { kind: 'file'; uri: string; cols?: Record<number, number> }>;
+}
+
+/** - the line a file's model shows at each reference when the file's text did not come (unreadable, gone) */
+export function unreadLine(uri: string): string {
+  return `(could not read ${uri.startsWith('file://') ? decodeURIComponent(uri.slice('file://'.length)) : uri})`;
 }
 
 /**
  * The peek for `answer`, asked in `cellId`, whose editor's model is `editorUri`: its references stay
  * on that model (the peek then starts on the reference under the cursor, referencesModel.js
  * nearestReference); every other cell gets a copy at peekCellUri; a file keeps its own URI, and its
- * text is its model (a file whose text did not come gets none: the peek shows no preview for it).
+ * text is its model. A file whose text did not come gets a model that holds unreadLine on each line
+ * with a reference and is empty elsewhere, each reference being that whole line: without a model the
+ * peek's list shows the place one line and column off and its preview keeps the place shown before.
  */
 export function peekPlan(answer: ReferencesAnswer, cellId: string, editorUri: string): PeekPlan {
   const plan: PeekPlan = { models: [], locations: [], owners: { [editorUri]: { kind: 'cell', cellId } } };
@@ -95,9 +105,27 @@ export function peekPlan(answer: ReferencesAnswer, cellId: string, editorUri: st
     plan.owners[uri] = { kind: 'cell', cellId: c.id };
   }
   for (const f of answer.files) plan.models.push({ uri: f.uri, text: f.text });
+  const read = new Set(answer.files.map(f => f.uri));
+  // - each file whose text did not come: line -> the column of its first reference there
+  const unread = new Map<string, Map<number, number>>();
+  for (const t of answer.targets) {
+    if (t.kind !== 'file' || read.has(t.uri)) continue;
+    const lines = unread.get(t.uri) ?? new Map<number, number>();
+    if (!lines.has(t.line)) lines.set(t.line, t.col);
+    unread.set(t.uri, lines);
+  }
+  for (const [uri, lines] of unread) {
+    const text = unreadLine(uri);
+    plan.models.push({ uri, text: Array.from({ length: Math.max(...lines.keys()) }, (_, i) => (lines.has(i + 1) ? text : '')).join('\n'), language: 'plaintext' });
+    plan.owners[uri] = { kind: 'file', uri, cols: Object.fromEntries(lines) };
+  }
   for (const t of answer.targets) {
     const uri = t.kind === 'file' ? t.uri : cellUri.get(t.cellId);
     if (uri === undefined) continue;
+    if (t.kind === 'file' && unread.has(uri)) {
+      plan.locations.push({ uri, range: { startLineNumber: t.line, startColumn: 1, endLineNumber: t.line, endColumn: unreadLine(uri).length + 1 } });
+      continue;
+    }
     if (t.kind === 'file') plan.owners[uri] = { kind: 'file', uri };
     plan.locations.push({ uri, range: { startLineNumber: t.line, startColumn: t.col, endLineNumber: t.endLine, endColumn: t.endCol } });
   }
@@ -108,7 +136,7 @@ export function peekPlan(answer: ReferencesAnswer, cellId: string, editorUri: st
 export function openedTarget(plan: PeekPlan, uri: string, line: number, col: number): DefinitionTarget | null {
   const owner = plan.owners[uri];
   if (!owner) return null;
-  return owner.kind === 'cell' ? { kind: 'cell', cellId: owner.cellId, line, col } : { kind: 'file', uri: owner.uri, line, col };
+  return owner.kind === 'cell' ? { kind: 'cell', cellId: owner.cellId, line, col } : { kind: 'file', uri: owner.uri, line, col: owner.cols?.[line] ?? col };
 }
 
 /** - the lines Monaco's reference peek asks for (referencesWidget.js LayoutData) */

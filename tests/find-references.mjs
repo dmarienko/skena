@@ -58,11 +58,19 @@ test('3. a reference opened in the peek goes to its cell (the asking one include
   assert.equal(openedTarget(plan, 'canvas-cell://0/E8', 1, 1), null);
 });
 
-test('4. a file whose text did not come is listed and opened, with no model', () => {
-  const plan = peekPlan({ ...ANSWER, files: [] }, 'c7', EDITOR);
-  assert.equal(plan.models.length, 2);
-  assert.equal(plan.locations.filter(l => l.uri.startsWith('file:')).length, 2);
-  assert.deepEqual(openedTarget(plan, 'file:///home/u/proj/src/b.py', 3, 1), { kind: 'file', uri: 'file:///home/u/proj/src/b.py', line: 3, col: 1 });
+test('4. a file whose text did not come gets a model saying so on each reference\'s line; opening one goes to the reference', () => {
+  const gone = 'file:///home/u/my%20proj/gone.py';
+  const say = '(could not read /home/u/my proj/gone.py)';
+  const answer = { ...ANSWER, targets: [...ANSWER.targets, { kind: 'file', uri: gone, line: 4, col: 1, endLine: 4, endCol: 4 }, { kind: 'file', uri: gone, line: 2, col: 9, endLine: 2, endCol: 12 }] };
+  const plan = peekPlan(answer, 'c7', EDITOR);
+  assert.deepEqual(plan.models.find(m => m.uri === gone), { uri: gone, text: `\n${say}\n\n${say}`, language: 'plaintext' });
+  assert.deepEqual(plan.locations.filter(l => l.uri === gone).map(l => l.range), [
+    { startLineNumber: 4, startColumn: 1, endLineNumber: 4, endColumn: say.length + 1 },
+    { startLineNumber: 2, startColumn: 1, endLineNumber: 2, endColumn: say.length + 1 },
+  ]);
+  assert.deepEqual(openedTarget(plan, gone, 2, 1), { kind: 'file', uri: gone, line: 2, col: 9 });
+  // - the files whose text came are as before
+  assert.deepEqual(plan.models.filter(m => m.uri.startsWith('file:') && m.uri !== gone).map(m => m.text), ['a', 'b']);
 });
 
 test('5. a cell shorter than the peek needs is drawn taller by the difference; a tall one keeps its size', () => {
