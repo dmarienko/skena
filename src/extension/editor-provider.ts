@@ -90,6 +90,7 @@ import { copyNode, ownedOutputId } from '../shared/outputLink';
 import { youtubeId, YOUTUBE_NODE } from '../shared/youtube';
 import { findDefinitions, showDefinitions } from './definition/goToDefinition';
 import { findReferences } from './definition/findReferences';
+import { failureReason } from '../shared/findReferences';
 
 /**
  * A canvas as the editor opens it from disk: lifted to the origin, sections seeded, and an edge the
@@ -706,9 +707,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             .catch(err => { void vscode.window.showErrorMessage(`Go to definition: ${err instanceof Error ? err.message : String(err)}`); });
           break;
         case 'findReferences': {
-          // - the answer always goes back, empty on a failure, so the cell can show its note
+          // - the answer always goes back, with the reason on a failure, so the cell can show its note
           const answer = await findReferences(msg, document.canvas, document.uri.fsPath)
-            .catch(err => { console.warn('[skena] find references', err); return { targets: [], cells: [], files: [] }; });
+            .catch(err => { console.warn('[skena] find references', err); return { targets: [], cells: [], files: [], error: failureReason(err) }; });
           send({ type: 'referencesResult', reqId: msg.reqId, cellNodeId: msg.cellNodeId, ...answer });
           break;
         }

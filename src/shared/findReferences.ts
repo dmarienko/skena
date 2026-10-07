@@ -45,8 +45,15 @@ export function referencesFromLocations(locs: readonly RefLocation[], joinedUri:
 export interface PeekCell { id: string; label: string; order: number; code: string }
 /** - a file that holds references, with its text */
 export interface PeekFile { uri: string; text: string }
-/** - the host's answer to a find references request */
-export interface ReferencesAnswer { targets: ReferenceTarget[]; cells: PeekCell[]; files: PeekFile[] }
+/** - the host's answer to a find references request; `error` when the lookup failed (failureReason) */
+export interface ReferencesAnswer { targets: ReferenceTarget[]; cells: PeekCell[]; files: PeekFile[]; error?: string }
+
+/** - a failed lookup as the cell's note gives it after `references failed: `: the first line of its message, at most 60 characters */
+export function failureReason(err: unknown): string {
+  const first = (err instanceof Error ? err.message : String(err)).trim().split('\n')[0].trim();
+  if (first === '') return 'unknown error';
+  return first.length > 60 ? `${first.slice(0, 59)}…` : first;
+}
 
 /** - the scheme of the code cells' model URIs */
 export const CELL_SCHEME = 'canvas-cell';

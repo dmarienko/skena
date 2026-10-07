@@ -3,8 +3,9 @@
  * name under the cursor goes to the host (goToDefinition, findReferences). A definition answer
  * (definitionResult) selects a cell here (skena:goToCell, CanvasView), or goes back to the host to
  * open a file or show a quick pick (showDefinitions); a references answer (referencesResult) opens
- * the cell's reference peek (referencePeek.ts). No answer: a note in the cell; a cell the jump goes
- * to that is gone by then: a note too (noteInCell, CanvasView). With no name under the
+ * the cell's reference peek (referencePeek.ts). No answer: a note in the cell; a references lookup
+ * that failed: a note with its reason; a cell the jump goes to that is gone by then: a note too
+ * (noteInCell, CanvasView). With no name under the
  * cursor nothing is asked and nothing shown (user). An answer that arrives after another key in the
  * cell or after the cell lost focus is dropped: the user has moved on, and keys typed meanwhile must
  * not land in another cell.
@@ -49,6 +50,7 @@ function listen(): void {
     if (!p || p.reqId !== r.reqId) return;
     pending.delete(r.cellNodeId);
     if (p.stale) return;
+    if (r.error !== undefined) { p.note(`references failed: ${r.error}`); return; }
     if (r.targets.length === 0) { p.note(`no references found for ${p.name}`); return; }
     p.open?.(r);
   });

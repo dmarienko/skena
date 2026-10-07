@@ -1,7 +1,7 @@
 // - run: npx esbuild src/shared/findReferences.ts --bundle --format=esm --outfile=tests/.build/findReferences.mjs && npx esbuild tests/fixtures/monaco-references-model.js --bundle --format=esm --platform=node --outfile=tests/.build/monacoReferencesModel.mjs && node --test tests/find-references.mjs
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { openedTarget, peekBoxHeight, peekCellUri, peekPlan, referencesFromLocations } from './.build/findReferences.mjs';
+import { failureReason, openedTarget, peekBoxHeight, peekCellUri, peekPlan, referencesFromLocations } from './.build/findReferences.mjs';
 import { ReferencesModel, URI } from './.build/monacoReferencesModel.mjs';
 
 // - the joined text of three cells (header line 0): A on lines 1-2, B on 4-5, C on 7
@@ -80,4 +80,11 @@ test('5. a cell shorter than the peek needs is drawn taller by the difference; a
   assert.equal(peekBoxHeight(600, 500, 19), null);
   // - a peek of 10 lines: 13 lines (ceil(10 / 0.8)) beat 12 (the peek, the cursor's line and the next)
   assert.equal(peekBoxHeight(100, 60, 20, 10), 100 + 260 - 60);
+});
+
+test('6. a failed lookup is noted by the first line of its message, cut to 60 characters', () => {
+  assert.equal(failureReason(new Error('Pylance is not installed')), 'Pylance is not installed');
+  assert.equal(failureReason(new Error('ENOENT: no such file or directory\n    at open (node:fs:1:1)')), 'ENOENT: no such file or directory');
+  assert.equal(failureReason('x'.repeat(70)), `${'x'.repeat(59)}…`);
+  assert.equal(failureReason(new Error('')), 'unknown error');
 });

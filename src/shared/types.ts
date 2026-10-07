@@ -577,7 +577,7 @@ export interface MsgDefinitionResult { type: 'definitionResult'; reqId: string; 
 // - host → webview: the quick pick chose a cell; select it and open its editor at the line, as leader g
 //   does. `from` is the cell that asked: a note goes there when the chosen cell is gone
 export interface MsgDefinitionGoto { type: 'definitionGoto'; cellNodeId: string; line: number; col: number; from: string; }
-// - host → webview: the references of a findReferences request, with the text of each cell and file they are in; no targets when none
+// - host → webview: the references of a findReferences request, with the text of each cell and file they are in; no targets when none, and `error` too when the lookup failed
 export interface MsgReferencesResult extends ReferencesAnswer { type: 'referencesResult'; reqId: string; cellNodeId: string; }
 
 export interface KernelStatusEntry {

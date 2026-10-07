@@ -26,12 +26,13 @@ async function documentText(uri: string): Promise<string | null> {
   }
 }
 
-/** - every reference of the name at the request's cursor; none when Pylance has none */
+/** - every reference of the name at the request's cursor; none when Pylance has none; throws without Pylance */
 export async function findReferences(msg: MsgFindReferences, canvas: CanvasData, canvasPath: string): Promise<ReferencesAnswer> {
   const cells = canvasCells(canvas, msg.cellNodeId, msg.code);
   const joined = joinCells(cells, JOINED_HEADER);
   const cursor = toJoined(joined, msg.cellNodeId, msg.line, msg.col);
-  if (!cursor || !hasPylance()) return { targets: [], cells: [], files: [] };
+  if (!hasPylance()) throw new Error('Pylance is not installed');
+  if (!cursor) return { targets: [], cells: [], files: [] };
   const file = writeJoinedFile(canvasPath, joined.text);
   const { uri, locs } = await pylanceLocations('vscode.executeReferenceProvider', file, cursor);
   const targets = referencesFromLocations(locs, uri, `${vscode.Uri.file(path.dirname(file)).toString()}/`, joined);
