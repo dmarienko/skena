@@ -1,7 +1,7 @@
 /**
  * Where an MCP server started outside skena (Claude Code reading .mcp.json) finds the extension's
  * 127.0.0.1 relay: a file per workspace folder, owner-only, holding the relay's "port:token", in a
- * folder only this user can use: $XDG_RUNTIME_DIR/skena when that is set, else skena-<user> in the
+ * folder only this user can use: $XDG_RUNTIME_DIR/skena when that is set and usable, else skena-<user> in the
  * OS temp dir. The extension writes it when the relay listens and removes it on dispose; an MCP
  * server started by the AI companion gets the same value in SKENA_RUN_IPC. No vscode import.
  */
@@ -51,19 +51,23 @@ function ownDir(dir: string): void {
 
 /**
  * - the per-user folder the endpoint files go in ($XDG_RUNTIME_DIR/skena, else skena-<user> in the
- *   OS temp dir), created owner-only; throws when it is not this user's alone. Go to definition keeps
- *   its joined files under it.
+ *   OS temp dir), created owner-only. $XDG_RUNTIME_DIR/skena that cannot be made or used (the variable
+ *   names a folder that does not exist) gives way to the one in the temp dir; throws when that is not
+ *   this user's alone. Go to definition keeps its joined files under it.
  */
 export function userTempDir(tmp?: string): string {
-  const dir = endpointDirs(tmp)[0];
-  ownDir(dir);
-  return dir;
+  const dirs = endpointDirs(tmp);
+  for (const dir of dirs.slice(0, -1)) {
+    try { ownDir(dir); return dir; } catch { /* - the next one */ }
+  }
+  const last = dirs[dirs.length - 1];
+  ownDir(last);
+  return last;
 }
 
 /** - `endpoint` is the relay's "port:token" */
 export function writeEndpoint(workspaceDir: string, endpoint: string, tmp?: string): void {
-  const dir = endpointDirs(tmp)[0];
-  ownDir(dir);
+  const dir = userTempDir(tmp);
   fs.writeFileSync(path.join(dir, fileName(workspaceDir)), JSON.stringify({ endpoint, workspaceDir: path.resolve(workspaceDir), pid: process.pid }), { mode: 0o600 });
 }
 

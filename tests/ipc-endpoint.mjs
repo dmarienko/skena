@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { chmodSync, mkdirSync, mkdtempSync, statSync } from 'node:fs';
 import { tmpdir, userInfo } from 'node:os';
 import { dirname, join } from 'node:path';
-import { endpointFile, readEndpoint, removeEndpoint, writeEndpoint } from './.build/ipcEndpoint.mjs';
+import { endpointFile, readEndpoint, removeEndpoint, userTempDir, writeEndpoint } from './.build/ipcEndpoint.mjs';
 
 const TMP = mkdtempSync(join(tmpdir(), 'skena-ipc-'));
 const USER_DIR = join(TMP, `skena-${userInfo().username}`);
@@ -67,6 +67,21 @@ test('6. with XDG_RUNTIME_DIR set the file goes there; a file in the temp folder
     writeEndpoint('/work/f', '7:xdg');
     assert.equal(readEndpoint('/work/f'), '7:xdg');
     assert.equal(statSync(join(xdg, 'skena')).mode & 0o777, 0o700);
+  } finally {
+    if (saved.xdg === undefined) delete process.env.XDG_RUNTIME_DIR; else process.env.XDG_RUNTIME_DIR = saved.xdg;
+    if (saved.tmp === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = saved.tmp;
+  }
+});
+
+test('7. XDG_RUNTIME_DIR set to a folder that does not exist: the per-user folder in the temp folder is used', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'skena-tmp-'));
+  const saved = { xdg: process.env.XDG_RUNTIME_DIR, tmp: process.env.TMPDIR };
+  try {
+    process.env.TMPDIR = tmp;
+    process.env.XDG_RUNTIME_DIR = join(tmp, 'no-such-dir');
+    assert.equal(userTempDir(), join(tmp, `skena-${userInfo().username}`));
+    writeEndpoint('/work/g', '8:tmp');
+    assert.equal(readEndpoint('/work/g'), '8:tmp');
   } finally {
     if (saved.xdg === undefined) delete process.env.XDG_RUNTIME_DIR; else process.env.XDG_RUNTIME_DIR = saved.xdg;
     if (saved.tmp === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = saved.tmp;
