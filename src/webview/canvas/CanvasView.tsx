@@ -4322,8 +4322,8 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
         // - viewport persistence: restore saved position/zoom. No fitView prop: the load effect fits
         //   through fitClamped on the same condition, and React Flow's own fit is unbounded.
         defaultViewport={initialViewport(canvas.viewport)}
-        // - the gesture span: GPU layer promotion only while moving (see canvas.css), so at rest
-        //   nodes render crisp at the real scale; the viewport is saved when the span ends
+        // - the gesture span: data-skena-interacting while moving (see canvas.css); the viewport is
+        //   saved when the span ends
         onMoveStart={onMoveStart}
         onMoveEnd={onMoveEnd}
         minZoom={MIN_ZOOM}
