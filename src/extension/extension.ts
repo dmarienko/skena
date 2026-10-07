@@ -15,6 +15,7 @@ import { VaultIndexer } from './vault-indexer';
 import { FileWatcher } from './file-watcher';
 import { getVaults } from './settings';
 import { runIpc } from './run-ipc';
+import { registerDefinitionLookupTest } from './definitionLookupTest';
 import type { AgentRunPersist } from '../shared/types';
 
 let indexer: VaultIndexer | undefined;
@@ -138,6 +139,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await exportCommand(context, editorProvider as SkenaEditorProvider, SkenaEditorProvider.activeCanvasPath());
     })
   );
+
+  // - TEMPORARY (go to definition plan, Task 1): the definition lookup test, in an Extension Development Host only
+  if (context.extensionMode === vscode.ExtensionMode.Development) registerDefinitionLookupTest(context);
 
   // - the relay's /export: the MCP tool canvas_export_html renders through this extension
   runIpc.setExportHandler(async (canvasPath, outPath) => {
