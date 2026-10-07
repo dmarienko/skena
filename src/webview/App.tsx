@@ -218,6 +218,9 @@ export function App(): JSX.Element {
         case 'definitionGoto':
           window.dispatchEvent(new CustomEvent('skena:goToCell', { detail: { id: msg.cellNodeId, line: msg.line, col: msg.col } }));
           break;
+        case 'referencesResult':
+          window.dispatchEvent(new CustomEvent('skena:referencesResult', { detail: msg }));
+          break;
         case 'subCanvasCreated':
           window.dispatchEvent(new CustomEvent('skena:subCanvasCreated', { detail: msg }));
           break;

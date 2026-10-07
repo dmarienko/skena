@@ -396,3 +396,9 @@ body.vscode-dark, body.vscode-high-contrast {
   white-space: nowrap;
   pointer-events: none;
 }
+
+/* - a code cell drawn taller while its reference peek is open (CodeNode.tsx): over every other node
+   - (a selected node is at 1000, edge labels at 1000), and without its connection handles, which stay
+   - at the cell's own edges, inside the taller box */
+.react-flow__node:has(> .skena-node.skena-code-peek) { z-index: 3000 !important; }
+.react-flow__node:has(> .skena-node.skena-code-peek) .react-flow__handle { display: none; }

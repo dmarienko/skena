@@ -1,21 +1,24 @@
 /**
- * Go to definition in a code cell (leader g), the webview's half. The dotted name under the cursor goes
- * to the host (goToDefinition); its answer (definitionResult) selects a cell here (skena:goToCell,
- * CanvasView), or goes back to the host to open a file or show a quick pick (showDefinitions). With no
- * name under the cursor nothing is asked and nothing shown (user). An answer that arrives after
- * another key in the cell or after the cell lost focus is dropped: the user has moved on, and keys
- * typed meanwhile must not land in another cell.
+ * Go to definition (leader g) and find references (leader z) in a code cell, the webview's half. The
+ * name under the cursor goes to the host (goToDefinition, findReferences). A definition answer
+ * (definitionResult) selects a cell here (skena:goToCell, CanvasView), or goes back to the host to
+ * open a file or show a quick pick (showDefinitions); a references answer (referencesResult) opens
+ * the cell's reference peek (referencePeek.ts). No answer: a note in the cell. With no name under the
+ * cursor nothing is asked and nothing shown (user). An answer that arrives after another key in the
+ * cell or after the cell lost focus is dropped: the user has moved on, and keys typed meanwhile must
+ * not land in another cell.
  */
 import type { editor as MonacoEditor } from 'monaco-editor';
 import { dottedNameAt } from '../../../shared/goToDefinition';
-import type { MsgDefinitionResult } from '../../../shared/types';
+import type { ReferencesAnswer } from '../../../shared/findReferences';
+import type { MsgDefinitionResult, MsgReferencesResult } from '../../../shared/types';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
 }
 
-// - one lookup per cell at a time; `since` is performance.now() when it was asked
-interface Pending { reqId: string; name: string; since: number; stale: boolean; note: (text: string) => void }
+// - one lookup per cell at a time; `since` is performance.now() when it was asked; `open` for references
+interface Pending { reqId: string; name: string; since: number; stale: boolean; note: (text: string) => void; open?: (answer: ReferencesAnswer) => void }
 const pending = new Map<string, Pending>();
 let counter = 0;
 let listening = false;
@@ -37,6 +40,15 @@ function listen(): void {
     }
     vscodePostMessage({ type: 'showDefinitions', targets: r.targets });
   });
+  window.addEventListener('skena:referencesResult', (e: Event) => {
+    const r = (e as CustomEvent<MsgReferencesResult>).detail;
+    const p = pending.get(r.cellNodeId);
+    if (!p || p.reqId !== r.reqId) return;
+    pending.delete(r.cellNodeId);
+    if (p.stale) return;
+    if (r.targets.length === 0) { p.note(`no references found for ${p.name}`); return; }
+    p.open?.(r);
+  });
 }
 
 /** - leader g in `cellId`'s editor: ask the host where the name under the cursor is defined; `note` shows a line in the cell */
@@ -50,6 +62,19 @@ export function requestDefinition(editor: MonacoEditor.IStandaloneCodeEditor, ce
   const reqId = `def-${++counter}`;
   pending.set(cellId, { reqId, name: at.dotted ?? at.word, since: performance.now(), stale: false, note });
   vscodePostMessage({ type: 'goToDefinition', reqId, cellNodeId: cellId, code: model.getValue(), line: pos.lineNumber, col: pos.column, name: at.dotted });
+}
+
+/** - leader z in `cellId`'s editor: ask the host for every reference of the name under the cursor; `open` shows them */
+export function requestReferences(editor: MonacoEditor.IStandaloneCodeEditor, cellId: string, note: (text: string) => void, open: (answer: ReferencesAnswer) => void): void {
+  listen();
+  const pos = editor.getPosition();
+  const model = editor.getModel();
+  if (!pos || !model) return;
+  const at = dottedNameAt(model.getLineContent(pos.lineNumber), pos.column);
+  if (!at) return;
+  const reqId = `ref-${++counter}`;
+  pending.set(cellId, { reqId, name: at.dotted ?? at.word, since: performance.now(), stale: false, note, open });
+  vscodePostMessage({ type: 'findReferences', reqId, cellNodeId: cellId, code: model.getValue(), line: pos.lineNumber, col: pos.column });
 }
 
 /** - a key in the cell, or the cell losing focus, at `when` (an event's timeStamp): a lookup asked before it is dropped */

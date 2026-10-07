@@ -5,7 +5,7 @@
  */
 
 import React, { useCallback, useState, useEffect, useLayoutEffect, useRef, useMemo, memo } from 'react';
-import { createPortal } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import { NodeProps, Handle, Position, NodeResizer, useStore, type Node as RFNode, type Edge } from '@xyflow/react';
 import Editor, { BeforeMount, OnMount } from '@monaco-editor/react';
 import type { editor as MonacoEditor } from 'monaco-editor';
@@ -25,7 +25,9 @@ import { G_BADGES_ATTR } from '../gChord';
 import { ScrollableContent, setScrollPosition } from '../../components/ScrollableContent';
 import { applyVimClipboard, patchVimNewlineAndIndent, patchVimLastLine, patchVimBlockCursorBlink, patchVimVisualCursor, patchVimExternalSelection, patchVimDeleteLastLine, patchVimJoin, bindSuggestNav } from './TextNode';
 import { installJumpLabels, moveVimCursor } from '../editorJumpLabels';
-import { dropLookup, requestDefinition } from './cellDefinition';
+import { dropLookup, requestDefinition, requestReferences } from './cellDefinition';
+import { closeReferencePeek, openReferencePeek, referencePeekOpen } from './referencePeek';
+import { openCellUri, peekBoxHeight, type ReferencesAnswer } from '../../../shared/findReferences';
 import { ensureKernelCompletion, setActiveCodeCell } from './kernelCompletion';
 import {
   CodeCellPreview, firstGlyphRect, previewGuides, previewLineRects, textContentRect,
@@ -284,6 +286,8 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   const pendingCursorRef = useRef<{ line: number; col: number } | null>(null);
   // - leader g's note in the cell (no definition found …); gone on the next key
   const [note, setNote] = useState<string | null>(null);
+  // - the cell's height while its reference peek is open (leader z), drawn over what lies below; null: its own
+  const [peekBox, setPeekBox] = useState<number | null>(null);
   const vimStatusRef = useRef<HTMLDivElement | null>(null);
   const nodeElRef = useRef<HTMLDivElement | null>(null);
   // - what this cell's text needs right now, in px: Monaco's content height plus the chrome around
@@ -296,6 +300,8 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   const reportHeight = useCallback(() => {
     const ed = editorRef.current;
     if (!ed) return;
+    // - the open peek's lines are the editor's content too, not the cell's text
+    if (referencePeekOpen(ed)) return;
     const dom = ed.getDomNode();
     const box = nodeElRef.current?.closest('.react-flow__node') as HTMLElement | null;
     if (!dom || !box) return;
@@ -380,8 +386,18 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     const onAnyKey = (e: KeyboardEvent) => { setNote(null); dropLookup(id, e.timeStamp); };
     container.addEventListener('keydown', onAnyKey, { capture: true });
     editorInstance.onDidDispose(() => container.removeEventListener('keydown', onAnyKey, { capture: true }));
-    // - leader z (find references) does nothing yet
-    installJumpLabels(editorInstance, vimMode, { onLookup: what => { if (what === 'definition') requestDefinition(editorInstance, id, setNote); } });
+    // - leader z: the peek opens in the editor, the cell drawn tall enough for it
+    const openPeek = (answer: ReferencesAnswer) => {
+      const box = nodeElRef.current?.offsetHeight ?? 0;
+      const lineHeight = editorInstance.getOption(monacoInstance.editor.EditorOption.lineHeight);
+      openReferencePeek(editorInstance, id, answer, peekBoxHeight(box, editorInstance.getLayoutInfo().height, lineHeight), px => {
+        flushSync(() => setPeekBox(px));
+        if (editorInstance.getModel()) editorInstance.layout();
+      });
+    };
+    installJumpLabels(editorInstance, vimMode, {
+      onLookup: what => (what === 'definition' ? requestDefinition(editorInstance, id, setNote) : requestReferences(editorInstance, id, setNote, openPeek)),
+    });
     if (savedViewState.current) editorInstance.restoreViewState(savedViewState.current);
     // - the preview is still on screen over the editor; start at its scroll offset (it shares the
     // - editor's font and line height, so the offsets map 1:1) so nothing moves when it goes
@@ -460,19 +476,32 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
       setEditing(false);
       setEditorShown(false);
       setNote(null);
+      setPeekBox(null);
     };
     // - click / tab away from the editor → leave edit mode back to the preview. BUT a blur
     // - into the vim command/search prompt (`/`, `?`, `:` — monaco-vim renders it into our
     // - status bar) is still "editing"; defer so activeElement is the new target, and stay.
     // - Skip entirely if the editor was already disposed (e.g. Esc-exit already ran leaveEdit).
-    editorInstance.onDidBlurEditorText(() => {
-      dropLookup(id, performance.now());
+    // - The reference peek's list and preview are inside the editor's own DOM: focus going there is a
+    //   text blur that stays, and focus leaving them is a widget blur only. Both blurs of one move run once.
+    let blurQueued = false;
+    const leaveIfFocusLeft = () => {
+      if (blurQueued) return;
+      blurQueued = true;
       setTimeout(() => {
+        blurQueued = false;
         if (!editorInstance.getModel()) return;
-        if (vimStatusRef.current && vimStatusRef.current.contains(document.activeElement)) return;
+        const active = document.activeElement;
+        if (vimStatusRef.current && vimStatusRef.current.contains(active)) return;
+        if (active && editorInstance.getDomNode()?.contains(active)) return;
         leaveEdit();
       }, 0);
+    };
+    editorInstance.onDidBlurEditorText(() => {
+      dropLookup(id, performance.now());
+      leaveIfFocusLeft();
     });
+    editorInstance.onDidBlurEditorWidget(leaveIfFocusLeft);
 
     // - Esc exits edit mode only from vim NORMAL mode (INSERT/VISUAL just return to normal).
     // - Track the mode from the status bar; MutationObserver runs as a microtask so inside
@@ -487,7 +516,8 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
       editorInstance.onDidDispose(() => obs.disconnect());
     }
     editorInstance.onKeyDown(e => {
-      if (e.browserEvent.key === 'Escape' && !vimIsEditing) leaveEdit();
+      // - with the reference peek open the first Esc closes it, the next one leaves the editor
+      if (e.browserEvent.key === 'Escape' && !vimIsEditing && !closeReferencePeek(editorInstance)) leaveEdit();
     });
   }, [id, editorFont]);
 
@@ -588,13 +618,13 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
       <NodeLabelBadge label={node.nodeLabel} createdBy={(node as { createdBy?: string }).createdBy} />
       <div
         ref={nodeElRef}
-        className={`skena-node ${ZOOM_WIDTH_CLASS} skena-node--code`}
+        className={`skena-node ${ZOOM_WIDTH_CLASS} skena-node--code${peekBox !== null ? ' skena-code-peek' : ''}`}
         onContextMenu={onContextMenu}
         style={{
           ...zoomVars,
           border:        `${bw} solid ${borderColor}`,
           padding:       bandInsetPadding(),
-          height:        '100%',
+          height:        peekBox ?? '100%',
           display:       'flex',
           flexDirection: 'column',
           borderRadius:  6,
@@ -644,6 +674,8 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
                 height="100%"
                 loading={null}   // - Monaco is bundled (loader.config in index.tsx); skip the "Loading…" flash
                 defaultLanguage="python"
+                // - the model URI the reference peek lists this cell's own references under (findReferences.ts)
+                defaultPath={openCellUri(node.nodeLabel ?? id)}
                 language="python"
                 theme="skena-code"
                 beforeMount={beforeMount}
@@ -736,7 +768,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
         </div>,
         document.body,
       )}
-      <NodeBorder base={1.5} color={borderColor} running={node.lastStatus === 'running'} />
+      <NodeBorder base={1.5} color={borderColor} running={node.lastStatus === 'running'} height={peekBox ?? undefined} />
       <NodeResizer
         minWidth={160} minHeight={90} isVisible={selected && !editing}
         onResizeEnd={(_, p) => window.dispatchEvent(new CustomEvent('skena:nodeResize', {
