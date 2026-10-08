@@ -6,6 +6,7 @@ import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import remarkRehype from 'remark-rehype';
+import rehypeKatex from 'rehype-katex';
 import { toHtml } from 'hast-util-to-html';
 import { normalizeDisplayMath, normalizeMath } from './.build/mathDelims.mjs';
 import { chunkEnd, definitionsAfter } from './.build/textWindow.mjs';
@@ -69,12 +70,76 @@ test('$$text opening a block, and $$text closing one, are split', () => {
   );
 });
 
-test('a balanced $$a$$ on one line is left alone', () => {
-  const md = lines('text $$a$$ more', '', '$$a$$', '', 'and $$b$$ with $$c$$', '$$', 'x', '$$', '');
+test('a balanced $$a$$ inside a sentence is left alone', () => {
+  const md = lines('text $$a$$ more', '', 'and $$b$$ with $$c$$', '$$', 'x', '$$', '');
   assert.equal(norm(md), md);
   // - nor is one that spans two lines of a paragraph
   const two = lines('see $$a', 'b$$ here', '', '$$', 'c', '$$', '');
   assert.equal(norm(two), two);
+});
+
+test('a paragraph that is one line of $$…$$ becomes $$, the body and $$ on three lines', () => {
+  assert.equal(
+    norm(lines('before', '', '$$f_{nt}=r_{nt}-R_t^M, \\tag{2}$$', '', 'after')),
+    lines('before', '', '$$', 'f_{nt}=r_{nt}-R_t^M, \\tag{2}', '$$', '', 'after'),
+  );
+  // - the whole text, spaces inside the delimiters and after the closing one
+  assert.equal(norm('$$ a = 1 $$  '), lines('$$', 'a = 1', '$$  '));
+  // - after a heading, with up to three spaces before it, and right before a $$ block
+  assert.equal(
+    norm(lines('## Model', '   $$a$$', '$$', 'b', '$$')),
+    lines('## Model', '   $$', '   a', '   $$', '$$', 'b', '$$'),
+  );
+  // - in a list item, after a fence and after a $$ block
+  assert.equal(
+    norm(lines('- item', '', '  $$a$$', '', '```', 'x', '```', '$$b$$', '$$', 'c', '$$', '$$d$$')),
+    lines('- item', '', '  $$', '  a', '  $$', '', '```', 'x', '```', '$$', 'b', '$$', '$$', 'c', '$$', '$$', 'd', '$$'),
+  );
+  // - an escaped \$ in the body stays in the body
+  assert.equal(norm('$$\\$5 \\tag{1}$$'), lines('$$', '\\$5 \\tag{1}', '$$'));
+  // - CRLF line ends are kept
+  assert.equal(norm('a\r\n\r\n$$x \\tag{1}$$\r\n\r\nb'), 'a\r\n\r\n$$\r\nx \\tag{1}\r\n$$\r\n\r\nb');
+});
+
+test('a one-line $$…$$ that shares its paragraph or its line, or sits in code, a quote or %%, is left alone', () => {
+  for (const md of [
+    lines('where', '$$a$$', ''),
+    lines('$$a$$', 'where a is fixed', ''),
+    lines('$$a$$', '$$b$$', ''),
+    lines('$$a$$ $$b$$', ''),
+    lines('$$a$$ where', ''),
+    // - a setext heading
+    lines('$$a$$', '---', ''),
+    lines('- $$a$$', ''),
+    lines('> $$a$$', ''),
+    lines('    $$a$$', ''),
+    lines('`$$a$$`', ''),
+    lines('```', '$$a$$', '```', ''),
+    lines('%%', '$$a$$', '%%', ''),
+    lines('\\$$a$$', ''),
+    lines('$$a\\$$', ''),
+    lines('$$ $$', ''),
+  ]) assert.equal(norm(md), md);
+});
+
+const katex = unified().use(remarkParse).use(remarkGfm).use(remarkMath).use(remarkRehype).use(rehypeKatex, { output: 'mathml', throwOnError: false });
+async function katexHtml(md) {
+  return toHtml(await katex.run(katex.parse(normalizeMath(md))));
+}
+const count = (s, re) => (s.match(re) ?? []).length;
+
+test('a \\tag in a one-line $$…$$ paragraph renders as a display equation', async () => {
+  const md = lines(
+    'Excess returns', '', '$$f_{nt}=r_{nt}-R_t^M, \\tag{2}$$', '',
+    '$$\\lambda_t(k)=\\frac{1}{M}\\sum_m\\frac{\\tilde\\sigma_{mt}(k)}{\\sigma_{mt}(k)},\\qquad \\lambda(k)=\\frac{1}{T}\\sum_t\\lambda_t(k). \\tag{10–11}$$',
+    '', 'where $M$ is the number of draws.',
+  );
+  const html = await katexHtml(md);
+  assert.equal(count(html, /katex-error/g), 0);
+  assert.equal(count(html, /<math[^>]*display="block"/g), 2);
+  assert.equal(count(html, /<math(?![^>]*display="block")/g), 1);
+  // - CRLF reads as LF
+  assert.deepEqual(blocks(normalizeMath(md.replace(/\n/g, '\r\n'))), blocks(normalizeMath(md)));
 });
 
 test('$ math is left alone', () => {
@@ -142,13 +207,22 @@ async function render(md) {
   return out.replace(/<section data-footnotes[\s\S]*<\/section>/, '').trimEnd();
 }
 
+// - one-line $$…$$ paragraphs, as an exported paper writes its numbered equations
+const TAGGED = lines(
+  '# Model', '', 'Excess returns', '', '$$f_{nt}=r_{nt}-R_t^M, \\tag{2}$$', '',
+  'and their covariance', '$$', 'V = F F\'', '$$', '$$B=\\sqrt{b}. \\tag{5}$$', '', 'The end.[^1]', '', '[^1]: A note.', '',
+);
+
 test('the start of the normalized text, cut anywhere, renders as it does inside the whole', async () => {
-  const text = normalizeMath(PAPER);
-  const whole = await render(text);
-  for (let from = 0; from < text.length;) {
-    const end = chunkEnd(text, from, 1);
-    const shown = await render(`${text.slice(0, end)}\n\n${definitionsAfter(text, end)}`);
-    assert.ok(whole.startsWith(shown), `cut at ${end} (${JSON.stringify(text.slice(end, end + 20))})`);
-    from = end;
+  for (const md of [PAPER, TAGGED]) {
+    const text = normalizeMath(md);
+    const whole = await render(text);
+    for (let from = 0; from < text.length;) {
+      const end = chunkEnd(text, from, 1);
+      const shown = await render(`${text.slice(0, end)}\n\n${definitionsAfter(text, end)}`);
+      assert.ok(whole.startsWith(shown), `cut at ${end} (${JSON.stringify(text.slice(end, end + 20))})`);
+      from = end;
+    }
   }
+  assert.equal(count(await render(TAGGED), /math-display/g), 3);
 });

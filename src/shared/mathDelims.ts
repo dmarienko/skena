@@ -41,6 +41,7 @@ const LIST_ITEM   = /^ {0,3}(?:[-+*]|\d{1,9}[.)])(?:[ \t]|$)/;
 const QUOTE       = /^ {0,3}>/;
 const BREAK       = /^ {0,3}([-*_])(?:[ \t]*\1){2,}\s*$/;
 const INDENTED    = /^(?: {4}|\t)/;
+const SETEXT      = /^ {0,3}(?:=+|-+)\s*$/;
 
 const isBlank = (line: string): boolean => line.trim() === '';
 
@@ -64,10 +65,8 @@ function trailingRun(line: string): { before: string; run: string; after: string
   return run.length >= 2 ? { before, run, after: m[3] } : null;
 }
 
-// - the `$` runs of a paragraph that remark-math leaves as plain text: a run pairs with the next run of
-//   the same length and the runs between are inside that math. An escaped `$` and code are no run.
-function unpairedRuns(text: string): { at: number; size: number }[] {
-  const t = text.replace(/(`+)[\s\S]*?[^`]\1(?!`)/g, m => m.replace(/[^\n]/g, '_'));
+// - the runs of `$` in `t`; a `$` escaped by a backslash is no part of one
+function dollarRuns(t: string): { at: number; size: number }[] {
   const runs: { at: number; size: number }[] = [];
   for (let k = 0; k < t.length; k++) {
     if (t[k] !== '$') continue;
@@ -79,6 +78,26 @@ function unpairedRuns(text: string): { at: number; size: number }[] {
     runs.push({ at: k, size: e - k });
     k = e - 1;
   }
+  return runs;
+}
+
+// - a line that is one `$$body$$` and nothing more, after up to 3 spaces; remark-math reads it as
+//   inline math that the first later run of exactly two `$` closes. A body that starts or ends with
+//   `$$` would close a $$ block on its own line, so it is not taken.
+function oneLineMath(line: string): { indent: string; body: string; after: string } | null {
+  const m = /^( {0,3})\$\$(?!\$)(.*?)(\s*)$/s.exec(line);
+  if (!m) return null;
+  const [, indent, rest, after] = m;
+  const close = dollarRuns(rest).find(r => r.size === 2);
+  if (!close || close.at + 2 !== rest.length) return null;
+  const body = rest.slice(0, close.at).trim();
+  return body && !/^\$\$|\$\$$/.test(body) ? { indent, body, after } : null;
+}
+
+// - the `$` runs of a paragraph that remark-math leaves as plain text: a run pairs with the next run of
+//   the same length and the runs between are inside that math. An escaped `$` and code are no run.
+function unpairedRuns(text: string): { at: number; size: number }[] {
+  const runs = dollarRuns(text.replace(/(`+)[\s\S]*?[^`]\1(?!`)/g, m => m.replace(/[^\n]/g, '_')));
   const unpaired: typeof runs = [];
   for (let r = 0; r < runs.length; r++) {
     let c = r + 1;
@@ -116,8 +135,10 @@ function paragraphAt(lines: string[], from: number): { end: number; opensAt: num
  * Put a `$$` that opens or closes a display block on a line of its own when text is glued to it, so
  * remark-math pairs every `$$` as written: `text$$` opening a block, and `text$$` or `$$text`
  * closing one, become `text` and `$$` on two lines; `$$text` opening a block (remark-math drops the
- * text) becomes `$$` and `text`. A `$$a$$` on one line, `$` math, `\$`, code and %% Typst blocks are
- * left as they are. Applying it twice gives what applying it once does.
+ * text) becomes `$$` and `text`. A paragraph that is one line `$$a$$`, which remark-math reads as
+ * inline math, becomes `$$`, `a` and `$$` on three lines. A `$$a$$` in a sentence or in a longer
+ * paragraph, `$` math, `\$`, code and %% Typst blocks are left as they are. Applying it twice gives
+ * what applying it once does.
  */
 export function normalizeDisplayMath(md: string): string {
   if (!md.includes('$$')) return md;
@@ -177,7 +198,16 @@ export function normalizeDisplayMath(md: string): string {
       paraEnd = -1;
       continue;
     }
-    if (i >= paraEnd) ({ end: paraEnd, opensAt } = paragraphAt(lines, i));
+    const starts = i >= paraEnd;
+    if (starts) ({ end: paraEnd, opensAt } = paragraphAt(lines, i));
+    // - a paragraph that is one `$$…$$` line is display math, as Obsidian and GitHub read it; a
+    //   line under it of `=` or `-` would make it a heading
+    const one = starts && paraEnd === i + 1 ? oneLineMath(line) : null;
+    if (one && !(paraEnd < lines.length && SETEXT.test(lines[paraEnd]))) {
+      const eol = one.after.endsWith('\r') ? '\r' : '';
+      out.push(one.indent + '$$' + eol, one.indent + one.body + eol, one.indent + '$$' + one.after);
+      continue;
+    }
     if (i === opensAt) {
       const t = trailingRun(line)!;
       mathIndent = MATH_OPEN.exec(lines[paraEnd])![1];
