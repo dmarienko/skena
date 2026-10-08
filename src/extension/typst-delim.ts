@@ -2,10 +2,13 @@
 // - inline `%body%`, block `%%body%%`. Strict boundary rules to avoid prose collisions
 // - with literal percent signs (mirrors remark-math's `$` rules):
 // -   opening delimiter immediately followed by a non-space,
+// -   opening delimiter not right after a letter or a digit (4.5%, x% are percent signs),
 // -   closing delimiter immediately preceded by a non-space,
 // -   inline spans do not cross a newline, empty body is not math.
 
 export interface TypstSpan { start: number; end: number; body: string; block: boolean }
+
+const WORD = /[\p{L}\p{N}]/u;
 
 export function findTypstSpans(text: string): TypstSpan[] {
   const out: TypstSpan[] = [];
@@ -15,6 +18,7 @@ export function findTypstSpans(text: string): TypstSpan[] {
     const block = text[i + 1] === '%';
     const open = block ? 2 : 1;
     const after = text[i + open];
+    if (i > 0 && WORD.test(text[i - 1])) { i += open; continue; }
     // - opening must be followed by a non-space, non-% char
     if (after === undefined || after === ' ' || after === '\t' || after === '%' || (!block && after === '\n')) { i += open; continue; }
     // - scan for the matching close

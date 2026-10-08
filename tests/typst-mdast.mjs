@@ -122,3 +122,14 @@ test('escaped characters around a split span keep their markdown reading outside
     { text: 'a * b ' }, { html: '<typst>x *y* z</typst>' }, { text: ' _w' },
   ]);
 });
+
+test('prose percentages stay text, and a span next to them still renders', () => {
+  assert.deepEqual(para('Mean simulated bias: about **4.5%** relative and **6.4%** risk.'), [
+    { text: 'Mean simulated bias: about ' }, { strong: [{ text: '4.5%' }] }, { text: ' relative and ' },
+    { strong: [{ text: '6.4%' }] }, { text: ' risk.' },
+  ]);
+  assert.deepEqual(para('vol 19.84% and 14.64%; Where %z_(i,t)^k% - actually factor %f_(i,t)^k% made'), [
+    { text: 'vol 19.84% and 14.64%; Where ' }, { html: '<typst>z_(i,t)^k</typst>' },
+    { text: ' - actually factor ' }, { html: '<typst>f_(i,t)^k</typst>' }, { text: ' made' },
+  ]);
+});
