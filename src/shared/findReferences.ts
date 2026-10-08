@@ -55,6 +55,15 @@ export function failureReason(err: unknown): string {
   return first.length > 60 ? `${first.slice(0, 59)}…` : first;
 }
 
+/**
+ * - `answer` without the reference the cursor is on (cell `cellId`, 1-based `line`/`col` of the
+ *   request): the place the lookup was asked from is not one to go to
+ */
+export function otherReferences(answer: ReferencesAnswer, cellId: string, line: number, col: number): ReferencesAnswer {
+  const at = (t: ReferenceTarget) => t.kind === 'cell' && t.cellId === cellId && t.line === line && t.endLine === line && t.col <= col && col < t.endCol;
+  return { ...answer, targets: answer.targets.filter(t => !at(t)) };
+}
+
 /** - the scheme of the code cells' model URIs */
 export const CELL_SCHEME = 'canvas-cell';
 

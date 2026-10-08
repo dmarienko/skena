@@ -1,7 +1,7 @@
 // - run: npx esbuild src/shared/findReferences.ts --bundle --format=esm --outfile=tests/.build/findReferences.mjs && npx esbuild tests/fixtures/monaco-references-model.js --bundle --format=esm --platform=node --outfile=tests/.build/monacoReferencesModel.mjs && node --test tests/find-references.mjs
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { failureReason, openedTarget, peekBoxHeight, peekCellUri, peekPlan, referencesFromLocations } from './.build/findReferences.mjs';
+import { failureReason, openedTarget, otherReferences, peekBoxHeight, peekCellUri, peekPlan, referencesFromLocations } from './.build/findReferences.mjs';
 import { ReferencesModel, URI } from './.build/monacoReferencesModel.mjs';
 
 // - the joined text of three cells (header line 0): A on lines 1-2, B on 4-5, C on 7
@@ -87,4 +87,20 @@ test('6. a failed lookup is noted by the first line of its message, cut to 60 ch
   assert.equal(failureReason(new Error('ENOENT: no such file or directory\n    at open (node:fs:1:1)')), 'ENOENT: no such file or directory');
   assert.equal(failureReason('x'.repeat(70)), `${'x'.repeat(59)}…`);
   assert.equal(failureReason(new Error('')), 'unknown error');
+});
+
+test('7. the reference the cursor is on is left out, its cell keeps the others, and a group left empty is gone', () => {
+  // - E7 asks with the cursor at 2:6, inside its reference 2:5-2:8
+  const rest = otherReferences(ANSWER, 'c7', 2, 6);
+  assert.deepEqual(rest.targets, ANSWER.targets.filter(t => !(t.kind === 'cell' && t.cellId === 'c7' && t.line === 2)));
+  assert.equal(otherReferences(ANSWER, 'c7', 2, 7).targets.length, 5);
+  // - 2:8 is just after the name: not on it
+  assert.equal(otherReferences(ANSWER, 'c7', 2, 8).targets.length, 6);
+  // - E9 asks on its only reference: its group is not in the peek
+  const plan = peekPlan(otherReferences(ANSWER, 'c9', 1, 2), 'c9', 'canvas-cell://0/E9');
+  const model = new ReferencesModel(plan.locations.map(l => ({ uri: URI.parse(l.uri), range: l.range })), 'References');
+  assert.deepEqual(model.groups.map(g => URI.parse(g.uri.toString()).path.split('/').pop()), ['E7', 'E10', 'a.py', 'b.py']);
+  // - the only reference there is: none left
+  const lone = { targets: [{ kind: 'cell', cellId: 'c7', line: 1, col: 1, endLine: 1, endCol: 4 }], cells: [ANSWER.cells[0]], files: [] };
+  assert.deepEqual(otherReferences(lone, 'c7', 1, 2).targets, []);
 });

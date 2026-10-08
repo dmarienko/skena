@@ -3,24 +3,25 @@
  * name under the cursor goes to the host (goToDefinition, findReferences). A definition answer
  * (definitionResult) selects a cell here (skena:goToCell, CanvasView), or goes back to the host to
  * open a file or show a quick pick (showDefinitions); a references answer (referencesResult) opens
- * the cell's reference peek (referencePeek.ts). No answer: a note in the cell; a references lookup
- * that failed: a note with its reason; a cell the jump goes to that is gone by then: a note too
- * (noteInCell, CanvasView). With no name under the
- * cursor nothing is asked and nothing shown (user). An answer that arrives after another key in the
+ * the cell's reference peek (referencePeek.ts) on every reference but the one the cursor is on (user).
+ * No answer, or none but that one: a note in the cell; a references lookup that failed: a note with
+ * its reason; a cell the jump goes to that is gone by then: a note too (noteInCell, CanvasView). With
+ * no name under the cursor nothing is asked and nothing shown (user). An answer that arrives after another key in the
  * cell or after the cell lost focus is dropped: the user has moved on, and keys typed meanwhile must
  * not land in another cell.
  */
 import type { editor as MonacoEditor } from 'monaco-editor';
 import { dottedNameAt } from '../../../shared/goToDefinition';
-import type { ReferencesAnswer } from '../../../shared/findReferences';
+import { otherReferences, type ReferencesAnswer } from '../../../shared/findReferences';
 import type { MsgDefinitionResult, MsgReferencesResult } from '../../../shared/types';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
 }
 
-// - one lookup per cell at a time; `since` is performance.now() when it was asked; `open` for references
-interface Pending { reqId: string; name: string; since: number; stale: boolean; note: (text: string) => void; open?: (answer: ReferencesAnswer) => void }
+// - one lookup per cell at a time; `since` is performance.now() when it was asked; `open` and `at` (the
+//   cursor's 1-based place when it was asked) for references
+interface Pending { reqId: string; name: string; since: number; stale: boolean; note: (text: string) => void; open?: (answer: ReferencesAnswer) => void; at?: { line: number; col: number } }
 const pending = new Map<string, Pending>();
 // - each cell's note, from its last lookup: a jump that lands nowhere notes it in the cell that asked
 const notes = new Map<string, (text: string) => void>();
@@ -52,7 +53,9 @@ function listen(): void {
     if (p.stale) return;
     if (r.error !== undefined) { p.note(`references failed: ${r.error}`); return; }
     if (r.targets.length === 0) { p.note(`no references found for ${p.name}`); return; }
-    p.open?.(r);
+    const rest = p.at ? otherReferences(r, r.cellNodeId, p.at.line, p.at.col) : r;
+    if (rest.targets.length === 0) { p.note(`no other references to ${p.name}`); return; }
+    p.open?.(rest);
   });
 }
 
@@ -80,7 +83,7 @@ export function requestReferences(editor: MonacoEditor.IStandaloneCodeEditor, ce
   if (!at) return;
   const reqId = `ref-${++counter}`;
   notes.set(cellId, note);
-  pending.set(cellId, { reqId, name: at.dotted ?? at.word, since: performance.now(), stale: false, note, open });
+  pending.set(cellId, { reqId, name: at.dotted ?? at.word, since: performance.now(), stale: false, note, open, at: { line: pos.lineNumber, col: pos.column } });
   vscodePostMessage({ type: 'findReferences', reqId, cellNodeId: cellId, code: model.getValue(), line: pos.lineNumber, col: pos.column });
 }
 
