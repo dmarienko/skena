@@ -14,7 +14,9 @@
  */
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 import type { editor as MonacoEditor } from 'monaco-editor';
-import { openedTarget, peekPlan, type PeekPlan, type ReferencesAnswer } from '../../../shared/findReferences';
+import { StandaloneServices } from 'monaco-editor/esm/vs/editor/standalone/browser/standaloneServices.js';
+import { ILabelService } from 'monaco-editor/esm/vs/platform/label/common/label.js';
+import { CELL_SCHEME, openedTarget, peekPlan, type PeekPlan, type ReferencesAnswer } from '../../../shared/findReferences';
 import type { DefinitionTarget } from '../../../shared/goToDefinition';
 
 function vscodePostMessage(msg: unknown) {
@@ -61,13 +63,26 @@ function goTo(t: DefinitionTarget, from: string): void {
   else vscodePostMessage({ type: 'showDefinitions', targets: [t], cellNodeId: from });
 }
 
-let openerInstalled = false;
+// - the peek names a group by its URI's last part and labels the folder after it, in the list and in its
+//   title (referencesTree.js FileReferencesTemplate, referencesWidget.js _revealReference). The
+//   standalone label service labels a URI that is not a file by its path (standaloneServices.js
+//   StandaloneUriLabelService), so the folder of a cell's /<label> would read "/". A cell's URI is
+//   labelled by its path after the slash: the folder by nothing, the cell by its label; files as before
+function labelCellsByName(): void {
+  const labels = StandaloneServices.get<{ getUriLabel(resource: monaco.Uri, options?: unknown): string }>(ILabelService);
+  const own = labels.getUriLabel.bind(labels);
+  labels.getUriLabel = (resource, options) => (resource.scheme === CELL_SCHEME ? resource.path.slice(1) : own(resource, options));
+}
 
-// - Monaco opens a reference (Enter, a double-click) through the code editor service, with the editor
-//   the peek is in as source; openers registered later are asked first (abstractCodeEditorService.js)
-function installOpener(): void {
-  if (openerInstalled) return;
-  openerInstalled = true;
+let installed = false;
+
+// - once per webview, before the first peek: cells labelled by name, and an editor opener. Monaco opens
+//   a reference (Enter, a double-click) through the code editor service, with the editor the peek is in
+//   as source; openers registered later are asked first (abstractCodeEditorService.js)
+function install(): void {
+  if (installed) return;
+  installed = true;
+  labelCellsByName();
   monaco.editor.registerEditorOpener({
     openCodeEditor(source, resource, at) {
       const peek = peeks.get(source);
@@ -107,7 +122,7 @@ export function openReferencePeek(
   height: () => number | null,
   setHeight: (px: number | null) => void,
 ): void {
-  installOpener();
+  install();
   closeReferencePeek(editor);
   const model = editor.getModel();
   const dom = editor.getDomNode();

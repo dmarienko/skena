@@ -56,3 +56,11 @@ declare module 'monaco-editor/esm/vs/basic-languages/python/python.js' {
   import type { languages } from 'monaco-editor';
   export const language: languages.IMonarchLanguage;
 }
+
+declare module 'monaco-editor/esm/vs/platform/label/common/label.js' {
+  export const ILabelService: unknown;
+}
+
+declare module 'monaco-editor/esm/vs/editor/standalone/browser/standaloneServices.js' {
+  export const StandaloneServices: { get<T>(serviceId: unknown): T };
+}
