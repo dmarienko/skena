@@ -2505,6 +2505,10 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
   <link rel="stylesheet" href="${styleUri}" />
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    /* - Monaco's CSS is written for content-box: a box given a width and a padding (a tree's twistie,
+       - a find widget button) is that width plus the padding. Zero specificity, so the box-sizing rules
+       - Monaco does set still win */
+    :where(.monaco-editor, .monaco-editor *) { box-sizing: content-box; }
     html, body, #root { width: 100%; height: 100%; overflow: hidden; background: var(--vscode-editor-background); }
   </style>
 </head>
