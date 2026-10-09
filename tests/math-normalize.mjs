@@ -181,6 +181,81 @@ test('a CRLF text reads as the LF one does', () => {
   assert.deepEqual(blocks(normalizeMath(PAPER.replace(/\n/g, '\r\n'))), blocks(normalizeMath(PAPER)));
 });
 
+// - normalizeMath, with the input kept for the idempotence check
+function normAll(md) {
+  seen.push(md);
+  return normalizeMath(md);
+}
+
+test('a \\$ inside $…$ math becomes a dollar sign written with no $', () => {
+  assert.equal(normAll('costs $\\$5$ each'), 'costs ${\\char"24}5$ each');
+  assert.equal(normAll('$x + \\$y$'), '$x + {\\char"24}y$');
+  // - a formula over two lines of a paragraph, and one right after an escaped dollar in prose
+  assert.equal(normAll(lines('from $a +', '\\$5$ on', '')), lines('from $a +', '{\\char"24}5$ on', ''));
+  assert.equal(normAll('paid \\$$\\$5$'), 'paid \\$${\\char"24}5$');
+  // - in a heading, a list item and a table cell
+  assert.equal(normAll(lines('# Cost $\\$5$', '- $\\$6$', '')), lines('# Cost ${\\char"24}5$', '- ${\\char"24}6$', ''));
+  assert.equal(
+    normAll(lines('| a | b |', '|---|---|', '| $\\$5$ | c |', '')),
+    lines('| a | b |', '|---|---|', '| ${\\char"24}5$ | c |', ''),
+  );
+});
+
+test('a \\$ inside $$ math becomes a dollar sign written with no $', () => {
+  assert.equal(normAll(lines('before', '', '$$a \\$ b$$', '', 'after')), lines('before', '', '$$', 'a {\\char"24} b', '$$', '', 'after'));
+  assert.equal(normAll('see $$a \\$ b$$ here'), 'see $$a {\\char"24} b$$ here');
+  assert.equal(
+    normAll(lines('$$', 'c = \\$5 + \\$6', '\\$7', '$$', '')),
+    lines('$$', 'c = {\\char"24}5 + {\\char"24}6', '{\\char"24}7', '$$', ''),
+  );
+  // - CRLF line ends
+  assert.equal(
+    normAll('a $\\$5$\r\n\r\n$$\r\n\\$6\r\n$$\r\n'),
+    'a ${\\char"24}5$\r\n\r\n$$\r\n{\\char"24}6\r\n$$\r\n',
+  );
+});
+
+test('a \\$ outside math, or in code, a fence or %%, is left alone', () => {
+  for (const md of [
+    'costs \\$5 and \\$6',
+    lines('costs \\$5 and', '\\$6 more', ''),
+    'use `$\\$5$` here',
+    lines('```', '$\\$5$', '```', ''),
+    lines('%%', '$\\$5$', '%%', ''),
+    lines('    $\\$5$', ''),
+    // - each cell of a table is read alone, so no math spans these
+    lines('| a | b | c |', '|---|---|---|', '| $x | \\$5 | y$ |', ''),
+  ]) assert.equal(normAll(md), md);
+  // - only the \$ in the math changes
+  assert.equal(normAll('costs \\$5, or $\\$6$, or \\$7'), 'costs \\$5, or ${\\char"24}6$, or \\$7');
+});
+
+test('a $$ inline formula at the start of a line keeps the \\$ that stops the line opening a $$ block', () => {
+  const md = lines('$$\\$5 + x', 'y$$ more', '');
+  assert.deepEqual(blocks(normAll(md)), blocks(md));
+  assert.deepEqual(blocks(md), ['paragraph:\\$5 + x\ny more']);
+});
+
+const katexOut = unified().use(remarkParse).use(remarkGfm).use(remarkMath).use(remarkRehype).use(rehypeKatex, { output: 'html', throwOnError: false });
+
+test('$ math holding \\$ renders the dollar sign with no KaTeX error, in MathML and in HTML', async () => {
+  const md = lines(
+    'in excess of $\\$ 100$ billion, roughly \\$5 billion', '',
+    '| x | y |', '|---|---|', '| $\\Delta \\mathrm{SR} / \\$ \\mathrm{~B}$ | \\$B |', '',
+    '$$', 'c = \\$5', '$$', '',
+  );
+  // - as written, the $ of a \$ closes the formula
+  assert.ok(count(toHtml(await katex.run(katex.parse(md))), /katex-error/g) > 0);
+  const mathml = await katexHtml(md);
+  const html = toHtml(await katexOut.run(katexOut.parse(normalizeMath(md))));
+  for (const out of [mathml, html]) {
+    assert.equal(count(out, /katex-error/g), 0);
+    assert.equal(count(out, />\$</g), 3);
+    assert.ok(out.includes('roughly $5 billion'));
+    assert.ok(out.includes('>$B<'));
+  }
+});
+
 test('applying it twice gives what applying it once does', () => {
   for (const md of seen) {
     const once = normalizeDisplayMath(md);
