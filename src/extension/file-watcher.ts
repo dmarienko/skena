@@ -7,6 +7,7 @@ import * as chokidar from 'chokidar';
 import * as path from 'path';
 import { VaultConfig } from '../shared/types';
 import { VaultIndexer } from './vault-indexer';
+import { WATCH_IGNORED } from './filePaths';
 
 type ChangeCallback = (fsPath: string) => void;
 
@@ -26,7 +27,7 @@ export class FileWatcher {
 
     this.watcher = chokidar.watch(paths, {
       ignoreInitial: true,
-      ignored: /(^|[/\\])\..|(node_modules|__pycache__|dist)/,
+      ignored: WATCH_IGNORED,
       persistent: true,
       awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 },
     });
