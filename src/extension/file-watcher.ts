@@ -4,10 +4,9 @@
  */
 
 import * as chokidar from 'chokidar';
-import * as path from 'path';
 import { VaultConfig } from '../shared/types';
 import { VaultIndexer } from './vault-indexer';
-import { WATCH_IGNORED } from './filePaths';
+import { WATCH_IGNORED, vaultRoot } from './filePaths';
 
 type ChangeCallback = (fsPath: string) => void;
 
@@ -21,9 +20,7 @@ export class FileWatcher {
     this.watcher?.close();
     if (vaults.length === 0) return;
 
-    const paths = vaults.map(v =>
-      v.path.startsWith('~') ? path.join(process.env.HOME ?? '~', v.path.slice(1)) : v.path
-    );
+    const paths = vaults.map(v => vaultRoot(v.path, process.env.HOME));
 
     this.watcher = chokidar.watch(paths, {
       ignoreInitial: true,

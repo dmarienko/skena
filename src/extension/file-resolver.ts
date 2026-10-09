@@ -13,6 +13,7 @@ import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { VaultConfig, VaultUri, FileType } from '../shared/types';
 import { VAULT_SCHEME, NOTION_VAULT_NAME } from '../shared/constants';
+import { vaultRoot, vaultUriFor } from './filePaths';
 
 export interface ResolvedFile {
   fsPath: string;
@@ -67,13 +68,7 @@ export class FileResolver {
 
   updateVaults(vaultConfigs: VaultConfig[]): void {
     this.vaults.clear();
-    for (const v of vaultConfigs) {
-      // - expand ~ to home dir
-      const expanded = v.path.startsWith('~')
-        ? path.join(process.env.HOME ?? '~', v.path.slice(1))
-        : v.path;
-      this.vaults.set(v.name, expanded);
-    }
+    for (const v of vaultConfigs) this.vaults.set(v.name, vaultRoot(v.path, process.env.HOME));
   }
 
   /**
@@ -122,17 +117,11 @@ export class FileResolver {
 
   /**
    * Reverse lookup — given an absolute fs path, return a vault:// URI if the
-   * file belongs to a configured vault, otherwise return null (caller falls
-   * back to a relative project path).
+   * file belongs to a configured vault (the one with the longest root), otherwise
+   * return null (caller falls back to a relative project path).
    */
   resolveFromFsPath(fsPath: string): string | null {
-    for (const [name, root] of this.vaults) {
-      if (fsPath.startsWith(root + path.sep) || fsPath.startsWith(root + '/')) {
-        const rel = fsPath.slice(root.length).replace(/^[/\\]/, '');
-        return `vault://${name}/${rel}`;
-      }
-    }
-    return null;
+    return vaultUriFor(this.vaults, fsPath);
   }
 
   /**
