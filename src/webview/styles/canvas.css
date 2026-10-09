@@ -276,8 +276,9 @@ body.vscode-dark, body.vscode-high-contrast {
 .skena-cell-html .skena-out-note  { opacity: 0.6; font-style: italic; }
 .skena-cell-html img { max-width: 100%; }
 
-/* - output cell text selects with the mouse, and Ctrl+C copies it: React Flow puts user-select:none on
-   - every node. Not during a pan or zoom, the same as the rest of the canvas (see above). */
+/* - output cell text in select mode (CellNode.tsx useSelectMode) selects with the mouse, and Ctrl+C
+   - copies it: React Flow puts user-select:none on every node. Not during a pan or zoom, the same as the
+   - rest of the canvas (see above). */
 :root:not([data-skena-interacting="1"]) .skena-cell-text { user-select: text; }
 .skena-cell-text { cursor: text; }
 /* - an image or a link would start a native drag-and-drop where the selection should start */
