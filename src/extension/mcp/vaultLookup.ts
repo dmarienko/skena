@@ -163,7 +163,9 @@ function readJson(file: string): Record<string, unknown> | null {
  */
 export function settingsFileSource(startDir: string, home: string | undefined): VaultSource {
   let dir = path.resolve(startDir);
+  let top = dir;
   for (let i = 0; i < SETTINGS_LEVELS; i++) {
+    top = dir;
     const basePath = path.join(dir, '.vscode', 'settings.json');
     const base = readJson(basePath);
     if (base !== null) {
@@ -178,7 +180,7 @@ export function settingsFileSource(startDir: string, home: string | undefined): 
     if (parent === dir) break;
     dir = parent;
   }
-  return { where: '.vscode/settings.json', vaults: null, note: `none in ${path.resolve(startDir)} or the folders above it` };
+  return { where: '.vscode/settings.json', vaults: null, note: `none in the folders from ${path.resolve(startDir)} up to ${top}` };
 }
 
 function workspaceFileSource(canvasPath: string, cwd: string, home: string | undefined): VaultSource {
@@ -232,8 +234,8 @@ export async function loadVaults(canvasPath: string, opts: LoadOptions): Promise
 /** - why a vault:// node names no file: the vault, then each place looked at and what it held */
 export function notConfiguredText(name: string, lookup: VaultLookup): string {
   return [
-    `vault "${name}" not configured. Looked at:`,
+    `(vault not configured — no "${name}" in skena.vaults. Looked at:`,
     ...lookup.looked.map(s => `  ${s.where}: ${s.note}`),
-    'Add it to skena.vaults in .vscode/settings.json, or in the settings of the .code-workspace file.',
+    'Add it to skena.vaults in .vscode/settings.json, or in the settings of the .code-workspace file.)',
   ].join('\n');
 }

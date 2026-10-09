@@ -224,7 +224,7 @@ test('16. a vault no list names: the text names the vault and each place looked 
   const lookup = await loadVaults(canvas, { relay: null, cwd: join(root, 'p'), home: HOME });
   assert.deepEqual(lookup.vaults, []);
   const text = notConfiguredText('crtx', lookup);
-  assert.match(text, /vault "crtx" not configured/);
+  assert.match(text, /^\(vault not configured — no "crtx" in skena\.vaults/);
   assert.match(text, /skena extension/);
   assert.match(text, /\.vscode\/settings\.json/);
   assert.match(text, /\.code-workspace/);
