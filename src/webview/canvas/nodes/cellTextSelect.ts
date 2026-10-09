@@ -4,6 +4,21 @@
 
 export interface Box { left: number; top: number; right: number; bottom: number }
 
+// - Intl.Segmenter is in Chromium and Node, not in this project's ES2020 lib types
+interface WordSegments { containing(index: number): { segment: string; index: number } | undefined }
+type SegmenterCtor = new (locale: undefined, options: { granularity: 'word' }) => { segment(text: string): WordSegments };
+const words = new (Intl as unknown as { Segmenter: SegmenterCtor }).Segmenter(undefined, { granularity: 'word' });
+
+/**
+ * The [start, end) offsets a double-click on character `i` of `text` selects: its word, a number or a
+ * file name whole, or the run of spaces or the punctuation mark it is (Unicode word boundaries, as
+ * Chromium's own double-click).
+ */
+export function wordAt(text: string, i: number): [number, number] {
+  const s = words.segment(text).containing(i);
+  return s ? [s.index, s.index + s.segment.length] : [i, i];
+}
+
 /**
  * The point nearest (x, y) inside both boxes, 1px in from their edges; null when they do not overlap.
  */
