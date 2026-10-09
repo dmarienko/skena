@@ -4,7 +4,7 @@
  * Double-click to edit markdown/html cells.
  */
 
-import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect, useMemo, useCallback } from 'react';
 import { NodeProps, Handle, Position, NodeResizer } from '@xyflow/react';
 import { CellNode } from '../../../shared/types';
 import { capOutputHtml } from '../../../shared/outputCap';
@@ -15,6 +15,10 @@ import { ScrollableContent } from '../../components/ScrollableContent';
 import { BAND_CLASS, HANDLE_STYLE, ZOOM_WIDTH_CLASS, bandHeldScroller, bandInsetPadding, baseBorderWidth, focusRingStyle, useBandVars, useZoomVars } from './nodeShared';
 import { NodeBorder } from './NodeBorder';
 import { nodeBorderColor } from '../palette';
+
+// - text the mouse selects instead of moving the node or panning the canvas (canvas.css: .skena-cell-text).
+//   The node still moves by the padding around it and the space under it.
+const TEXT_CLASS = 'skena-cell-text nodrag nopan';
 
 export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Element {
   const node = data as unknown as CellNode & { accentColor?: string };
@@ -41,6 +45,13 @@ export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
     if (el.scrollHeight - el.scrollTop - el.clientHeight < 80) el.scrollTop = el.scrollHeight;
   }, [node.content]);
 
+  // - the mouseup that ends a drag selection also clicks the node: React Flow would select it and
+  //   CanvasView reveal it, a pan under the selection
+  const onTextClick = useCallback((e: React.MouseEvent) => {
+    const sel = window.getSelection();
+    if (sel && !sel.isCollapsed && e.currentTarget.contains(sel.anchorNode)) e.stopPropagation();
+  }, []);
+
   return (
     <>
     <NodeLabelBadge label={node.nodeLabel} />
@@ -62,9 +73,9 @@ export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
       }}
     >
       <ScrollableContent ref={scrollRef} scrollKey={id} className={BAND_CLASS} style={{ ...bandVars, ...bandHeldScroller(6, 8, 6, 8) }}>
-        {node.format === 'markdown' && <MarkdownRenderer content={node.content} />}
+        {node.format === 'markdown' && <div className={TEXT_CLASS} onClick={onTextClick}><MarkdownRenderer content={node.content} /></div>}
         {node.format === 'image'    && <img src={node.content} alt="cell" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />}
-        {node.format === 'html'     && <div className="skena-cell-html" dangerouslySetInnerHTML={{ __html: htmlContent }} />}
+        {node.format === 'html'     && <div className={`skena-cell-html ${TEXT_CLASS}`} onClick={onTextClick} dangerouslySetInnerHTML={{ __html: htmlContent }} />}
         {node.format === 'plotly'   && <PlotlyRenderer json={node.content} />}
       </ScrollableContent>
     </div>
