@@ -15,6 +15,7 @@ import { CanvasView } from './canvas/CanvasView';
 import { FloatingChat } from './canvas/FloatingChat';
 import type { NodeAdded, RestoredChat } from './hooks/useFloatingChat';
 import { useCanvasData } from './hooks/useCanvasData';
+import { invalidateFileCache } from './hooks/useFileContent';
 import { HostToWebview, MarkdownConfig, ChatToolEvent, ChatTokenUsage } from '../shared/types';
 import { MarkdownConfigContext, DEFAULT_MARKDOWN_CONFIG } from './context/MarkdownConfigContext';
 import { warmCodeHighlighter } from './lib/codeHighlight';
@@ -173,6 +174,9 @@ export function App(): JSX.Element {
           break;
         case 'fileChanged':
           dispatch({ type: 'FILE_CHANGED', uri: msg.uri });
+          // - drop the cached copy here as well: a node in a folded section is unmounted and hears no event
+          invalidateFileCache(msg.uri);
+          if (msg.fsPath) invalidateFileCache(msg.fsPath);
           window.dispatchEvent(new CustomEvent('skena:fileInvalidated', { detail: msg.uri }));
           // - a node may store the file by its full path (the MCP accepts one), which the relative uri never matches
           if (msg.fsPath && msg.fsPath !== msg.uri) window.dispatchEvent(new CustomEvent('skena:fileInvalidated', { detail: msg.fsPath }));
