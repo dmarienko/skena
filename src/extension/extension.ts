@@ -144,6 +144,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const { exportToFile } = await import('./export/exportCommand');
     return exportToFile(context, editorProvider as SkenaEditorProvider, canvasPath, outPath);
   });
+  // - the relay's /vaults: the MCP resolves vault:// file nodes with the list this window uses
+  runIpc.setVaultsHandler(() => getVaults());
 
   // - deploy MCP server to each workspace folder
   const folders = vscode.workspace.workspaceFolders ?? [];

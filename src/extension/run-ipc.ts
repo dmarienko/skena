@@ -1,8 +1,9 @@
 import * as http from 'http';
 import { randomUUID } from 'crypto';
 import type * as vscode from 'vscode';
-import type { HostToWebview, AgentRunPersistResult, ExportReply } from '../shared/types';
+import type { HostToWebview, AgentRunPersistResult, ExportReply, VaultConfig } from '../shared/types';
 import { removeEndpoint, writeEndpoint } from './ipcEndpoint';
+import { vaultRoot } from './filePaths';
 
 // - a tiny 127.0.0.1 relay so the OUT-OF-PROCESS MCP server can stream a running cell's live output
 // - back to the extension host, which forwards it to the right canvas webview (no canvas reload).
@@ -16,6 +17,8 @@ type ResolvePanel = (canvasPath: string) => vscode.WebviewPanel | undefined;
 type PersistHandler = (canvasPath: string, payload: unknown) => Promise<AgentRunPersistResult>;
 // - request/response: write the canvas as one HTML page (the MCP tool canvas_export_html)
 type ExportHandler = (canvasPath: string, outPath: string | undefined) => Promise<ExportReply>;
+// - request/response: the extension's vault list as it is now (settings.getVaults), for the MCP's vault:// nodes
+type VaultsHandler = () => Promise<VaultConfig[]>;
 
 class RunIpc {
   private server: http.Server | null = null;
@@ -24,6 +27,7 @@ class RunIpc {
   private resolvePanel: ResolvePanel = () => undefined;
   private persistHandler: PersistHandler | null = null;
   private exportHandler: ExportHandler | null = null;
+  private vaultsHandler: VaultsHandler | null = null;
   // - the workspace folders whose endpoint file this relay wrote, or will write once it listens
   private advertised: string[] = [];
 
@@ -51,6 +55,10 @@ class RunIpc {
 
   setExportHandler(fn: ExportHandler): void {
     this.exportHandler = fn;
+  }
+
+  setVaultsHandler(fn: VaultsHandler): void {
+    this.vaultsHandler = fn;
   }
 
   /**
@@ -102,6 +110,19 @@ class RunIpc {
       res.statusCode = 200;
       res.setHeader('content-type', 'application/json');
       res.end(JSON.stringify(reply)); return;
+    }
+    if (url === '/vaults' && this.vaultsHandler) {
+      try {
+        const vaults = (await this.vaultsHandler())
+          .filter(v => typeof v?.name === 'string' && typeof v?.path === 'string')
+          .map(v => ({ ...v, path: vaultRoot(v.path, process.env.HOME) }));
+        res.statusCode = 200;
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ vaults }));
+      } catch (e) {
+        res.statusCode = 500; res.end((e as Error).message);
+      }
+      return;
     }
     res.statusCode = 403; res.end();
   }
