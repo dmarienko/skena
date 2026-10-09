@@ -4462,7 +4462,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       {searchOpen && (
         <CanvasSearch
           nodes={canvasRef.current.nodes.filter(n => !isGroup(n))}
-          onFocus={focusNodeById}
+          onFocus={(id, then) => revealAndFocus(id, { then })}
           onClose={() => setSearchOpen(false)}
         />
       )}

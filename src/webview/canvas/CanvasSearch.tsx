@@ -17,8 +17,9 @@
  *   ↑ / ↓         → previous / next result
  *   Escape         → close
  *
- * The parent calls focusNode(id) whenever the active result changes;
- * the search bar itself has no knowledge of the React Flow instance.
+ * The parent is called with onFocus(id, then) whenever the active result changes, and calls `then`
+ * once the node has the focus (later when its section had to unfold first); the search bar itself
+ * has no knowledge of the React Flow instance.
  */
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
@@ -27,7 +28,7 @@ import { parseQuery, matches, nodeVaultName } from './searchMatch';
 
 interface Props {
   nodes:   CanvasNode[];
-  onFocus: (id: string) => void;
+  onFocus: (id: string, then: () => void) => void;
   onClose: () => void;
 }
 
@@ -66,12 +67,15 @@ export function CanvasSearch({ nodes, onFocus, onClose }: Props): JSX.Element {
   const current = total > 0 ? Math.min(index, total - 1) : -1;
 
   // - when results or index change, pan to active node, then restore input focus.
-  // - TextNode's skena:focusNode handler calls wrapperRef.focus() synchronously,
-  // - so we reclaim focus in the next animation frame (after all event handlers run).
+  // - TextNode's skena:focusNode handler calls wrapperRef.focus() synchronously: take it back at once,
+  // - so a key typed meanwhile still reaches the input, and again in the next animation frame (after
+  // - all event handlers run).
   useEffect(() => {
     if (current >= 0) {
-      onFocus(results[current].id);
-      requestAnimationFrame(() => inputRef.current?.focus());
+      onFocus(results[current].id, () => {
+        inputRef.current?.focus();
+        requestAnimationFrame(() => inputRef.current?.focus());
+      });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current, query]); // - results identity changes with query
