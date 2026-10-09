@@ -60,7 +60,8 @@ import { HelperLines } from './HelperLines';
 import { SectionSeparators } from './SectionSeparators';
 import { EdgeFollowHints, type EdgeHint, type ShownHints } from './EdgeFollowHints';
 import { cardContent, type CardContent } from './cardContent';
-import { loadedFileText } from '../hooks/useFileContent';
+import { invalidateFileCache, loadedFileText } from '../hooks/useFileContent';
+import { newFileNodeUris } from './newFileNodes';
 import { G_BADGES_ATTR, gChordStep } from './gChord';
 import { WHEEL_IDLE_MS, createGestureTracker, type GestureTracker } from './gestureTracker';
 import { JumpTags, type ShownTags } from './JumpTags';
@@ -498,6 +499,14 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
   const initialNodes = ensureLabels(canvas.nodes);
   const [nodes, setNodes, onNodesChange] = useNodesState(toFlowNodes(initialNodes));
   const [edges, setEdges, onEdgesChange] = useEdgesState(toFlowEdges(canvas.edges, initialNodes));
+  // - a file node this canvas did not have in its previous node list asks the host for its file rather
+  // - than reusing a cached copy. Done while rendering: the node renders after this body, so its first
+  // - look at the cache already misses. Dropping an entry twice is harmless, so a discarded render is too.
+  const prevNodesRef = useRef(nodes);
+  if (prevNodesRef.current !== nodes) {
+    for (const uri of newFileNodeUris(prevNodesRef.current, nodes)) invalidateFileCache(uri);
+    prevNodesRef.current = nodes;
+  }
   // - the completion word list of the text-node editor and the chat input; rebuilt once the canvas stops changing
   useEffect(() => {
     const t = setTimeout(() => setCanvasWords(nodes.map(n => n.data as unknown as CanvasNode)), WORDS_REBUILD_MS);
