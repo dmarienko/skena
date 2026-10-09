@@ -657,6 +657,11 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           vscode.window.setStatusBarMessage(`Skena: copied reference ${msg.label}`, 2000);
           break;
         }
+        // - not awaited: the export asks this webview for its theme, and the save dialog and the
+        //   "Open in browser" note wait on the user
+        case 'exportHtml':
+          void import('./export/exportCommand').then(m => m.exportCommand(this.context, this, document.uri.fsPath));
+          break;
         case 'verifyPath': {
           // - expand ~ and file://, answer with the same path convention dropFiles produces
           let p = msg.path.startsWith('file://') ? vscode.Uri.parse(msg.path).fsPath : msg.path;

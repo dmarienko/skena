@@ -33,6 +33,7 @@ interface Props {
   onPaste:             () => void;
   onCopyNodeReference: () => void;
   onMoveToSubCanvas:   () => void;
+  onExportHtml:        () => void;
 }
 
 function MenuItem({ icon, label, onClick, disabled = false }: {
@@ -79,7 +80,7 @@ function Divider(): JSX.Element {
 export function ContextMenu({
   screenX, screenY,
   selectedCount, hasClipboard,
-  onClose, onAddText, onAddCodeCell, onAddKernel, onAddUrl, onSearch, onCopy, onPaste, onCopyNodeReference, onMoveToSubCanvas,
+  onClose, onAddText, onAddCodeCell, onAddKernel, onAddUrl, onSearch, onCopy, onPaste, onCopyNodeReference, onMoveToSubCanvas, onExportHtml,
 }: Props): JSX.Element {
   const menuRef  = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -219,6 +220,9 @@ export function ContextMenu({
           <MenuItem icon="symbol-namespace" label="Move to sub-canvas…" onClick={() => { onMoveToSubCanvas(); onClose(); }} />
         </>
       )}
+
+      <Divider />
+      <MenuItem icon="export" label="Export canvas to HTML…" onClick={() => { onExportHtml(); onClose(); }} />
     </div>
   );
 }

@@ -4498,6 +4498,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
           onPaste={pasteInternalClipboard}
           onCopyNodeReference={handleCopyNodeReference}
           onMoveToSubCanvas={handleMoveToSubCanvas}
+          onExportHtml={() => vscodePostMessage({ type: 'exportHtml' })}
         />
       )}
     </div>

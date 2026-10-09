@@ -667,6 +667,9 @@ export interface MsgOpenFile {
 
 export interface MsgCopyNodeReference { type: 'copyNodeReference'; label: string; }
 
+/** - the canvas menu's "Export canvas to HTML…": the export command, for the canvas of the panel that sent it */
+export interface MsgExportHtml { type: 'exportHtml'; }
+
 export interface MsgSearchVault {
   type: 'searchVault';
   requestId: RequestId;
@@ -851,6 +854,7 @@ export type WebviewToHost =
   | MsgSaveCanvas
   | MsgOpenFile
   | MsgCopyNodeReference
+  | MsgExportHtml
   | MsgSearchVault
   | MsgChatMessage
   | MsgRefreshVault
