@@ -31,7 +31,6 @@ import { applyLaneFit, deriveLanes, isGroup, outputCellGeom, pinOutputToLane, pr
 import { resolveCellKernel, cellKernelView, kernelById, upstreamCellsForRun, resolveKernelCellsInCanvas, type KernelLike } from '../../shared/kernelBinding';
 import { layoutSection, reflowSection, insertAfter, forkOf, placeOutput, applyPatchesToCanvas, columnsOfDeleted, ridersOf, hangingBelow, sectionEngineNodes, sectionMembership, toEngineNodes, codeCellHeight, estimateCodeNeedPx, keepRowOf, markKeepRowOnLoad } from '../../shared/layoutEngine';
 import { pickKernelServers, unknownServerText, type KernelServerConfig, type KernelLookup, type SettingsRead } from '../jupyter/config';
-import { parseSettingsJson } from '../settingsJson';
 import { readSettingsSync, workspaceDirAbove } from '../settingsFiles';
 import { parseNodeRef, isSectionLabel } from '../../shared/nodeRef';
 import { youtubeId, YOUTUBE_NODE } from '../../shared/youtube';
@@ -41,6 +40,7 @@ import { renderOutput, hasVisibleOutput } from '../jupyter/output';
 import type { CollectedOutput } from '../jupyter/protocol';
 import { readEndpoint } from '../ipcEndpoint';
 import { postExport } from './exportRequest';
+import { loadVaults, notConfiguredText } from './vaultLookup';
 import type { ExportReply } from '../../shared/types';
 
 // - "port:token" from the host (SKENA_RUN_IPC) → the 127.0.0.1 relay for live agent-run output
@@ -84,70 +84,18 @@ function expandHome(p: string): string {
   return p.startsWith('~/') ? path.join(os.homedir(), p.slice(2)) : p;
 }
 
-// ─── vault config (read from .vscode/settings.json near the canvas file) ──────
-
-interface VaultConfig { name: string; path: string; directories?: string[] }
-
-// - cache: workspace root → vault list (avoid re-reading settings for every call)
-const vaultCache = new Map<string, VaultConfig[]>();
-
-/** Read a settings file and return its parsed content, or null on failure. */
-async function readSettingsFile(filePath: string): Promise<Record<string, unknown> | null> {
-  try {
-    const raw = await fs.readFile(filePath, 'utf-8');
-    return parseSettingsJson(raw);
-  } catch {
-    return null;
-  }
-}
-
 /**
- * Walk up from `startDir` looking for `.vscode/settings.json`.
- * If `.vscode/settings.local.json` exists alongside it, its `skena.vaults`
- * value overrides the base file (local wins).
- * Results are cached per resolved settings directory path.
+ * A vault:// uri's file, or why it names none. The vault list comes from vaultLookup.loadVaults: the
+ * running extension's (over its relay), else the .vscode settings files, else the .code-workspace file.
  */
-async function loadVaults(startDir: string): Promise<VaultConfig[]> {
-  let dir = path.resolve(startDir);
-  for (let i = 0; i < 8; i++) {
-    const settingsPath = path.join(dir, '.vscode', 'settings.json');
-    const base = await readSettingsFile(settingsPath);
-    if (base !== null) {
-      const cacheKey = settingsPath;
-      const cached   = vaultCache.get(cacheKey);
-      if (cached) return cached;
-
-      // - check for local override — skena.vaults in local file wins entirely
-      const localPath = path.join(dir, '.vscode', 'settings.local.json');
-      const local     = await readSettingsFile(localPath);
-      const vaults    = (
-        (local?.['skena.vaults'] ?? base['skena.vaults'] ?? [])
-      ) as VaultConfig[];
-
-      vaultCache.set(cacheKey, vaults);
-      return vaults;
-    }
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return [];
-}
-
-/**
- * Resolve a `vault://name/rel/path` URI to an absolute filesystem path.
- * Returns null if the vault is not configured or the URI is not a vault URI.
- */
-async function resolveVaultUri(uri: string, canvasPath: string): Promise<string | null> {
-  if (!uri.startsWith('vault://')) return null;
-  const rest   = uri.slice(8);                      // - "name/rel/path.md"
+async function resolveVaultUri(uri: string, canvasPath: string): Promise<{ fsPath: string } | { notConfigured: string }> {
+  const rest   = uri.slice('vault://'.length);    // - "name/rel/path.md"
   const slash  = rest.indexOf('/');
   const name   = slash === -1 ? rest : rest.slice(0, slash);
   const rel    = slash === -1 ? ''   : rest.slice(slash + 1);
-  const vaults = await loadVaults(path.dirname(canvasPath));
-  const vault  = vaults.find(v => v.name === name);
-  if (!vault) return null;
-  return path.join(expandHome(vault.path), rel);
+  const lookup = await loadVaults(canvasPath, { relay: extensionRelay(canvasPath), cwd: process.cwd(), home: os.homedir() });
+  const vault  = lookup.vaults.find(v => v.name === name);
+  return vault ? { fsPath: path.join(vault.path, rel) } : { notConfigured: notConfiguredText(name, lookup) };
 }
 
 /**
@@ -447,7 +395,7 @@ const MAX_READ_BYTES = 64 * 1024; // - 64 KB cap so CC context stays manageable
  * content as a string ready for CC to consume.
  *
  * Handles:
- *   vault://name/rel/path   → resolved via .vscode/settings.json skena.vaults
+ *   vault://name/rel/path   → resolved with the vault list of resolveVaultUri
  *   ./relative/path         → resolved relative to the canvas file's directory
  *   /absolute/path          → used as-is
  */
@@ -456,10 +404,8 @@ async function readFileNodeContent(uri: string, canvasPath: string): Promise<str
   let fsPath: string;
   if (uri.startsWith('vault://')) {
     const resolved = await resolveVaultUri(uri, canvasPath);
-    if (!resolved) {
-      return `vault URI: ${uri}\n(vault not configured — add it to skena.vaults in .vscode/settings.json)`;
-    }
-    fsPath = resolved;
+    if ('notConfigured' in resolved) return `vault URI: ${uri}\n${resolved.notConfigured}`;
+    fsPath = resolved.fsPath;
   } else if (path.isAbsolute(uri)) {
     fsPath = uri;
   } else {
@@ -685,8 +631,8 @@ async function canvasFollow(args: Record<string, unknown>): Promise<string> {
     // - canvas_follow just resolves the path (no content) — use canvas_read for content
     if (n.file.startsWith('vault://')) {
       const resolved = await resolveVaultUri(n.file, p);
-      if (!resolved) return `Vault URI: ${n.file}\n(vault not configured in .vscode/settings.json — add it to skena.vaults)`;
-      return `File path: ${resolved}\nVault URI: ${n.file}`;
+      if ('notConfigured' in resolved) return `Vault URI: ${n.file}\n${resolved.notConfigured}`;
+      return `File path: ${resolved.fsPath}\nVault URI: ${n.file}`;
     }
     const abs = path.isAbsolute(n.file) ? n.file : path.resolve(path.dirname(p), n.file);
     return `File path: ${abs}`;
@@ -694,8 +640,8 @@ async function canvasFollow(args: Record<string, unknown>): Promise<string> {
   if (n.type === 'portal') {
     if (n.canvas.startsWith('vault://')) {
       const resolved = await resolveVaultUri(n.canvas, p);
-      if (!resolved) return `Vault URI: ${n.canvas}\n(vault not configured in .vscode/settings.json — add it to skena.vaults)`;
-      return `Sub-canvas path: ${resolved}\nVault URI: ${n.canvas}`;
+      if ('notConfigured' in resolved) return `Vault URI: ${n.canvas}\n${resolved.notConfigured}`;
+      return `Sub-canvas path: ${resolved.fsPath}\nVault URI: ${n.canvas}`;
     }
     const abs = path.isAbsolute(n.canvas) ? n.canvas : path.resolve(path.dirname(p), n.canvas);
     return `Sub-canvas path: ${abs}`;
@@ -1704,7 +1650,7 @@ const NO_EXPORT_HOST = 'no running skena extension found for this workspace. The
 
 // - the relay of the extension running this workspace: the AI companion passes it in SKENA_RUN_IPC;
 //   an MCP server started from .mcp.json reads the endpoint file the extension wrote (ipcEndpoint.ts)
-function exportHost(canvasPath: string): { port: number; token: string } | null {
+function extensionRelay(canvasPath: string): { port: number; token: string } | null {
   const fromEnv = parseRunIpc(process.env.SKENA_RUN_IPC);
   if (fromEnv) return fromEnv;
   const dirs = [workspaceDirAbove(path.dirname(canvasPath)), process.cwd()].filter((d): d is string => !!d);
@@ -1728,7 +1674,7 @@ async function canvasExportHtml(args: Record<string, unknown>): Promise<string> 
     : undefined;
   if (outPath === canvasPath) throw new Error(`not writing the page to ${outPath}: it is the canvas being exported`);
   if (outPath && /\.canvas$/i.test(outPath)) throw new Error(`not writing the page to ${outPath}: that is a .canvas file`);
-  const ipc = exportHost(canvasPath);
+  const ipc = extensionRelay(canvasPath);
   if (!ipc) throw new Error(NO_EXPORT_HOST);
   const res = await postExport(ipc.port, ipc.token, { canvasPath, outPath }, EXPORT_WAIT_MS);
   if (res.kind === 'unreachable') throw new Error(NO_EXPORT_HOST);
