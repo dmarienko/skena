@@ -16,6 +16,7 @@ import * as fs from 'fs/promises';
 import { randomUUID } from 'crypto';
 import { readCanvas, writeCanvas } from './canvas-io';
 import { FileResolver } from './file-resolver';
+import { urisForChangedFile } from './filePaths';
 import { VaultIndexer } from './vault-indexer';
 import { FileWatcher } from './file-watcher';
 import { parseNotebook } from './notebook-parser';
@@ -772,24 +773,35 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       return rel.startsWith('.') ? rel : `./${rel}`;
     };
 
+    // - one notice under the uri this canvas would store the file with, and one more for each file node
+    // - whose own uri (vault, relative, ../ or absolute) resolves to the same file, so the webview hears
+    // - the exact key the node's content is cached under
+    const notifyFileChanged = (fsPath: string) => {
+      const uri = toCanvasUri(fsPath);
+      send({ type: 'fileChanged', uri, fsPath });
+      const nodeUris = document.canvas.nodes.flatMap(n => (n.type === 'file' ? [n.file] : []));
+      const resolveNode = (u: string) => {
+        const r = resolver.resolve(u, canvasDir);
+        return r && !r.isNotion ? r.fsPath : null;
+      };
+      for (const nodeUri of urisForChangedFile(nodeUris, resolveNode, fsPath)) {
+        if (nodeUri !== uri && nodeUri !== fsPath) send({ type: 'fileChanged', uri: nodeUri, fsPath });
+      }
+    };
+
     // - watch vault file changes (chokidar, already running)
-    const unsubscribe = this.watcher.onFileChanged(fsPath => {
-      send({ type: 'fileChanged', uri: toCanvasUri(fsPath), fsPath });
-    });
+    const unsubscribe = this.watcher.onFileChanged(notifyFileChanged);
 
     // - onDidSaveTextDocument fires whenever any file is saved in the VS Code editor
     // - this is the primary live-update trigger for "edit file → see canvas update"
     const saveDisposable = vscode.workspace.onDidSaveTextDocument(doc => {
-      const uri = toCanvasUri(doc.uri.fsPath);
-      console.log(`[Skena] file saved: ${doc.uri.fsPath} → canvas URI: ${uri}`);
-      send({ type: 'fileChanged', uri, fsPath: doc.uri.fsPath });
+      console.log(`[Skena] file saved: ${doc.uri.fsPath} → canvas URI: ${toCanvasUri(doc.uri.fsPath)}`);
+      notifyFileChanged(doc.uri.fsPath);
     });
 
     // - file system watcher covers external changes (git pull, Obsidian, other editors)
     const workspaceWatcher = vscode.workspace.createFileSystemWatcher('**/*.{md,ipynb,py,yaml,yml}');
-    workspaceWatcher.onDidChange(uri => {
-      send({ type: 'fileChanged', uri: toCanvasUri(uri.fsPath), fsPath: uri.fsPath });
-    });
+    workspaceWatcher.onDidChange(uri => notifyFileChanged(uri.fsPath));
 
     // - track the most-recently-focused canvas panel for the skena.addNode command
     SkenaEditorProvider.activePanel = panel;

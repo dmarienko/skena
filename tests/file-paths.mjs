@@ -1,7 +1,10 @@
 // - run: npx esbuild src/extension/filePaths.ts --bundle --platform=node --format=esm --outfile=tests/.build/filePaths.mjs && node --test tests/file-paths.mjs
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { WATCH_IGNORED, vaultRoot, vaultUriFor } from './.build/filePaths.mjs';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { WATCH_IGNORED, vaultRoot, vaultUriFor, urisForChangedFile } from './.build/filePaths.mjs';
 
 test('the vault watcher skips dot entries and whole node_modules, __pycache__ and dist folders', () => {
   for (const p of [
@@ -56,4 +59,61 @@ test('a file outside every vault, or in a folder that only starts like one, has 
   assert.equal(vaultUriFor(roots, '/home/quant0/projects/crtx2/a.md'), null);
   assert.equal(vaultUriFor(roots, '/home/quant0/projects/factors/a.md'), null);
   assert.equal(vaultUriFor(roots, '/home/quant0/projects/crtx'), null);
+});
+
+// - a vault folder, the same folder reached through a symlink, and a canvas three levels below their parent
+function scene() {
+  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'skena-file-paths-')));
+  fs.mkdirSync(path.join(tmp, 'crtx', 'knowledge'), { recursive: true });
+  fs.writeFileSync(path.join(tmp, 'crtx', 'knowledge', 'a.md'), 'a');
+  fs.writeFileSync(path.join(tmp, 'crtx', 'knowledge', 'b.md'), 'b');
+  fs.symlinkSync(path.join(tmp, 'crtx'), path.join(tmp, 'linked'));
+  const canvasDir = path.join(tmp, 'factors', 'research', 'review');
+  fs.mkdirSync(canvasDir, { recursive: true });
+  const vaults = { crtx: path.join(tmp, 'crtx'), linked: path.join(tmp, 'linked') };
+  // - stands in for FileResolver.resolve: vault, notion (no file), absolute, canvas-relative
+  const resolve = uri => {
+    const m = /^vault:\/\/([^/]+)\/(.*)$/.exec(uri);
+    if (m) return vaults[m[1]] ? path.join(vaults[m[1]], m[2]) : null;
+    return path.isAbsolute(uri) ? uri : path.resolve(canvasDir, uri);
+  };
+  return { tmp, resolve, done: () => fs.rmSync(tmp, { recursive: true, force: true }) };
+}
+
+test('every node uri that names the changed file is returned, in the form the node stores it', () => {
+  const { tmp, resolve, done } = scene();
+  try {
+    const uris = [
+      'vault://crtx/knowledge/a.md',
+      '../../../crtx/knowledge/a.md',
+      path.join(tmp, 'crtx', 'knowledge', 'a.md'),
+      'vault://linked/knowledge/a.md',
+      'vault://crtx/knowledge/b.md',
+      'vault://notion/abc123',
+      'vault://unknown/knowledge/a.md',
+    ];
+    const want = uris.slice(0, 4);
+    assert.deepEqual(urisForChangedFile(uris, resolve, path.join(tmp, 'crtx', 'knowledge', 'a.md')), want);
+    // - the change may be reported through the symlink, or with a doubled slash
+    assert.deepEqual(urisForChangedFile(uris, resolve, path.join(tmp, 'linked', 'knowledge', 'a.md')), want);
+    assert.deepEqual(urisForChangedFile(uris, resolve, `${tmp}/crtx//knowledge/a.md`), want);
+  } finally { done(); }
+});
+
+test('a uri listed by several nodes is returned once, and a file nobody shows gives nothing', () => {
+  const { tmp, resolve, done } = scene();
+  try {
+    const uris = ['vault://crtx/knowledge/a.md', 'vault://crtx/knowledge/a.md', './a.md'];
+    assert.deepEqual(urisForChangedFile(uris, resolve, path.join(tmp, 'crtx', 'knowledge', 'a.md')), ['vault://crtx/knowledge/a.md']);
+    assert.deepEqual(urisForChangedFile(uris, resolve, path.join(tmp, 'crtx', 'knowledge', 'b.md')), []);
+  } finally { done(); }
+});
+
+test('a file that no longer exists still matches the nodes that name it', () => {
+  const { tmp, resolve, done } = scene();
+  try {
+    const gone = path.join(tmp, 'crtx', 'knowledge', 'gone.md');
+    assert.deepEqual(urisForChangedFile(['vault://crtx/knowledge/gone.md', '../../../crtx/knowledge/gone.md'], resolve, gone),
+      ['vault://crtx/knowledge/gone.md', '../../../crtx/knowledge/gone.md']);
+  } finally { done(); }
 });
