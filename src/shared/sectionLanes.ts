@@ -297,6 +297,14 @@ export function foldLane(lanes: SectionLane[], nodes: LaneNodeGeom[], id: string
   return lanes.map(l => (l.id === id ? { ...l, folded: target.memberIds } : l));
 }
 
+/**
+ * Id of the section whose fold hides a node: the one listing it in `folded`. Null for a node in an
+ * open section, in no section, unknown, or dropped into a folded section after the fold (shown).
+ */
+export function laneHidingNode(lanes: SectionLane[], id: string): string | null {
+  return lanes.find(l => l.folded?.includes(id))?.id ?? null;
+}
+
 /** True when there is at least one lane and every lane is folded (an empty `folded` list still counts). */
 export function allFolded(lanes: { folded?: string[] }[]): boolean {
   return lanes.length > 0 && lanes.every(l => !!l.folded);

@@ -1,7 +1,7 @@
 // - run: npx esbuild src/shared/sectionLanes.ts --bundle --format=esm --outfile=tests/.build/sectionLanes.mjs && node --test tests/section-lanes.mjs
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { sortLanes, groupIdsByLane, pruneFoldedIds, unfoldLane, laneIndexForY, deriveLanes, migrateSections, LANE_BOTTOM_PAD, outputCellGeom, memberCodeCellsInRunOrder, parkFirstLaneAtOrigin, laneIndexForNode, pinnedLaneIndex, SECTION_FOLDED_H, SECTION_MIN_H, fitLanes, applyLaneFit, sectionTargetHeight, pinOutputToLane, laneTopForNode, sectionByRef, insertLaneAt, foldLane, allFolded } from './.build/sectionLanes.mjs';
+import { sortLanes, groupIdsByLane, pruneFoldedIds, unfoldLane, laneIndexForY, deriveLanes, migrateSections, LANE_BOTTOM_PAD, outputCellGeom, memberCodeCellsInRunOrder, parkFirstLaneAtOrigin, laneIndexForNode, pinnedLaneIndex, SECTION_FOLDED_H, SECTION_MIN_H, fitLanes, applyLaneFit, sectionTargetHeight, pinOutputToLane, laneTopForNode, sectionByRef, insertLaneAt, foldLane, allFolded, laneHidingNode } from './.build/sectionLanes.mjs';
 
 const lane = (id, y, extra = {}) => ({ id, y, createdAt: 1, ...extra });
 
@@ -413,4 +413,15 @@ test('groupIdsByLane splits ids by the lane they are in, keeps their order and d
   assert.deepEqual(groups.get('b'), ['n5', 'n4']);
   assert.equal(groups.size, 2, 'an id in no lane is dropped');
   assert.deepEqual([...groupIdsByLane([], ['n1']).keys()], []);
+});
+
+test('laneHidingNode: the section whose fold hides the node, null when no fold hides it', () => {
+  const lanes = [lane('a', 0), lane('b', 600, { folded: ['n2', 'n3'] }), lane('c', 680, { folded: ['n4'] })];
+  assert.equal(laneHidingNode(lanes, 'n2'), 'b');
+  assert.equal(laneHidingNode(lanes, 'n4'), 'c');
+  assert.equal(laneHidingNode(lanes, 'n1'), null, 'a member of an open section');
+  assert.equal(laneHidingNode(lanes, 'gone'), null, 'an id no section knows');
+  assert.equal(laneHidingNode([], 'n1'), null, 'a canvas with no sections');
+  // - dropped into a folded section after the fold: a member by its y, shown, so nothing to unfold
+  assert.equal(laneHidingNode([lane('a', 0), lane('b', 600, { folded: [] })], 'n5'), null);
 });
