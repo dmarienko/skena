@@ -70,7 +70,7 @@ import { vimSettings } from './vimSettings';
 import { SectionRail, type RailKernel } from '../rail/SectionRail';
 import { fmtDateTime } from '../rail/RailSegment';
 import { refTitle } from '../../shared/nodeRef';
-import { allFolded, deriveLanes, fitLanes, groupIdsByLane, isGroup, sortLanes, insertLaneAt, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
+import { allFolded, deriveLanes, fitLanes, groupIdsByLane, isGroup, laneHidingNode, sortLanes, insertLaneAt, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
 import { applyPatchesToCanvas, codeCellHeight, columnsOfDeleted as columnsOfDeletedIn, directionSlot, forkOf, hangingBelow, insertAfter, keepRowOf, layoutSection, reflowSection, ridersOf, sectionEngineNodes, sectionMembership, toEngineNodes, type EngineNode, type LayoutOpts, type Patches } from '../../shared/layoutEngine';
 import { youtubeId, YOUTUBE_NODE } from '../../shared/youtube';
 import { copyNode, ownedOutputId } from '../../shared/outputLink';
@@ -182,8 +182,9 @@ const RECENT_OUTPUT_MS = 4000;
 // - quiet time after the last canvas change before the completion word list is rebuilt
 const WORDS_REBUILD_MS = 400;
 
-// - how long go to definition waits for a cell of a section it unfolds to mount before giving up on its editor
-const GO_TO_CELL_WAIT_MS = 1000;
+// - how long a jump waits for a node of a section it unfolds to be drawn (and go to definition for the
+//   cell's editor to take the cursor) before giving up
+const JUMP_WAIT_MS = 1000;
 
 // - the label map of a disarmed chord, so disarming allocates nothing
 const EMPTY_LABELS: ReadonlyMap<string, string> = new Map();
@@ -848,7 +849,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       const cross = pendingCrossFocusRef.current;
       if (cross && nodesRef.current.some(n => n.id === cross)) {
         pendingCrossFocusRef.current = null;
-        focusNodeById(cross, true);
+        revealAndFocus(cross, { forceCenter: true });
         return;
       }
       const crossLane = pendingCrossLaneRef.current;
@@ -877,7 +878,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       }
     }, 80);
     return () => clearTimeout(t);
-  // - focusNodeById / pickViewportNode / fitClamped are stable useCallbacks; declared below
+  // - focusNodeById / revealAndFocus / pickViewportNode / fitClamped are stable useCallbacks; declared below
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canvas, canvasPath, setNodes, setEdges]);
 
@@ -1857,6 +1858,49 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
     revealNode(id, forceCenter);
   }, [setNodes, canvasPath, revealNode, recordPreviousPosition]);
 
+  /**
+   * Unfold the section whose fold hides `id`, by the rail chevron's own action (its history entry, its
+   * save). The fold list is read from the canvas mirror, which that action writes in the same tick, so
+   * a second call before the next render does not unfold the section twice.
+   */
+  const unfoldHiding = useCallback((id: string) => {
+    const laneId = laneHidingNode(canvasRef.current.metadata?.sections ?? [], id);
+    // - the chevron's action toggles by the rendered lanes: it unfolds only what they show folded
+    if (laneId !== null && derivedLanesRef.current.some(l => l.id === laneId && l.folded)) foldLaneRef.current(laneId);
+  }, []); // - refs only
+
+  // - the wait of the last jump into a folded section; a newer jump, or the canvas going away, ends it
+  const revealWaitRef = useRef<(() => void) | null>(null);
+  useEffect(() => () => revealWaitRef.current?.(), []);
+
+  /**
+   * Every jump to a node by id (marks, search, references, the g chord, jump tags): focus it the way
+   * h/j/k/l do — selection, the smallest pan, the `` ` `` register. A node hidden by a fold has its
+   * section unfolded first and is focused once React Flow draws it, tried every 30 ms up to
+   * JUMP_WAIT_MS, then focused anyway. Any other node is focused at once. An id that is gone does
+   * nothing and is not stored. `then(drawn)` runs right after the focus.
+   */
+  const revealAndFocus = useCallback((id: string, opts: { forceCenter?: boolean; then?: (drawn: boolean) => void } = {}) => {
+    revealWaitRef.current?.();
+    // - the mirror holds a node added this tick before the RF array does
+    const exists = () => nodesRef.current.some(n => n.id === id) || canvasRef.current.nodes.some(n => n.id === id);
+    if (!exists()) return;
+    unfoldHiding(id);
+    const land = (drawn: boolean) => { focusNodeById(id, opts.forceCenter); opts.then?.(drawn); };
+    if (!hiddenByFoldRef.current.has(id)) { land(true); return; }
+    const until = performance.now() + JUMP_WAIT_MS;
+    const timer = window.setInterval(() => {
+      if (!exists()) { stop(); return; }
+      const drawn = !hiddenByFoldRef.current.has(id) && document.querySelector(`.react-flow__node[data-id="${CSS.escape(id)}"]`) !== null;
+      if (drawn || performance.now() >= until) { stop(); land(drawn); }
+    }, 30);
+    const stop = () => {
+      window.clearInterval(timer);
+      if (revealWaitRef.current === stop) revealWaitRef.current = null;
+    };
+    revealWaitRef.current = stop;
+  }, [focusNodeById, unfoldHiding]);
+
   // - a plain click reveals the node it hit, the same pan the keyboard gets. Selection stays React
   //   Flow's, so a modifier click (add to selection) must not pan; React Flow does not fire this
   //   after a drag. An already-selected node does not pan either: a double-click to enter the editor
@@ -1894,14 +1938,16 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
     if (!target) return;
     // - abort if the marked node was deleted since
     if (target.nodeId !== null && !nodesRef.current.some(n => n.id === target.nodeId)) return;
+    // - before the camera: the mark's camera was set with the node's section open
+    if (target.nodeId) unfoldHiding(target.nodeId);
     const cMark = clampCam(target.viewport.x, target.viewport.y, target.viewport.zoom);
     rfRef.current.setViewport({ x: cMark.x, y: cMark.y, zoom: target.viewport.zoom }, { duration: CAMERA_MS });
     if (target.nodeId) {
       const id = target.nodeId;
-      setTimeout(() => focusNodeById(id), 320);
+      setTimeout(() => revealAndFocus(id), 320);
     }
     setMarksOpen(false);
-  }, [focusNodeById, clampCam]);
+  }, [revealAndFocus, unfoldHiding, clampCam]);
 
   /**
    * `` ` ` ``: back to the node focus came from. It only reveals that node — the minimal pan at the
@@ -1911,9 +1957,9 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
   const jumpToPreviousNode = useCallback(() => {
     const previous = marksRef.current['`']?.nodeId;
     if (!previous || !nodesRef.current.some(n => n.id === previous)) return;
-    focusNodeById(previous);
+    revealAndFocus(previous);
     setMarksOpen(false);
-  }, [focusNodeById]);
+  }, [revealAndFocus]);
 
   // - one entry point for `{x} and the marks panel: `` ` `` is the previous node, the rest are marks
   const jumpToRegister = useCallback((register: string) => {
@@ -1953,12 +1999,12 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       .filter(n => members.has(n.id))
       .sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x)[0];
     if (first) {
-      requestAnimationFrame(() => focusNodeById(first.id, forceCenter));
+      requestAnimationFrame(() => revealAndFocus(first.id, { forceCenter }));
       return first.id;
     }
     revealLaneTop(id);
     return null;
-  }, [derivedLanes, nodes, focusNodeById, revealLaneTop]);
+  }, [derivedLanes, nodes, revealAndFocus, revealLaneTop]);
   const goToSectionRef = useRef(goToSection);
   useEffect(() => { goToSectionRef.current = goToSection; });
 
@@ -2622,7 +2668,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       if (step.do === 'pass') return false;
       e.preventDefault();
       if (step.do === 'first') jumpInSection('first');
-      else if (step.do === 'jump') focusNodeById(step.nodeId);
+      else if (step.do === 'jump') revealAndFocus(step.nodeId);
       return true;
     };
 
@@ -2667,7 +2713,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
         return;
       }
       closeJump();
-      if (m.kind === 'jump') focusNodeById(shown.ids[m.index]);
+      if (m.kind === 'jump') revealAndFocus(shown.ids[m.index]);
     };
 
     // - the section the keys act on: the focused node's, or — after a fold dropped the selection —
@@ -3455,7 +3501,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       window.removeEventListener('keydown', handler);
       window.removeEventListener('keydown', panCapture, { capture: true });
     };
-  }, [setNodes, setEdges, focusNodeById, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, closeKnowledge, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToRegister, engineNodesOf, runEngineAfterMove, anchoredBy, runEngineForCells, withKeepRow, canvasPath, closeG, revealBox, closeJump]); // - nodesRef + spaceSelectedRef carry live state
+  }, [setNodes, setEdges, focusNodeById, revealAndFocus, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, closeKnowledge, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToRegister, engineNodesOf, runEngineAfterMove, anchoredBy, runEngineForCells, withKeepRow, canvasPath, closeG, revealBox, closeJump]); // - nodesRef + spaceSelectedRef carry live state
 
   // - expose a viewport snapshot for the AI companion (what the user actually sees:
   // - zoom, on-screen node labels, scroll position within the focused node)
@@ -4272,19 +4318,18 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       // - mark it pending so the reload effect force-centers it once nodes land (first open),
       // - and try centering now for the already-open case; clear the mark after it can't apply
       pendingCrossFocusRef.current = id;
-      focusNodeById(id, true);
+      revealAndFocus(id, { forceCenter: true });
       window.setTimeout(() => { if (pendingCrossFocusRef.current === id) pendingCrossFocusRef.current = null; }, 1500);
     };
     window.addEventListener('skena:focusNodeRequest', handler);
     return () => window.removeEventListener('skena:focusNodeRequest', handler);
-  }, [focusNodeById]);
+  }, [revealAndFocus]);
 
   // - go to definition landed in a code cell (cellDefinition.ts, referencePeek.ts, or the host's quick
-  //   pick): select it as h/j/k/l do (smallest pan, the `` ` `` register), then open its editor at the
-  //   line. A cell in a folded section unfolds it first; it is selected once it is drawn and its editor
-  //   opened once it has mounted (its enterEdit listener takes the request), tried until
-  //   GO_TO_CELL_WAIT_MS. A cell deleted meanwhile is noted in the cell that asked (`from`), if that
-  //   one is still there.
+  //   pick): the jump every other path takes (revealAndFocus: a folded section unfolds, the cell is
+  //   focused once drawn), then its editor opens at the line once it has mounted (its enterEdit
+  //   listener takes the request), tried until JUMP_WAIT_MS from the request. A cell deleted
+  //   meanwhile is noted in the cell that asked (`from`), if that one is still there.
   useEffect(() => {
     let stop: (() => void) | null = null;
     const handler = (e: Event) => {
@@ -4295,34 +4340,24 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
         if (from !== undefined && exists(from)) noteInCell(from, 'that cell no longer exists');
         return;
       }
-      let focused = false;
-      // - true when there is nothing more to do: the editor took the request, or the cell is gone
-      const attempt = (): boolean => {
-        if (!exists(id)) return true;
-        if (!focused) {
-          if (!document.querySelector(`.react-flow__node[data-id="${CSS.escape(id)}"]`)) return false;
-          focusNodeById(id);
-          focused = true;
-        }
+      const until = performance.now() + JUMP_WAIT_MS;
+      // - true when the editor took the request
+      const open = (): boolean => {
         const detail = { id, cursor: { line, col }, taken: false };
         window.dispatchEvent(new CustomEvent('skena:enterEdit', { detail }));
         return detail.taken;
       };
-      const lane = derivedLanesRef.current.find(l => (l.folded ?? []).includes(id));
-      if (lane) foldLaneRef.current(lane.id);   // - the same action unfolds
-      if (attempt()) return;
-      const until = performance.now() + GO_TO_CELL_WAIT_MS;
-      const timer = window.setInterval(() => {
-        if (attempt()) { stop?.(); return; }
-        if (performance.now() < until) return;
-        if (!focused) focusNodeById(id);
-        stop?.();
-      }, 30);
-      stop = () => { window.clearInterval(timer); stop = null; };
+      revealAndFocus(id, { then: drawn => {
+        if (!drawn || open()) return;
+        const timer = window.setInterval(() => {
+          if (!exists(id) || open() || performance.now() >= until) stop?.();
+        }, 30);
+        stop = () => { window.clearInterval(timer); stop = null; };
+      } });
     };
     window.addEventListener('skena:goToCell', handler);
     return () => { stop?.(); window.removeEventListener('skena:goToCell', handler); };
-  }, [focusNodeById]);
+  }, [revealAndFocus]);
 
   // - the same for a reference to a section (S3): the host found the label; it is read here against
   //   the live stack order. Marked pending like a node, so a first open does not restore its last focus
