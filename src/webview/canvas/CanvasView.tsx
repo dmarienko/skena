@@ -76,7 +76,7 @@ import { youtubeId, YOUTUBE_NODE } from '../../shared/youtube';
 import { copyNode, ownedOutputId } from '../../shared/outputLink';
 import { useLaneFit, flowGeom } from '../rail/useLaneFit';
 import { connectionLabels, findNearestNode, focusAfterDelete, revealPan, type ConnectionLabel, type EdgeSideContext, type NavDir, type NavNode, type Rect } from './spatialNav';
-import { bandNavBox, sectionIndexAtY, stepSection } from '../../shared/sectionNav';
+import { bandNavBox, focusAfterFold, nearestBand, nearestVisibleNode, sectionIndexAtY, stepSection, viewIsEmpty } from '../../shared/sectionNav';
 import { focusAreaBottom } from './chat/consoleLayout';
 import { setCanvasWords } from './canvasWordCompletion';
 import { CanvasSearch } from './CanvasSearch';
@@ -866,7 +866,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
         return;
       }
       const stored  = lastFocusedNodeId.get(canvasPath);
-      const exists  = stored && nodesRef.current.some(n => n.id === stored);
+      const exists  = stored && nodesRef.current.some(n => n.id === stored) && !hiddenByFoldRef.current.has(stored);
       const focusId = exists ? stored : pickViewportNode();
       if (focusId) {
         // - on any RELOAD (or when a viewport is saved) reselect WITHOUT moving the camera, so an
@@ -1940,23 +1940,14 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
   }, [revealNode, canvasPath, recordPreviousPosition]);
 
   /**
-   * Returns the id of the node whose center is closest to the
-   * current viewport center. Returns null if no eligible nodes exist.
+   * The visible node whose centre is closest to the viewport centre; null when none is visible. A
+   * node a fold hides is never picked.
    */
   const pickViewportNode = useCallback((): string | null => {
     const { x: vx, y: vy, zoom } = rfRef.current.getViewport();
-    const vpCx = (window.innerWidth  / 2 - vx) / zoom;
-    const vpCy = (window.innerHeight / 2 - vy) / zoom;
-    let bestId:   string | null = null;
-    let bestDist  = Infinity;
-    for (const n of nodesRef.current) {
-      const cx   = n.position.x + Number(n.style?.width  ?? 200) / 2;
-      const cy   = n.position.y + Number(n.style?.height ?? 150) / 2;
-      const dist = Math.hypot(cx - vpCx, cy - vpCy);
-      if (dist < bestDist) { bestDist = dist; bestId = n.id; }
-    }
-    return bestId;
-  }, []); // - rfRef + nodesRef always current
+    const centre = { x: (window.innerWidth / 2 - vx) / zoom, y: (window.innerHeight / 2 - vy) / zoom };
+    return nearestVisibleNode(nodesRef.current.map(toNav), hiddenByFoldRef.current, centre);
+  }, []); // - rfRef, nodesRef and hiddenByFoldRef are always current
 
   // - the part of the pane a focus lands in (above the chat console), in flow coordinates
   const flowView = useCallback((): { left: number; top: number; right: number; bottom: number } | null => {
@@ -1985,6 +1976,70 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
     setSelectedBand(laneId);
     revealBand(laneId);
   }, [recordPreviousPosition, setNodes, setSelectedBand, revealBand]);
+
+  /**
+   * Focus something while nothing is selected (h/j/k/l, Alt+I): the visible node nearest the view
+   * centre, else, with every node folded away, the band nearest it.
+   */
+  const focusFromView = useCallback(() => {
+    const id = pickViewportNode();
+    if (id) { focusNodeById(id); return; }
+    const view = flowView();
+    const band = view && nearestBand(derivedLanesRef.current, (view.top + view.bottom) / 2);
+    if (band) selectBand(band);
+  }, [pickViewportNode, focusNodeById, flowView, selectBand]);
+
+  // - the folded section ids and the selected node ids as of the last render: a fold drops the
+  //   selection in the same commit, so the node it hid is read from here
+  const foldSeenRef = useRef<{ path: string; folded: Set<string>; selected: string[] } | null>(null);
+  // - a fold waiting for the fit to settle: the sections it folded, and the focused node it hid
+  const pendingFoldRef = useRef<{ laneIds: string[]; hidFocus: string | null } | null>(null);
+
+  /**
+   * After a fold by any path (the rail, Shift+(, an MCP write, undo). A focused node the fold hid
+   * hands the focus to the first node of the nearest open section below, else above, else to the
+   * folded section's band; the hidden node stays in the `` ` `` register. A fold that hid no focus but
+   * leaves nothing in view pans the folded band into view. Pan only, the zoom is kept.
+   */
+  const settleFold = useCallback(() => {
+    const p = pendingFoldRef.current;
+    pendingFoldRef.current = null;
+    if (!p) return;
+    const lanes = derivedLanesRef.current;
+    const hidden = hiddenByFoldRef.current;
+    const navs = nodesRef.current.map(toNav);
+    const hidBy = p.hidFocus === null ? undefined : lanes.find(l => l.folded?.includes(p.hidFocus as string));
+    if (p.hidFocus !== null && hidBy) {
+      lastFocusedNodeId.set(canvasPath, p.hidFocus);
+      const t = focusAfterFold(lanes, hidBy.id, navs, hidden);
+      if (t.kind === 'node') focusNodeById(t.nodeId); else selectBand(t.laneId);
+      return;
+    }
+    const view = flowView();
+    if (!view || !viewIsEmpty(view, lanes, navs, hidden)) return;
+    const band = nearestBand(lanes.filter(l => p.laneIds.includes(l.id)), (view.top + view.bottom) / 2);
+    if (band) revealBand(band);
+  }, [canvasPath, focusNodeById, selectBand, flowView, revealBand]);
+
+  useEffect(() => {
+    const folded = new Set(lanes.filter(l => l.folded).map(l => l.id));
+    const selected = nodes.filter(n => n.selected).map(n => n.id);
+    const seen = foldSeenRef.current;
+    foldSeenRef.current = { path: canvasPath, folded, selected };
+    if (seen?.path === canvasPath) {
+      const laneIds = [...folded].filter(id => !seen.folded.has(id));
+      if (laneIds.length) {
+        const hid = (ids: string[]) => ids.find(id => hiddenByFold.has(id));
+        const pending = { laneIds, hidFocus: hid(seen.selected) ?? hid(selected) ?? null };
+        pendingFoldRef.current = pending;
+        // - the fit settles one render later; a state restored by undo is not fitted, so the wait
+        //   also ends on a timer
+        window.setTimeout(() => { if (pendingFoldRef.current === pending) settleFold(); }, 300);
+      }
+    }
+    // - after the fit: the sections below have moved up by then, so the band and the next node are where they stay
+    if (pendingFoldRef.current && Object.keys(fitLanes(lanes, nodes.map(flowGeom)).laneShifts).length === 0) settleFold();
+  }, [nodes, lanes, hiddenByFold, canvasPath, settleFold]);
 
   // - jump to a named mark: restore its viewport, then focus its node (which records `` ` ``)
   const jumpToMark = useCallback((register: string) => {
@@ -3496,12 +3551,11 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
 
       let current = nodesRef.current.find(n => n.selected);
 
-      // - no focused node: establish focus on the viewport-nearest node first;
-      // - the user can press the key again to navigate from there
+      // - no focused node: establish focus on the viewport-nearest visible node first (a band when
+      // - every node is folded away); the user can press the key again to navigate from there
       if (!current) {
         e.preventDefault();
-        const id = pickViewportNode();
-        if (id) focusNodeById(id);
+        focusFromView();
         return;
       }
 
@@ -3595,7 +3649,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       window.removeEventListener('keydown', panCapture, { capture: true });
       window.removeEventListener('keydown', scrollCapture, { capture: true });
     };
-  }, [setNodes, setEdges, focusNodeById, revealAndFocus, pickViewportNode, flowView, selectBand, setSelectedBand, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, closeKnowledge, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToRegister, engineNodesOf, runEngineAfterMove, anchoredBy, runEngineForCells, withKeepRow, canvasPath, closeG, revealBox, closeJump]); // - nodesRef + spaceSelectedRef carry live state
+  }, [setNodes, setEdges, focusNodeById, revealAndFocus, focusFromView, flowView, selectBand, setSelectedBand, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, closeKnowledge, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToRegister, engineNodesOf, runEngineAfterMove, anchoredBy, runEngineForCells, withKeepRow, canvasPath, closeG, revealBox, closeJump]); // - nodesRef + spaceSelectedRef carry live state
 
   // - expose a viewport snapshot for the AI companion (what the user actually sees:
   // - zoom, on-screen node labels, scroll position within the focused node)
@@ -4390,16 +4444,17 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
   //
   // When the user presses Alt+I while the chat input is active, FloatingChat
   // dispatches skena:restoreCanvasFocus.  We focus the last keyboard-focused
-  // node, or the node nearest the viewport centre if no history exists.
+  // node while a fold does not hide it, else what focusFromView picks.
 
   useEffect(() => {
     const handler = () => {
-      const id = lastFocusedNodeId.get(canvasPath) ?? pickViewportNode();
-      if (id) focusNodeById(id);
+      const id = lastFocusedNodeId.get(canvasPath);
+      if (id && nodesRef.current.some(n => n.id === id) && !hiddenByFoldRef.current.has(id)) focusNodeById(id);
+      else focusFromView();
     };
     window.addEventListener('skena:restoreCanvasFocus', handler);
     return () => window.removeEventListener('skena:restoreCanvasFocus', handler);
-  }, [canvasPath, focusNodeById, pickViewportNode]);
+  }, [canvasPath, focusNodeById, focusFromView]);
 
   // ─── host-driven jump: cross-canvas node reference opened this canvas ─────
   //
