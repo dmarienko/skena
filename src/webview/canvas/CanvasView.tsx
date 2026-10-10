@@ -2939,20 +2939,6 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
         return;
       }
 
-      // - Ctrl+U / Ctrl+D: scroll focused node content up / down (vim half-page)
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'u' || e.key === 'd')) {
-        const focused = nodesRef.current.find(n => n.selected);
-        if (focused) {
-          const nodeEl  = document.querySelector(`.react-flow__node[data-id="${focused.id}"]`);
-          const scrollEl = nodeEl?.querySelector('.skena-scrollable') as HTMLElement | null;
-          if (scrollEl && scrollEl.scrollHeight > scrollEl.clientHeight + 1) {
-            e.preventDefault();
-            scrollEl.scrollBy({ top: scrollEl.clientHeight / 4 * (e.key === 'u' ? -1 : 1), behavior: 'smooth' });
-            return;
-          }
-        }
-      }
-
       // - z / Z: zoom in / out centred on viewport centre
       if (!e.ctrlKey && !e.metaKey && !e.shiftKey && e.key === 'z') {
         e.preventDefault();
@@ -3472,6 +3458,20 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       rfRef.current.setViewport({ x: c.x, y: c.y, zoom }, { duration: CAMERA_MS });
     };
 
+    // - Ctrl+E / Ctrl+Y scroll the focused node's content down / up by a quarter of its height, vim's
+    //   scroll keys. VS Code's forwarder (a bubble-phase window listener added before ours) passes every
+    //   keydown to VS Code, which runs its own binding for these two (quick open, redo), so a press that
+    //   scrolls is stopped here at capture. With nothing to scroll the key goes on to VS Code untouched.
+    const scrollCapture = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || (e.key !== 'e' && e.key !== 'y')) return;
+      const active = document.activeElement;
+      if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active?.closest('.monaco-editor')) return;
+      if (panelOpenRef.current || pendingMarkRef.current !== null || chordRef.current) return;
+      if (!scrollFocusedNode(e.key === 'e' ? 'J' : 'K')) return;
+      e.preventDefault();
+      e.stopPropagation();
+    };
+
     // - while the badges are shown the next key is theirs, wherever the focus sits: read here at
     //   capture and stopped, so no node, no other binding and not VS Code acts on it
     const gCapture = (e: KeyboardEvent) => {
@@ -3495,11 +3495,13 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
     window.addEventListener('keydown', gCapture, { capture: true });
     window.addEventListener('keydown', handler);
     window.addEventListener('keydown', panCapture, { capture: true });
+    window.addEventListener('keydown', scrollCapture, { capture: true });
     return () => {
       window.removeEventListener('keydown', jumpCapture, { capture: true });
       window.removeEventListener('keydown', gCapture, { capture: true });
       window.removeEventListener('keydown', handler);
       window.removeEventListener('keydown', panCapture, { capture: true });
+      window.removeEventListener('keydown', scrollCapture, { capture: true });
     };
   }, [setNodes, setEdges, focusNodeById, revealAndFocus, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, closeKnowledge, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToRegister, engineNodesOf, runEngineAfterMove, anchoredBy, runEngineForCells, withKeepRow, canvasPath, closeG, revealBox, closeJump]); // - nodesRef + spaceSelectedRef carry live state
 

@@ -132,7 +132,7 @@ Navigate the canvas without touching the mouse:
 | `o` | New node below the focused one — on a code cell a new code cell in the same column, with the cells under it pushed down |
 | `yy` / `dd` / `p` | Copy / delete / paste nodes (canvas clipboard) |
 | `u` / `r` | Undo / redo (50-entry canvas history) |
-| `Ctrl+U` / `Ctrl+D` | Scroll focused node's content up / down by a quarter of its visible height |
+| `Ctrl+E` / `Ctrl+Y` | Scroll focused node's content down / up by a quarter of its visible height; with nothing to scroll the key goes to VS Code |
 | `w` / `W` | Widen / narrow focused node |
 | `e` / `E` | Expand / shrink focused node height |
 | `z` / `Z` | Zoom in / out |
