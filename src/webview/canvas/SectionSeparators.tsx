@@ -6,8 +6,11 @@ import { fmtDateTime } from '../rail/RailSegment';
 
 const FONT = 'system-ui, -apple-system, sans-serif';
 
-/** The 1px line at each section's bottom, and the title a folded section shows in its band. */
-export function SectionSeparators({ lanes, kernels }: { lanes: DerivedLane[]; kernels: RailKernel[] }): JSX.Element {
+/**
+ * The 1px line at each section's bottom, and the title a folded section shows in its band. A band
+ * selected as the focus is framed in the colour of a focused node's ring.
+ */
+export function SectionSeparators({ lanes, kernels, selectedBandId }: { lanes: DerivedLane[]; kernels: RailKernel[]; selectedBandId: string | null }): JSX.Element {
   const ty = useStore(s => s.transform[1]);
   const zoom = useStore(s => s.transform[2]);
   const height = useStore(s => s.height);
@@ -34,8 +37,9 @@ export function SectionSeparators({ lanes, kernels }: { lanes: DerivedLane[]; ke
         const count = `${l.memberIds.length} nodes`;
         // - flow-space text: it scales with the canvas, so it keeps its place in the band at any zoom
         return (
-          <div key={`${l.id}-band`}
-            style={{ position: 'absolute', left: 0, right: 0, top, height: h, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3 * zoom, overflow: 'hidden' }}>
+          <div key={`${l.id}-band`} data-sk-band={l.id} data-selected={l.id === selectedBandId ? '1' : undefined}
+            style={{ position: 'absolute', left: 0, right: 0, top, height: h, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3 * zoom, overflow: 'hidden',
+              boxShadow: l.id === selectedBandId ? 'inset 0 0 0 3px var(--skena-focus-ring)' : undefined }}>
             <div style={{ fontFamily: FONT, fontWeight: 600, fontSize: 12 * zoom, color, whiteSpace: 'nowrap', maxWidth: '70%', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {l.title?.trim() || fmtDateTime(l.createdAt)}
             </div>

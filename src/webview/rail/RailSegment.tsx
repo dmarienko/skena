@@ -26,12 +26,14 @@ const btn: React.CSSProperties = {
   width: BTN_H, height: BTN_H, flex: 'none',
 };
 
-export function RailSegment({ lane, seg, color, kernel, current, runnable, onFold, onRun, onDelete, onKernel, onTitle, onMenu }: {
+export function RailSegment({ lane, seg, color, kernel, current, selected, runnable, onFold, onRun, onDelete, onKernel, onTitle, onMenu }: {
   lane: DerivedLane;
   seg: Seg;
   color: string;
   kernel: RailKernel | null;
   current: boolean;
+  /** - the section's band is the focus: framed in the colour of a focused node's ring */
+  selected: boolean;
   /** - the section's kernelId names a kernel that exists; ▶ is dimmed and says so when it does not */
   runnable: boolean;
   onFold: (id: string) => void;
@@ -53,8 +55,10 @@ export function RailSegment({ lane, seg, color, kernel, current, runnable, onFol
   const anchor = (e: React.MouseEvent) => (e.currentTarget as HTMLElement).getBoundingClientRect();
 
   return (
-    <div title={tooltip} onContextMenu={e => { e.preventDefault(); onMenu(lane.id, { x: e.clientX, y: e.clientY }, anchor(e)); }}
-      style={{ position: 'absolute', left: 0, right: 0, top: seg.top, height: seg.height, opacity: lane.folded ? 0.55 : 1 }}>
+    <div title={tooltip} data-sk-lane={lane.id} data-selected={selected ? '1' : undefined}
+      onContextMenu={e => { e.preventDefault(); onMenu(lane.id, { x: e.clientX, y: e.clientY }, anchor(e)); }}
+      style={{ position: 'absolute', left: 0, right: 0, top: seg.top, height: seg.height, opacity: lane.folded && !selected ? 0.55 : 1,
+        borderRadius: 3, boxShadow: selected ? 'inset 0 0 0 2px var(--skena-focus-ring)' : undefined }}>
       <div style={{ position: 'absolute', left: 6, top: 0, bottom: 0, width: 4, borderRadius: 2, background: color }} />
       <div style={{ position: 'absolute', left: 10, right: 0, top: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7, paddingTop: 8, overflow: 'hidden', boxSizing: 'border-box' }}>
         {items.map(item => {

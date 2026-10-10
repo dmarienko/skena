@@ -117,6 +117,8 @@ Navigate the canvas without touching the mouse:
 | `g` then a label key | Focus and reveal the node at the other end of that connection. The first connection of a border is its own vim key (left `h`, top `k`, right `l`, bottom `j`); the rest take `1`–`9` then `a`–`z` minus `g h j k l`, walked left, top, right, bottom |
 | `gg` / `G` | Focus the first / last node of the focused node's section (by y, then x) |
 | `Shift+(` / `Shift+)` | Fold / unfold the current section (same action as the rail chevron) |
+| `Ctrl+D` / `Ctrl+U` | Next section down / up, from the focused node's section (with nothing focused, the one at the view centre); no wrap. An open section focuses its first node (by y, then x), a folded one selects its band |
+| On a selected band | `Ctrl+D` / `Ctrl+U` go on to the next section, `Enter` unfolds it and focuses its first node, `h` / `j` / `k` / `l` go to the nearest visible node that way, `Esc` drops it |
 | `Enter` / `Ctrl+Enter` | Open focused file in editor (beside the canvas / in the canvas's own editor group); on a knowledge node, open its source in the server's web reader, as `↗` does |
 | `Alt+X` then `h/j/k/l` | Add a node connected in that direction, picked from a menu: new text note, **code node**, URL, or a vault / workspace file. In a section the new node takes the column slot beside, below or above the anchor and that column packs. On a code cell `h` / `l` branch left / right: `l` goes into the nearest column to the right that already holds a code cell, on the cell's row (under the cell's own output when that column is the one its output sits in) |
 | `Ctrl+Shift+H/J/K/L` or arrows | Add connected empty text node in direction and start editing it |

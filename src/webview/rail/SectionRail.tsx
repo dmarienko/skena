@@ -25,10 +25,12 @@ export function laneColor(lane: { kernelId?: string; index: number }, kernels: R
   return { color: kernelColor(k ? k.colorIndex : lane.index), kernel: k };
 }
 
-export function SectionRail({ lanes, kernels, selectedNodeId, onFold, onRun, onReflow, onDelete, onBindKernel, onRename, onNewSection, onNewKernel, onRemoveKernel, onKernelAction, onCopyReference }: {
+export function SectionRail({ lanes, kernels, selectedNodeId, selectedBandId, onFold, onRun, onReflow, onDelete, onBindKernel, onRename, onNewSection, onNewKernel, onRemoveKernel, onKernelAction, onCopyReference }: {
   lanes: DerivedLane[];
   kernels: RailKernel[];
   selectedNodeId: string | null;
+  /** - a folded section selected as the focus in place of a node */
+  selectedBandId: string | null;
   onFold: (id: string) => void;
   onRun: (id: string) => void;
   onReflow: (id: string) => void;
@@ -48,7 +50,7 @@ export function SectionRail({ lanes, kernels, selectedNodeId, onFold, onRun, onR
   // - the + strip is not canvas: segments are laid out in the space above it
   const segs = railSegments(lanes, ty, zoom, Math.max(0, height - PLUS_H));
   const byId = new Map(lanes.map(l => [l.id, l]));
-  const currentId = selectedNodeId ? lanes.find(l => l.memberIds.includes(selectedNodeId))?.id ?? null : null;
+  const currentId = selectedBandId ?? (selectedNodeId ? lanes.find(l => l.memberIds.includes(selectedNodeId))?.id ?? null : null);
 
   // - one popover at a time, anchored to the control that opened it. The menu also keeps the
   //   segment's rect, so a picker opened from a menu row still lands beside the segment.
@@ -78,7 +80,7 @@ export function SectionRail({ lanes, kernels, selectedNodeId, onFold, onRun, onR
           const runnable = kernel !== null;
           return (
             <RailSegment key={seg.id} lane={lane} seg={seg} color={color} kernel={kernel} runnable={runnable}
-              current={lane.id === currentId} onFold={onFold} onRun={onRun} onDelete={onDelete} onKernel={openKernel} onTitle={openTitle} onMenu={openMenu} />
+              current={lane.id === currentId} selected={lane.id === selectedBandId} onFold={onFold} onRun={onRun} onDelete={onDelete} onKernel={openKernel} onTitle={openTitle} onMenu={openMenu} />
           );
         })}
       </div>

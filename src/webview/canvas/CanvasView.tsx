@@ -76,6 +76,7 @@ import { youtubeId, YOUTUBE_NODE } from '../../shared/youtube';
 import { copyNode, ownedOutputId } from '../../shared/outputLink';
 import { useLaneFit, flowGeom } from '../rail/useLaneFit';
 import { connectionLabels, findNearestNode, focusAfterDelete, revealPan, type ConnectionLabel, type EdgeSideContext, type NavDir, type NavNode, type Rect } from './spatialNav';
+import { bandNavBox, sectionIndexAtY, stepSection } from '../../shared/sectionNav';
 import { focusAreaBottom } from './chat/consoleLayout';
 import { setCanvasWords } from './canvasWordCompletion';
 import { CanvasSearch } from './CanvasSearch';
@@ -251,6 +252,12 @@ function toFlowEdge(ce: CanvasEdge): Edge {
   };
 }
 
+
+// - a React Flow node as the navigation maths reads it
+const toNav = (n: Node): NavNode => ({
+  id: n.id, x: n.position.x, y: n.position.y,
+  w: Number(n.style?.width ?? 200), h: Number(n.style?.height ?? 150),
+});
 
 const toRouteNode = (n: Node): RouteNode => {
   const g = flowGeom(n);
@@ -941,6 +948,22 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
   const hiddenByFoldRef = useRef(hiddenByFold);
   useEffect(() => { hiddenByFoldRef.current = hiddenByFold; });
 
+  // - a folded section picked as the focus in place of a node (Ctrl+D / Ctrl+U onto it, or a fold that
+  //   left no open section): its band and rail segment are highlighted and the keys act on it. The ref
+  //   is written with the state so a key right after sees it.
+  const [selectedBand, setSelectedBandState] = useState<string | null>(null);
+  const selectedBandRef = useRef<string | null>(null);
+  const setSelectedBand = useCallback((id: string | null) => {
+    selectedBandRef.current = id;
+    setSelectedBandState(id);
+  }, []);
+  const clearBand = useCallback(() => setSelectedBand(null), [setSelectedBand]);
+  // - the band goes once its section is open again or gone
+  useEffect(() => {
+    const id = selectedBandRef.current;
+    if (id !== null && !derivedLanes.some(l => l.id === id && l.folded)) setSelectedBand(null);
+  }, [derivedLanes, setSelectedBand]);
+
   // - the last committed pass, so a drag can hand back the routes it is not recomputing
   const routesRef = useRef<Map<string, RoutedEdge>>(new Map());
   // - one routing pass per section, all of its edges together, so the lanes and the exit slots see
@@ -1283,6 +1306,8 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
   ], [nodes, kernels]);
 
   const selectedNodeId = useMemo(() => nodes.find(n => n.selected)?.id ?? null, [nodes]);
+  // - a node taking the selection by any path (a click, a box select) takes it from the band
+  useEffect(() => { if (selectedNodeId !== null) setSelectedBand(null); }, [selectedNodeId, setSelectedBand]);
 
   const handleBindKernel = useCallback((id: string, kernelId: string | null) => {
     pushHistory();
@@ -1853,10 +1878,11 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
   const focusNodeById = useCallback((id: string, forceCenter = false) => {
     recordPreviousPosition(id);
     lastFocusedNodeId.set(canvasPath, id);
+    setSelectedBand(null);
     setNodes(nds => nds.map(n => ({ ...n, selected: n.id === id })));
     window.dispatchEvent(new CustomEvent('skena:focusNode', { detail: { id } }));
     revealNode(id, forceCenter);
-  }, [setNodes, canvasPath, revealNode, recordPreviousPosition]);
+  }, [setNodes, canvasPath, revealNode, recordPreviousPosition, setSelectedBand]);
 
   /**
    * Unfold the section whose fold hides `id`, by the rail chevron's own action (its history entry, its
@@ -1931,6 +1957,34 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
     }
     return bestId;
   }, []); // - rfRef + nodesRef always current
+
+  // - the part of the pane a focus lands in (above the chat console), in flow coordinates
+  const flowView = useCallback((): { left: number; top: number; right: number; bottom: number } | null => {
+    if (!wrapperRef.current) return null;
+    const area = paneArea(wrapperRef.current);
+    const { x, y, zoom } = rfRef.current.getViewport();
+    return { left: (area.left - x) / zoom, top: (area.top - y) / zoom, right: (area.right - x) / zoom, bottom: (area.bottom - y) / zoom };
+  }, []); // - refs only
+
+  /** Pan, keeping the zoom, by the smallest move that shows a folded section's band. Only y moves: a band spans the pane's width. */
+  const revealBand = useCallback((laneId: string) => {
+    const lane = derivedLanesRef.current.find(l => l.id === laneId);
+    const view = flowView();
+    if (!lane || !view) return;
+    const cx = (view.left + view.right) / 2;
+    revealBox({ x1: cx, y1: lane.top, x2: cx, y2: lane.bottom });
+  }, [flowView, revealBox]);
+
+  /**
+   * Make a folded section's band the focus: no node selected, the band highlighted and panned into
+   * view. The node focused before goes into the `` ` `` register, so `` ` ` `` comes back to it.
+   */
+  const selectBand = useCallback((laneId: string) => {
+    recordPreviousPosition(`band:${laneId}`);
+    setNodes(nds => (nds.some(n => n.selected) ? nds.map(n => (n.selected ? { ...n, selected: false } : n)) : nds));
+    setSelectedBand(laneId);
+    revealBand(laneId);
+  }, [recordPreviousPosition, setNodes, setSelectedBand, revealBand]);
 
   // - jump to a named mark: restore its viewport, then focus its node (which records `` ` ``)
   const jumpToMark = useCallback((register: string) => {
@@ -2578,12 +2632,6 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       }
     };
 
-    // - the nodes map into the pure finder, which derives the folded (hidden) ids from the lanes itself
-    const toNav = (n: Node): NavNode => ({
-      id: n.id, x: n.position.x, y: n.position.y,
-      w: Number(n.style?.width ?? 200), h: Number(n.style?.height ?? 150),
-    });
-
     const focusedNode = () => nodesRef.current.find(n => n.selected);
 
     // - what the follow reads: every visible node, every edge, and the routes of the last pass. A
@@ -2716,9 +2764,11 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       if (m.kind === 'jump') revealAndFocus(shown.ids[m.index]);
     };
 
-    // - the section the keys act on: the focused node's, or — after a fold dropped the selection —
-    //   the one holding the node focused last
+    // - the section the keys act on: the selected band's, the focused node's, or — after a fold
+    //   dropped the selection — the one holding the node focused last
     const currentLane = () => {
+      const band = selectedBandRef.current;
+      if (band !== null) return derivedLanesRef.current.find(l => l.id === band);
       const id = focusedNode()?.id ?? lastFocusedNodeId.get(canvasPath);
       if (!id) return undefined;
       return derivedLanesRef.current.find(l => l.memberIds.includes(id));
@@ -2737,6 +2787,25 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
         .sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x);
       const target = which === 'first' ? members[0] : members[members.length - 1];
       if (target && target.id !== current?.id) focusNodeById(target.id);
+    };
+
+    // - Ctrl+D / Ctrl+U: the next section down / up from the selected band, from the focused node's
+    //   section, or with neither from the section at the view centre. A folded one is selected as a
+    //   band, an open one focuses its first node (stepSection); nothing past the first or last section.
+    const stepSectionKey = (dir: 'up' | 'down') => {
+      const lanes = derivedLanesRef.current;
+      const band = selectedBandRef.current;
+      const focused = focusedNode();
+      let from = band !== null ? lanes.findIndex(l => l.id === band)
+        : focused ? lanes.findIndex(l => l.memberIds.includes(focused.id)) : -1;
+      if (from < 0) {
+        const view = flowView();
+        if (!view) return;
+        from = sectionIndexAtY(lanes, (view.top + view.bottom) / 2);
+      }
+      const t = from < 0 ? null : stepSection(lanes, from, dir, nodesRef.current.map(toNav), hiddenByFoldRef.current);
+      if (!t) return;
+      if (t.kind === 'band') selectBand(t.laneId); else focusNodeById(t.nodeId);
     };
 
     // - add a node off the focused node in the given direction (Alt+X chord target)
@@ -2937,6 +3006,29 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
         e.preventDefault();
         setMarksOpen(true);
         return;
+      }
+
+      // - Ctrl+D / Ctrl+U: section down / up. Ctrl+E / Ctrl+Y scroll the focused node (scrollCapture).
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'u' || e.key === 'd')) {
+        e.preventDefault();
+        stepSectionKey(e.key === 'd' ? 'down' : 'up');
+        return;
+      }
+
+      // - a selected band: Enter unfolds it and focuses its first node, Esc drops it, h/j/k/l go to
+      //   the nearest visible node that way from it
+      const band = selectedBandRef.current;
+      if (band !== null && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+        if (e.key === 'Enter') { e.preventDefault(); goToSectionRef.current(band); return; }
+        if (e.key === 'Escape') { e.preventDefault(); setSelectedBand(null); return; }
+        const bandDir = keyToDir(e.key);
+        const lane = derivedLanesRef.current.find(l => l.id === band);
+        if (bandDir && lane) {
+          e.preventDefault();
+          const target = findNearestNode(bandNavBox(lane), bandDir, { nodes: nodesRef.current.map(toNav), lanes: lanesRef.current });
+          if (target) focusNodeById(target);
+          return;
+        }
       }
 
       // - z / Z: zoom in / out centred on viewport centre
@@ -3503,7 +3595,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       window.removeEventListener('keydown', panCapture, { capture: true });
       window.removeEventListener('keydown', scrollCapture, { capture: true });
     };
-  }, [setNodes, setEdges, focusNodeById, revealAndFocus, pickViewportNode, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, closeKnowledge, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToRegister, engineNodesOf, runEngineAfterMove, anchoredBy, runEngineForCells, withKeepRow, canvasPath, closeG, revealBox, closeJump]); // - nodesRef + spaceSelectedRef carry live state
+  }, [setNodes, setEdges, focusNodeById, revealAndFocus, pickViewportNode, flowView, selectBand, setSelectedBand, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, closeKnowledge, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToRegister, engineNodesOf, runEngineAfterMove, anchoredBy, runEngineForCells, withKeepRow, canvasPath, closeG, revealBox, closeJump]); // - nodesRef + spaceSelectedRef carry live state
 
   // - expose a viewport snapshot for the AI companion (what the user actually sees:
   // - zoom, on-screen node labels, scroll position within the focused node)
@@ -4384,7 +4476,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
     <KernelsContext.Provider value={kernels}>
     <EdgeRoutesContext.Provider value={edgeRoutes}>
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'row' }}>
-    <SectionRail lanes={derivedLanes} kernels={railKernels} selectedNodeId={selectedNodeId}
+    <SectionRail lanes={derivedLanes} kernels={railKernels} selectedNodeId={selectedNodeId} selectedBandId={selectedBand}
       onFold={handleFoldLane} onRun={handleRunLane} onReflow={handleReflowLane} onDelete={handleDeleteLane}
       onBindKernel={handleBindKernel} onRename={handleRenameLane} onNewSection={handleNewSectionClick}
       onNewKernel={handleNewKernel} onRemoveKernel={handleRemoveKernel} onKernelAction={handleKernelActionForLane}
@@ -4407,6 +4499,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
         onNodesDelete={onNodesDelete}
         onEdgesDelete={onEdgesDelete}
         onNodeClick={onNodeClick}
+        onPaneClick={clearBand}
         onNodeDoubleClick={onNodeDoubleClick}
         onEdgeDoubleClick={onEdgeDoubleClick}
         connectionMode={ConnectionMode.Loose}
@@ -4429,7 +4522,7 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
         elevateEdgesOnSelect
       >
         <Background variant={BackgroundVariant.Dots} gap={GRID} size={1} color="var(--vscode-editorIndentGuide-background)" />
-        <SectionSeparators lanes={derivedLanes} kernels={railKernels} />
+        <SectionSeparators lanes={derivedLanes} kernels={railKernels} selectedBandId={selectedBand} />
         <EdgeFollowHints shown={gShown} />
         <JumpTags shown={jumpShown} />
         <HelperLines horizontal={helperLines.horizontal} vertical={helperLines.vertical} />
