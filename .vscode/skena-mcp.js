@@ -2141,7 +2141,7 @@ var require_extension = __commonJS({
       else
         dest[name].push(elem);
     }
-    function parse(header) {
+    function parse3(header) {
       const offers = /* @__PURE__ */ Object.create(null);
       let params = /* @__PURE__ */ Object.create(null);
       let mustUnescape = false;
@@ -2279,7 +2279,7 @@ var require_extension = __commonJS({
       }
       return offers;
     }
-    function format(extensions) {
+    function format2(extensions) {
       return Object.keys(extensions).map((extension2) => {
         let configurations = extensions[extension2];
         if (!Array.isArray(configurations))
@@ -2296,7 +2296,7 @@ var require_extension = __commonJS({
         }).join(", ");
       }).join(", ");
     }
-    module2.exports = { format, parse };
+    module2.exports = { format: format2, parse: parse3 };
   }
 });
 
@@ -2306,12 +2306,12 @@ var require_websocket = __commonJS({
     "use strict";
     var EventEmitter = require("events");
     var https = require("https");
-    var http = require("http");
+    var http3 = require("http");
     var net = require("net");
     var tls = require("tls");
     var { randomBytes: randomBytes2, createHash } = require("crypto");
     var { Duplex, Readable } = require("stream");
-    var { URL } = require("url");
+    var { URL: URL2 } = require("url");
     var PerMessageDeflate2 = require_permessage_deflate();
     var Receiver2 = require_receiver();
     var Sender2 = require_sender();
@@ -2330,7 +2330,7 @@ var require_websocket = __commonJS({
     var {
       EventTarget: { addEventListener, removeEventListener }
     } = require_event_target();
-    var { format, parse } = require_extension();
+    var { format: format2, parse: parse3 } = require_extension();
     var { toBuffer } = require_buffer_util();
     var kAborted = Symbol("kAborted");
     var protocolVersions = [8, 13];
@@ -2829,11 +2829,11 @@ var require_websocket = __commonJS({
         );
       }
       let parsedUrl;
-      if (address instanceof URL) {
+      if (address instanceof URL2) {
         parsedUrl = address;
       } else {
         try {
-          parsedUrl = new URL(address);
+          parsedUrl = new URL2(address);
         } catch {
           throw new SyntaxError(`Invalid URL: ${address}`);
         }
@@ -2865,7 +2865,7 @@ var require_websocket = __commonJS({
       }
       const defaultPort = isSecure ? 443 : 80;
       const key = randomBytes2(16).toString("base64");
-      const request = isSecure ? https.request : http.request;
+      const request3 = isSecure ? https.request : http3.request;
       const protocolSet = /* @__PURE__ */ new Set();
       let perMessageDeflate;
       opts.createConnection = opts.createConnection || (isSecure ? tlsConnect : netConnect);
@@ -2887,7 +2887,7 @@ var require_websocket = __commonJS({
           isServer: false,
           maxPayload: opts.maxPayload
         });
-        opts.headers["Sec-WebSocket-Extensions"] = format({
+        opts.headers["Sec-WebSocket-Extensions"] = format2({
           [PerMessageDeflate2.extensionName]: perMessageDeflate.offer()
         });
       }
@@ -2943,12 +2943,12 @@ var require_websocket = __commonJS({
         if (opts.auth && !options.headers.authorization) {
           options.headers.authorization = "Basic " + Buffer.from(opts.auth).toString("base64");
         }
-        req = websocket._req = request(opts);
+        req = websocket._req = request3(opts);
         if (websocket._redirects) {
           websocket.emit("redirect", websocket.url, req);
         }
       } else {
-        req = websocket._req = request(opts);
+        req = websocket._req = request3(opts);
       }
       if (opts.timeout) {
         req.on("timeout", () => {
@@ -2972,7 +2972,7 @@ var require_websocket = __commonJS({
           req.abort();
           let addr;
           try {
-            addr = new URL(location, address);
+            addr = new URL2(location, address);
           } catch (e) {
             const err2 = new SyntaxError(`Invalid URL: ${location}`);
             emitErrorAndClose(websocket, err2);
@@ -3028,7 +3028,7 @@ var require_websocket = __commonJS({
           }
           let extensions;
           try {
-            extensions = parse(secWebSocketExtensions);
+            extensions = parse3(secWebSocketExtensions);
           } catch (err2) {
             const message = "Invalid Sec-WebSocket-Extensions header";
             abortHandshake(websocket, socket, message);
@@ -3336,7 +3336,7 @@ var require_subprotocol = __commonJS({
   "node_modules/ws/lib/subprotocol.js"(exports2, module2) {
     "use strict";
     var { tokenChars } = require_validation();
-    function parse(header) {
+    function parse3(header) {
       const protocols = /* @__PURE__ */ new Set();
       let start = -1;
       let end = -1;
@@ -3375,7 +3375,7 @@ var require_subprotocol = __commonJS({
       protocols.add(protocol);
       return protocols;
     }
-    module2.exports = { parse };
+    module2.exports = { parse: parse3 };
   }
 });
 
@@ -3384,7 +3384,7 @@ var require_websocket_server = __commonJS({
   "node_modules/ws/lib/websocket-server.js"(exports2, module2) {
     "use strict";
     var EventEmitter = require("events");
-    var http = require("http");
+    var http3 = require("http");
     var { Duplex } = require("stream");
     var { createHash } = require("crypto");
     var extension2 = require_extension();
@@ -3465,8 +3465,8 @@ var require_websocket_server = __commonJS({
           );
         }
         if (options.port != null) {
-          this._server = http.createServer((req, res) => {
-            const body = http.STATUS_CODES[426];
+          this._server = http3.createServer((req, res) => {
+            const body = http3.STATUS_CODES[426];
             res.writeHead(426, {
               "Content-Length": body.length,
               "Content-Type": "text/plain"
@@ -3764,7 +3764,7 @@ var require_websocket_server = __commonJS({
       this.destroy();
     }
     function abortHandshake(socket, code, message, headers) {
-      message = message || http.STATUS_CODES[code];
+      message = message || http3.STATUS_CODES[code];
       headers = {
         Connection: "close",
         "Content-Type": "text/html",
@@ -3773,7 +3773,7 @@ var require_websocket_server = __commonJS({
       };
       socket.once("finish", socket.destroy);
       socket.end(
-        `HTTP/1.1 ${code} ${http.STATUS_CODES[code]}\r
+        `HTTP/1.1 ${code} ${http3.STATUS_CODES[code]}\r
 ` + Object.keys(headers).map((h) => `${h}: ${headers[h]}`).join("\r\n") + "\r\n\r\n" + message
       );
     }
@@ -3790,9 +3790,9 @@ var require_websocket_server = __commonJS({
 });
 
 // src/extension/mcp/server.ts
-var fs = __toESM(require("fs/promises"));
-var path = __toESM(require("path"));
-var os = __toESM(require("os"));
+var fs3 = __toESM(require("fs/promises"));
+var path5 = __toESM(require("path"));
+var os2 = __toESM(require("os"));
 var readline = __toESM(require("readline"));
 var crypto = __toESM(require("crypto"));
 
@@ -3822,8 +3822,6 @@ function nodeLabelPrefix(node) {
       return "N";
     case "link":
       return "L";
-    case "group":
-      return "G";
     case "cell":
       return "C";
     case "kernel":
@@ -3870,12 +3868,12 @@ function nextLabel(prefix, used) {
   return `${prefix}${i}`;
 }
 function ensureLabels(nodes) {
-  const needsLabel = nodes.some((n) => !n.nodeLabel);
+  const needsLabel = nodes.some((n) => !n.nodeLabel && n.type !== "group");
   if (!needsLabel)
     return nodes;
   const used = usedLabels(nodes);
   return nodes.map((n) => {
-    if (n.nodeLabel)
+    if (n.nodeLabel || n.type === "group")
       return n;
     const label = nextLabel(nodeLabelPrefix(n), used);
     used.add(label);
@@ -3894,20 +3892,22 @@ function assignLabel(node, existingNodes) {
 var GRID = 100;
 var NODE_SIZE = {
   text: { w: 700, h: 300 },
-  code: { w: 700, h: 300 },
+  code: { w: 700, h: 100 },
+  // - an empty cell: one grid row, what codeCellHeight gives it
   link: { w: 300, h: 100 },
   portal: { w: 200, h: 200 },
   kernel: { w: 140, h: 160 },
   file: { w: 700, h: 700 },
   knowledge: { w: 700, h: 300 }
 };
-var SECTION_MIN_H = 2 * NODE_SIZE.code.h + 2 * GRID;
+var SECTION_MIN_H = 2 * NODE_SIZE.text.h + 2 * GRID;
 var SECTION_FOLDED_H = GRID;
 var DEFAULT_NODE_WIDTH = NODE_SIZE.text.w;
 var DEFAULT_NODE_HEIGHT = NODE_SIZE.text.h;
 var MAX_FILE_FULL_BYTES = 2 * 1024 * 1024;
 var MAX_FILE_PREVIEW_BYTES = 200 * 1024;
 var MAX_NOTEBOOK_BYTES = 10 * 1024 * 1024;
+var CODE_MIN_H = NODE_SIZE.code.h;
 var CODE_MAX_H = 900;
 var CODE_H_STEP = 50;
 var OUTPUT_MIN_W = 600;
@@ -3929,6 +3929,9 @@ function clampToOrigin(x, y) {
 
 // src/shared/sectionLanes.ts
 var LANE_BOTTOM_PAD = GRID;
+function isGroup(n) {
+  return n.type === "group";
+}
 function sortLanes(lanes) {
   return [...lanes].sort((a, b) => a.y - b.y);
 }
@@ -3960,6 +3963,8 @@ function deriveLanes(nodes, lanes) {
   const visible = sorted.map(() => []);
   const maxY = sorted.map(() => -Infinity);
   for (const n of nodes) {
+    if (isGroup(n))
+      continue;
     const i = laneIndexForNode(sorted, n, pinned);
     members[i].push(n.id);
     if (pinned.has(n.id))
@@ -3987,7 +3992,8 @@ function sectionTargetHeight(l, members) {
   const raw = Math.max(l.folded ? SECTION_FOLDED_H : SECTION_MIN_H, content);
   return Math.ceil(raw / GRID) * GRID;
 }
-function fitLanes(lanes, nodes, own) {
+function fitLanes(lanes, all, own) {
+  const nodes = all.filter((n) => !isGroup(n));
   const empty = { laneShifts: {}, nodeShifts: {} };
   const sorted = sortLanes(lanes);
   if (sorted.length === 0)
@@ -4042,7 +4048,7 @@ function unfoldLane(lanes, nodes, id) {
 function applyLaneFit(canvas, now, own) {
   const lanes = canvas.metadata?.sections ?? [];
   if (lanes.length === 0) {
-    if (canvas.nodes.length === 0)
+    if (canvas.nodes.every(isGroup))
       return canvas;
     return { ...canvas, metadata: { ...canvas.metadata, sections: [{ id: `sec-${now.toString(36)}`, y: 0, createdAt: now }] } };
   }
@@ -4218,8 +4224,8 @@ function resolveCellKernel(cellId, c) {
   return makeCellKernelResolver(c)(cellId);
 }
 function resolveKernelCellsInCanvas(kernelId, c) {
-  const resolve2 = makeCellKernelResolver(c);
-  return c.nodes.filter((n) => n.type === "code" && resolve2(n.id) === kernelId).map((n) => n.id);
+  const resolve6 = makeCellKernelResolver(c);
+  return c.nodes.filter((n) => n.type === "code" && resolve6(n.id) === kernelId).map((n) => n.id);
 }
 function kernelById(c, id) {
   const rec = c.metadata?.kernels?.find((k) => k.id === id);
@@ -4234,8 +4240,8 @@ function upstreamCellsForRun(targetId, c) {
   const isCode = (id) => byId2.get(id)?.type === "code";
   if (resolveBoundKernel(targetId, c.edges, isKernel))
     return resolveUpstreamChain(targetId, c.edges, isKernel, isCode);
-  const resolve2 = makeCellKernelResolver(c);
-  const kernel = resolve2(targetId);
+  const resolve6 = makeCellKernelResolver(c);
+  const kernel = resolve6(targetId);
   if (!kernel)
     return [];
   const seen = /* @__PURE__ */ new Set([targetId]);
@@ -4270,7 +4276,7 @@ var byId = (nodes) => new Map(nodes.map((n) => [n.id, n]));
 var gridUp = (v) => Math.ceil(v / GRID) * GRID;
 function codeCellHeight(neededPx) {
   const raw = Math.ceil(Math.max(0, neededPx) / CODE_H_STEP) * CODE_H_STEP;
-  return Math.min(CODE_MAX_H, Math.max(NODE_SIZE.code.h, raw));
+  return Math.min(CODE_MAX_H, Math.max(CODE_MIN_H, raw));
 }
 function estimateCodeNeedPx(code) {
   const lines = code.split("\n").length;
@@ -4296,7 +4302,7 @@ function ridersOf(nodes, edges) {
       continue;
     const from = map.get(e.fromNode);
     const to = map.get(e.toNode);
-    if (!from || !to || !isMember(to, owners) || to.type === "group" || from.type === "kernel" || from.type === "group")
+    if (!from || !to || !isMember(to, owners) || from.type === "kernel")
       continue;
     const source = map.get(owners.get(from.id) ?? "") ?? from;
     if (snapGrid(from.x) >= snapGrid(to.x) || snapGrid(source.x) >= snapGrid(to.x))
@@ -4322,7 +4328,7 @@ function hangingBelow(input, edges, draggedFrom) {
       continue;
     const from = map.get(e.fromNode);
     const to = map.get(e.toNode);
-    if (!from || !to || !isMember(to, owners) || to.type === "group" || from.type === "kernel" || from.type === "group")
+    if (!from || !to || !isMember(to, owners) || from.type === "kernel")
       continue;
     if (snapGrid(from.x) === snapGrid(to.x) || to.y < from.y + from.h)
       continue;
@@ -4410,8 +4416,8 @@ function deriveColumns(nodes, movers = /* @__PURE__ */ new Set()) {
   });
   return columns.map((c, i) => {
     const nextX = columns[i + 1]?.x;
-    const inside = nextX === void 0 ? c.cells : c.cells.filter((m) => c.x + m.w + GRID <= nextX);
-    const widths = (inside.length > 0 ? inside : c.cells).map((m) => m.w);
+    const inside2 = nextX === void 0 ? c.cells : c.cells.filter((m) => c.x + m.w + GRID <= nextX);
+    const widths = (inside2.length > 0 ? inside2 : c.cells).map((m) => m.w);
     return { x: c.x, width: Math.max(...widths), cellIds: c.cells.map((m) => m.id) };
   });
 }
@@ -4443,7 +4449,7 @@ function derivePairs(nodes, columns) {
 }
 function rowBottom(cell, map) {
   const out = map.get(cell.outputNodeId ?? "");
-  return cell.y + Math.max(cell.h, out ? out.h : 0);
+  return cell.y + Math.max(cell.h, out && out.y <= cell.y ? out.h : 0);
 }
 function overlaps(a, b) {
   const sepX = a.x + a.w + GRID <= b.x || b.x + b.w + GRID <= a.x;
@@ -4482,7 +4488,8 @@ function keepsRowAgainst(node, cellId, riders, map) {
 function packColumn(pair, nodes, map, riders, owners, out, toSlot = () => true, sets = { held: /* @__PURE__ */ new Set(), noBump: /* @__PURE__ */ new Set(), placed: /* @__PURE__ */ new Set() }) {
   const { held, noBump, placed } = sets;
   const x = pair.column.x;
-  const place = (cell, y) => {
+  const outX = (cell, o, wasY) => toSlot(cell.id, o, wasY) ? pair.outputX : Math.max(o.x, pair.outputX);
+  const place = (cell, y, oy = y) => {
     const wasY = cell.y;
     if (x !== cell.x || y !== cell.y) {
       if (out)
@@ -4491,20 +4498,20 @@ function packColumn(pair, nodes, map, riders, owners, out, toSlot = () => true, 
       cell.y = y;
     }
     const o = map.get(cell.outputNodeId ?? "");
-    const ox = o ? toSlot(cell.id, o, wasY) ? pair.outputX : Math.max(o.x, pair.outputX) : 0;
-    if (o && (o.x !== ox || o.y !== y)) {
+    const ox = o ? outX(cell, o, wasY) : 0;
+    if (o && (o.x !== ox || o.y !== oy)) {
       if (out)
-        out[o.id] = { x: ox, y };
+        out[o.id] = { x: ox, y: oy };
       o.x = ox;
-      o.y = y;
+      o.y = oy;
     }
   };
   const members = pair.column.cellIds.map((id) => map.get(id));
   const own = new Set(pair.column.cellIds);
-  const anchored = members.map((cell, order) => {
+  const rowOf = (cell) => {
     const s = riders.get(cell.id);
-    return { cell, order, at: s !== void 0 && !own.has(s) ? map.get(s)?.y : void 0 };
-  }).filter((a) => a.at !== void 0).sort((a, b) => a.at - b.at || a.order - b.order);
+    return s !== void 0 && !own.has(s) ? map.get(s)?.y : void 0;
+  };
   const byRow = (a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id);
   const around = obstaclesOf(pair, nodes, owners);
   const blocking = around.filter((n) => owners.has(n.id) || held.has(n.id)).sort(byRow);
@@ -4518,10 +4525,10 @@ function packColumn(pair, nodes, map, riders, owners, out, toSlot = () => true, 
     const keep = around.filter((n) => held.has(n.id) && keepsRowAgainst(n, cell.id, riders, map)).sort(byRow);
     const start = y;
     for (let guard = 0; guard < 16; guard++) {
-      const above = y > start ? around.filter((n) => !noBump.has(n.id) && n.y < y) : [];
-      const near = /* @__PURE__ */ new Set([...noBump, ...keep.map((n) => n.id), ...above.map((n) => n.id)]);
-      const oy = rowStart(y, ox, o, [...keep, ...above].sort(byRow), near);
-      const my = rowStart(oy, x, cell, [...list, ...above].sort(byRow), near);
+      const above2 = y > start ? around.filter((n) => !noBump.has(n.id) && n.y < y) : [];
+      const near = /* @__PURE__ */ new Set([...noBump, ...keep.map((n) => n.id), ...above2.map((n) => n.id)]);
+      const oy = rowStart(y, ox, o, [...keep, ...above2].sort(byRow), near);
+      const my = rowStart(oy, x, cell, [...list, ...above2].sort(byRow), near);
       if (my === y)
         break;
       y = my;
@@ -4533,49 +4540,115 @@ function packColumn(pair, nodes, map, riders, owners, out, toSlot = () => true, 
     }
     return y;
   };
-  let prevRider = null;
-  for (const a of anchored) {
-    const source = map.get(riders.get(a.cell.id));
-    const inWay = (blocking.includes(source) ? blocking : [...blocking, source].sort(byRow)).filter(blocks(a.cell));
-    place(a.cell, belowHeld(a.cell, rowStart(prevRider === null ? a.at : Math.max(a.at, prevRider + GRID), x, a.cell, inWay, noBump), inWay));
-    placed.add(a.cell.id);
-    prevRider = rowBottom(a.cell, map);
-  }
-  const taken = new Set(anchored.map((a) => a.cell.id));
-  const fixed = anchored.flatMap((a) => [a.cell, map.get(a.cell.outputNodeId ?? "")].filter((n) => n !== void 0));
-  const obstacles = [...around, ...fixed].sort(byRow);
-  const otherRiders = around.filter((n) => riders.has(n.id) && held.has(n.id));
-  const others = new Set(otherRiders.map((n) => n.id));
-  const riderRows = [...fixed, ...otherRiders.filter((n) => placed.has(n.id))].sort(byRow);
-  const headRows = [...fixed, ...around.filter((n) => noBump.has(n.id) && (!others.has(n.id) || placed.has(n.id)))].sort(byRow);
-  let prevBottom = null;
-  for (const cell of members) {
-    if (taken.has(cell.id))
-      continue;
-    const isHeld = held.has(cell.id);
-    const below = /* @__PURE__ */ new Set();
-    for (const id of sets.hanging?.get(cell.id) ?? []) {
-      const t = map.get(id);
-      if (t && !others.has(id)) {
-        for (const n of bumpGroup(t, nodes, owners, map, true))
-          if (!others.has(n.id))
-            below.add(n.id);
+  const startY = (n) => sets.startY?.get(n.id) ?? n.y;
+  const above = (m, r) => startY(m) < startY(r) || startY(m) === startY(r) && sets.dropped?.has(m.id) === true;
+  const boxY = /* @__PURE__ */ new Map();
+  const packOnce = (under2) => {
+    const anchored = members.map((cell, order) => ({ cell, order, at: under2.has(cell.id) ? void 0 : rowOf(cell) })).filter((a) => a.at !== void 0).sort((a, b) => a.at - b.at || a.order - b.order);
+    const anchoredIds = new Set(anchored.map((a) => a.cell.id));
+    const outputRow = (cell, y) => {
+      const o = map.get(cell.outputNodeId ?? "");
+      if (!o || sets.reflow)
+        return y;
+      const over = members.filter((m) => !anchoredIds.has(m.id) && above(m, cell) && m.y < y).map((m) => map.get(m.outputNodeId ?? "")).filter((n) => n !== void 0).sort(byRow);
+      return rowStart(y, outX(cell, o, cell.y), o, over, noBump);
+    };
+    let prevRider = null;
+    for (const a of anchored) {
+      const source = map.get(riders.get(a.cell.id));
+      const inWay = (blocking.includes(source) ? blocking : [...blocking, source].sort(byRow)).filter(blocks(a.cell));
+      const y = belowHeld(a.cell, rowStart(prevRider === null ? a.at : Math.max(a.at, prevRider + GRID), x, a.cell, inWay, noBump), inWay);
+      place(a.cell, y, outputRow(a.cell, y));
+      placed.add(a.cell.id);
+      prevRider = rowBottom(a.cell, map);
+    }
+    const taken = new Set(anchored.map((a) => a.cell.id));
+    const fixed = anchored.flatMap((a) => [sets.reflow ? a.cell : { ...a.cell, h: rowBottom(a.cell, map) - a.cell.y }, map.get(a.cell.outputNodeId ?? "")].filter((n) => n !== void 0));
+    const obstacles = [...around, ...fixed].sort(byRow);
+    const otherRiders = around.filter((n) => riders.has(n.id) && held.has(n.id));
+    const others = new Set(otherRiders.map((n) => n.id));
+    const riderRows = [...fixed, ...otherRiders.filter((n) => placed.has(n.id))].sort(byRow);
+    const headRows = [...fixed, ...around.filter((n) => noBump.has(n.id) && (!others.has(n.id) || placed.has(n.id)))].sort(byRow);
+    let prevBottom = null;
+    for (const cell of members) {
+      if (taken.has(cell.id))
+        continue;
+      if (under2.has(cell.id)) {
+        const source = map.get(riders.get(cell.id));
+        const inWay = [.../* @__PURE__ */ new Set([...blocking, source, ...fixed])].sort(byRow).filter(blocks(cell));
+        const start = prevBottom === null ? rowOf(cell) : Math.max(rowOf(cell), prevBottom + GRID);
+        place(cell, belowHeld(cell, rowStart(start, x, cell, inWay, noBump), inWay));
+        placed.add(cell.id);
+        prevBottom = rowBottom(cell, map);
+        continue;
+      }
+      const isHeld = held.has(cell.id);
+      const below = /* @__PURE__ */ new Set();
+      for (const id of sets.hanging?.get(cell.id) ?? []) {
+        const t = map.get(id);
+        if (t && !others.has(id)) {
+          for (const n of bumpGroup(t, nodes, owners, map, true))
+            if (!others.has(n.id))
+              below.add(n.id);
+        }
+      }
+      const keep = (o) => riders.get(o.id) !== cell.id && !below.has(o.id) && !(isHeld && others.has(o.id));
+      const list = (prevBottom === null && !sets.reflow ? headRows : obstacles).filter(keep);
+      const floor = sets.reflow ? -Infinity : Math.max(...anchored.filter((a) => !above(cell, a.cell)).map((a) => rowBottom(a.cell, map) + GRID));
+      let y = prevBottom === null ? rowStart(Math.max(snapGrid(sets.headY?.get(cell.id) ?? cell.y), floor), x, cell, list, noBump) : rowStart(Math.max(prevBottom + GRID, floor), x, cell, list, noBump);
+      const out2 = map.get(cell.outputNodeId ?? "");
+      const theirs = new Set(anchored.filter((a) => above(cell, a.cell)).map((a) => a.cell.outputNodeId ?? ""));
+      const outRows = sets.reflow ? list : fixed.filter(keep).filter((n) => !theirs.has(n.id));
+      boxY.set(cell.id, y);
+      if (out2 && outRows.length > 0) {
+        const ox = outX(cell, out2, cell.y);
+        for (let guard = 0; guard < 16; guard++) {
+          const oy = rowStart(y, ox, out2, outRows, noBump);
+          const my = rowStart(oy, x, cell, list, noBump);
+          if (my === y)
+            break;
+          y = my;
+        }
+      }
+      place(cell, belowHeld(cell, y, list));
+      prevBottom = rowBottom(cell, map);
+    }
+  };
+  const sourceMoved = (r) => {
+    const s = riders.get(r.id);
+    return sets.movers?.has(s) === true || map.get(s).y !== sets.startY?.get(s);
+  };
+  const under = /* @__PURE__ */ new Set();
+  const saved = [...members, ...members.map((m) => map.get(m.outputNodeId ?? "")).filter((n) => n !== void 0)];
+  for (let guard = 0; ; guard++) {
+    const at = saved.map((n) => ({ n, x: n.x, y: n.y, p: out?.[n.id] }));
+    const wasPlaced = new Set(placed), wasUnder = new Set(sets.wentUnder ?? []);
+    packOnce(under);
+    if (sets.reflow || guard >= members.length)
+      return;
+    const passed = members.filter((r, i) => !under.has(r.id) && rowOf(r) !== void 0 && members.slice(0, i).some((m) => rowOf(m) === void 0 && m.y > r.y && above(m, r) && ((boxY.get(m.id) ?? m.y) < r.y || !sets.movers?.has(r.id) && !sourceMoved(r))));
+    if (passed.length === 0)
+      return;
+    for (const r of passed)
+      under.add(r.id);
+    for (const b of at) {
+      b.n.x = b.x;
+      b.n.y = b.y;
+      if (out) {
+        if (b.p)
+          out[b.n.id] = b.p;
+        else
+          delete out[b.n.id];
       }
     }
-    const keep = (o) => riders.get(o.id) !== cell.id && !below.has(o.id) && !(isHeld && others.has(o.id));
-    const list = (prevBottom === null && !sets.reflow ? headRows : obstacles).filter(keep);
-    let y = prevBottom === null ? rowStart(snapGrid(sets.headY?.get(cell.id) ?? cell.y), x, cell, list, noBump) : rowStart(prevBottom + GRID, x, cell, list, noBump);
-    const out2 = map.get(cell.outputNodeId ?? "");
-    if (sets.reflow && out2)
-      for (let guard = 0; guard < 16; guard++) {
-        const oy = rowStart(y, pair.outputX, out2, list, noBump);
-        const my = rowStart(oy, x, cell, list, noBump);
-        if (my === y)
-          break;
-        y = my;
-      }
-    place(cell, belowHeld(cell, y, list));
-    prevBottom = rowBottom(cell, map);
+    placed.clear();
+    for (const id of wasPlaced)
+      placed.add(id);
+    if (sets.wentUnder) {
+      sets.wentUnder.clear();
+      for (const id of wasUnder)
+        sets.wentUnder.add(id);
+    }
   }
 }
 function bumpGroup(node, nodes, owners, map, downward) {
@@ -4762,7 +4835,7 @@ function layoutCall(input, opts, recheck) {
           noBump.add(outId);
       }
   const wentUnder = /* @__PURE__ */ new Set();
-  const sets = { held, noBump, placed: /* @__PURE__ */ new Set(), movedOutputs: new Set([...movers].filter((id) => owners.has(id) && !resized.has(id))), wentUnder, hanging };
+  const sets = { held, noBump, placed: /* @__PURE__ */ new Set(), movedOutputs: new Set([...movers].filter((id) => owners.has(id) && !resized.has(id))), wentUnder, hanging, movers, dropped: new Set([...movers].filter((id) => opts.draggedFrom?.has(id))), startY: new Map(input.map((n) => [n.id, n.y])) };
   const packed = new Set(pairs.filter((p) => touched.has(p.column.x)));
   const makeRoom = (pair, moved) => {
     const members = pair.column.cellIds.map((id) => map.get(id));
@@ -4957,7 +5030,10 @@ function insertAfter(nodes, afterId) {
   if (!after)
     return null;
   const map = byId(nodes);
-  return { x: snapGrid(after.x), y: rowBottom(after, map) + GRID };
+  const owners = outputOwners(nodes);
+  const x = snapGrid(after.x);
+  const above = isMember(after, owners) ? nodes.filter((n) => isMember(n, owners) && snapGrid(n.x) === x && n.y <= after.y) : [];
+  return { x, y: Math.max(rowBottom(after, map), ...above.map((n) => rowBottom(n, map))) + GRID };
 }
 function forkOf(nodes, cellId, side, w = NODE_SIZE.code.w) {
   const cell = nodes.find((n) => n.id === cellId);
@@ -4967,8 +5043,15 @@ function forkOf(nodes, cellId, side, w = NODE_SIZE.code.w) {
   const pair = pairs.find((p) => p.column.cellIds.includes(cellId));
   if (!pair)
     return null;
-  if (side === "right")
-    return { x: gridUp(pair.right + GRID), y: snapGrid(cell.y) };
+  if (side === "right") {
+    const map = byId(nodes);
+    const next = pairs.find((p) => p.column.x >= pair.outputX && p.column.cellIds.some((id) => map.get(id)?.type === "code"));
+    if (!next)
+      return { x: gridUp(pair.right + GRID), y: snapGrid(cell.y) };
+    const out = map.get(cell.outputNodeId ?? "");
+    const slot = { x: next.column.x, y: snapGrid(cell.y), w, h: NODE_SIZE.code.h };
+    return out && overlaps(slot, out) ? { x: slot.x, y: gridUp(out.y + out.h + GRID) } : { x: slot.x, y: slot.y };
+  }
   const x = Math.floor((pair.column.x - GRID - (w + GRID + OUTPUT_MIN_W)) / GRID) * GRID;
   return x < 0 ? null : { x, y: snapGrid(cell.y) };
 }
@@ -5028,39 +5111,1031 @@ function columnsOfDeleted(nodes, sections, deletedIds) {
   return cols;
 }
 function toEngineNodes(nodes) {
-  return nodes.map((n) => ({ id: n.id, type: n.type, x: n.x, y: n.y, w: n.width, h: n.height, ...n.outputNodeId ? { outputNodeId: n.outputNodeId } : {} }));
+  return nodes.filter((n) => !isGroup(n)).map((n) => ({ id: n.id, type: n.type, x: n.x, y: n.y, w: n.width, h: n.height, ...n.outputNodeId ? { outputNodeId: n.outputNodeId } : {} }));
 }
 
 // src/extension/jupyter/config.ts
-function parseEnvFile(text) {
-  const out = {};
-  for (const line of text.split("\n")) {
-    const t = line.trim();
-    if (!t || t.startsWith("#"))
-      continue;
-    const eq = t.indexOf("=");
-    if (eq < 0)
-      continue;
-    const key = t.slice(0, eq).trim();
-    let val = t.slice(eq + 1).trim();
-    if (val.startsWith('"') && val.endsWith('"') || val.startsWith("'") && val.endsWith("'")) {
-      val = val.slice(1, -1);
-    }
-    out[key] = val;
-  }
-  return out;
+function defaultServerFromEnv(env) {
+  const hubUrl = env.JUPYTER_SERVER_URL;
+  const token = env.JUPYTER_API_TOKEN;
+  return hubUrl && token ? [{ name: "default", hubUrl, token }] : [];
 }
-function resolveKernelConfig(setting, envText) {
-  if (setting && setting.length)
-    return setting;
-  if (envText) {
-    const env = parseEnvFile(envText);
-    const hubUrl = env.JUPYTER_SERVER_URL;
-    const token = env.JUPYTER_API_TOKEN;
-    if (hubUrl && token)
-      return [{ name: "default", hubUrl, token }];
+function pickKernelServers(harness, settings, env) {
+  const looked = [];
+  if (harness === void 0 || harness === "")
+    looked.push("SKENA_JUPYTER_KERNELS (not set)");
+  else if (harness !== null) {
+    let list;
+    try {
+      list = JSON.parse(harness);
+    } catch {
+      list = void 0;
+    }
+    if (Array.isArray(list) && list.length)
+      return { servers: list, from: "SKENA_JUPYTER_KERNELS", looked };
+    looked.push(Array.isArray(list) ? "SKENA_JUPYTER_KERNELS (empty list)" : "SKENA_JUPYTER_KERNELS (not a JSON list)");
   }
-  return [];
+  for (const s of settings) {
+    if (s.problem) {
+      looked.push(`${s.file} (${s.problem})`);
+      continue;
+    }
+    const list = s.json?.["skena.jupyter.kernels"];
+    if (Array.isArray(list) && list.length)
+      return { servers: list, from: s.file, looked };
+    looked.push(`${s.file} (no skena.jupyter.kernels)`);
+  }
+  const fromEnv = defaultServerFromEnv(env);
+  if (fromEnv.length)
+    return { servers: fromEnv, from: "JUPYTER_SERVER_URL + JUPYTER_API_TOKEN", looked };
+  const unset = ["JUPYTER_SERVER_URL", "JUPYTER_API_TOKEN"].filter((k) => !env[k]);
+  looked.push(`${unset.join(" and ")} (not set)`);
+  return { servers: [], from: null, looked };
+}
+function unknownServerText(name, lookup) {
+  if (lookup.servers.length) {
+    return `error: unknown server ${name} \u2014 known: ${lookup.servers.map((s) => s.name).join(", ")} (from ${lookup.from})`;
+  }
+  return `error: unknown server ${name} \u2014 no Jupyter servers configured; looked in: ${lookup.looked.join("; ")}`;
+}
+
+// src/extension/settingsFiles.ts
+var fsSync = __toESM(require("fs"));
+var path = __toESM(require("path"));
+
+// node_modules/jsonc-parser/lib/esm/impl/scanner.js
+function createScanner(text, ignoreTrivia = false) {
+  const len = text.length;
+  let pos = 0, value = "", tokenOffset = 0, token = 16, lineNumber = 0, lineStartOffset = 0, tokenLineStartOffset = 0, prevTokenLineStartOffset = 0, scanError = 0;
+  function scanHexDigits(count, exact) {
+    let digits = 0;
+    let value2 = 0;
+    while (digits < count || !exact) {
+      let ch = text.charCodeAt(pos);
+      if (ch >= 48 && ch <= 57) {
+        value2 = value2 * 16 + ch - 48;
+      } else if (ch >= 65 && ch <= 70) {
+        value2 = value2 * 16 + ch - 65 + 10;
+      } else if (ch >= 97 && ch <= 102) {
+        value2 = value2 * 16 + ch - 97 + 10;
+      } else {
+        break;
+      }
+      pos++;
+      digits++;
+    }
+    if (digits < count) {
+      value2 = -1;
+    }
+    return value2;
+  }
+  function setPosition(newPosition) {
+    pos = newPosition;
+    value = "";
+    tokenOffset = 0;
+    token = 16;
+    scanError = 0;
+  }
+  function scanNumber() {
+    let start = pos;
+    if (text.charCodeAt(pos) === 48) {
+      pos++;
+    } else {
+      pos++;
+      while (pos < text.length && isDigit(text.charCodeAt(pos))) {
+        pos++;
+      }
+    }
+    if (pos < text.length && text.charCodeAt(pos) === 46) {
+      pos++;
+      if (pos < text.length && isDigit(text.charCodeAt(pos))) {
+        pos++;
+        while (pos < text.length && isDigit(text.charCodeAt(pos))) {
+          pos++;
+        }
+      } else {
+        scanError = 3;
+        return text.substring(start, pos);
+      }
+    }
+    let end = pos;
+    if (pos < text.length && (text.charCodeAt(pos) === 69 || text.charCodeAt(pos) === 101)) {
+      pos++;
+      if (pos < text.length && text.charCodeAt(pos) === 43 || text.charCodeAt(pos) === 45) {
+        pos++;
+      }
+      if (pos < text.length && isDigit(text.charCodeAt(pos))) {
+        pos++;
+        while (pos < text.length && isDigit(text.charCodeAt(pos))) {
+          pos++;
+        }
+        end = pos;
+      } else {
+        scanError = 3;
+      }
+    }
+    return text.substring(start, end);
+  }
+  function scanString() {
+    let result = "", start = pos;
+    while (true) {
+      if (pos >= len) {
+        result += text.substring(start, pos);
+        scanError = 2;
+        break;
+      }
+      const ch = text.charCodeAt(pos);
+      if (ch === 34) {
+        result += text.substring(start, pos);
+        pos++;
+        break;
+      }
+      if (ch === 92) {
+        result += text.substring(start, pos);
+        pos++;
+        if (pos >= len) {
+          scanError = 2;
+          break;
+        }
+        const ch2 = text.charCodeAt(pos++);
+        switch (ch2) {
+          case 34:
+            result += '"';
+            break;
+          case 92:
+            result += "\\";
+            break;
+          case 47:
+            result += "/";
+            break;
+          case 98:
+            result += "\b";
+            break;
+          case 102:
+            result += "\f";
+            break;
+          case 110:
+            result += "\n";
+            break;
+          case 114:
+            result += "\r";
+            break;
+          case 116:
+            result += "	";
+            break;
+          case 117:
+            const ch3 = scanHexDigits(4, true);
+            if (ch3 >= 0) {
+              result += String.fromCharCode(ch3);
+            } else {
+              scanError = 4;
+            }
+            break;
+          default:
+            scanError = 5;
+        }
+        start = pos;
+        continue;
+      }
+      if (ch >= 0 && ch <= 31) {
+        if (isLineBreak(ch)) {
+          result += text.substring(start, pos);
+          scanError = 2;
+          break;
+        } else {
+          scanError = 6;
+        }
+      }
+      pos++;
+    }
+    return result;
+  }
+  function scanNext() {
+    value = "";
+    scanError = 0;
+    tokenOffset = pos;
+    lineStartOffset = lineNumber;
+    prevTokenLineStartOffset = tokenLineStartOffset;
+    if (pos >= len) {
+      tokenOffset = len;
+      return token = 17;
+    }
+    let code = text.charCodeAt(pos);
+    if (isWhiteSpace(code)) {
+      do {
+        pos++;
+        value += String.fromCharCode(code);
+        code = text.charCodeAt(pos);
+      } while (isWhiteSpace(code));
+      return token = 15;
+    }
+    if (isLineBreak(code)) {
+      pos++;
+      value += String.fromCharCode(code);
+      if (code === 13 && text.charCodeAt(pos) === 10) {
+        pos++;
+        value += "\n";
+      }
+      lineNumber++;
+      tokenLineStartOffset = pos;
+      return token = 14;
+    }
+    switch (code) {
+      case 123:
+        pos++;
+        return token = 1;
+      case 125:
+        pos++;
+        return token = 2;
+      case 91:
+        pos++;
+        return token = 3;
+      case 93:
+        pos++;
+        return token = 4;
+      case 58:
+        pos++;
+        return token = 6;
+      case 44:
+        pos++;
+        return token = 5;
+      case 34:
+        pos++;
+        value = scanString();
+        return token = 10;
+      case 47:
+        const start = pos - 1;
+        if (text.charCodeAt(pos + 1) === 47) {
+          pos += 2;
+          while (pos < len) {
+            if (isLineBreak(text.charCodeAt(pos))) {
+              break;
+            }
+            pos++;
+          }
+          value = text.substring(start, pos);
+          return token = 12;
+        }
+        if (text.charCodeAt(pos + 1) === 42) {
+          pos += 2;
+          const safeLength = len - 1;
+          let commentClosed = false;
+          while (pos < safeLength) {
+            const ch = text.charCodeAt(pos);
+            if (ch === 42 && text.charCodeAt(pos + 1) === 47) {
+              pos += 2;
+              commentClosed = true;
+              break;
+            }
+            pos++;
+            if (isLineBreak(ch)) {
+              if (ch === 13 && text.charCodeAt(pos) === 10) {
+                pos++;
+              }
+              lineNumber++;
+              tokenLineStartOffset = pos;
+            }
+          }
+          if (!commentClosed) {
+            pos++;
+            scanError = 1;
+          }
+          value = text.substring(start, pos);
+          return token = 13;
+        }
+        value += String.fromCharCode(code);
+        pos++;
+        return token = 16;
+      case 45:
+        value += String.fromCharCode(code);
+        pos++;
+        if (pos === len || !isDigit(text.charCodeAt(pos))) {
+          return token = 16;
+        }
+      case 48:
+      case 49:
+      case 50:
+      case 51:
+      case 52:
+      case 53:
+      case 54:
+      case 55:
+      case 56:
+      case 57:
+        value += scanNumber();
+        return token = 11;
+      default:
+        while (pos < len && isUnknownContentCharacter(code)) {
+          pos++;
+          code = text.charCodeAt(pos);
+        }
+        if (tokenOffset !== pos) {
+          value = text.substring(tokenOffset, pos);
+          switch (value) {
+            case "true":
+              return token = 8;
+            case "false":
+              return token = 9;
+            case "null":
+              return token = 7;
+          }
+          return token = 16;
+        }
+        value += String.fromCharCode(code);
+        pos++;
+        return token = 16;
+    }
+  }
+  function isUnknownContentCharacter(code) {
+    if (isWhiteSpace(code) || isLineBreak(code)) {
+      return false;
+    }
+    switch (code) {
+      case 125:
+      case 93:
+      case 123:
+      case 91:
+      case 34:
+      case 58:
+      case 44:
+      case 47:
+        return false;
+    }
+    return true;
+  }
+  function scanNextNonTrivia() {
+    let result;
+    do {
+      result = scanNext();
+    } while (result >= 12 && result <= 15);
+    return result;
+  }
+  return {
+    setPosition,
+    getPosition: () => pos,
+    scan: ignoreTrivia ? scanNextNonTrivia : scanNext,
+    getToken: () => token,
+    getTokenValue: () => value,
+    getTokenOffset: () => tokenOffset,
+    getTokenLength: () => pos - tokenOffset,
+    getTokenStartLine: () => lineStartOffset,
+    getTokenStartCharacter: () => tokenOffset - prevTokenLineStartOffset,
+    getTokenError: () => scanError
+  };
+}
+function isWhiteSpace(ch) {
+  return ch === 32 || ch === 9;
+}
+function isLineBreak(ch) {
+  return ch === 10 || ch === 13;
+}
+function isDigit(ch) {
+  return ch >= 48 && ch <= 57;
+}
+var CharacterCodes;
+(function(CharacterCodes2) {
+  CharacterCodes2[CharacterCodes2["lineFeed"] = 10] = "lineFeed";
+  CharacterCodes2[CharacterCodes2["carriageReturn"] = 13] = "carriageReturn";
+  CharacterCodes2[CharacterCodes2["space"] = 32] = "space";
+  CharacterCodes2[CharacterCodes2["_0"] = 48] = "_0";
+  CharacterCodes2[CharacterCodes2["_1"] = 49] = "_1";
+  CharacterCodes2[CharacterCodes2["_2"] = 50] = "_2";
+  CharacterCodes2[CharacterCodes2["_3"] = 51] = "_3";
+  CharacterCodes2[CharacterCodes2["_4"] = 52] = "_4";
+  CharacterCodes2[CharacterCodes2["_5"] = 53] = "_5";
+  CharacterCodes2[CharacterCodes2["_6"] = 54] = "_6";
+  CharacterCodes2[CharacterCodes2["_7"] = 55] = "_7";
+  CharacterCodes2[CharacterCodes2["_8"] = 56] = "_8";
+  CharacterCodes2[CharacterCodes2["_9"] = 57] = "_9";
+  CharacterCodes2[CharacterCodes2["a"] = 97] = "a";
+  CharacterCodes2[CharacterCodes2["b"] = 98] = "b";
+  CharacterCodes2[CharacterCodes2["c"] = 99] = "c";
+  CharacterCodes2[CharacterCodes2["d"] = 100] = "d";
+  CharacterCodes2[CharacterCodes2["e"] = 101] = "e";
+  CharacterCodes2[CharacterCodes2["f"] = 102] = "f";
+  CharacterCodes2[CharacterCodes2["g"] = 103] = "g";
+  CharacterCodes2[CharacterCodes2["h"] = 104] = "h";
+  CharacterCodes2[CharacterCodes2["i"] = 105] = "i";
+  CharacterCodes2[CharacterCodes2["j"] = 106] = "j";
+  CharacterCodes2[CharacterCodes2["k"] = 107] = "k";
+  CharacterCodes2[CharacterCodes2["l"] = 108] = "l";
+  CharacterCodes2[CharacterCodes2["m"] = 109] = "m";
+  CharacterCodes2[CharacterCodes2["n"] = 110] = "n";
+  CharacterCodes2[CharacterCodes2["o"] = 111] = "o";
+  CharacterCodes2[CharacterCodes2["p"] = 112] = "p";
+  CharacterCodes2[CharacterCodes2["q"] = 113] = "q";
+  CharacterCodes2[CharacterCodes2["r"] = 114] = "r";
+  CharacterCodes2[CharacterCodes2["s"] = 115] = "s";
+  CharacterCodes2[CharacterCodes2["t"] = 116] = "t";
+  CharacterCodes2[CharacterCodes2["u"] = 117] = "u";
+  CharacterCodes2[CharacterCodes2["v"] = 118] = "v";
+  CharacterCodes2[CharacterCodes2["w"] = 119] = "w";
+  CharacterCodes2[CharacterCodes2["x"] = 120] = "x";
+  CharacterCodes2[CharacterCodes2["y"] = 121] = "y";
+  CharacterCodes2[CharacterCodes2["z"] = 122] = "z";
+  CharacterCodes2[CharacterCodes2["A"] = 65] = "A";
+  CharacterCodes2[CharacterCodes2["B"] = 66] = "B";
+  CharacterCodes2[CharacterCodes2["C"] = 67] = "C";
+  CharacterCodes2[CharacterCodes2["D"] = 68] = "D";
+  CharacterCodes2[CharacterCodes2["E"] = 69] = "E";
+  CharacterCodes2[CharacterCodes2["F"] = 70] = "F";
+  CharacterCodes2[CharacterCodes2["G"] = 71] = "G";
+  CharacterCodes2[CharacterCodes2["H"] = 72] = "H";
+  CharacterCodes2[CharacterCodes2["I"] = 73] = "I";
+  CharacterCodes2[CharacterCodes2["J"] = 74] = "J";
+  CharacterCodes2[CharacterCodes2["K"] = 75] = "K";
+  CharacterCodes2[CharacterCodes2["L"] = 76] = "L";
+  CharacterCodes2[CharacterCodes2["M"] = 77] = "M";
+  CharacterCodes2[CharacterCodes2["N"] = 78] = "N";
+  CharacterCodes2[CharacterCodes2["O"] = 79] = "O";
+  CharacterCodes2[CharacterCodes2["P"] = 80] = "P";
+  CharacterCodes2[CharacterCodes2["Q"] = 81] = "Q";
+  CharacterCodes2[CharacterCodes2["R"] = 82] = "R";
+  CharacterCodes2[CharacterCodes2["S"] = 83] = "S";
+  CharacterCodes2[CharacterCodes2["T"] = 84] = "T";
+  CharacterCodes2[CharacterCodes2["U"] = 85] = "U";
+  CharacterCodes2[CharacterCodes2["V"] = 86] = "V";
+  CharacterCodes2[CharacterCodes2["W"] = 87] = "W";
+  CharacterCodes2[CharacterCodes2["X"] = 88] = "X";
+  CharacterCodes2[CharacterCodes2["Y"] = 89] = "Y";
+  CharacterCodes2[CharacterCodes2["Z"] = 90] = "Z";
+  CharacterCodes2[CharacterCodes2["asterisk"] = 42] = "asterisk";
+  CharacterCodes2[CharacterCodes2["backslash"] = 92] = "backslash";
+  CharacterCodes2[CharacterCodes2["closeBrace"] = 125] = "closeBrace";
+  CharacterCodes2[CharacterCodes2["closeBracket"] = 93] = "closeBracket";
+  CharacterCodes2[CharacterCodes2["colon"] = 58] = "colon";
+  CharacterCodes2[CharacterCodes2["comma"] = 44] = "comma";
+  CharacterCodes2[CharacterCodes2["dot"] = 46] = "dot";
+  CharacterCodes2[CharacterCodes2["doubleQuote"] = 34] = "doubleQuote";
+  CharacterCodes2[CharacterCodes2["minus"] = 45] = "minus";
+  CharacterCodes2[CharacterCodes2["openBrace"] = 123] = "openBrace";
+  CharacterCodes2[CharacterCodes2["openBracket"] = 91] = "openBracket";
+  CharacterCodes2[CharacterCodes2["plus"] = 43] = "plus";
+  CharacterCodes2[CharacterCodes2["slash"] = 47] = "slash";
+  CharacterCodes2[CharacterCodes2["formFeed"] = 12] = "formFeed";
+  CharacterCodes2[CharacterCodes2["tab"] = 9] = "tab";
+})(CharacterCodes || (CharacterCodes = {}));
+
+// node_modules/jsonc-parser/lib/esm/impl/string-intern.js
+var cachedSpaces = new Array(20).fill(0).map((_, index) => {
+  return " ".repeat(index);
+});
+var maxCachedValues = 200;
+var cachedBreakLinesWithSpaces = {
+  " ": {
+    "\n": new Array(maxCachedValues).fill(0).map((_, index) => {
+      return "\n" + " ".repeat(index);
+    }),
+    "\r": new Array(maxCachedValues).fill(0).map((_, index) => {
+      return "\r" + " ".repeat(index);
+    }),
+    "\r\n": new Array(maxCachedValues).fill(0).map((_, index) => {
+      return "\r\n" + " ".repeat(index);
+    })
+  },
+  "	": {
+    "\n": new Array(maxCachedValues).fill(0).map((_, index) => {
+      return "\n" + "	".repeat(index);
+    }),
+    "\r": new Array(maxCachedValues).fill(0).map((_, index) => {
+      return "\r" + "	".repeat(index);
+    }),
+    "\r\n": new Array(maxCachedValues).fill(0).map((_, index) => {
+      return "\r\n" + "	".repeat(index);
+    })
+  }
+};
+
+// node_modules/jsonc-parser/lib/esm/impl/parser.js
+var ParseOptions;
+(function(ParseOptions2) {
+  ParseOptions2.DEFAULT = {
+    allowTrailingComma: false
+  };
+})(ParseOptions || (ParseOptions = {}));
+function parse(text, errors = [], options = ParseOptions.DEFAULT) {
+  let currentProperty = null;
+  let currentParent = [];
+  const previousParents = [];
+  function onValue(value) {
+    if (Array.isArray(currentParent)) {
+      currentParent.push(value);
+    } else if (currentProperty !== null) {
+      currentParent[currentProperty] = value;
+    }
+  }
+  const visitor = {
+    onObjectBegin: () => {
+      const object = {};
+      onValue(object);
+      previousParents.push(currentParent);
+      currentParent = object;
+      currentProperty = null;
+    },
+    onObjectProperty: (name) => {
+      currentProperty = name;
+    },
+    onObjectEnd: () => {
+      currentParent = previousParents.pop();
+    },
+    onArrayBegin: () => {
+      const array = [];
+      onValue(array);
+      previousParents.push(currentParent);
+      currentParent = array;
+      currentProperty = null;
+    },
+    onArrayEnd: () => {
+      currentParent = previousParents.pop();
+    },
+    onLiteralValue: onValue,
+    onError: (error, offset, length) => {
+      errors.push({ error, offset, length });
+    }
+  };
+  visit(text, visitor, options);
+  return currentParent[0];
+}
+function visit(text, visitor, options = ParseOptions.DEFAULT) {
+  const _scanner = createScanner(text, false);
+  const _jsonPath = [];
+  let suppressedCallbacks = 0;
+  function toNoArgVisit(visitFunction) {
+    return visitFunction ? () => suppressedCallbacks === 0 && visitFunction(_scanner.getTokenOffset(), _scanner.getTokenLength(), _scanner.getTokenStartLine(), _scanner.getTokenStartCharacter()) : () => true;
+  }
+  function toOneArgVisit(visitFunction) {
+    return visitFunction ? (arg) => suppressedCallbacks === 0 && visitFunction(arg, _scanner.getTokenOffset(), _scanner.getTokenLength(), _scanner.getTokenStartLine(), _scanner.getTokenStartCharacter()) : () => true;
+  }
+  function toOneArgVisitWithPath(visitFunction) {
+    return visitFunction ? (arg) => suppressedCallbacks === 0 && visitFunction(arg, _scanner.getTokenOffset(), _scanner.getTokenLength(), _scanner.getTokenStartLine(), _scanner.getTokenStartCharacter(), () => _jsonPath.slice()) : () => true;
+  }
+  function toBeginVisit(visitFunction) {
+    return visitFunction ? () => {
+      if (suppressedCallbacks > 0) {
+        suppressedCallbacks++;
+      } else {
+        let cbReturn = visitFunction(_scanner.getTokenOffset(), _scanner.getTokenLength(), _scanner.getTokenStartLine(), _scanner.getTokenStartCharacter(), () => _jsonPath.slice());
+        if (cbReturn === false) {
+          suppressedCallbacks = 1;
+        }
+      }
+    } : () => true;
+  }
+  function toEndVisit(visitFunction) {
+    return visitFunction ? () => {
+      if (suppressedCallbacks > 0) {
+        suppressedCallbacks--;
+      }
+      if (suppressedCallbacks === 0) {
+        visitFunction(_scanner.getTokenOffset(), _scanner.getTokenLength(), _scanner.getTokenStartLine(), _scanner.getTokenStartCharacter());
+      }
+    } : () => true;
+  }
+  const onObjectBegin = toBeginVisit(visitor.onObjectBegin), onObjectProperty = toOneArgVisitWithPath(visitor.onObjectProperty), onObjectEnd = toEndVisit(visitor.onObjectEnd), onArrayBegin = toBeginVisit(visitor.onArrayBegin), onArrayEnd = toEndVisit(visitor.onArrayEnd), onLiteralValue = toOneArgVisitWithPath(visitor.onLiteralValue), onSeparator = toOneArgVisit(visitor.onSeparator), onComment = toNoArgVisit(visitor.onComment), onError = toOneArgVisit(visitor.onError);
+  const disallowComments = options && options.disallowComments;
+  const allowTrailingComma = options && options.allowTrailingComma;
+  function scanNext() {
+    while (true) {
+      const token = _scanner.scan();
+      switch (_scanner.getTokenError()) {
+        case 4:
+          handleError(
+            14
+            /* ParseErrorCode.InvalidUnicode */
+          );
+          break;
+        case 5:
+          handleError(
+            15
+            /* ParseErrorCode.InvalidEscapeCharacter */
+          );
+          break;
+        case 3:
+          handleError(
+            13
+            /* ParseErrorCode.UnexpectedEndOfNumber */
+          );
+          break;
+        case 1:
+          if (!disallowComments) {
+            handleError(
+              11
+              /* ParseErrorCode.UnexpectedEndOfComment */
+            );
+          }
+          break;
+        case 2:
+          handleError(
+            12
+            /* ParseErrorCode.UnexpectedEndOfString */
+          );
+          break;
+        case 6:
+          handleError(
+            16
+            /* ParseErrorCode.InvalidCharacter */
+          );
+          break;
+      }
+      switch (token) {
+        case 12:
+        case 13:
+          if (disallowComments) {
+            handleError(
+              10
+              /* ParseErrorCode.InvalidCommentToken */
+            );
+          } else {
+            onComment();
+          }
+          break;
+        case 16:
+          handleError(
+            1
+            /* ParseErrorCode.InvalidSymbol */
+          );
+          break;
+        case 15:
+        case 14:
+          break;
+        default:
+          return token;
+      }
+    }
+  }
+  function handleError(error, skipUntilAfter = [], skipUntil = []) {
+    onError(error);
+    if (skipUntilAfter.length + skipUntil.length > 0) {
+      let token = _scanner.getToken();
+      while (token !== 17) {
+        if (skipUntilAfter.indexOf(token) !== -1) {
+          scanNext();
+          break;
+        } else if (skipUntil.indexOf(token) !== -1) {
+          break;
+        }
+        token = scanNext();
+      }
+    }
+  }
+  function parseString(isValue) {
+    const value = _scanner.getTokenValue();
+    if (isValue) {
+      onLiteralValue(value);
+    } else {
+      onObjectProperty(value);
+      _jsonPath.push(value);
+    }
+    scanNext();
+    return true;
+  }
+  function parseLiteral() {
+    switch (_scanner.getToken()) {
+      case 11:
+        const tokenValue = _scanner.getTokenValue();
+        let value = Number(tokenValue);
+        if (isNaN(value)) {
+          handleError(
+            2
+            /* ParseErrorCode.InvalidNumberFormat */
+          );
+          value = 0;
+        }
+        onLiteralValue(value);
+        break;
+      case 7:
+        onLiteralValue(null);
+        break;
+      case 8:
+        onLiteralValue(true);
+        break;
+      case 9:
+        onLiteralValue(false);
+        break;
+      default:
+        return false;
+    }
+    scanNext();
+    return true;
+  }
+  function parseProperty() {
+    if (_scanner.getToken() !== 10) {
+      handleError(3, [], [
+        2,
+        5
+        /* SyntaxKind.CommaToken */
+      ]);
+      return false;
+    }
+    parseString(false);
+    if (_scanner.getToken() === 6) {
+      onSeparator(":");
+      scanNext();
+      if (!parseValue()) {
+        handleError(4, [], [
+          2,
+          5
+          /* SyntaxKind.CommaToken */
+        ]);
+      }
+    } else {
+      handleError(5, [], [
+        2,
+        5
+        /* SyntaxKind.CommaToken */
+      ]);
+    }
+    _jsonPath.pop();
+    return true;
+  }
+  function parseObject() {
+    onObjectBegin();
+    scanNext();
+    let needsComma = false;
+    while (_scanner.getToken() !== 2 && _scanner.getToken() !== 17) {
+      if (_scanner.getToken() === 5) {
+        if (!needsComma) {
+          handleError(4, [], []);
+        }
+        onSeparator(",");
+        scanNext();
+        if (_scanner.getToken() === 2 && allowTrailingComma) {
+          break;
+        }
+      } else if (needsComma) {
+        handleError(6, [], []);
+      }
+      if (!parseProperty()) {
+        handleError(4, [], [
+          2,
+          5
+          /* SyntaxKind.CommaToken */
+        ]);
+      }
+      needsComma = true;
+    }
+    onObjectEnd();
+    if (_scanner.getToken() !== 2) {
+      handleError(7, [
+        2
+        /* SyntaxKind.CloseBraceToken */
+      ], []);
+    } else {
+      scanNext();
+    }
+    return true;
+  }
+  function parseArray() {
+    onArrayBegin();
+    scanNext();
+    let isFirstElement = true;
+    let needsComma = false;
+    while (_scanner.getToken() !== 4 && _scanner.getToken() !== 17) {
+      if (_scanner.getToken() === 5) {
+        if (!needsComma) {
+          handleError(4, [], []);
+        }
+        onSeparator(",");
+        scanNext();
+        if (_scanner.getToken() === 4 && allowTrailingComma) {
+          break;
+        }
+      } else if (needsComma) {
+        handleError(6, [], []);
+      }
+      if (isFirstElement) {
+        _jsonPath.push(0);
+        isFirstElement = false;
+      } else {
+        _jsonPath[_jsonPath.length - 1]++;
+      }
+      if (!parseValue()) {
+        handleError(4, [], [
+          4,
+          5
+          /* SyntaxKind.CommaToken */
+        ]);
+      }
+      needsComma = true;
+    }
+    onArrayEnd();
+    if (!isFirstElement) {
+      _jsonPath.pop();
+    }
+    if (_scanner.getToken() !== 4) {
+      handleError(8, [
+        4
+        /* SyntaxKind.CloseBracketToken */
+      ], []);
+    } else {
+      scanNext();
+    }
+    return true;
+  }
+  function parseValue() {
+    switch (_scanner.getToken()) {
+      case 3:
+        return parseArray();
+      case 1:
+        return parseObject();
+      case 10:
+        return parseString(true);
+      default:
+        return parseLiteral();
+    }
+  }
+  scanNext();
+  if (_scanner.getToken() === 17) {
+    if (options.allowEmptyContent) {
+      return true;
+    }
+    handleError(4, [], []);
+    return false;
+  }
+  if (!parseValue()) {
+    handleError(4, [], []);
+    return false;
+  }
+  if (_scanner.getToken() !== 17) {
+    handleError(9, [], []);
+  }
+  return true;
+}
+
+// node_modules/jsonc-parser/lib/esm/main.js
+var ScanError;
+(function(ScanError2) {
+  ScanError2[ScanError2["None"] = 0] = "None";
+  ScanError2[ScanError2["UnexpectedEndOfComment"] = 1] = "UnexpectedEndOfComment";
+  ScanError2[ScanError2["UnexpectedEndOfString"] = 2] = "UnexpectedEndOfString";
+  ScanError2[ScanError2["UnexpectedEndOfNumber"] = 3] = "UnexpectedEndOfNumber";
+  ScanError2[ScanError2["InvalidUnicode"] = 4] = "InvalidUnicode";
+  ScanError2[ScanError2["InvalidEscapeCharacter"] = 5] = "InvalidEscapeCharacter";
+  ScanError2[ScanError2["InvalidCharacter"] = 6] = "InvalidCharacter";
+})(ScanError || (ScanError = {}));
+var SyntaxKind;
+(function(SyntaxKind2) {
+  SyntaxKind2[SyntaxKind2["OpenBraceToken"] = 1] = "OpenBraceToken";
+  SyntaxKind2[SyntaxKind2["CloseBraceToken"] = 2] = "CloseBraceToken";
+  SyntaxKind2[SyntaxKind2["OpenBracketToken"] = 3] = "OpenBracketToken";
+  SyntaxKind2[SyntaxKind2["CloseBracketToken"] = 4] = "CloseBracketToken";
+  SyntaxKind2[SyntaxKind2["CommaToken"] = 5] = "CommaToken";
+  SyntaxKind2[SyntaxKind2["ColonToken"] = 6] = "ColonToken";
+  SyntaxKind2[SyntaxKind2["NullKeyword"] = 7] = "NullKeyword";
+  SyntaxKind2[SyntaxKind2["TrueKeyword"] = 8] = "TrueKeyword";
+  SyntaxKind2[SyntaxKind2["FalseKeyword"] = 9] = "FalseKeyword";
+  SyntaxKind2[SyntaxKind2["StringLiteral"] = 10] = "StringLiteral";
+  SyntaxKind2[SyntaxKind2["NumericLiteral"] = 11] = "NumericLiteral";
+  SyntaxKind2[SyntaxKind2["LineCommentTrivia"] = 12] = "LineCommentTrivia";
+  SyntaxKind2[SyntaxKind2["BlockCommentTrivia"] = 13] = "BlockCommentTrivia";
+  SyntaxKind2[SyntaxKind2["LineBreakTrivia"] = 14] = "LineBreakTrivia";
+  SyntaxKind2[SyntaxKind2["Trivia"] = 15] = "Trivia";
+  SyntaxKind2[SyntaxKind2["Unknown"] = 16] = "Unknown";
+  SyntaxKind2[SyntaxKind2["EOF"] = 17] = "EOF";
+})(SyntaxKind || (SyntaxKind = {}));
+var parse2 = parse;
+var ParseErrorCode;
+(function(ParseErrorCode2) {
+  ParseErrorCode2[ParseErrorCode2["InvalidSymbol"] = 1] = "InvalidSymbol";
+  ParseErrorCode2[ParseErrorCode2["InvalidNumberFormat"] = 2] = "InvalidNumberFormat";
+  ParseErrorCode2[ParseErrorCode2["PropertyNameExpected"] = 3] = "PropertyNameExpected";
+  ParseErrorCode2[ParseErrorCode2["ValueExpected"] = 4] = "ValueExpected";
+  ParseErrorCode2[ParseErrorCode2["ColonExpected"] = 5] = "ColonExpected";
+  ParseErrorCode2[ParseErrorCode2["CommaExpected"] = 6] = "CommaExpected";
+  ParseErrorCode2[ParseErrorCode2["CloseBraceExpected"] = 7] = "CloseBraceExpected";
+  ParseErrorCode2[ParseErrorCode2["CloseBracketExpected"] = 8] = "CloseBracketExpected";
+  ParseErrorCode2[ParseErrorCode2["EndOfFileExpected"] = 9] = "EndOfFileExpected";
+  ParseErrorCode2[ParseErrorCode2["InvalidCommentToken"] = 10] = "InvalidCommentToken";
+  ParseErrorCode2[ParseErrorCode2["UnexpectedEndOfComment"] = 11] = "UnexpectedEndOfComment";
+  ParseErrorCode2[ParseErrorCode2["UnexpectedEndOfString"] = 12] = "UnexpectedEndOfString";
+  ParseErrorCode2[ParseErrorCode2["UnexpectedEndOfNumber"] = 13] = "UnexpectedEndOfNumber";
+  ParseErrorCode2[ParseErrorCode2["InvalidUnicode"] = 14] = "InvalidUnicode";
+  ParseErrorCode2[ParseErrorCode2["InvalidEscapeCharacter"] = 15] = "InvalidEscapeCharacter";
+  ParseErrorCode2[ParseErrorCode2["InvalidCharacter"] = 16] = "InvalidCharacter";
+})(ParseErrorCode || (ParseErrorCode = {}));
+function printParseErrorCode(code) {
+  switch (code) {
+    case 1:
+      return "InvalidSymbol";
+    case 2:
+      return "InvalidNumberFormat";
+    case 3:
+      return "PropertyNameExpected";
+    case 4:
+      return "ValueExpected";
+    case 5:
+      return "ColonExpected";
+    case 6:
+      return "CommaExpected";
+    case 7:
+      return "CloseBraceExpected";
+    case 8:
+      return "CloseBracketExpected";
+    case 9:
+      return "EndOfFileExpected";
+    case 10:
+      return "InvalidCommentToken";
+    case 11:
+      return "UnexpectedEndOfComment";
+    case 12:
+      return "UnexpectedEndOfString";
+    case 13:
+      return "UnexpectedEndOfNumber";
+    case 14:
+      return "InvalidUnicode";
+    case 15:
+      return "InvalidEscapeCharacter";
+    case 16:
+      return "InvalidCharacter";
+  }
+  return "<unknown ParseErrorCode>";
+}
+
+// src/extension/settingsJson.ts
+function parseSettingsJson(raw) {
+  const errors = [];
+  const result = parse2(raw, errors, { allowTrailingComma: true });
+  if (errors.length > 0) {
+    const first = errors[0];
+    throw new Error(
+      `settings JSON parse error: ${printParseErrorCode(first.error)} at offset ${first.offset}`
+    );
+  }
+  if (result === null || typeof result !== "object" || Array.isArray(result)) {
+    throw new Error("settings JSON must parse to an object");
+  }
+  return result;
+}
+
+// src/extension/settingsFiles.ts
+function workspaceDirAbove(start) {
+  let dir = path.resolve(start);
+  for (; ; ) {
+    try {
+      if (fsSync.statSync(path.join(dir, ".vscode")).isDirectory())
+        return dir;
+    } catch {
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir)
+      return null;
+    dir = parent;
+  }
+}
+function readSettingsSync(file) {
+  let raw;
+  try {
+    raw = fsSync.readFileSync(file, "utf-8");
+  } catch (e) {
+    return { file, problem: e.code === "ENOENT" ? "missing" : "not readable" };
+  }
+  try {
+    return { file, json: parseSettingsJson(raw) };
+  } catch (e) {
+    return { file, problem: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+// src/shared/nodeRef.ts
+var REF_RE = /^(.+\.canvas)#([A-Z]+\d+)$/;
+function parseNodeRef(s) {
+  const m = REF_RE.exec(s.trim());
+  return m ? { canvas: m[1], label: m[2] } : null;
+}
+function isSectionLabel(label) {
+  return /^S\d+$/.test(label);
+}
+
+// src/shared/youtube.ts
+var YOUTUBE_NODE = { w: 500, h: 320 };
+function youtubeId(url) {
+  let u;
+  try {
+    u = new URL(url);
+  } catch {
+    return null;
+  }
+  const host = u.hostname.replace(/^(www|m|music)\./, "");
+  let id = null;
+  if (host === "youtu.be")
+    id = u.pathname.slice(1).split("/")[0];
+  else if (host === "youtube.com" || host === "youtube-nocookie.com") {
+    if (u.pathname === "/watch")
+      id = u.searchParams.get("v");
+    else
+      id = u.pathname.match(/^\/(?:shorts|embed|live|v)\/([^/?#]+)/)?.[1] ?? null;
+  }
+  return id && /^[A-Za-z0-9_-]{6,20}$/.test(id) ? id : null;
+}
+
+// src/shared/outputLink.ts
+function ownedOutputId(nodes, edges, cell) {
+  const id = cell.outputNodeId;
+  if (!id || !nodes.some((n) => n.id === id && n.type === "cell"))
+    return void 0;
+  if (edges.some((e) => e.fromNode === cell.id && e.toNode === id))
+    return id;
+  return nodes.some((n) => n.type === "code" && n.id !== cell.id && n.outputNodeId === id) ? void 0 : id;
 }
 
 // node_modules/ws/wrapper.mjs
@@ -5264,13 +6339,13 @@ async function executeCell(server, kernelId, code, ids, onDelta) {
   const url = `${wsBase(server.hubUrl)}/api/kernels/${kernelId}/channels?token=${encodeURIComponent(server.token)}`;
   const ws = new wrapper_default(url, { headers: { Authorization: `token ${server.token}` } });
   const replies = [];
-  return new Promise((resolve2, reject) => {
+  return new Promise((resolve6, reject) => {
     const finish = (out) => {
       try {
         ws.close();
       } catch {
       }
-      resolve2(out);
+      resolve6(out);
     };
     ws.on("open", () => ws.send(JSON.stringify(buildExecuteRequest(code, ids))));
     ws.on("message", (raw) => {
@@ -5284,7 +6359,7 @@ async function executeCell(server, kernelId, code, ids, onDelta) {
       }
     });
     ws.on("error", (err2) => reject(err2));
-    ws.on("close", () => resolve2(collectOutputs(replies, ids.msgId)));
+    ws.on("close", () => resolve6(collectOutputs(replies, ids.msgId)));
   });
 }
 
@@ -5504,6 +6579,308 @@ function renderOutput(out) {
   return { format: "html", content: parts.join("\n") };
 }
 
+// src/extension/ipcEndpoint.ts
+var fs = __toESM(require("fs"));
+var os = __toESM(require("os"));
+var path2 = __toESM(require("path"));
+function hashPath(p) {
+  let h = 0;
+  for (let i = 0; i < p.length; i++) {
+    h = h * 31 + p.charCodeAt(i) | 0;
+  }
+  return (h >>> 0).toString(36);
+}
+function userName() {
+  try {
+    return os.userInfo().username;
+  } catch {
+    return "user";
+  }
+}
+function endpointDirs(tmp) {
+  const inTmp = path2.join(tmp ?? os.tmpdir(), `skena-${userName()}`);
+  const xdg = tmp ? void 0 : process.env.XDG_RUNTIME_DIR;
+  return xdg ? [path2.join(xdg, "skena"), inTmp] : [inTmp];
+}
+var fileName = (workspaceDir) => `skena-ipc-${hashPath(path2.resolve(workspaceDir))}.json`;
+function readFile(file, workspaceDir) {
+  try {
+    const uid2 = process.getuid?.();
+    if (uid2 !== void 0 && fs.statSync(file).uid !== uid2)
+      return null;
+    const j = JSON.parse(fs.readFileSync(file, "utf-8"));
+    return typeof j.endpoint === "string" && j.workspaceDir === path2.resolve(workspaceDir) ? j.endpoint : null;
+  } catch {
+    return null;
+  }
+}
+function readEndpoint(workspaceDir, tmp) {
+  for (const dir of endpointDirs(tmp)) {
+    const endpoint = readFile(path2.join(dir, fileName(workspaceDir)), workspaceDir);
+    if (endpoint)
+      return endpoint;
+  }
+  return null;
+}
+
+// src/extension/mcp/exportRequest.ts
+var http = __toESM(require("http"));
+var UNREACHABLE = /* @__PURE__ */ new Set(["ECONNREFUSED", "EHOSTUNREACH", "ENETUNREACH", "EADDRNOTAVAIL"]);
+function postExport(port, token, body, timeoutMs) {
+  return new Promise((resolve6) => {
+    const data = JSON.stringify(body);
+    let settled = false;
+    const done = (o) => {
+      if (settled)
+        return;
+      settled = true;
+      clearTimeout(timer);
+      resolve6(o);
+    };
+    const req = http.request({
+      host: "127.0.0.1",
+      port,
+      path: "/export",
+      method: "POST",
+      headers: { "content-type": "application/json", "content-length": Buffer.byteLength(data), "x-skena-token": token }
+    }, (res) => {
+      let text = "";
+      res.setEncoding("utf8");
+      res.on("data", (c) => {
+        text += c;
+      });
+      res.on("end", () => done({ kind: "answer", status: res.statusCode ?? 0, body: text }));
+      res.on("error", (e) => done({ kind: "closed", message: e.message }));
+    });
+    const timer = setTimeout(() => {
+      done({ kind: "timeout" });
+      req.destroy();
+    }, timeoutMs);
+    req.on("error", (e) => {
+      done(e.code && UNREACHABLE.has(e.code) ? { kind: "unreachable", code: e.code } : { kind: "closed", message: e.message });
+    });
+    req.end(data);
+  });
+}
+
+// src/extension/mcp/vaultLookup.ts
+var fs2 = __toESM(require("fs"));
+var http2 = __toESM(require("http"));
+var path4 = __toESM(require("path"));
+var import_url = require("url");
+
+// src/extension/filePaths.ts
+var path3 = __toESM(require("path"));
+function vaultRoot(configured, home) {
+  const expanded = configured.startsWith("~") ? path3.join(home ?? "~", configured.slice(1)) : configured;
+  return path3.resolve(expanded);
+}
+
+// src/extension/mcp/vaultLookup.ts
+var RELAY_WAIT_MS = 500;
+var RELAY_CACHE_MS = 3e3;
+var EXTENSION = "the skena extension";
+var SETTINGS_LEVELS = 8;
+function normaliseVaults(list, home) {
+  const out = [];
+  for (const v of list) {
+    if (!v || typeof v !== "object")
+      continue;
+    const { name, path: p } = v;
+    if (typeof name !== "string" || typeof p !== "string")
+      continue;
+    out.push({ ...v, path: vaultRoot(p, home) });
+  }
+  return out;
+}
+var listNote = (vaults) => vaults.length ? `${vaults.length} vault(s): ${vaults.map((v) => v.name).join(", ")}` : "an empty skena.vaults";
+function requestRelayVaults(port, token, timeoutMs, home) {
+  return new Promise((resolve6) => {
+    let settled = false;
+    const done = (r) => {
+      if (settled)
+        return;
+      settled = true;
+      clearTimeout(timer);
+      resolve6(r);
+    };
+    const data = "{}";
+    const req = http2.request({
+      host: "127.0.0.1",
+      port,
+      path: "/vaults",
+      method: "POST",
+      headers: { "content-type": "application/json", "content-length": Buffer.byteLength(data), "x-skena-token": token }
+    }, (res) => {
+      let text = "";
+      res.setEncoding("utf8");
+      res.on("data", (c) => {
+        text += c;
+      });
+      res.on("error", (e) => done({ kind: "none", why: e.message }));
+      res.on("end", () => {
+        if (res.statusCode !== 200)
+          return done({ kind: "none", why: `refused (HTTP ${res.statusCode})` });
+        try {
+          const j = JSON.parse(text);
+          if (!Array.isArray(j.vaults))
+            return done({ kind: "none", why: "no vault list in its answer" });
+          done({ kind: "answer", vaults: normaliseVaults(j.vaults, home) });
+        } catch {
+          done({ kind: "none", why: "an answer that is not JSON" });
+        }
+      });
+    });
+    const timer = setTimeout(() => {
+      done({ kind: "none", why: `no answer within ${timeoutMs} ms` });
+      req.destroy();
+    }, timeoutMs);
+    req.on("error", (e) => done({ kind: "none", why: e.code === "ECONNREFUSED" ? "nothing listening at its port" : e.message }));
+    req.end(data);
+  });
+}
+async function chooseVaults(steps) {
+  const looked = [];
+  for (const step of steps) {
+    const s = await step();
+    looked.push(s);
+    if (s.vaults)
+      return { vaults: s.vaults, looked };
+  }
+  return { vaults: [], looked };
+}
+function parseWorkspaceFile(raw, file, home) {
+  const json = parseSettingsJson(raw);
+  const folders = [];
+  for (const f of Array.isArray(json.folders) ? json.folders : []) {
+    const { path: p, uri } = f ?? {};
+    if (typeof p === "string")
+      folders.push(path4.resolve(path4.dirname(file), p));
+    else if (typeof uri === "string" && uri.startsWith("file:"))
+      folders.push((0, import_url.fileURLToPath)(uri));
+  }
+  const settings = json.settings && typeof json.settings === "object" ? json.settings : {};
+  const list = settings["skena.vaults"];
+  return { folders, vaults: Array.isArray(list) ? normaliseVaults(list, home) : null };
+}
+function spellings(p) {
+  const abs = path4.resolve(p);
+  try {
+    const real = fs2.realpathSync(abs);
+    return real === abs ? [abs] : [abs, real];
+  } catch {
+    return [abs];
+  }
+}
+var inside = (file, folder) => file === folder || file.startsWith(folder + path4.sep);
+function canvasSpellings(canvasPath) {
+  const abs = path4.resolve(canvasPath);
+  const real = spellings(path4.dirname(abs)).map((d) => path4.join(d, path4.basename(abs)));
+  return [.../* @__PURE__ */ new Set([abs, ...real])];
+}
+function workspaceFilesIn(dir) {
+  try {
+    return fs2.readdirSync(dir).filter((n) => n.endsWith(".code-workspace")).sort().map((n) => path4.join(dir, n));
+  } catch {
+    return [];
+  }
+}
+function findWorkspaceFile(canvasPath, starts) {
+  const canvas = canvasSpellings(canvasPath);
+  const seen = /* @__PURE__ */ new Set();
+  for (const start of starts) {
+    let dir = path4.resolve(start);
+    for (; ; ) {
+      if (!seen.has(dir)) {
+        seen.add(dir);
+        for (const file of workspaceFilesIn(dir)) {
+          let folders;
+          try {
+            folders = parseWorkspaceFile(fs2.readFileSync(file, "utf-8"), file, void 0).folders;
+          } catch {
+            continue;
+          }
+          if (folders.some((f) => spellings(f).some((sp) => canvas.some((c) => inside(c, sp)))))
+            return file;
+        }
+      }
+      const parent = path4.dirname(dir);
+      if (parent === dir)
+        break;
+      dir = parent;
+    }
+  }
+  return null;
+}
+function readJson(file) {
+  try {
+    return parseSettingsJson(fs2.readFileSync(file, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+function settingsFileSource(startDir, home) {
+  let dir = path4.resolve(startDir);
+  let top = dir;
+  for (let i = 0; i < SETTINGS_LEVELS; i++) {
+    top = dir;
+    const basePath = path4.join(dir, ".vscode", "settings.json");
+    const base = readJson(basePath);
+    if (base !== null) {
+      const localPath = path4.join(dir, ".vscode", "settings.local.json");
+      const local = readJson(localPath);
+      const fromLocal = Array.isArray(local?.["skena.vaults"]);
+      const list = fromLocal ? local["skena.vaults"] : base["skena.vaults"];
+      const vaults = Array.isArray(list) ? normaliseVaults(list, home) : null;
+      return { where: fromLocal ? localPath : basePath, vaults, note: vaults ? listNote(vaults) : "no skena.vaults" };
+    }
+    const parent = path4.dirname(dir);
+    if (parent === dir)
+      break;
+    dir = parent;
+  }
+  return { where: ".vscode/settings.json", vaults: null, note: `none in the folders from ${path4.resolve(startDir)} up to ${top}` };
+}
+function workspaceFileSource(canvasPath, cwd, home) {
+  const file = findWorkspaceFile(canvasPath, [path4.dirname(path4.resolve(canvasPath)), cwd]);
+  if (!file)
+    return { where: ".code-workspace", vaults: null, note: `no .code-workspace file above the canvas or ${cwd} lists a folder holding the canvas` };
+  try {
+    const { vaults } = parseWorkspaceFile(fs2.readFileSync(file, "utf-8"), file, home);
+    return { where: file, vaults, note: vaults ? listNote(vaults) : "no skena.vaults in its settings" };
+  } catch (e) {
+    return { where: file, vaults: null, note: `not readable: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+var relayCache = /* @__PURE__ */ new Map();
+async function relaySource(relay, now, waitMs, home) {
+  if (!relay)
+    return { where: EXTENSION, vaults: null, note: "no window for this workspace (no SKENA_RUN_IPC, no endpoint file)" };
+  const key = `${relay.port}:${relay.token}`;
+  let hit = relayCache.get(key);
+  if (!hit || now - hit.at > RELAY_CACHE_MS || now < hit.at) {
+    hit = { at: now, result: await requestRelayVaults(relay.port, relay.token, waitMs, home) };
+    relayCache.set(key, hit);
+  }
+  const where = `${EXTENSION} (relay at 127.0.0.1:${relay.port})`;
+  return hit.result.kind === "answer" ? { where, vaults: hit.result.vaults, note: listNote(hit.result.vaults) } : { where, vaults: null, note: hit.result.why };
+}
+async function loadVaults(canvasPath, opts) {
+  const now = opts.now ?? Date.now();
+  return chooseVaults([
+    () => relaySource(opts.relay, now, opts.waitMs ?? RELAY_WAIT_MS, opts.home),
+    () => settingsFileSource(path4.dirname(path4.resolve(canvasPath)), opts.home),
+    () => workspaceFileSource(canvasPath, opts.cwd, opts.home)
+  ]);
+}
+function notConfiguredText(name, lookup) {
+  return [
+    `(vault not configured \u2014 no "${name}" in skena.vaults. Looked at:`,
+    ...lookup.looked.map((s) => `  ${s.where}: ${s.note}`),
+    "Add it to skena.vaults in .vscode/settings.json, or in the settings of the .code-workspace file.)"
+  ].join("\n");
+}
+
 // src/extension/mcp/server.ts
 function parseRunIpc(raw) {
   if (!raw)
@@ -5532,71 +6909,39 @@ async function persistViaHost(ipc, canvasPath, payload) {
   }
 }
 function resolvePath(raw) {
-  const expanded = raw.startsWith("~/") ? path.join(os.homedir(), raw.slice(2)) : raw;
-  return path.resolve(expanded);
+  const expanded = raw.startsWith("~/") ? path5.join(os2.homedir(), raw.slice(2)) : raw;
+  return path5.resolve(expanded);
 }
 function expandHome(p) {
-  return p.startsWith("~/") ? path.join(os.homedir(), p.slice(2)) : p;
-}
-var vaultCache = /* @__PURE__ */ new Map();
-function parseRelaxedJson(raw) {
-  const stripped = raw.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "").replace(/,(\s*[}\]])/g, "$1");
-  return JSON.parse(stripped);
-}
-async function readSettingsFile(filePath) {
-  try {
-    const raw = await fs.readFile(filePath, "utf-8");
-    return parseRelaxedJson(raw);
-  } catch {
-    return null;
-  }
-}
-async function loadVaults(startDir) {
-  let dir = path.resolve(startDir);
-  for (let i = 0; i < 8; i++) {
-    const settingsPath = path.join(dir, ".vscode", "settings.json");
-    const base = await readSettingsFile(settingsPath);
-    if (base !== null) {
-      const cacheKey = settingsPath;
-      const cached = vaultCache.get(cacheKey);
-      if (cached)
-        return cached;
-      const localPath = path.join(dir, ".vscode", "settings.local.json");
-      const local = await readSettingsFile(localPath);
-      const vaults = local?.["skena.vaults"] ?? base["skena.vaults"] ?? [];
-      vaultCache.set(cacheKey, vaults);
-      return vaults;
-    }
-    const parent = path.dirname(dir);
-    if (parent === dir)
-      break;
-    dir = parent;
-  }
-  return [];
+  return p.startsWith("~/") ? path5.join(os2.homedir(), p.slice(2)) : p;
 }
 async function resolveVaultUri(uri, canvasPath) {
-  if (!uri.startsWith("vault://"))
-    return null;
-  const rest = uri.slice(8);
+  const rest = uri.slice("vault://".length);
   const slash = rest.indexOf("/");
   const name = slash === -1 ? rest : rest.slice(0, slash);
   const rel = slash === -1 ? "" : rest.slice(slash + 1);
-  const vaults = await loadVaults(path.dirname(canvasPath));
-  const vault = vaults.find((v) => v.name === name);
-  if (!vault)
-    return null;
-  return path.join(expandHome(vault.path), rel);
+  const lookup = await loadVaults(canvasPath, { relay: extensionRelay(canvasPath), cwd: process.cwd(), home: os2.homedir() });
+  const vault = lookup.vaults.find((v) => v.name === name);
+  return vault ? { fsPath: path5.join(vault.path, rel) } : { notConfigured: notConfiguredText(name, lookup) };
 }
 function normalizeFileUri(fileUri, canvasPath) {
   if (!fileUri || fileUri.startsWith("vault://"))
     return fileUri;
-  if (!path.isAbsolute(fileUri))
+  if (!path5.isAbsolute(fileUri))
     return fileUri;
-  const canvasDir = path.dirname(canvasPath);
-  const rel = path.relative(canvasDir, fileUri).replace(/\\/g, "/");
+  const canvasDir = path5.dirname(canvasPath);
+  const rel = path5.relative(canvasDir, fileUri).replace(/\\/g, "/");
   if (rel.startsWith(".."))
     return fileUri;
   return rel.startsWith("./") ? rel : `./${rel}`;
+}
+function noderefCanvasPath(target, canvasPath) {
+  const abs = expandHome(target);
+  if (!path5.isAbsolute(abs))
+    return target;
+  const root = workspaceDirAbove(path5.dirname(canvasPath));
+  const rel = root ? path5.relative(root, abs) : "";
+  return rel && !rel.startsWith("..") && !path5.isAbsolute(rel) ? rel.split(path5.sep).join("/") : abs;
 }
 var _fileLocks = /* @__PURE__ */ new Map();
 function withFileLock(fsPath, fn) {
@@ -5608,7 +6953,7 @@ function withFileLock(fsPath, fn) {
   return next;
 }
 async function readCanvas(fsPath) {
-  const raw = await fs.readFile(fsPath, "utf-8");
+  const raw = await fs3.readFile(fsPath, "utf-8");
   const parsed = JSON.parse(raw);
   const data = {
     ...parsed,
@@ -5623,7 +6968,7 @@ function holdSection(d, edge) {
   return sectionEngineNodes(d.nodes, d.metadata?.sections ?? [], edge.toNode) ?? toEngineNodes(d.nodes);
 }
 async function writeCanvas(fsPath, data) {
-  await fs.writeFile(fsPath, JSON.stringify(data, null, 2), "utf-8");
+  await fs3.writeFile(fsPath, JSON.stringify(data, null, 2), "utf-8");
 }
 async function readCanvasOrEmpty(fsPath) {
   try {
@@ -5670,6 +7015,8 @@ function nodeSnippet(node) {
       return `${node.agent}: ${node.title}`;
     case "portal":
       return `\u2192 ${node.canvas}`;
+    case "noderef":
+      return `\u2192 ${node.canvas}#${node.label}${isSectionLabel(node.label) ? " (section)" : ""}${node.title ? ` "${node.title}"` : ""}`;
     case "knowledge":
       return truncate(node.title, 80);
     default:
@@ -5677,6 +7024,8 @@ function nodeSnippet(node) {
   }
 }
 function typeLabel(node) {
+  if (node.type === "group")
+    return "group (not shown)";
   if (node.type === "file") {
     const f = node.file.toLowerCase();
     if (f.endsWith(".ipynb"))
@@ -5716,7 +7065,8 @@ function stampLabel(ms) {
 function uid() {
   return `ai-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
 }
-function autoPlace(nodes, w, h) {
+function autoPlace(all, w, h) {
+  const nodes = all.filter((n) => !isGroup(n));
   if (nodes.length === 0)
     return { x: 100, y: 100 };
   const GAP = 60;
@@ -5781,17 +7131,28 @@ function geomOf(d) {
 function movedLabels(d, before, exclude = []) {
   return d.nodes.filter((n) => !exclude.includes(n.id) && before.has(n.id) && before.get(n.id) !== `${n.x},${n.y}`).map((n) => n.nodeLabel ?? n.id);
 }
-function defaultDims(type) {
-  const map = {
-    text: { w: 400, h: 300 },
-    cell: { w: 480, h: 320 },
-    code: { w: NODE_SIZE.code.w, h: NODE_SIZE.code.h },
-    // - the size the webview gives a code cell, so both build the same column
-    file: { w: 400, h: 400 },
-    link: { w: 240, h: 80 },
-    portal: { w: 200, h: 120 }
-  };
-  return map[type] ?? { w: 400, h: 300 };
+var CELL_SIZE = { w: 480, h: 320 };
+var NODEREF_SIZE = { w: 200, h: 120 };
+var CODE_HEIGHT_RANGE = `${CODE_MIN_H} to ${CODE_MAX_H} px in ${CODE_H_STEP} px steps`;
+var KERNEL_SERVERS_TEXT = `Jupyter servers are looked up on every call, and the first non-empty list wins: SKENA_JUPYTER_KERNELS (set when the canvas AI companion starts this server); then skena.jupyter.kernels in .vscode/settings.local.json and then .vscode/settings.json of the nearest folder above the canvas that has a .vscode directory, then of the one above this server's working directory; then JUPYTER_SERVER_URL + JUPYTER_API_TOKEN from the environment, as a server named "default". An unknown server name is answered with the names found and where they came from, or with every place looked in.`;
+var ADD_NODE_TYPES = ["text", "code", "cell", "file", "link", "portal", "noderef"];
+function defaultDims(type, url) {
+  switch (type) {
+    case "code":
+      return NODE_SIZE.code;
+    case "cell":
+      return CELL_SIZE;
+    case "file":
+      return NODE_SIZE.file;
+    case "link":
+      return url && youtubeId(url) ? YOUTUBE_NODE : NODE_SIZE.link;
+    case "portal":
+      return NODE_SIZE.portal;
+    case "noderef":
+      return NODEREF_SIZE;
+    default:
+      return NODE_SIZE.text;
+  }
 }
 var BINARY_EXTS = /* @__PURE__ */ new Set([".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".pdf", ".zip", ".7z"]);
 var MAX_READ_BYTES = 64 * 1024;
@@ -5799,27 +7160,26 @@ async function readFileNodeContent(uri, canvasPath) {
   let fsPath;
   if (uri.startsWith("vault://")) {
     const resolved = await resolveVaultUri(uri, canvasPath);
-    if (!resolved) {
+    if ("notConfigured" in resolved)
       return `vault URI: ${uri}
-(vault not configured \u2014 add it to skena.vaults in .vscode/settings.json)`;
-    }
-    fsPath = resolved;
-  } else if (path.isAbsolute(uri)) {
+${resolved.notConfigured}`;
+    fsPath = resolved.fsPath;
+  } else if (path5.isAbsolute(uri)) {
     fsPath = uri;
   } else {
-    fsPath = path.resolve(path.dirname(canvasPath), uri);
+    fsPath = path5.resolve(path5.dirname(canvasPath), uri);
   }
   const header = `File: ${fsPath}`;
-  const ext = path.extname(fsPath).toLowerCase();
+  const ext = path5.extname(fsPath).toLowerCase();
   if (BINARY_EXTS.has(ext)) {
     return `${header}
 (binary file \u2014 content not shown)`;
   }
   try {
-    const stat2 = await fs.stat(fsPath);
+    const stat2 = await fs3.stat(fsPath);
     if (stat2.size > MAX_READ_BYTES) {
       const buf = Buffer.alloc(MAX_READ_BYTES);
-      const fd = await fs.open(fsPath, "r");
+      const fd = await fs3.open(fsPath, "r");
       try {
         const { bytesRead } = await fd.read(buf, 0, MAX_READ_BYTES, 0);
         let text2 = buf.slice(0, bytesRead).toString("utf-8");
@@ -5834,7 +7194,7 @@ ${text2}`;
         await fd.close();
       }
     }
-    const text = await fs.readFile(fsPath, "utf-8");
+    const text = await fs3.readFile(fsPath, "utf-8");
     return `${header}
 
 ${text}`;
@@ -5847,9 +7207,9 @@ function outputLinks(d) {
   const byId2 = new Map(d.nodes.map((n) => [n.id, n]));
   const output = /* @__PURE__ */ new Map(), outputOf = /* @__PURE__ */ new Map();
   for (const n of d.nodes) {
-    if (n.type !== "code" || !n.outputNodeId)
+    if (n.type !== "code")
       continue;
-    const o = byId2.get(n.outputNodeId);
+    const o = byId2.get(ownedOutputId(d.nodes, d.edges, n) ?? "");
     if (!o)
       continue;
     output.set(n.id, o);
@@ -5873,7 +7233,7 @@ async function canvasList(args) {
     const tags = ext.tags?.length ? `  [${ext.tags.join(", ")}]` : "";
     const out = links.output.get(n.id), of = links.outputOf.get(n.id);
     const link = out ? `  (output: ${out.nodeLabel ?? out.id})` : of ? `  (output of: ${of.nodeLabel ?? of.id})` : "";
-    lines.push(`  ${(n.nodeLabel ?? "?").padEnd(4)}  ${typeLabel(n).padEnd(10)}  ${nodeSnippet(n)}${aiMark}${tags}${link}`);
+    lines.push(`  ${(n.nodeLabel ?? n.id).padEnd(4)}  ${typeLabel(n).padEnd(10)}  ${nodeSnippet(n)}${aiMark}${tags}${link}`);
   }
   if (d.metadata?.sections?.length) {
     lines.push("", "Sections:");
@@ -5969,6 +7329,10 @@ Title: ${n.title}`;
     case "portal":
       content = `Sub-canvas: ${n.canvas}`;
       break;
+    case "noderef":
+      content = `Reference: ${n.canvas}#${n.label}${isSectionLabel(n.label) ? " (section)" : ""}${n.title ? `
+Title: ${n.title}` : ""}`;
+      break;
     case "knowledge":
       content = `Format: knowledge
 Server: ${n.server}
@@ -6017,7 +7381,7 @@ async function canvasSearch(args) {
     return `No nodes match "${args.query}"`;
   const lines = [`Found ${results.length} node(s) matching "${args.query}":`, ""];
   for (const n of results) {
-    lines.push(`  ${(n.nodeLabel ?? "?").padEnd(4)}  ${typeLabel(n).padEnd(10)}  ${nodeSnippet(n)}`);
+    lines.push(`  ${(n.nodeLabel ?? n.id).padEnd(4)}  ${typeLabel(n).padEnd(10)}  ${nodeSnippet(n)}`);
   }
   return lines.join("\n");
 }
@@ -6048,25 +7412,25 @@ async function canvasFollow(args) {
   if (n.type === "file") {
     if (n.file.startsWith("vault://")) {
       const resolved = await resolveVaultUri(n.file, p);
-      if (!resolved)
+      if ("notConfigured" in resolved)
         return `Vault URI: ${n.file}
-(vault not configured in .vscode/settings.json \u2014 add it to skena.vaults)`;
-      return `File path: ${resolved}
+${resolved.notConfigured}`;
+      return `File path: ${resolved.fsPath}
 Vault URI: ${n.file}`;
     }
-    const abs = path.isAbsolute(n.file) ? n.file : path.resolve(path.dirname(p), n.file);
+    const abs = path5.isAbsolute(n.file) ? n.file : path5.resolve(path5.dirname(p), n.file);
     return `File path: ${abs}`;
   }
   if (n.type === "portal") {
     if (n.canvas.startsWith("vault://")) {
       const resolved = await resolveVaultUri(n.canvas, p);
-      if (!resolved)
+      if ("notConfigured" in resolved)
         return `Vault URI: ${n.canvas}
-(vault not configured in .vscode/settings.json \u2014 add it to skena.vaults)`;
-      return `Sub-canvas path: ${resolved}
+${resolved.notConfigured}`;
+      return `Sub-canvas path: ${resolved.fsPath}
 Vault URI: ${n.canvas}`;
     }
-    const abs = path.isAbsolute(n.canvas) ? n.canvas : path.resolve(path.dirname(p), n.canvas);
+    const abs = path5.isAbsolute(n.canvas) ? n.canvas : path5.resolve(path5.dirname(p), n.canvas);
     return `Sub-canvas path: ${abs}`;
   }
   if (n.type === "link") {
@@ -6076,6 +7440,13 @@ Vault URI: ${n.canvas}`;
 }
 async function canvasAddNode(args) {
   const p = resolvePath(args.canvasPath);
+  if (args.type !== void 0 && !ADD_NODE_TYPES.includes(args.type)) {
+    const elsewhere = args.type === "knowledge" ? " (a knowledge node: canvas_add_knowledge)" : args.type === "kernel" ? " (a kernel: canvas_add_kernel adds a kernel record)" : args.type === "group" ? " (the canvas does not show groups; a section holds a set of nodes: canvas_add_section)" : "";
+    return `error: unknown node type "${String(args.type)}" \u2014 canvas_add_node makes ${ADD_NODE_TYPES.join(", ")}${elsewhere}`;
+  }
+  const ref = args.type === "noderef" ? parseNodeRef(args.label === void 0 ? String(args.canvas ?? "") : `${String(args.canvas ?? "")}#${String(args.label)}`) : null;
+  if (args.type === "noderef" && !ref)
+    return "error: a noderef needs canvas (a path ending in .canvas) and label (the target node's label, e.g. N3, or a section's label, e.g. S3), or canvas as path.canvas#N3";
   return withFileLock(p, async () => {
     const d = await readCanvasOrEmpty(p);
     const anchorRef = args.after ?? args.forkOf;
@@ -6083,16 +7454,16 @@ async function canvasAddNode(args) {
     if (anchorRef !== void 0 && !anchor)
       return `Node not found: ${anchorRef}`;
     const type = args.type ?? (anchor?.type === "code" ? "code" : "text");
-    const dims = defaultDims(type);
-    const w = args.width ?? dims.w;
+    const dims = defaultDims(type, args.url);
+    const w = args.width !== void 0 ? snapGrid(args.width) : dims.w;
     const sized = type === "code" && args.height === void 0 && typeof args.content === "string";
-    const h = sized ? codeCellHeight(estimateCodeNeedPx(args.content)) : args.height ?? dims.h;
+    const h = sized ? codeCellHeight(estimateCodeNeedPx(args.content)) : args.height !== void 0 ? snapGrid(args.height) : dims.h;
     let placed = null;
     if (anchor) {
       if (args.forkOf !== void 0 && anchor.type !== "code")
         return "forkOf must be a code cell";
       const around = sectionEngineNodes(d.nodes, d.metadata?.sections ?? [], anchor.id) ?? toEngineNodes(d.nodes);
-      placed = args.after !== void 0 ? insertAfter(around, anchor.id) : forkOf(around, anchor.id, args.side ?? "right", snapGrid(w));
+      placed = args.after !== void 0 ? insertAfter(around, anchor.id) : forkOf(around, anchor.id, args.side ?? "right", w);
       if (!placed)
         return "a left fork does not fit before the origin";
     }
@@ -6103,8 +7474,8 @@ async function canvasAddNode(args) {
       type,
       x: at.x,
       y: at.y,
-      width: snapGrid(w),
-      height: sized ? h : snapGrid(h),
+      width: w,
+      height: h,
       createdBy: "ai",
       ...args.color ? { color: args.color } : {},
       ...args.tags ? { tags: args.tags } : {}
@@ -6131,6 +7502,9 @@ async function canvasAddNode(args) {
         break;
       case "portal":
         newNode = { ...base, type: "portal", canvas: args.canvas ?? "" };
+        break;
+      case "noderef":
+        newNode = { ...base, type: "noderef", canvas: noderefCanvasPath(ref.canvas, p), label: ref.label, ...args.title ? { title: args.title } : {} };
         break;
       default:
         newNode = { ...base, type: "text", text: args.content ?? "" };
@@ -6445,11 +7819,11 @@ async function canvasCreate(args) {
   const p = resolvePath(args.canvasPath);
   return withFileLock(p, async () => {
     try {
-      await fs.access(p);
+      await fs3.access(p);
       return `Canvas already exists: ${p}`;
     } catch {
     }
-    await fs.mkdir(path.dirname(p), { recursive: true });
+    await fs3.mkdir(path5.dirname(p), { recursive: true });
     await writeCanvas(p, { nodes: [], edges: [] });
     return `Created empty canvas: ${p}`;
   });
@@ -6458,15 +7832,15 @@ async function canvasPinOutput(args) {
   const p = resolvePath(args.canvasPath);
   return withFileLock(p, async () => {
     const d = await readCanvas(p);
-    const format = args.format ?? "html";
+    const format2 = args.format ?? "html";
     const content = args.content ?? "";
-    const W = 480, H = 320;
+    const W = CELL_SIZE.w, H = CELL_SIZE.h;
     let geom = { x: 0, y: 0, width: W, height: H };
     let sourceNode;
     if (args.sourceRef) {
       sourceNode = findNode(d, args.sourceRef);
       if (sourceNode) {
-        const around = sourceNode.type === "code" && !sourceNode.outputNodeId ? sectionEngineNodes(d.nodes, d.metadata?.sections ?? [], sourceNode.id) : null;
+        const around = sourceNode.type === "code" && !ownedOutputId(d.nodes, d.edges, sourceNode) ? sectionEngineNodes(d.nodes, d.metadata?.sections ?? [], sourceNode.id) : null;
         const slot = around && placeOutput(around, sourceNode.id);
         geom = slot ?? { ...outputCellGeom(d.metadata?.sections ?? [], sourceNode, 60), width: W, height: H };
       }
@@ -6477,7 +7851,7 @@ async function canvasPinOutput(args) {
       id: uid(),
       type: "cell",
       ...geom,
-      format,
+      format: format2,
       content,
       createdBy: "ai",
       ...args.tags ? { tags: args.tags } : {}
@@ -6500,7 +7874,7 @@ async function canvasPinOutput(args) {
       edgeId = edge.id;
       pinEdge = edge;
     }
-    const adopted = sourceNode?.type === "code" && !sourceNode.outputNodeId;
+    const adopted = sourceNode?.type === "code" && !ownedOutputId(d.nodes, d.edges, sourceNode);
     if (adopted)
       sourceNode.outputNodeId = labeled.id;
     if (sourceNode && d.metadata?.sections)
@@ -6523,20 +7897,16 @@ async function canvasPinOutput(args) {
     return lines.join("\n");
   });
 }
-function loadKernelServersFromEnv() {
-  const raw = process.env.SKENA_JUPYTER_KERNELS;
-  if (raw) {
-    try {
-      return JSON.parse(raw);
-    } catch {
-    }
-  }
-  return resolveKernelConfig(void 0, null);
+function loadKernelServers(canvasPath) {
+  const dirs = [workspaceDirAbove(path5.dirname(canvasPath)), workspaceDirAbove(process.cwd())].filter((d, i, all) => d !== null && all.indexOf(d) === i);
+  const settings = dirs.length ? dirs.flatMap((d) => ["settings.local.json", "settings.json"].map((f) => readSettingsSync(path5.join(d, ".vscode", f)))) : [{ file: ".vscode settings", problem: `no .vscode folder at or above ${path5.dirname(canvasPath)} or ${process.cwd()}` }];
+  return pickKernelServers(process.env.SKENA_JUPYTER_KERNELS, settings, process.env);
 }
 async function runCellCore(d, cell, kernel, kernelId, server, p, ipc) {
   const startRes = await persistViaHost(ipc, p, { phase: "start", cellNodeId: cell.id, kernelNodeId: kernel.id, kernelId });
   const hostOwns = startRes.handled;
-  const outId = hostOwns ? startRes.outputNodeId ?? cell.outputNodeId ?? uid() : cell.outputNodeId ?? uid();
+  const owned = ownedOutputId(d.nodes, d.edges, cell);
+  const outId = hostOwns ? startRes.outputNodeId ?? owned ?? uid() : owned ?? uid();
   if (!hostOwns) {
     cell.lastStatus = "running";
     await writeCanvas(p, d);
@@ -6551,7 +7921,7 @@ async function runCellCore(d, cell, kernel, kernelId, server, p, ipc) {
       return;
     if (!hasVisibleOutput(partial))
       return;
-    const { format: format2, content: content2 } = renderOutput(partial);
+    const { format: format3, content: content2 } = renderOutput(partial);
     const message = {
       type: "runOutput",
       codeNodeId: cell.id,
@@ -6559,7 +7929,7 @@ async function runCellCore(d, cell, kernel, kernelId, server, p, ipc) {
       kernelNodeId: kernel.id,
       kernelId,
       source: "mcp",
-      outputNode: { id: outId, type: "cell", format: format2, content: content2, ...outGeom, createdBy: "ai" },
+      outputNode: { id: outId, type: "cell", format: format3, content: content2, ...outGeom, createdBy: "ai" },
       edge: outEdge
     };
     void fetch(`http://127.0.0.1:${ipc.port}/delta`, {
@@ -6590,7 +7960,7 @@ async function runCellCore(d, cell, kernel, kernelId, server, p, ipc) {
     }
     return { status: "error", outLabel: "(error)", streamText: "", moved: [], capped: false, error: e instanceof Error ? e.message : String(e) };
   }
-  const { format, content } = renderOutput(out);
+  const { format: format2, content } = renderOutput(out);
   const hasOutput = hasVisibleOutput(out);
   let outLabel = "(no output)";
   let moved = [];
@@ -6603,7 +7973,7 @@ async function runCellCore(d, cell, kernel, kernelId, server, p, ipc) {
       kernelId,
       outputNodeId: outId,
       status: out.status === "error" ? "error" : "ok",
-      output: hasOutput ? { format, content } : null
+      output: hasOutput ? { format: format2, content } : null
     });
     cell.lastStatus = out.status === "error" ? "error" : "ok";
     cell.lastRun = Date.now();
@@ -6618,13 +7988,13 @@ async function runCellCore(d, cell, kernel, kernelId, server, p, ipc) {
     if (hasOutput) {
       const existing = d.nodes.find((n) => n.id === outId && n.type === "cell");
       if (existing) {
-        existing.format = format;
+        existing.format = format2;
         existing.content = content;
         if (!d.edges.some((e) => e.fromNode === cell.id && e.toNode === outId))
           d.edges.push(outEdge);
         outLabel = existing.nodeLabel ?? existing.id;
       } else {
-        const outNode = { id: outId, type: "cell", format, content, ...outGeom, createdBy: "ai" };
+        const outNode = { id: outId, type: "cell", format: format2, content, ...outGeom, createdBy: "ai" };
         const labeled = assignLabel(outNode, d.nodes);
         d.nodes.push(labeled);
         d.edges.push(outEdge);
@@ -6639,7 +8009,7 @@ async function runCellCore(d, cell, kernel, kernelId, server, p, ipc) {
     moved = movedLabels(d, before);
     await writeCanvas(p, d);
     if (ipc) {
-      const message = hasOutput ? { type: "runOutput", codeNodeId: cell.id, lastStatus: cell.lastStatus, kernelNodeId: kernel.id, kernelId, source: "mcp", outputNode: { id: outId, type: "cell", format, content, ...outGeom, createdBy: "ai" }, edge: outEdge } : { type: "runOutput", codeNodeId: cell.id, lastStatus: cell.lastStatus, kernelNodeId: kernel.id, kernelId, source: "mcp" };
+      const message = hasOutput ? { type: "runOutput", codeNodeId: cell.id, lastStatus: cell.lastStatus, kernelNodeId: kernel.id, kernelId, source: "mcp", outputNode: { id: outId, type: "cell", format: format2, content, ...outGeom, createdBy: "ai" }, edge: outEdge } : { type: "runOutput", codeNodeId: cell.id, lastStatus: cell.lastStatus, kernelNodeId: kernel.id, kernelId, source: "mcp" };
       void fetch(`http://127.0.0.1:${ipc.port}/delta`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-skena-token": ipc.token },
@@ -6654,7 +8024,7 @@ function kernelByRef(d, ref) {
   const n = findNode(d, ref);
   return kernelById(d, ref) ?? (d.metadata?.kernels?.find((k) => k.displayName === ref) ?? null) ?? (n?.type === "kernel" ? kernelById(d, n.id) : null);
 }
-function prepareRun(d, cell, kernelRef) {
+function prepareRun(d, p, cell, kernelRef) {
   let kernel = kernelRef ? kernelByRef(d, kernelRef) : null;
   if (kernelRef && !kernel)
     return `error: no kernel matches "${kernelRef}" \u2014 a record id or display name, or a kernel node label/id`;
@@ -6664,10 +8034,10 @@ function prepareRun(d, cell, kernelRef) {
   }
   if (!kernel)
     return "error: no kernel bound to this cell \u2014 connect it to a kernel node, or bind a kernel to its section from the rail";
-  const servers = loadKernelServersFromEnv();
-  const server = servers.find((s) => s.name === kernel.server);
+  const lookup = loadKernelServers(p);
+  const server = lookup.servers.find((s) => s.name === kernel.server);
   if (!server)
-    return `error: unknown server ${kernel.server}`;
+    return unknownServerText(kernel.server, lookup);
   if (!kernel.kernelId)
     return "error: kernel has no live kernelId (open the canvas so Skena starts it)";
   return { kernel, kernelId: kernel.kernelId, server, ipc: parseRunIpc(process.env.SKENA_RUN_IPC) };
@@ -6679,7 +8049,7 @@ async function canvasRunCell(args) {
     const cell = findNode(d, args.cellRef);
     if (!cell || cell.type !== "code")
       return `error: ${args.cellRef} is not a code node`;
-    const prep = prepareRun(d, cell, args.kernelRef);
+    const prep = prepareRun(d, p, cell, args.kernelRef);
     if (typeof prep === "string")
       return prep;
     const { kernel, kernelId, server, ipc } = prep;
@@ -6873,7 +8243,7 @@ async function canvasRunSection(args) {
       const cell = d.nodes.find((n) => n.id === cellId && n.type === "code");
       if (!cell)
         continue;
-      const prep = prepareRun(d, cell);
+      const prep = prepareRun(d, p, cell);
       if (typeof prep === "string")
         return `${prep}${ran.length ? ` (ran ${ran.join(", ")})` : ""}`;
       const r = await runCellCore(d, cell, prep.kernel, prep.kernelId, prep.server, p, prep.ipc);
@@ -6892,10 +8262,10 @@ async function canvasAddKernel(args) {
   const p = resolvePath(args.canvasPath);
   return withFileLock(p, async () => {
     const d = await readCanvas(p);
-    const servers = loadKernelServersFromEnv();
-    const server = servers.find((s) => s.name === args.server);
+    const lookup = loadKernelServers(p);
+    const server = lookup.servers.find((s) => s.name === args.server);
     if (!server)
-      return `error: unknown server ${args.server} \u2014 known: ${servers.map((s) => s.name).join(", ") || "(none configured)"}`;
+      return unknownServerText(String(args.server), lookup);
     const spec = args.spec;
     let kernelId;
     if (args.start !== false) {
@@ -6941,7 +8311,7 @@ async function canvasRemoveKernel(args) {
         return `error: ${ref} is a kernel node; remove it with canvas_remove_node`;
       return `error: no kernel record matches ${ref} \u2014 a record id or display name`;
     }
-    const server = loadKernelServersFromEnv().find((s) => s.name === rec.server);
+    const server = loadKernelServers(p).servers.find((s) => s.name === rec.server);
     if (server && rec.kernelId) {
       try {
         await shutdownKernel(server, rec.kernelId);
@@ -6969,10 +8339,58 @@ async function canvasRemoveKernel(args) {
     return `Removed kernel ${rec.id} (${rec.displayName ?? "kernel"}); ${bound.size} cell(s) un-run`;
   });
 }
+var NO_EXPORT_HOST = "no running skena extension found for this workspace. The page is rendered by the extension, which has Typst, the code theme setting and the knowledge server token: open the workspace in VS Code, open any .canvas in it once (that starts skena), and call this again.";
+function extensionRelay(canvasPath) {
+  const fromEnv = parseRunIpc(process.env.SKENA_RUN_IPC);
+  if (fromEnv)
+    return fromEnv;
+  const dirs = [workspaceDirAbove(path5.dirname(canvasPath)), process.cwd()].filter((d) => !!d);
+  for (const dir of dirs) {
+    const ipc = parseRunIpc(readEndpoint(dir) ?? void 0);
+    if (ipc)
+      return ipc;
+  }
+  return null;
+}
+var EXPORT_WAIT_MS = 30 * 6e4;
+async function canvasExportHtml(args) {
+  const canvasPath = resolvePath(String(args.canvasPath ?? ""));
+  if (!canvasPath.endsWith(".canvas"))
+    throw new Error(`not a .canvas file: ${canvasPath}`);
+  await fs3.access(canvasPath);
+  const outPath = typeof args.outPath === "string" && args.outPath.trim() ? path5.resolve(path5.dirname(canvasPath), expandHome(args.outPath.trim())) : void 0;
+  if (outPath === canvasPath)
+    throw new Error(`not writing the page to ${outPath}: it is the canvas being exported`);
+  if (outPath && /\.canvas$/i.test(outPath))
+    throw new Error(`not writing the page to ${outPath}: that is a .canvas file`);
+  const ipc = extensionRelay(canvasPath);
+  if (!ipc)
+    throw new Error(NO_EXPORT_HOST);
+  const res = await postExport(ipc.port, ipc.token, { canvasPath, outPath }, EXPORT_WAIT_MS);
+  if (res.kind === "unreachable")
+    throw new Error(NO_EXPORT_HOST);
+  if (res.kind === "closed")
+    throw new Error(`the skena extension closed the connection before it answered (${res.message}): was the VS Code window closed or reloaded? Call this again once it is open.`);
+  if (res.kind === "timeout") {
+    const target = outPath ?? path5.join(path5.dirname(canvasPath), `${path5.basename(canvasPath, ".canvas")}.html`);
+    throw new Error(`the export is still running in VS Code (no answer after ${EXPORT_WAIT_MS / 6e4} min); the page appears at ${target} when it is done.`);
+  }
+  if (res.status === 403)
+    throw new Error("the skena extension of this workspace refused the export: it may be older than this MCP script; reload the VS Code window");
+  if (res.status !== 200)
+    throw new Error(`the skena extension answered HTTP ${res.status}`);
+  const reply = JSON.parse(res.body);
+  if (!reply.ok)
+    throw new Error(reply.error);
+  const missing = reply.missing.length ? `
+${reply.missing.length} images could not be read and show their address instead:
+${reply.missing.slice(0, 20).join("\n")}` : "";
+  return `Exported ${reply.nodes} nodes and ${reply.edges} edges to ${reply.outPath} (${(reply.bytes / 1e6).toFixed(1)} MB).${missing}`;
+}
 var TOOLS = [
   {
     name: "canvas_list",
-    description: 'List all nodes and edges on a canvas. Returns node labels (N1, J3, etc.), types, and content previews. Use these labels to reference nodes in other tools. A code cell that has an output ends its line with "(output: C5)", and that output cell with "(output of: E6)". Lists the sections (S1\u2026, their y, kernel and title) when the canvas has any. Lists the kernel records (id, name, server, live id) when the canvas has any.',
+    description: 'List all nodes and edges on a canvas. Returns node labels (N1, J3, etc.), types, and content previews. Use these labels to reference nodes in other tools. A code cell that has an output ends its line with "(output: C5)", and that output cell with "(output of: E6)". Lists the sections (S1\u2026, their y, kernel and title) when the canvas has any. Lists the kernel records (id, name, server, live id) when the canvas has any. A group entry in the file is listed as "group (not shown)", by its id when it has no label: the canvas keeps it but does not show it, lay it out or count it in a section.',
     inputSchema: {
       type: "object",
       properties: {
@@ -6995,7 +8413,7 @@ var TOOLS = [
   },
   {
     name: "canvas_search",
-    description: "Search for canvas nodes whose labels, content, filenames, or tags match a query string.",
+    description: "Search for canvas nodes whose labels, content, filenames, tags, or the labels of their edges contain a query string (case-insensitive).",
     inputSchema: {
       type: "object",
       properties: {
@@ -7032,25 +8450,27 @@ var TOOLS = [
   },
   {
     name: "canvas_add_node",
-    description: "Add a new node to the canvas. The node is automatically marked as AI-created (\u{1F916} badge) and assigned a label. Position defaults to the right of all existing nodes. `after` puts the new node under any node, in that node's own column (the type defaults to code under a code cell, else to a text note); `forkOf` names a code cell and starts a new column pair beside its pair; both ignore x/y. Whatever the placement, the layout engine then packs the column the node landed in and pushes the column pairs to its right and the notes it covers out of the way \u2014 never across a section boundary. Sections fit their content: a node placed past its section's bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Supplied coordinates are snapped to the grid and clamped to the canvas origin.",
+    description: `Add a new node to the canvas: text (default), code, cell, file, link, portal or noderef; any other type is refused with an error (a group too: the canvas does not show groups, a section does that job). The node is marked as AI-created (\u{1F916} badge) and assigned a label. Default sizes are the ones the canvas UI gives a new node: text ${NODE_SIZE.text.w}\xD7${NODE_SIZE.text.h}, code ${NODE_SIZE.code.w}\xD7${NODE_SIZE.code.h} (a code cell with content is as tall as its lines need, ${CODE_HEIGHT_RANGE}), cell ${CELL_SIZE.w}\xD7${CELL_SIZE.h}, file ${NODE_SIZE.file.w}\xD7${NODE_SIZE.file.h}, link ${NODE_SIZE.link.w}\xD7${NODE_SIZE.link.h} (a link to a YouTube video ${YOUTUBE_NODE.w}\xD7${YOUTUBE_NODE.h}, room for its thumbnail), portal ${NODE_SIZE.portal.w}\xD7${NODE_SIZE.portal.h}, noderef ${NODEREF_SIZE.w}\xD7${NODEREF_SIZE.h}; a supplied width or height is snapped to the grid. A noderef points at a node or a section in another canvas: canvas (the target .canvas file) and label (the target node's label, e.g. N3, or a section's label, e.g. S3 \u2014 S followed by digits always names a section), or canvas alone as path.canvas#N3, plus an optional title. Opening a section reference unfolds that section and focuses its first node. Position defaults to the right of all existing nodes. after puts the new node under any node, in that node's own column (the type defaults to code under a code cell, else to a text note); forkOf names a code cell: on side right the new node goes on that cell's row in the nearest column past its output column that holds a code cell (under the cell's own output when it would overlap it), else it starts a new column pair right of the cell's pair; on side left it starts a new column pair left of the cell's column; both ignore x/y. Whatever the placement, the layout engine then packs the column the node landed in and pushes the column pairs to its right and the notes it covers out of the way \u2014 never across a section boundary. Sections fit their content: a node placed past its section's bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Supplied coordinates are snapped to the grid and clamped to the canvas origin.`,
     inputSchema: {
       type: "object",
       properties: {
         canvasPath: { type: "string", description: "Path to the .canvas file" },
-        type: { type: "string", description: "Node type: text (default), code, cell, file, link, portal" },
-        content: { type: "string", description: "Text content for text/cell nodes, or the code for a code node" },
+        type: { type: "string", description: `Node type: ${ADD_NODE_TYPES.join(", ")}; text is the default (code under a code cell)` },
+        content: { type: "string", description: "Text of a text note or a cell, or the code of a code node" },
         format: { type: "string", description: "Cell format: markdown (default), html, image" },
-        file: { type: "string", description: "File path for file nodes (vault:// URI or absolute path)" },
+        file: { type: "string", description: "File path for file nodes (vault:// URI, or a path; an absolute one under the canvas folder is stored relative to it)" },
         url: { type: "string", description: "URL for link nodes" },
-        canvas: { type: "string", description: "Relative canvas path for portal nodes" },
+        canvas: { type: "string", description: "portal: path of the target canvas relative to this canvas's folder, stored as given. noderef: the target .canvas \u2014 absolute (stored relative to the workspace folder, as Copy node reference writes it) or relative to the workspace folder \u2014 or the whole reference path.canvas#N3" },
+        label: { type: "string", description: "noderef: the target node's label (N3, E10) or a section's label (S3)" },
+        title: { type: "string", description: "noderef: optional text shown under the reference" },
         tags: { type: "array", items: { type: "string" }, description: "Optional tags for search/organisation" },
         color: { type: "string", description: "Node accent color: 1=red, 2=orange, 3=yellow, 4=green, 5=cyan, 6=purple" },
         x: { type: "number", description: "X position (auto-placed if omitted; ignored with after/forkOf)" },
         y: { type: "number", description: "Y position (auto-placed if omitted; ignored with after/forkOf)" },
-        width: { type: "number", description: "Width in canvas units (default: type-dependent)" },
-        height: { type: "number", description: "Height in canvas units (default: type-dependent; a code cell with content is sized to the lines it holds, between 300 and 900)" },
+        width: { type: "number", description: "Width in canvas units, snapped to the grid (default: the UI size for the type)" },
+        height: { type: "number", description: `Height in canvas units, snapped to the grid (default: the UI size for the type; a code cell with content is sized to the lines it holds, ${CODE_HEIGHT_RANGE})` },
         after: { type: "string", description: "Label or id of any node: place the new node one gap below it in the same column (type defaults to code under a code cell, else text)" },
-        forkOf: { type: "string", description: "Label or id of a code cell: start a new column pair beside its pair (type defaults to code)" },
+        forkOf: { type: "string", description: "Label or id of a code cell: the new node goes on its row beside it (see the tool description; type defaults to code)" },
         side: { type: "string", description: "forkOf side: right (default) or left; a left fork that would start before the canvas origin is refused" }
       },
       required: ["canvasPath"]
@@ -7058,20 +8478,20 @@ var TOOLS = [
   },
   {
     name: "canvas_update_node",
-    description: "Update an existing node: content, tags, color, label, and/or move/resize it. Partial \u2014 only supplied fields change. Code content that CHANGES the cell's text, with no explicit height, re-sizes it to the lines it now holds (grows or shrinks, 300 to 900) and counts as a resize; re-sending the same text re-sizes nothing, so a height set by hand is kept. Move/resize uses absolute canvas coordinates and runs the layout engine: the node's column is packed, the column pairs to its right are pushed clear, and the notes it covers move down. An output cell is clamped to 1400 wide by 900 high so it cannot overlap the pair to its right. Sections fit their content: a node placed past its section's bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Supplied coordinates are snapped to the grid and clamped to the canvas origin.",
+    description: `Update an existing node: content, tags, color, label, and/or move/resize it. Partial \u2014 only supplied fields change. content sets the text of a text note, the content of a cell or the code of a code cell; other types ignore it and a knowledge node refuses it. Code content that CHANGES the cell's text, with no explicit height, re-sizes it to the lines it now holds (grows or shrinks, ${CODE_HEIGHT_RANGE}) and counts as a resize; re-sending the same text re-sizes nothing, so a height set by hand is kept. Move/resize uses absolute canvas coordinates and runs the layout engine: the node's column is packed, the column pairs to its right are pushed clear, and the notes it covers move down. An output cell is clamped to ${OUTPUT_MAX_W} wide by ${OUTPUT_MAX_H} high so it cannot overlap the pair to its right. Sections fit their content: a node placed past its section's bottom edge grows it, slack shrinks it (never under the minimum), and every section and node below moves by the same grid multiple, down or up. Supplied coordinates and sizes are snapped to the grid; coordinates are clamped to the canvas origin.`,
     inputSchema: {
       type: "object",
       properties: {
         canvasPath: { type: "string", description: "Path to the .canvas file" },
         ref: { type: "string", description: "Node label or ID to update" },
-        content: { type: "string", description: "New text/cell content" },
+        content: { type: "string", description: "New text of a text note or a cell, or new code of a code cell" },
         tags: { type: "array", items: { type: "string" }, description: "Replace tags list" },
         color: { type: "string", description: "New accent color (1-6)" },
-        label: { type: "string", description: "Override the node label (e.g. rename N5 to N1)" },
+        label: { type: "string", description: "Override the node label (e.g. rename N5 to N1); not checked against the labels already in use" },
         x: { type: "number", description: "Move: absolute x (left)" },
         y: { type: "number", description: "Move: absolute y (top)" },
         width: { type: "number", description: "Resize: width" },
-        height: { type: "number", description: "Resize: height (omit it and code content that CHANGES the text re-sizes the cell to the lines it now holds, 300 to 900)" }
+        height: { type: "number", description: `Resize: height (omit it and code content that CHANGES the text re-sizes the cell to the lines it now holds, ${CODE_HEIGHT_RANGE})` }
       },
       required: ["canvasPath", "ref"]
     }
@@ -7171,7 +8591,7 @@ var TOOLS = [
   },
   {
     name: "canvas_remove_node",
-    description: "Delete one or more nodes from the canvas (also removes their connected edges). The column a deleted code cell sat in closes the hole it left, and sections fit their content.",
+    description: "Delete one or more nodes from the canvas (also removes their connected edges). The column each deleted node sat in closes the hole it left (a deleted output counts for its code cell's column). A code cell's output is deleted only when it is named too; deleting a kernel node does not shut its kernel down. Sections fit their content.",
     inputSchema: {
       type: "object",
       properties: {
@@ -7200,7 +8620,7 @@ var TOOLS = [
   },
   {
     name: "canvas_pin_output",
-    description: "Pin a content snippet (analysis result, notebook output, HTML table, image) as a CellNode on the canvas. Automatically links it to a source node if specified. Pinned onto a code cell it becomes that cell's output: it is placed in the pair's output column and the column below and the pairs to the right may move.",
+    description: `Pin a content snippet (analysis result, notebook output, HTML table, image) as a cell node on the canvas. With sourceRef it is connected from that node by an edge labelled with the date and time (or edgeLabel). Pinned onto a code cell that has no output yet, it becomes that cell's output: it is placed in the pair's output column, and the column below and the pairs to the right may move. Pinned onto any other node, or a code cell that already has an output, it is a ${CELL_SIZE.w}\xD7${CELL_SIZE.h} cell beside the source; with no source, right of all existing nodes.`,
     inputSchema: {
       type: "object",
       properties: {
@@ -7216,7 +8636,7 @@ var TOOLS = [
   },
   {
     name: "canvas_run_section",
-    description: "Run every code cell of a section in run order (top to bottom, then left to right), each on its own resolved kernel, stopping at the first error. Needs a live kernel, as canvas_run_cell does. A new output is placed in its pair's output column; the column below and the pairs to the right may move.",
+    description: "Run every code cell of a section in run order (top to bottom, then left to right), each on its own resolved kernel, whether it has run before or not, stopping at the first error. Needs a live kernel on a server this process can find, as canvas_run_cell does. A new output is placed in its pair's output column; the column below and the pairs to the right may move.",
     inputSchema: {
       type: "object",
       properties: {
@@ -7228,12 +8648,12 @@ var TOOLS = [
   },
   {
     name: "canvas_add_kernel",
-    description: `Add a kernel record to the canvas (the kind a section binds, not a kernel node). By default it starts the kernel on the Jupyter server at once, as the rail's "New kernel\u2026" does, so cells can run on it immediately.`,
+    description: `Add a kernel record to the canvas (the kind a section binds, not a kernel node). By default it starts the kernel on the Jupyter server at once, as the rail's "New kernel\u2026" does, so cells can run on it immediately. ${KERNEL_SERVERS_TEXT}`,
     inputSchema: {
       type: "object",
       properties: {
         canvasPath: { type: "string", description: "absolute path to the .canvas file" },
-        server: { type: "string", description: "a configured Jupyter server name (skena.jupyter.kernels[].name)" },
+        server: { type: "string", description: "name of a Jupyter server this process can find (see the tool description), e.g. a skena.jupyter.kernels[].name" },
         spec: { type: "string", description: "optional: kernelspec to launch, default python3; remembered so a restart reuses the same environment" },
         displayName: { type: "string", description: "optional: name shown in the rail; defaults to the spec" },
         bindSection: { type: "string", description: "optional: section to bind it to (S1, S2 \u2026 or the section id)" },
@@ -7244,7 +8664,7 @@ var TOOLS = [
   },
   {
     name: "canvas_remove_kernel",
-    description: "Remove a kernel record: shut it down if live, unbind every section that named it, and un-run the cells that ran on it (its namespace is gone with it). A kernel NODE is removed with canvas_remove_node instead.",
+    description: "Remove a kernel record: shut it down if it is live and its server can be found, unbind every section that named it, and un-run the cells that ran on it (its namespace is gone with it). A kernel NODE is removed with canvas_remove_node instead.",
     inputSchema: {
       type: "object",
       properties: {
@@ -7296,7 +8716,7 @@ var TOOLS = [
   },
   {
     name: "canvas_reflow_section",
-    description: "Pack a section's code columns and output pairs tight and settle overlapped notes downward. The only whole-section move: every other write touches one column. Each code cell is snapped onto the nearest column, each column closes its holes, the pairs sit one gap apart left to right, and a note a managed cell overlaps moves down. Sections fit their content afterwards.",
+    description: "Lay out a whole section again: the only write that moves more than the column it touches. Every node is put on a column, left to right \u2014 the code cells decide where the columns are, then every other node joins the nearest column that reaches it or starts its own (an output cell goes back to its pair's output slot; a kernel node stays where it is). Every column is packed (a node an edge holds on another node's row keeps that row), the columns are moved tight left to right one gap apart (the output slot is kept only after a column that has an output), and the columns are packed again. Sizes do not change; nothing is written when nothing moves. Sections fit their content afterwards.",
     inputSchema: {
       type: "object",
       properties: {
@@ -7308,7 +8728,7 @@ var TOOLS = [
   },
   {
     name: "canvas_run_cell",
-    description: "Run a code cell node on a Jupyter kernel and write its output to a linked cell node. Resolves the kernel from kernelRef, else the code node's bound-kernel edge, else the kernel bound to the node's section. A new output is placed in its pair's output column; the column below and the pairs to the right may move.",
+    description: `Run a code cell node on a Jupyter kernel and write its output to a linked cell node. Resolves the kernel from kernelRef, else the code node's bound-kernel edge, else the kernel bound to the node's section; the kernel must be live. First runs, in order, the cells upstream of it that have not run successfully yet; a failed one stops the chain. The reply ends with the first 500 characters of the stream output. A new output is placed in its pair's output column; the column below and the pairs to the right may move. ${KERNEL_SERVERS_TEXT}`,
     inputSchema: {
       type: "object",
       properties: {
@@ -7317,6 +8737,18 @@ var TOOLS = [
         kernelRef: { type: "string", description: "optional: a kernel record id or display name, or a kernel node label/id; defaults to the resolved one" }
       },
       required: ["canvasPath", "cellRef"]
+    }
+  },
+  {
+    name: "canvas_export_html",
+    description: "Write the canvas as one self-contained HTML page that loads nothing from the network: every node at its canvas position and size with its label, sections as frames (folded ones drawn unfolded), edges with their labels, math (KaTeX, Typst), code cells in the skena.code.theme colours, output cells (html, images, plotly), knowledge nodes and markdown files in full, all fonts and images inlined. Read-only on the .canvas file. The page is rendered by the skena extension of the running VS Code window of this workspace; without one this tool says so.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        canvasPath: { type: "string", description: "Path to the .canvas file" },
+        outPath: { type: "string", description: "Where to write the page: absolute, ~/..., or relative to the canvas's folder; default: next to the canvas, same name, .html. An existing file is overwritten; a .canvas file never is." }
+      },
+      required: ["canvasPath"]
     }
   }
 ];
@@ -7422,6 +8854,9 @@ async function dispatch(msg) {
           break;
         case "canvas_remove_kernel":
           text = await canvasRemoveKernel(args);
+          break;
+        case "canvas_export_html":
+          text = await canvasExportHtml(args);
           break;
         default:
           throw new Error(`Unknown tool: ${name}`);
