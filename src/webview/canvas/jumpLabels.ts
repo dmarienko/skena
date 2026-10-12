@@ -171,6 +171,15 @@ export function lineStarts(lines: readonly VisibleLine[], cursorLine: number, di
 }
 
 /**
+ * The px the horizontal scrollbar covers at the bottom of an editor's text area, as Monaco counts it
+ * (viewLayout.ts _getHorizontalScrollbarHeight): `size` when the scrollbar is not hidden and the text is
+ * wider than the view, else 0. The layout info's horizontalScrollbarHeight is `size` either way.
+ */
+export function horizontalScrollbarCover(hidden: boolean, viewWidth: number, scrollWidth: number, size: number): number {
+  return hidden || viewWidth >= scrollWidth ? 0 : size;
+}
+
+/**
  * The nodes that overlap `view` and whose centre is strictly on the `dir` side of `origin` (l right,
  * h left, j below, k above), nearest centre first; equal distances keep the input order. All in flow
  * coordinates. The focused node's own centre is the origin, so it is never on any side.

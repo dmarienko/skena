@@ -2,8 +2,8 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import {
-  DEFAULT_JUMP_LABELS, assignLabels, labelKey, labelRest, leaderStep, lineStarts, matchKeys, nodesInDirection, normalizeLeader,
-  vimKeyOf, wordStarts,
+  DEFAULT_JUMP_LABELS, assignLabels, horizontalScrollbarCover, labelKey, labelRest, leaderStep, lineStarts, matchKeys,
+  nodesInDirection, normalizeLeader, vimKeyOf, wordStarts,
 } from './.build/jumpLabels.mjs';
 
 const key = (k, mods = {}) => ({ key: k, ctrl: false, meta: false, alt: false, ...mods });
@@ -209,4 +209,12 @@ test('24. leader g and leader z are the code cell lookups, only where they are o
   }
   assert.deepEqual(leaderStep(1, key(';'), ';', true), { do: 'hold', next: 2 });
   assert.deepEqual(leaderStep(1, key('Shift'), ';', true), { do: 'none' });
+});
+
+test('25. the horizontal scrollbar covers the bottom of the text only when it is shown: not hidden, text wider than the view', () => {
+  assert.equal(horizontalScrollbarCover(true, 700, 900, 12), 0);
+  assert.equal(horizontalScrollbarCover(true, 700, 700, 12), 0);
+  assert.equal(horizontalScrollbarCover(false, 700, 700, 12), 0);
+  assert.equal(horizontalScrollbarCover(false, 700, 650, 12), 0);
+  assert.equal(horizontalScrollbarCover(false, 700, 701, 4), 4);
 });

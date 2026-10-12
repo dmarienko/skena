@@ -1,6 +1,7 @@
 import type { editor as MonacoEditor } from 'monaco-editor';
+import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 import { VimMode, type VimAdapterInstance } from 'monaco-vim';
-import { assignLabels, labelKey, labelRest, leaderStep, lineStarts, vimKeyOf, wordStarts, type JumpDir, type JumpKey, type LeaderState, type TextPos, type VisibleLine } from './jumpLabels';
+import { assignLabels, horizontalScrollbarCover, labelKey, labelRest, leaderStep, lineStarts, vimKeyOf, wordStarts, type JumpDir, type JumpKey, type LeaderState, type TextPos, type VisibleLine } from './jumpLabels';
 import { vimSettings } from './vimSettings';
 
 // - the parts of monaco-vim's per-editor state read and written here (keymap_vim.ts maybeInitVimState, InputState)
@@ -109,11 +110,14 @@ function visibleLines(editor: MonacoEditor.IStandaloneCodeEditor): VisibleLine[]
 
 // - the targets drawn inside the text area, in the order given, on lines shown whole. A line that does
 //   not wrap (code cells) can have word starts scrolled off to the left or right; those get no label.
+//   A line under a shown horizontal scrollbar is not whole.
 function onScreen(editor: MonacoEditor.IStandaloneCodeEditor, targets: TextPos[]): TextPos[] {
   const { contentLeft, contentWidth, verticalScrollbarWidth, height, horizontalScrollbarHeight } = editor.getLayoutInfo();
-  // - contentWidth includes the vertical scrollbar and height the horizontal one (computeLayout in editorOptions.js)
+  // - contentWidth includes the vertical scrollbar (computeLayout in editorOptions.js); it is also the view
+  //   width Monaco compares the scroll width with (viewLayout.ts)
   const right = contentLeft + contentWidth - verticalScrollbarWidth;
-  const bottom = height - horizontalScrollbarHeight;
+  const hidden = editor.getOption(monaco.editor.EditorOption.scrollbar).horizontal === monaco.editor.ScrollbarVisibility.Hidden;
+  const bottom = height - horizontalScrollbarCover(hidden, contentWidth, editor.getScrollWidth(), horizontalScrollbarHeight);
   return targets.filter(t => {
     const p = editor.getScrolledVisiblePosition({ lineNumber: t.line, column: t.col });
     return !!p && p.left >= contentLeft && p.left < right && p.top >= 0 && p.top + p.height <= bottom;
