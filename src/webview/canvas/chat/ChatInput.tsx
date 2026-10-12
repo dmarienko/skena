@@ -10,6 +10,7 @@ import { INPUT_LINE_H, inputHeight } from './consoleLayout';
 import { ensureCanvasWordCompletion } from '../canvasWordCompletion';
 import { inJumpLabels, installJumpLabels } from '../editorJumpLabels';
 import { defineEditorTheme } from '../codeCellTheme';
+import { releaseVsCodeKeys } from '../vscodeKeys';
 
 export interface ChatInputHandle {
   focus:  () => void;
@@ -217,6 +218,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(p
     patchVimDeleteLastLine();
     applyVimClipboard();
     bindSuggestNav(editor, monaco);
+    releaseVsCodeKeys(monaco);
     installJumpLabels(editor, vim);
 
     editor.onDidFocusEditorText(() => {

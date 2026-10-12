@@ -25,6 +25,7 @@ import { G_BADGES_ATTR } from '../gChord';
 import { ScrollableContent, setScrollPosition } from '../../components/ScrollableContent';
 import { applyVimClipboard, patchVimNewlineAndIndent, patchVimLastLine, patchVimBlockCursorBlink, patchVimVisualCursor, patchVimExternalSelection, patchVimDeleteLastLine, patchVimJoin, bindSuggestNav } from './TextNode';
 import { installJumpLabels, moveVimCursor } from '../editorJumpLabels';
+import { releaseVsCodeKeys } from '../vscodeKeys';
 import { dropLookup, requestDefinition, requestReferences } from './cellDefinition';
 import { closeReferencePeek, openReferencePeek, referencePeekOpen } from './referencePeek';
 import { openCellUri, peekBoxHeight, type ReferencesAnswer } from '../../../shared/findReferences';
@@ -366,6 +367,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     bindRun(monacoInstance.KeyMod.Alt     | monacoInstance.KeyCode.KeyJ);
 
     bindSuggestNav(editorInstance, monacoInstance);
+    releaseVsCodeKeys(monacoInstance);
     // - vim mode (same editor experience as text nodes); status bar shows the mode
     const vimMode = initVimMode(editorInstance, vimStatusRef.current ?? undefined);
     vimRef.current = vimMode;

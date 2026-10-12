@@ -44,6 +44,7 @@ import { stripForHost, rememberWritten, classifyHostText } from '../vimClipboard
 import { ensureCanvasWordCompletion } from '../canvasWordCompletion';
 import { installJumpLabels } from '../editorJumpLabels';
 import { defineEditorTheme } from '../codeCellTheme';
+import { releaseVsCodeKeys } from '../vscodeKeys';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -871,6 +872,7 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
     patchVimDeleteLastLine();
     patchVimJoin(editorInstance, vimStatusRef.current);
     bindSuggestNav(editorInstance, monacoInstance);
+    releaseVsCodeKeys(monacoInstance);
     installJumpLabels(editorInstance, vimMode);
 
     // ─── vim mode tracking via MutationObserver ──────────────────────────────
