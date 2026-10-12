@@ -44,7 +44,7 @@ import { stripForHost, rememberWritten, classifyHostText } from '../vimClipboard
 import { ensureCanvasWordCompletion } from '../canvasWordCompletion';
 import { installJumpLabels } from '../editorJumpLabels';
 import { defineEditorTheme } from '../codeCellTheme';
-import { releaseVsCodeKeys } from '../vscodeKeys';
+import { isVsCodeKey, releaseVsCodeKeys } from '../vscodeKeys';
 
 function vscodePostMessage(msg: unknown) {
   (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage(msg);
@@ -1016,13 +1016,13 @@ export function TextNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
       {editing ? (
         // - block React Flow from stealing pointer AND keyboard events while Monaco is active
         // - (space = pan, arrow keys = nudge, delete = delete node, etc.); the click is stopped too,
-        // - or placing the cursor would run onNodeClick's reveal pan
+        // - or placing the cursor would run onNodeClick's reveal pan. Ctrl+H / Ctrl+L go on to VS Code.
         <div
           style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
           onMouseDown={e => e.stopPropagation()}
           onPointerDown={e => e.stopPropagation()}
           onClick={e => e.stopPropagation()}
-          onKeyDown={e => e.stopPropagation()}
+          onKeyDown={e => { if (!isVsCodeKey(e)) e.stopPropagation(); }}
         >
           <div style={{ flex: 1 }}>
             <Editor

@@ -7,6 +7,7 @@ import { ConversationPanel } from './chat/ConversationPanel';
 import { InputBar } from './chat/InputBar';
 import type { ChatInputHandle } from './chat/ChatInput';
 import { clampConsoleWidth, dragWidth } from './chat/consoleLayout';
+import { isVsCodeKey } from './vscodeKeys';
 
 interface Props {
   activeNodeId: string | null;
@@ -90,8 +91,14 @@ export function FloatingChat({
   const { sendMessage } = chat;
   const send = useCallback((text: string) => sendMessage(text, activeNodeIdRef.current), [sendMessage]);
 
-  // - keys stop here so CanvasView's handlers (Space, hjkl) never see typing. Alt combos must reach the
-  // - window, where VS Code's keybinding forwarder listens; skena's own Alt keys are taken in capture phase.
+  // - the keys (e.code) whose keydown went on to VS Code: their keyup goes on too, even with Ctrl released
+  // - first. React Flow (useKeyPress on document) holds a key it saw go down until it sees it come up, and
+  // - a held h or l keeps its Delete from matching.
+  const passedRef = useRef(new Set<string>());
+
+  // - keys stop here so CanvasView's handlers (Space, hjkl) never see typing. Alt combos and Ctrl+H / Ctrl+L
+  // - must reach the window, where VS Code's keybinding forwarder listens; skena's own Alt keys are taken
+  // - in capture phase.
   // - A mouse press on a button leaves the focus where it was: a focused button would keep every key
   // - from the canvas. The + menu takes the focus itself when it opens.
   return (
@@ -99,8 +106,11 @@ export function FloatingChat({
       className="cc-root"
       data-skena-chat="1"
       style={{ width }}
-      onKeyDown={e => { if (!e.altKey) e.stopPropagation(); }}
-      onKeyUp={e => { if (!e.altKey) e.stopPropagation(); }}
+      onKeyDown={e => {
+        if (isVsCodeKey(e)) passedRef.current.add(e.code);
+        else if (!e.altKey) e.stopPropagation();
+      }}
+      onKeyUp={e => { if (!passedRef.current.delete(e.code) && !e.altKey) e.stopPropagation(); }}
       onMouseDown={e => { if ((e.target as HTMLElement).closest('button')) e.preventDefault(); }}
     >
       <div className="cc-edge cc-edge-left" title="Drag to change the width" onMouseDown={onEdgeDown('left')} />

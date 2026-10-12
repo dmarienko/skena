@@ -25,7 +25,7 @@ import { G_BADGES_ATTR } from '../gChord';
 import { ScrollableContent, setScrollPosition } from '../../components/ScrollableContent';
 import { applyVimClipboard, patchVimNewlineAndIndent, patchVimLastLine, patchVimBlockCursorBlink, patchVimVisualCursor, patchVimExternalSelection, patchVimDeleteLastLine, patchVimJoin, bindSuggestNav } from './TextNode';
 import { installJumpLabels, moveVimCursor } from '../editorJumpLabels';
-import { releaseVsCodeKeys } from '../vscodeKeys';
+import { isVsCodeKey, releaseVsCodeKeys } from '../vscodeKeys';
 import { dropLookup, requestDefinition, requestReferences } from './cellDefinition';
 import { closeReferencePeek, openReferencePeek, referencePeekOpen } from './referencePeek';
 import { openCellUri, peekBoxHeight, type ReferencesAnswer } from '../../../shared/findReferences';
@@ -668,14 +668,15 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
           {editing && (
             /* - nodrag/nowheel: let Monaco own pointer + wheel (React Flow otherwise pans/zooms
                and never gives the editor focus); stopPropagation keeps RF hotkeys off while typing and
-               a click on the code out of onNodeClick, which would pan the canvas */
+               a click on the code out of onNodeClick, which would pan the canvas. Ctrl+H / Ctrl+L go
+               on to VS Code */
             <div
               className="nodrag nowheel"
               style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
               onMouseDown={e => e.stopPropagation()}
               onPointerDown={e => e.stopPropagation()}
               onClick={e => e.stopPropagation()}
-              onKeyDown={e => e.stopPropagation()}
+              onKeyDown={e => { if (!isVsCodeKey(e)) e.stopPropagation(); }}
             >
               <Editor
                 height="100%"
