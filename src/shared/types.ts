@@ -275,6 +275,16 @@ export interface MsgCanvasLoaded {
   canvasPath: string;
   /** - this canvas's path as a copied reference writes it (`c c`, Copy reference) */
   refPath?: string;
+  /** - the host's version of the file this canvas is (canvasFile.ts); the webview's saves name it as their base */
+  version?: number;
+}
+
+/** - the host wrote the webview's save `seq`: the file is now at `version`, which follows `prevVersion` */
+export interface MsgCanvasSaved {
+  type:        'canvasSaved';
+  seq:         number;
+  version:     number;
+  prevVersion: number;
 }
 
 export interface MsgFileContent {
@@ -506,6 +516,7 @@ export interface MsgKnowledgeRefreshed {
 
 export type HostToWebview =
   | MsgCanvasLoaded
+  | MsgCanvasSaved
   | MsgExportThemeRequest
   | MsgNodesFromDrop
   | MsgFileContent
@@ -607,6 +618,9 @@ export interface MsgRunOutput {
   outputNode?:  CellNode;    // - present when the run produced output (upsert by id)
   edge?:        CanvasEdge;  // - present only when the output node was newly created
   source?:      'host' | 'mcp';   // - TEMP diagnosis: which agent-run path emitted this (single-writer host vs MCP fallback)
+  // - the host wrote this run's result: the file went from prevVersion to version with exactly this change
+  version?:     number;
+  prevVersion?: number;
 }
 export interface MsgRunStatus {
   type:         'runStatus';
@@ -655,6 +669,10 @@ export interface MsgRequestFile {
 export interface MsgSaveCanvas {
   type: 'saveCanvas';
   canvas: CanvasData;
+  /** - the host version (canvasLoaded / canvasSaved) this canvas is based on; a save on an older one is refused */
+  baseVersion?: number;
+  /** - numbers the saves of one webview, so canvasSaved can say which one it wrote */
+  seq?: number;
 }
 
 export interface MsgOpenFile {

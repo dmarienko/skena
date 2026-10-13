@@ -30,7 +30,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
-import { CanvasData, CanvasNode, CanvasEdge, CanvasViewport, KernelNode, KernelRecord, KnowledgeNode, MsgAddNodeResult, MsgKernelAdded, MsgKernelRemoved, MsgKnowledgeFetchResult, MsgKnowledgeRefresh, MsgKnowledgeRefreshed, MsgKnowledgeServersResult, MsgRunOutput, MsgSubCanvasCreated, MsgVerifyPathResult, NodeSide, CanvasMark, ViewportSnapshot } from '../../shared/types';
+import { CanvasData, CanvasNode, CanvasEdge, CanvasViewport, KernelNode, KernelRecord, KnowledgeNode, MsgAddNodeResult, MsgKernelAdded, MsgKernelRemoved, MsgKnowledgeFetchResult, MsgKnowledgeRefresh, MsgKnowledgeRefreshed, MsgKnowledgeServersResult, MsgCanvasSaved, MsgRunOutput, MsgSubCanvasCreated, MsgVerifyPathResult, NodeSide, CanvasMark, ViewportSnapshot } from '../../shared/types';
 import type { KnowledgeHit, KnowledgeText } from '../../shared/knowledge/types';
 import type { RefreshOutcome, RefreshTarget } from '../../shared/knowledge/refresh';
 import { staleTargets } from '../../shared/knowledge/refresh';
@@ -85,6 +85,7 @@ import { MarksPanel, type SectionEntry } from './MarksPanel';
 import { LanesContext } from './LanesContext';
 import { KernelsContext } from './KernelsContext';
 import { EdgeRoutesContext } from './EdgeRoutesContext';
+import { merge3, rebaseHistory } from '../../shared/canvasMerge';
 import { borderPoint, LANE_STEP, routeSection, sideOfHandle, type RouteEdge, type RouteNode, type RoutedEdge, type Side } from '../../shared/edgeRouting';
 
 const NODE_TYPES: NodeTypes = {
@@ -177,9 +178,6 @@ function toFlowEdges(ces: CanvasEdge[], cns: CanvasNode[]): Edge[] {
   return ces.filter(e => !groups.has(e.fromNode) && !groups.has(e.toNode)).map(toFlowEdge);
 }
 
-// - how long a just-produced run output is protected from being reverted by a stale reload
-const RECENT_OUTPUT_MS = 4000;
-
 // - quiet time after the last canvas change before the completion word list is rebuilt
 const WORDS_REBUILD_MS = 400;
 
@@ -204,14 +202,11 @@ const NEW_NODE_W = NEW_NODE.w, NEW_NODE_H = NEW_NODE.h, NEW_NODE_GAP = NEW_NODE.
 // - re-render (flicker) the whole canvas. An UNCHANGED node returns its EXACT previous object — React
 // - Flow memoizes node wrappers by reference, so an identical ref means zero re-render. Only genuinely
 // - changed nodes get a new object (data ref reused when only the position moved). Selection preserved.
-function reconcileFlowNodes(prev: Node[], next: Node[], pinned?: Set<string>): Node[] {
+function reconcileFlowNodes(prev: Node[], next: Node[]): Node[] {
   const prevById = new Map(prev.map(n => [n.id, n]));
   return next.map(nn => {
     const pn = prevById.get(nn.id);
     if (!pn) return nn;   // - new node
-    // - a just-produced run output: keep the webview's fresh copy so a momentarily-stale disk reload
-    //   can't revert its content back to an older run
-    if (pinned?.has(nn.id)) return pn;
     const dataSame = JSON.stringify(pn.data) === JSON.stringify(nn.data);
     const posSame  = pn.position.x === nn.position.x && pn.position.y === nn.position.y
       && pn.width === nn.width && pn.height === nn.height;
@@ -493,6 +488,8 @@ let clipboard: { nodes: CanvasNode[]; edges: CanvasEdge[] } | null = null;
 
 interface CanvasViewProps {
   canvas:     CanvasData;
+  /** - the host's version of the file `canvas` is; a save names the version it is based on */
+  canvasVersion?: number;
   canvasPath: string;
   /** - this canvas's path as a copied reference writes it; a pasted reference to it gets a title */
   refPath?:   string;
@@ -502,7 +499,7 @@ interface CanvasViewProps {
 
 // ─── inner component (needs ReactFlowProvider context) ────────────────────────
 
-function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: CanvasViewProps): JSX.Element {
+function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveNodeChange }: CanvasViewProps): JSX.Element {
   // - ensure every node has a reference label (N1, M3, J2 …); save if any were missing
   const initialNodes = ensureLabels(canvas.nodes);
   const [nodes, setNodes, onNodesChange] = useNodesState(toFlowNodes(initialNodes));
@@ -697,11 +694,46 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
   // - initialNodes already has labels assigned; if any were missing, they need a save
   const canvasRef = useRef<CanvasData>({ ...canvas, nodes: initialNodes });
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // - the file as the host last told this view it is: its version and canvas. canvasRef is this plus the
+  //   view's own changes; a reload merges those into the new file content (merge3) instead of dropping
+  //   them, and a save names the version so the host can refuse one based on an older file.
+  const baseRef = useRef<CanvasData>(canvasRef.current);
+  const baseVersionRef = useRef<number | undefined>(canvasVersion);
+  // - the canvases of the saves in flight, by number, until the host says which one it wrote
+  const saveSeqRef = useRef(0);
+  const postedRef = useRef<Map<number, CanvasData>>(new Map());
 
-  // - cancel any in-flight debounced save when the component unmounts.
-  // - without this, a pending save queued BEFORE an external canvas change (e.g. MCP
-  // - writing a new node) fires AFTER the reload, posting the stale pre-change canvas
-  // - back to the extension and overwriting the external edit on disk.
+  // - debounced save — reads canvasRef.current and the base version at fire time, so it sends the
+  //   latest state, named by the file version it is based on
+  const scheduleSave = useCallback(() => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null;
+      const seq = ++saveSeqRef.current;
+      postedRef.current.set(seq, canvasRef.current);
+      // - an answer can only be for one of the last few saves; older ones are never written
+      for (const k of postedRef.current.keys()) if (k <= seq - 8) postedRef.current.delete(k);
+      vscodePostMessage({ type: 'saveCanvas', canvas: canvasRef.current, baseVersion: baseVersionRef.current, seq });
+    }, 500);
+  }, []); // - refs only — stable, no closure dependency
+
+  // - the host wrote save `seq` as it was, from the version this view is based on: the view's base is now
+  //   that save at the written version. Answers for older saves only drop their entries.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { seq, version, prevVersion } = (e as CustomEvent<MsgCanvasSaved>).detail;
+      const posted = postedRef.current.get(seq);
+      for (const k of postedRef.current.keys()) if (k <= seq) postedRef.current.delete(k);
+      if (posted && prevVersion === baseVersionRef.current) {
+        baseRef.current = posted;
+        baseVersionRef.current = version;
+      }
+    };
+    window.addEventListener('skena:canvasSaved', handler);
+    return () => window.removeEventListener('skena:canvasSaved', handler);
+  }, []);
+
+  // - cancel any in-flight debounced save when the component unmounts
   useEffect(() => {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -721,15 +753,9 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
   // - which canvasPath the camera has been initialized for; a reload of the SAME path must not
   //   re-set the viewport (see the reload effect below)
   const loadedPathRef = useRef<string | null>(null);
-  // - output-node id → time (ms) of its last run output. A reload within RECENT_OUTPUT_MS keeps the
-  //   webview's fresh content for that node instead of reverting to a momentarily-stale disk snapshot.
-  const recentOutputRef = useRef<Map<string, number>>(new Map());
 
   // - sync when canvas reloads from host; restore focus after fitView settles
   useEffect(() => {
-    // - cancel any in-flight save: the freshly-loaded canvas IS the truth on disk;
-    // - letting a stale timer fire would overwrite an MCP write with old state.
-    if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
     // - first load of THIS path → allow the camera to be set (restore/fit/focus). A RELOAD of the
     //   same path (agent MCP edit, cell-run output, another window's save) must NOT move the camera:
     //   editing node data never changes the viewpoint. The disk viewport is also stale on a reload —
@@ -745,6 +771,8 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       console.warn(`[skena reload] IGNORED empty reload (have ${nodesRef.current.length} nodes on screen) — treating as a torn read`);
       return;
     }
+    // - a file version this view is already past (the same canvas sent twice) brings nothing new
+    if (!isInitialLoad && canvasVersion !== undefined && baseVersionRef.current !== undefined && canvasVersion <= baseVersionRef.current) return;
     loadedPathRef.current = canvasPath;
     const labeled = ensureLabels(canvas.nodes);
     // - TEMP INSTRUMENT (agent-run node-shift): log any node whose incoming DISK position differs from
@@ -776,50 +804,28 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
         });
       console.warn(`[skena outputs] cells=${cells.length}(${cells.join(',')}) code: ${report.join(' | ')}`);
     }
-    // - PROTECT run outputs: never let a (possibly stale) reload drop an output node that a code node
-    //   still references. A save/reload race can produce a disk snapshot lacking a just-created output
-    //   node + its edge; keep the webview's copy so it doesn't vanish or lose its connection.
-    const diskIds = new Set(labeled.map(n => n.id));
-    const referenced = new Set(
-      nodesRef.current
-        .map(n => (n.data as { outputNodeId?: string }).outputNodeId)
-        .filter((oid): oid is string => !!oid),
-    );
-    const keepNodes = nodesRef.current.filter(n => referenced.has(n.id) && !diskIds.has(n.id));
-    // - keep the edge to ANY referenced output the disk snapshot is missing the edge for — covers the
-    //   "node present but link dropped" case, not just a fully-missing output node
-    const keepEdges = edgesRef.current.filter(e => referenced.has(e.target) && !canvas.edges.some(x => x.id === e.id));
-    const keepAsCanvas = keepNodes.map(n => {
-      const { accentColor: _drop, ...rest } = n.data as Record<string, unknown>;
-      return { ...rest, x: n.position.x, y: n.position.y } as unknown as CanvasNode;
-    });
-    // - start from the stored edge so `keepRow`, `label` and `color` survive; the flow edge gives the ends
-    const storedEdges = new Map(canvasRef.current.edges.map(x => [x.id, x]));
-    const keepEdgesAsCanvas = keepEdges.map(e => ({ toEnd: 'arrow', ...storedEdges.get(e.id), id: e.id,
-      fromNode: e.source, toNode: e.target,
-      fromSide: e.sourceHandle ?? undefined, toSide: e.targetHandle ?? undefined } as CanvasEdge));
-
-    // - pin just-produced run outputs: a reload firing from a momentarily-stale writer must not revert
-    //   their fresh content to an older run. Expire entries past RECENT_OUTPUT_MS.
-    const nowMs = Date.now();
-    const pinned = new Set<string>();
-    for (const [oid, ts] of recentOutputRef.current) {
-      if (nowMs - ts < RECENT_OUTPUT_MS) pinned.add(oid); else recentOutputRef.current.delete(oid);
+    // - this view's own changes since the file version it last had (unsaved, or saved but answered by
+    //   this reload) are merged into the new file content, not dropped; where the file changed the same
+    //   thing, the file wins. A first load has no changes of its own: a pending save was another file's.
+    const theirs: CanvasData = { ...canvas, nodes: labeled };
+    const prevBase = baseRef.current;
+    const { canvas: merged, kept } = isInitialLoad
+      ? { canvas: theirs, kept: false }
+      : merge3(prevBase, canvasRef.current, theirs);
+    baseRef.current = theirs;
+    baseVersionRef.current = canvasVersion;
+    canvasRef.current = merged;
+    // - undo restores what the user had before a step, not what the file held before another writer's change
+    if (!isInitialLoad) {
+      undoStackRef.current = rebaseHistory(undoStackRef.current, prevBase, theirs);
+      redoStackRef.current = rebaseHistory(redoStackRef.current, prevBase, theirs);
     }
-    // - keep the webview's fresh version of pinned outputs in canvasRef too, so a save can't write the
-    //   stale disk content back either
-    const prevById = new Map(nodesRef.current.map(n => [n.id, n]));
-    const labeledForRef = labeled.map(cn => {
-      const wv = pinned.has(cn.id) ? prevById.get(cn.id) : undefined;
-      if (!wv) return cn;
-      const { accentColor: _drop, ...rest } = wv.data as Record<string, unknown>;
-      return { ...rest, x: wv.position.x, y: wv.position.y } as unknown as CanvasNode;
-    });
-
     // - reconcile (not replace) so unchanged nodes keep their exact object ref → no flicker re-render
-    setNodes(prev => [...reconcileFlowNodes(prev, toFlowNodes(labeled), pinned), ...keepNodes]);
-    setEdges([...toFlowEdges(canvas.edges, labeled), ...keepEdges]);
-    canvasRef.current = { ...canvas, nodes: [...labeledForRef, ...keepAsCanvas], edges: [...canvas.edges, ...keepEdgesAsCanvas] };
+    setNodes(prev => reconcileFlowNodes(prev, toFlowNodes(merged.nodes)));
+    setEdges(toFlowEdges(merged.edges, merged.nodes));
+    // - what is left of this view's changes still has to reach the file, based on the new version
+    if (kept) scheduleSave();
+    else if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
 
     // - restore saved viewport ONLY on the first load of this path (defaultViewport only fires on
     //   mount). On a reload keep the user's current camera — never snap to the stale disk viewport.
@@ -889,26 +895,18 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canvas, canvasPath, setNodes, setEdges]);
 
-  // - debounced save — reads canvasRef.current at fire time so it always sends
-  // - the latest state even if an external write (MCP) updated canvasRef between
-  // - the scheduleSave() call and the 500 ms timer expiry.
-  const scheduleSave = useCallback(() => {
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      vscodePostMessage({ type: 'saveCanvas', canvas: canvasRef.current });
-    }, 500);
-  }, []); // - canvasRef is a ref — stable, no closure dependency
 
   // - lanes live in canvas metadata; the webview owns fold/create/delete and the host merges them back
   const [lanes, setLanes] = useState<SectionLane[]>(canvas.metadata?.sections ?? []);
-  useEffect(() => { setLanes(canvas.metadata?.sections ?? []); }, [canvas]);
+  // - after the reload effect above has merged the reload into canvasRef
+  useEffect(() => { setLanes(canvasRef.current.metadata?.sections ?? []); }, [canvas]);
   const lanesRef = useRef<SectionLane[]>(lanes);
   useEffect(() => { lanesRef.current = lanes; }, [lanes]);
 
   // - kernels without a node, also in canvas metadata; created and removed by the host, mirrored here
   //   so the webview's own save carries them
   const [kernels, setKernels] = useState<KernelRecord[]>(canvas.metadata?.kernels ?? []);
-  useEffect(() => { setKernels(canvas.metadata?.kernels ?? []); }, [canvas]);
+  useEffect(() => { setKernels(canvasRef.current.metadata?.kernels ?? []); }, [canvas]);
   const kernelsRef = useRef<KernelRecord[]>(kernels);
   useEffect(() => { kernelsRef.current = kernels; }, [kernels]);
 
@@ -3975,13 +3973,6 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
           : '';
         console.warn(`[skena runOutput] src=${d.source ?? '?'} code=${d.codeNodeId} status=${d.lastStatus} out=${out?.id ?? '∅'} prevOid=${prevOid ?? '∅'}${flag}`);
       }
-      // - remember this run just now, so a stale reload can't revert the output cell's content NOR the
-      //   code node's outputNodeId link (see the reload effect's `pinned` set)
-      if (out) {
-        const t = Date.now();
-        recentOutputRef.current.set(out.id, t);
-        recentOutputRef.current.set(d.codeNodeId, t);
-      }
       // - one answer for this delta: the output cell is new to the canvas, not a re-run updating it
       const isNewOutput = !!out && !canvasRef.current?.nodes.some(n => n.id === out.id);
       setNodes(nds => {
@@ -4001,17 +3992,23 @@ function CanvasViewInner({ canvas, canvasPath, refPath, onActiveNodeChange }: Ca
       // - code node's outputNodeId are durable: a concurrent scheduleSave() then keeps them, and the
       // - host also persists the node once on first output. This is what lets a close+reopen mid-run
       // - restore the output node. (Reload flicker from the resulting writes is absorbed by reconcile.)
-      const cr = canvasRef.current;
-      if (cr) {
+      const mirror = (cr: CanvasData): CanvasData => {
         let nodes = cr.nodes.map(n => {
           if (n.id === d.codeNodeId) return { ...n, lastStatus: d.lastStatus, ...(out ? { outputNodeId: out.id } : {}) } as CanvasNode;
           if (d.kernelId && n.id === d.kernelNodeId) return { ...n, kernelId: d.kernelId } as CanvasNode;
           if (out && n.id === out.id) return { ...n, format: out.format, content: out.content, ...(out.nodeLabel ? { nodeLabel: out.nodeLabel } : {}) } as CanvasNode;
           return n;
         });
-        if (out && isNewOutput) nodes = [...nodes, out];
+        if (out && !cr.nodes.some(n => n.id === out.id)) nodes = [...nodes, out];
         const edges = d.edge && !cr.edges.some(x => x.id === d.edge!.id) ? [...cr.edges, d.edge] : cr.edges;
-        canvasRef.current = { ...cr, nodes, edges };
+        return { ...cr, nodes, edges };
+      };
+      canvasRef.current = mirror(canvasRef.current);
+      // - the host wrote exactly this to the file, from the version this view is based on: the view is
+      //   at the new version too, and its next save is based on it
+      if (d.version !== undefined && d.prevVersion === baseVersionRef.current) {
+        baseRef.current = mirror(baseRef.current);
+        baseVersionRef.current = d.version;
       }
       // - the host pinned this output to the folded section under a suppressed write; mirror it, or the
       //   fit counts the new node as visible content and expands the fold

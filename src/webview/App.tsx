@@ -80,7 +80,7 @@ function makeEventTarget<T>(): {
 // ─── App ─────────────────────────────────────────────────────────────────────
 
 export function App(): JSX.Element {
-  const { canvas, canvasPath, refPath, dispatch } = useCanvasData();
+  const { canvas, canvasPath, refPath, version, dispatch } = useCanvasData();
   const [ready,    setReady]    = useState(false);
   const [mdConfig, setMdConfig] = useState<MarkdownConfig>(DEFAULT_MARKDOWN_CONFIG);
   const styleUrlsRef = useRef<string[]>([]);
@@ -133,7 +133,7 @@ export function App(): JSX.Element {
       const msg = event.data;
       switch (msg.type) {
         case 'canvasLoaded':
-          dispatch({ type: 'SET_CANVAS', canvas: msg.canvas, canvasPath: msg.canvasPath, refPath: msg.refPath });
+          dispatch({ type: 'SET_CANVAS', canvas: msg.canvas, canvasPath: msg.canvasPath, refPath: msg.refPath, version: msg.version });
           setReady(true);
           break;
         case 'canvasChanged':
@@ -328,6 +328,9 @@ export function App(): JSX.Element {
         case 'runOutput':
           window.dispatchEvent(new CustomEvent('skena:runOutput', { detail: msg }));
           break;
+        case 'canvasSaved':
+          window.dispatchEvent(new CustomEvent('skena:canvasSaved', { detail: msg }));
+          break;
       }
     };
 
@@ -365,6 +368,7 @@ export function App(): JSX.Element {
       {ready ? (
         <CanvasView
           canvas={canvas}
+          canvasVersion={version}
           canvasPath={canvasPath}
           refPath={refPath}
           onActiveNodeChange={handleActiveNodeChange}

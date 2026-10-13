@@ -11,13 +11,15 @@ interface CanvasState {
   canvasPath: string;
   /** - the path a copied reference writes for this canvas; '' until the host sends it */
   refPath: string;
+  /** - the host's version of the file `canvas` is (canvasLoaded) */
+  version?: number;
   vaultEntries: VaultEntry[];
   /** - set of URIs that need re-render due to underlying file change */
   dirtyUris: Set<string>;
 }
 
 type Action =
-  | { type: 'SET_CANVAS';     canvas: CanvasData; canvasPath: string; refPath?: string }
+  | { type: 'SET_CANVAS';     canvas: CanvasData; canvasPath: string; refPath?: string; version?: number }
   | { type: 'SET_VAULT_INDEX'; entries: VaultEntry[] }
   | { type: 'FILE_CHANGED';   uri: string }
   | { type: 'UPDATE_NODE';    node: CanvasNode }
@@ -38,7 +40,7 @@ const initial: CanvasState = {
 function reducer(state: CanvasState, action: Action): CanvasState {
   switch (action.type) {
     case 'SET_CANVAS':
-      return { ...state, canvas: action.canvas, canvasPath: action.canvasPath, refPath: action.refPath ?? '', dirtyUris: new Set() };
+      return { ...state, canvas: action.canvas, canvasPath: action.canvasPath, refPath: action.refPath ?? '', version: action.version, dirtyUris: new Set() };
 
     case 'SET_VAULT_INDEX':
       return { ...state, vaultEntries: action.entries };
@@ -91,6 +93,7 @@ export function useCanvasData() {
     canvas:       state.canvas,
     canvasPath:   state.canvasPath,
     refPath:      state.refPath,
+    version:      state.version,
     vaultEntries: state.vaultEntries,
     dirtyUris:    state.dirtyUris,
     dispatch,

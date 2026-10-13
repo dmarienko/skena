@@ -14,7 +14,8 @@ import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs/promises';
 import { randomUUID } from 'crypto';
-import { readCanvas, writeCanvas } from './canvas-io';
+import { readCanvas, writeCanvas, writeCanvasJson } from './canvas-io';
+import { CanvasFile, type Committed } from './canvasFile';
 import { FileResolver } from './file-resolver';
 import { urisForChangedFile } from './filePaths';
 import { VaultIndexer } from './vault-indexer';
@@ -106,6 +107,9 @@ function openedCanvas(raw: CanvasData, was?: CanvasData): CanvasData {
   const edges = markKeepRowOnLoad(canvas.nodes, canvas.metadata?.sections ?? [], stored);
   return edges === canvas.edges ? canvas : { ...canvas, edges };
 }
+
+/** - writes the host's canvas of one open editor (canvasFile.ts); `tell` sends the webview the result */
+type Commit = (opts?: { tell?: boolean }) => Promise<Committed>;
 
 // - where a run's output cell goes: its pair's output column, its code cell's y. The fallback covers
 //   a canvas with no sections; a code cell inside one is always in a column, so it cannot miss there.
@@ -238,19 +242,16 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const canvasDir = path.dirname(document.uri.fsPath);
     const resolver = new FileResolver(vaults);
 
-    // - flag to suppress file watcher events triggered by our own saves
-    let isSelfSaving = false;
-    // - the last few JSONs WE wrote. A watcher event whose disk content matches ANY of these is our
-    // - own echo — remembering several (not one) is essential because the host's run writes and the
-    // - webview's saves interleave, so `disk` may still hold an earlier of OUR writes when its
-    // - watcher event finally fires. One slot got clobbered by the other writer → spurious reload.
-    const recentWrites: string[] = [];
-    let   lastWrittenJson = '';
-    const rememberWrite = (s: string) => {
-      lastWrittenJson = s;
-      recentWrites.push(s);
-      if (recentWrites.length > 8) recentWrites.shift();
-    };
+    // - every write of this file by the host and every reload from it goes through `file`: a write
+    //   merges in what another writer changed first, and a webview save based on an older version than
+    //   the file's is refused (canvasFile.ts)
+    const file = new CanvasFile(
+      document.uri.fsPath,
+      { read: p => fs.readFile(p, 'utf-8').catch(() => null), write: writeCanvasJson },
+      (fromFile, was) => openedCanvas(fromFile, was),
+      () => document.canvas,
+      c => document.updateFromDisk(c),
+    );
 
     panel.webview.options = {
       enableScripts: true,
@@ -281,6 +282,15 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       if (panelDisposed) return;
       try { panel.webview.postMessage(msg); } catch { /* - panel disposed mid-async */ }
     };
+    const sendLoaded = (canvas: CanvasData, version: number) =>
+      send({ type: 'canvasLoaded', canvas, canvasPath: document.uri.fsPath, refPath: this.refPathFor(document), version });
+    // - write document.canvas; the webview gets the result when another writer's change was merged in
+    //   (it has not seen that change) or when `tell` asks for it (a change it does not mirror itself)
+    const commit: Commit = async (opts = {}) => {
+      const r = await file.commit();
+      if (r.merged || opts.tell) sendLoaded(r.canvas, r.version);
+      return r;
+    };
 
     // - one Jupyter kernel manager per panel; pushes status to the webview.
     // - one-shot on open: reconcile run-flags against the live kernels — a bound kernel that died
@@ -289,7 +299,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     let reconciledFlags = false;
     const manager = new KernelManager(document.uri.fsPath, kernels => {
       send({ type: 'kernelStatus', kernels });
-      if (!reconciledFlags) { reconciledFlags = true; void this.reconcileRunFlags(document, kernels); }
+      if (!reconciledFlags) { reconciledFlags = true; void this.reconcileRunFlags(document, kernels, commit); }
     });
 
     // - handle messages from webview
@@ -301,12 +311,10 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             // - read canvas and clipboard in parallel; clipboard pre-warm ensures
             // - that vim's `p` works immediately on first open even in a fresh
             // - cross-canvas webview where clipboardCache starts empty.
-            const [rawCanvas, clipboardText] = await Promise.all([
-              readCanvas(document.uri.fsPath),
+            const [{ canvas, version }, clipboardText] = await Promise.all([
+              file.load(),
               vscode.env.clipboard.readText(),
             ]);
-            const canvas = openedCanvas(rawCanvas);
-            document.updateFromDisk(canvas);
             // - knowledge nodes already on the canvas refresh on open, so the providers exist
             //   before the webview has the canvas — not only once the dialog asks for the list.
             //   A settings file that fails to parse must not stop the canvas from loading
@@ -319,7 +327,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             send({ type: 'vimConfig', config: getVimConfig() });
             // - the code cells' colours, before the cells are drawn
             send({ type: 'codeConfig', config: getCodeConfig() });
-            send({ type: 'canvasLoaded', canvas, canvasPath: document.uri.fsPath, refPath: this.refPathFor(document) });
+            sendLoaded(canvas, version);
             // - a cross-canvas reference opened this canvas — focus its target now that the webview
             // - has parsed it (document.canvas isn't ready any earlier than this)
             {
@@ -387,7 +395,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           break;
         }
         case 'requestFile':  await this.handleRequestFile(msg, panel, document, resolver, canvasDir); break;
-        case 'saveCanvas':   await this.handleSaveCanvas(msg, document, v => { isSelfSaving = v; }, s => rememberWrite(s)); break;
+        case 'saveCanvas':   await this.handleSaveCanvas(msg, document, file, send, sendLoaded); break;
         case 'openFile':     await this.handleOpenFile(msg, resolver, canvasDir); break;
         case 'searchVault':  {
           const results = this.indexer.search(msg.query);
@@ -400,7 +408,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           break;
         }
         case 'chatMessage':          await this.handleChatMessage(msg, panel); break;
-        case 'floatingChatSend':  await this.handleFloatingChatSend(msg, panel, document, canvasDir, resolver); break;
+        case 'floatingChatSend':  await this.handleFloatingChatSend(msg, panel, document, canvasDir, resolver, commit); break;
         case 'floatingChatAbort': this._llmClient?.abort(); break;
         case 'floatingChatPickFiles': {
           const folder = vscode.workspace.getWorkspaceFolder(document.uri)?.uri ?? vscode.Uri.file(path.dirname(document.uri.fsPath));
@@ -418,7 +426,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           if (!added) break;
           send({ type: 'floatingChatNodeAdded', node: added.node, edge: added.edge, turnKey: msg.turnKey, moved: added.moved, sections: document.canvas.metadata?.sections });
           try {
-            await writeCanvas(document.uri.fsPath, document.canvas);
+            await commit();
           } catch { /* - the webview already holds the node; its next save writes it */ }
           break;
         }
@@ -460,7 +468,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           }
           // - persist in the .canvas file (portable), respawn so the new model and effort take effect
           document.canvas.metadata = { ...(document.canvas.metadata ?? {}), aiModel: chosen, aiEffort: effort };
-          await writeCanvas(document.uri.fsPath, document.canvas);
+          await commit();
           this._llmClient?.resetSession?.(document.uri.fsPath);
           send(this.chatModelInfo(document));
           break;
@@ -688,11 +696,11 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         case 'diagLog':
           this.indexer.output.appendLine(`[${new Date().toISOString()}] ${msg.text}`);
           break;
-        case 'runCell':      await this.handleRunCell(msg, manager, panel, document, v => { isSelfSaving = v; }, s => rememberWrite(s)); break;
-        case 'runSection':   await this.handleRunSection(msg, manager, panel, document, v => { isSelfSaving = v; }, s => rememberWrite(s)); break;
-        case 'addKernel':    await this.handleAddKernel(msg, manager, document, send, v => { isSelfSaving = v; }, s => rememberWrite(s)); break;
-        case 'kernelAction': await this.handleKernelAction(msg, manager, document); break;
-        case 'removeKernel': await this.handleRemoveKernel(msg, manager, document, send, v => { isSelfSaving = v; }, s => rememberWrite(s)); break;
+        case 'runCell':      await this.handleRunCell(msg, manager, panel, document, commit); break;
+        case 'runSection':   await this.handleRunSection(msg, manager, panel, document, commit); break;
+        case 'addKernel':    await this.handleAddKernel(msg, manager, document, send, commit); break;
+        case 'kernelAction': await this.handleKernelAction(msg, manager, document, commit); break;
+        case 'removeKernel': await this.handleRemoveKernel(msg, manager, document, send, commit); break;
         case 'interruptCell': await this.handleInterruptCell(msg, manager, document); break;
         case 'confirmDelete': {
           const yes = await vscode.window.showWarningMessage(msg.reason, { modal: true }, 'Delete');
@@ -722,11 +730,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       }
     });
 
-    // - watch for external changes to the .canvas file itself (Obsidian, git pull, MCP)
-    // - isSelfSaving suppresses the reload cycle when WE wrote the file.
-    // - But an external writer (e.g. MCP server) can write WHILE isSelfSaving is true,
-    // - so when that flag is set we compare disk content to lastWrittenJson: if it
-    // - differs, an external write slipped through and we must still reload the webview.
+    // - watch for external changes to the .canvas file itself (Obsidian, git pull, MCP). Our own writes
+    //   are told apart by content: the file holding the text the host last wrote is no change.
     const canvasWatcher = vscode.workspace.createFileSystemWatcher(document.uri.fsPath);
 
     // - reload the webview from disk after an external write.
@@ -736,9 +741,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     // - mounts the one new node (React Flow diffs by id) instead of remounting all.
     const reloadFromDisk = async () => {
       try {
-        const canvas = openedCanvas(await readCanvas(document.uri.fsPath), document.canvas);
-        document.updateFromDisk(canvas);
-        send({ type: 'canvasLoaded', canvas, canvasPath: document.uri.fsPath, refPath: this.refPathFor(document) });
+        const r = await file.absorb();
+        if (!r) return;
+        sendLoaded(r.canvas, r.version);
         // - covers the rare race where a pending cross-canvas focus arrived before this
         // - panel was registered in panelsByPath (see the webviewReady canvasLoaded above)
         const wantLabel = this.pendingFocus.get(document.uri.fsPath);
@@ -752,18 +757,13 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     // - debounce: an AI add-note is two writes (canvas_add_node + canvas_add_edge);
     // - coalesce rapid external writes into a single reload to avoid double redraw
     let reloadTimer: ReturnType<typeof setTimeout> | null = null;
-    canvasWatcher.onDidChange(async () => {
-      // - skip our own echo by CONTENT, not the isSelfSaving timer. A large-canvas / slow-FS write
-      // - can fire its watcher event AFTER the 400ms flag reverted; that used to slip through as an
-      // - "external" change and trigger a reload whose (stale) snapshot dropped a just-created
-      // - run-output node. Comparing disk to the last bytes we wrote catches late echoes too.
-      try {
-        const raw = await fs.readFile(document.uri.fsPath, 'utf-8');
-        if (recentWrites.includes(raw)) return;   // - our own write (current, or a late-firing earlier one)
-      } catch { return; }
+    const onCanvasFileEvent = () => {
       if (reloadTimer) clearTimeout(reloadTimer);
       reloadTimer = setTimeout(() => { reloadTimer = null; void reloadFromDisk(); }, 200);
-    });
+    };
+    canvasWatcher.onDidChange(onCanvasFileEvent);
+    // - another writer that writes atomically (renames a temp file onto the canvas) shows as a create
+    canvasWatcher.onDidCreate(onCanvasFileEvent);
 
     // - helper: convert an absolute fsPath to the URI the canvas node uses.
     // - MUST return the same form the node's `file` field was stored with:
@@ -816,7 +816,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     // - self-save suppression + last-written tracking the webview's saveCanvas uses.
     SkenaEditorProvider.agentPersistByPath.set(document.uri.fsPath, {
       panel,
-      fn: payload => this.persistAgentRun(payload, panel, document, v => { isSelfSaving = v; }, s => rememberWrite(s)),
+      fn: payload => this.persistAgentRun(payload, panel, document, commit),
     });
     panel.onDidChangeViewState(({ webviewPanel }) => {
       if (webviewPanel.active) {
@@ -1013,13 +1013,14 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
   }
 
   private async handleSaveCanvas(
-    msg: MsgSaveCanvas,
-    document: SkenaDocument,
-    setSelfSaving: (v: boolean) => void,
-    setLastWrittenJson: (s: string) => void,
+    msg:        MsgSaveCanvas,
+    document:   SkenaDocument,
+    file:       CanvasFile,
+    send:       (m: HostToWebview) => void,
+    sendLoaded: (canvas: CanvasData, version: number) => void,
   ): Promise<void> {
-    try {
-      setSelfSaving(true);
+    // - built once the file is checked, from the host's canvas as it is then
+    const build = (): CanvasData => {
       // - the webview snapshot is nodes/edges only; it does NOT own canvas metadata (aiModel is
       // - set host-side via pickModel). Keep the host's metadata authoritative, else this
       // - auto-save clobbers metadata.aiModel back to null and the per-canvas model is lost on reopen.
@@ -1033,7 +1034,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         const hostOid = (hostById.get(n.id) as CodeNode | undefined)?.outputNodeId;
         return hostOid && msgIds.has(hostOid) ? { ...(n as CodeNode), outputNodeId: hostOid } : n;
       });
-      const canvasToWrite = {
+      return {
         ...msg.canvas,
         nodes: mergedNodes,
         // - aiModel is host-owned (set via pickModel); sections are webview-owned (fold/create/delete).
@@ -1048,15 +1049,14 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           }) ?? document.canvas.metadata?.kernels,
         },
       };
-      const json = JSON.stringify(canvasToWrite, null, 2);
-      setLastWrittenJson(json);
-      await writeCanvas(document.uri.fsPath, canvasToWrite);
-      document.updateFromDisk(canvasToWrite);
+    };
+    try {
+      const r = await file.save(msg.baseVersion, build);
+      // - refused (its base is older than the file): the webview merges its changes into the current canvas and saves again
+      if (r.written) send({ type: 'canvasSaved', seq: msg.seq ?? 0, version: r.version, prevVersion: r.prevVersion });
+      else sendLoaded(r.canvas, r.version);
     } catch (e) {
       vscode.window.showErrorMessage(`Skena: failed to save canvas: ${e}`);
-    } finally {
-      // - clear flag after watcher debounce settles (chokidar awaitWriteFinish ~200ms + margin)
-      setTimeout(() => setSelfSaving(false), 400);
     }
   }
 
@@ -1546,8 +1546,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     payload:        AgentRunPersist,
     panel:          vscode.WebviewPanel,
     document:       SkenaDocument,
-    setSelfSaving:  (v: boolean) => void,
-    setLastWritten: (s: string) => void,
+    commit:         Commit,
   ): Promise<AgentRunPersistResult> {
     try {
       const c  = document.canvas;
@@ -1563,20 +1562,19 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       const kn = kernelById(c, payload.kernelNodeId);
       if (kn && payload.kernelId !== kn.kernelId) kn.kernelId = payload.kernelId;   // - reuse this kernel next run
 
-      const persist = async () => {
-        setSelfSaving(true);
-        const json = JSON.stringify(c, null, 2);
-        setLastWritten(json);
-        await writeCanvas(document.uri.fsPath, c);
-        setTimeout(() => setSelfSaving(false), 400);
+      // - the version step the webview may take with the runOutput; none when the write merged in
+      //   another writer's change (the webview was sent the whole canvas then)
+      const persist = async (): Promise<{ version?: number; prevVersion?: number }> => {
+        const r = await commit();
+        return r.merged ? {} : { version: r.version, prevVersion: r.prevVersion };
       };
 
       if (payload.phase === 'start') {
         cn.lastStatus = 'running';
         // - do NOT set cn.outputNodeId yet — only commit it once there is output (matches applyAndPersist)
         const outId = ownedOutputId(c.nodes, c.edges, cn) ?? `ai-${Date.now().toString(36)}`;
-        await persist();
-        send({ type: 'runOutput', codeNodeId: cn.id, lastStatus: 'running', kernelNodeId: payload.kernelNodeId, kernelId: payload.kernelId, source: 'host' });
+        const step = await persist();
+        send({ type: 'runOutput', codeNodeId: cn.id, lastStatus: 'running', kernelNodeId: payload.kernelNodeId, kernelId: payload.kernelId, source: 'host', ...step });
         return { handled: true, outputNodeId: outId };
       }
 
@@ -1614,12 +1612,13 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           c.edges.push(edge);
         }
       }
-      await persist();
+      const step = await persist();
       send({
         type: 'runOutput', codeNodeId: cn.id, lastStatus: payload.status ?? 'ok',
         kernelNodeId: payload.kernelNodeId, kernelId: payload.kernelId, source: 'host',
         ...(outputNode ? { outputNode } : {}),
         ...(edge ? { edge } : {}),
+        ...step,
       });
       return { handled: true };
     } catch {
@@ -1641,8 +1640,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     manager:        KernelManager,
     panel:          vscode.WebviewPanel,
     document:       SkenaDocument,
-    setSelfSaving:  (v: boolean) => void,
-    setLastWritten: (s: string) => void,
+    commit:         Commit,
   ): Promise<'ok' | 'error'> {
     // - the run can outlive its panel (user closes the canvas mid-run); posting to a
     // - disposed webview throws, so swallow it — the output is still persisted to disk.
@@ -1679,25 +1677,23 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const fail = (error: string) =>
       send({ type: 'runStatus', cellNodeId: codeNode.id, kernelNodeId: kernel.id, state: 'error', error });
 
-    // - persist a 'running' marker to disk (self-save suppressed, no reload) so reopening the
-    // - canvas — or the kernel finishing after this panel closed — shows the cell in-progress
-    // - instead of its previous status. The end-of-run write overwrites it with ok/error.
+    // - persist a 'running' marker to disk (no reload) so reopening the canvas — or the kernel
+    // - finishing after this panel closed — shows the cell in-progress instead of its previous
+    // - status. The end-of-run write overwrites it with ok/error.
     try {
       const c = document.canvas;
       const cn = c.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code') as CodeNode | undefined;
       if (cn) {
         cn.code = msg.code;
         cn.lastStatus = 'running';
-        setSelfSaving(true);
-        setLastWritten(JSON.stringify(c, null, 2));
-        await writeCanvas(document.uri.fsPath, c);
-        setTimeout(() => setSelfSaving(false), 400);
+        const r = await commit();
+        if (!r.merged) send({ type: 'runOutput', codeNodeId: cn.id, lastStatus: 'running', kernelNodeId: kernel.id, version: r.version, prevVersion: r.prevVersion });
       }
     } catch { /* - best-effort marker */ }
 
-    // - apply the run's mutations to the CURRENT document.canvas, persist WITHOUT triggering
-    // - the watcher reload (self-save suppression, like handleSaveCanvas), and return the
-    // - output node/edge so the caller can push a TARGETED runOutput update to the webview.
+    // - apply the run's mutations to the CURRENT document.canvas, persist (our own write: no watcher
+    // - reload), and return the output node/edge so the caller can push a TARGETED runOutput update
+    // - to the webview, with the version step when the write merged nothing in.
     // - This avoids a full canvas reload (which re-syncs every node → focus jump + shift).
     // - The run awaits for seconds; a debounced saveCanvas can swap document._canvas
     // - meanwhile, so we re-resolve nodes by id here rather than writing a captured object.
@@ -1705,7 +1701,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       status: 'ok' | 'error',
       output: { format: 'markdown' | 'image' | 'html' | 'plotly'; content: string } | null,
       presetId?: string,
-    ): Promise<{ outputNode?: CellNode; edge?: CanvasEdge }> => {
+    ): Promise<{ outputNode?: CellNode; edge?: CanvasEdge; version?: number; prevVersion?: number }> => {
       const c  = document.canvas;
       const cn = c.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code') as CodeNode | undefined;
       if (!cn) return {};                         // - cell deleted mid-run
@@ -1750,12 +1746,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           c.edges.push(edge);
         }
       }
-      setSelfSaving(true);
-      const json = JSON.stringify(c, null, 2);
-      setLastWritten(json);
-      await writeCanvas(document.uri.fsPath, c);
-      setTimeout(() => setSelfSaving(false), 400);
-      return { outputNode, edge };
+      const r = await commit();
+      return { outputNode, edge, ...(r.merged ? {} : { version: r.version, prevVersion: r.prevVersion }) };
     };
 
     // - relaunch the SAME environment on a restart via the kernel's kernelspec. Older kernel nodes
@@ -1823,9 +1815,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           const own = layoutAround(c, cn.id, { moverIds: [outputNode.id] }, [outputNode.id]);
           Object.assign(c, applyLaneFit(c, Date.now(), own));   // - c IS document.canvas, written below: assign into it, never reassign c
           if (!c.edges.some(e => e.id === edge.id)) c.edges.push(edge);
-          setSelfSaving(true);
-          setLastWritten(JSON.stringify(c, null, 2));
-          void writeCanvas(document.uri.fsPath, c).finally(() => setTimeout(() => setSelfSaving(false), 400));
+          void commit().catch(() => { /* - the end-of-run write persists it */ });
         }
       }
     };
@@ -1845,8 +1835,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         // - same id so the live node reconciles to disk instead of being orphaned in the webview.
         const snap = latest as CollectedOutput | null;   // - CFA narrows the closure-assigned `latest` to null; widen it
         const streamed = snap && hasVisibleOutput(snap) ? renderOutput(snap) : null;
-        const { outputNode, edge } = await applyAndPersist('error', streamed, liveOutputId);
-        send({ type: 'runOutput', codeNodeId: codeNode.id, lastStatus: 'error', kernelNodeId: kernel.id, kernelId, outputNode, edge });
+        const done = await applyAndPersist('error', streamed, liveOutputId);
+        send({ type: 'runOutput', codeNodeId: codeNode.id, lastStatus: 'error', kernelNodeId: kernel.id, kernelId, ...done });
       } catch { /* non-fatal */ }
       fail(`execution failed: ${e instanceof Error ? e.message : String(e)}`);
       return 'error';
@@ -1862,9 +1852,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const hasOutput = hasVisibleOutput(out);
     const status: 'ok' | 'error' = out.status === 'error' ? 'error' : 'ok';
     try {
-      const { outputNode, edge } = await applyAndPersist(status, hasOutput ? { format, content } : null, liveOutputId);
+      const done = await applyAndPersist(status, hasOutput ? { format, content } : null, liveOutputId);
       // - targeted update: webview mirrors the output node without a full reload
-      send({ type: 'runOutput', codeNodeId: codeNode.id, lastStatus: status, kernelNodeId: kernel.id, kernelId, outputNode, edge });
+      send({ type: 'runOutput', codeNodeId: codeNode.id, lastStatus: status, kernelNodeId: kernel.id, kernelId, ...done });
     } catch (e) {
       vscode.window.showErrorMessage(`Skena: failed to save run output: ${e}`);
     }
@@ -1885,8 +1875,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     manager:        KernelManager,
     panel:          vscode.WebviewPanel,
     document:       SkenaDocument,
-    setSelfSaving:  (v: boolean) => void,
-    setLastWritten: (s: string) => void,
+    commit:         Commit,
   ): Promise<void> {
     const canvas   = document.canvas;
     const upstream = upstreamCellsForRun(msg.cellNodeId, cellKernelView(canvas));
@@ -1896,12 +1885,12 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       if (!up || up.lastStatus === 'ok') continue;   // - already run (and unchanged) → skip
       const st = await this.runOneCell(
         { type: 'runCell', cellNodeId: up.id, code: up.code ?? '' },
-        manager, panel, document, setSelfSaving, setLastWritten,
+        manager, panel, document, commit,
       );
       if (st === 'error') return;   // - a failed upstream cell aborts the chain (don't run downstream)
     }
     // - finally run the requested cell (always) with the code the user is running
-    await this.runOneCell(msg, manager, panel, document, setSelfSaving, setLastWritten);
+    await this.runOneCell(msg, manager, panel, document, commit);
   }
 
   /**
@@ -1913,8 +1902,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     manager:        KernelManager,
     panel:          vscode.WebviewPanel,
     document:       SkenaDocument,
-    setSelfSaving:  (v: boolean) => void,
-    setLastWritten: (s: string) => void,
+    commit:         Commit,
   ): Promise<void> {
     const canvas = document.canvas;
     const order  = memberCodeCellsInRunOrder(canvas.nodes, canvas.metadata?.sections ?? [], msg.sectionId);
@@ -1936,7 +1924,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         if (!cell) continue;
         const st = await this.runOneCell(
           { type: 'runCell', cellNodeId: cell.id, code: cell.code ?? '' },
-          manager, panel, document, setSelfSaving, setLastWritten,
+          manager, panel, document, commit,
         );
         if (st === 'error') return;
       }
@@ -1999,25 +1987,12 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     }
   }
 
-  /** Write document.canvas with self-save suppression (no watcher reload), as runOneCell's applyAndPersist does. */
-  private async persistCanvas(
-    document:       SkenaDocument,
-    setSelfSaving:  (v: boolean) => void,
-    setLastWritten: (s: string) => void,
-  ): Promise<void> {
-    const c = document.canvas;
-    setSelfSaving(true);
-    setLastWritten(JSON.stringify(c, null, 2));
-    await writeCanvas(document.uri.fsPath, c);
-    setTimeout(() => setSelfSaving(false), 400);
-  }
-
   /** Drop the run-flags and the stale kernelId of every kernel whose Jupyter kernel is no longer live. */
   // - reset run-flags (and the stale kernelId) for every kernel — node or record — whose kernel is no longer live, so
   // - run-with-upstream re-runs everything against a wiped namespace. Guarded: acts only when the
   // - kernel's SERVER responded to the poll but the kernelId is absent (a fully unreachable server
   // - is ambiguous — a live kernel could just be momentarily unreported — so it's left alone).
-  private async reconcileRunFlags(document: SkenaDocument, kernels: KernelStatusEntry[]): Promise<void> {
+  private async reconcileRunFlags(document: SkenaDocument, kernels: KernelStatusEntry[], commit: Commit): Promise<void> {
     const canvas           = document.canvas;
     const liveIds          = new Set(kernels.map(k => k.kernelId));
     const reachableServers = new Set(kernels.map(k => k.server));
@@ -2039,7 +2014,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       k.kernelId = undefined;   // - drop the dead id so the next run starts a fresh kernel
       changed = true;
     }
-    if (changed) await writeCanvas(document.uri.fsPath, canvas);
+    // - the webview does not clear these itself: it is sent the result
+    if (changed) await commit({ tell: true });
   }
 
   /**
@@ -2051,6 +2027,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     msg:      { action: 'restart' | 'shutdown' | 'interrupt' | 'start'; kernelNodeId: string },
     manager:  KernelManager,
     document: SkenaDocument,
+    commit:   Commit,
   ): Promise<void> {
     // - read-only resolution: server, spec, name and the live-kernel guards. Every branch re-resolves
     //   the kernel from a fresh canvas before it mutates one.
@@ -2060,8 +2037,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     if (!server) return;   // - 'start' needs no live kernel; the others are guarded below
     const name = kernel.displayName ?? 'kernel';
     // - restart/shutdown wipe the kernel namespace → every bound cell is effectively un-run, so clear
-    // - their run-flag (lastStatus). Interrupt keeps variables, so it must NOT reset. The plain write
-    // - (no self-save suppression) makes the file-watcher soft-reload the cleared flags into the webview.
+    // - their run-flag (lastStatus). Interrupt keeps variables, so it must NOT reset. The webview is
+    // - sent the written canvas, which carries the cleared flags and the kernel's id.
     const resetBoundCellFlags = (canvas: CanvasData): void => {
       const bound = new Set(resolveKernelCellsInCanvas(msg.kernelNodeId, cellKernelView(canvas)));
       for (const n of canvas.nodes) {
@@ -2087,7 +2064,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         if (!fresh) return;   // - removed while the kernel was starting
         fresh.kernelId = liveId;
         if (spec && fresh.spec !== spec) fresh.spec = spec;   // - heal older kernels
-        await writeCanvas(document.uri.fsPath, canvas);
+        await commit({ tell: true });
         void vscode.window.showInformationMessage(`Skena: started ${name}.`);
         return;
       }
@@ -2097,7 +2074,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         // - re-read after the awaits: a save may have replaced document.canvas meanwhile
         const canvas = document.canvas;
         resetBoundCellFlags(canvas);
-        await writeCanvas(document.uri.fsPath, canvas);
+        await commit({ tell: true });
         void vscode.window.showInformationMessage(`Skena: restarted ${name} — cell run-flags reset.`);
       } else if (msg.action === 'interrupt') {
         await manager.interrupt(server, kernel.kernelId);
@@ -2109,7 +2086,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         const fresh  = kernelById(canvas, msg.kernelNodeId);
         if (fresh) fresh.kernelId = undefined;
         resetBoundCellFlags(canvas);
-        await writeCanvas(document.uri.fsPath, canvas);   // - also persists the cleared kernelId
+        await commit({ tell: true });   // - also persists the cleared kernelId
         void vscode.window.showInformationMessage(`Skena: shut down ${name} — cell run-flags reset.`);
       }
     } catch (e) {
@@ -2123,8 +2100,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     manager:        KernelManager,
     document:       SkenaDocument,
     send:           (m: HostToWebview) => void,
-    setSelfSaving:  (v: boolean) => void,
-    setLastWritten: (s: string) => void,
+    commit:         Commit,
   ): Promise<void> {
     const kernel = document.canvas.metadata?.kernels?.find(k => k.id === msg.kernelRef);
     if (!kernel) {
@@ -2162,7 +2138,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         return rest;
       }),
     };
-    await this.persistCanvas(document, setSelfSaving, setLastWritten);
+    await commit();
     send({ type: 'kernelRemoved', kernelRef: msg.kernelRef, unranCells: [...bound] });
   }
 
@@ -2208,8 +2184,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     manager:        KernelManager,
     document:       SkenaDocument,
     send:           (m: HostToWebview) => void,
-    setSelfSaving:  (v: boolean) => void,
-    setLastWritten: (s: string) => void,
+    commit:         Commit,
   ): Promise<void> {
     const servers = manager.allServers();
     if (!servers.length) {
@@ -2288,7 +2263,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       // - the lane can be gone (deleted while the QuickPick was open); the record is still kept, unbound
       const lane = canvas.metadata.sections?.find(l => l.id === msg.forSection);
       if (lane) lane.kernelId = kernel.id;
-      await this.persistCanvas(document, setSelfSaving, setLastWritten);
+      await commit();
       send({ type: 'kernelAdded', sectionId: msg.forSection, kernel });
       return;
     }
@@ -2344,6 +2319,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     document:  SkenaDocument,
     canvasDir: string,
     resolver:  FileResolver,
+    commit:    Commit,
   ): Promise<void> {
     const send = (m: HostToWebview) => panel.webview.postMessage(m);
 
@@ -2419,7 +2395,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           }
           // - save canvas to disk
           try {
-            await writeCanvas(document.uri.fsPath, document.canvas);
+            await commit();
           } catch { /* non-fatal */ }
           return content ? 'Note added to canvas.' : 'No content provided.';
         }
