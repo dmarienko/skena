@@ -3292,7 +3292,7 @@ var require_stream = __commonJS({
       };
       duplex._final = function(callback) {
         if (ws.readyState === ws.CONNECTING) {
-          ws.once("open", function open2() {
+          ws.once("open", function open3() {
             duplex._final(callback);
           });
           return;
@@ -3316,7 +3316,7 @@ var require_stream = __commonJS({
       };
       duplex._write = function(chunk, encoding, callback) {
         if (ws.readyState === ws.CONNECTING) {
-          ws.once("open", function open2() {
+          ws.once("open", function open3() {
             duplex._write(chunk, encoding, callback);
           });
           return;
@@ -3790,9 +3790,9 @@ var require_websocket_server = __commonJS({
 });
 
 // src/extension/mcp/server.ts
-var fs3 = __toESM(require("fs/promises"));
-var path5 = __toESM(require("path"));
-var os2 = __toESM(require("os"));
+var fs5 = __toESM(require("fs/promises"));
+var path7 = __toESM(require("path"));
+var os4 = __toESM(require("os"));
 var readline = __toESM(require("readline"));
 var crypto = __toESM(require("crypto"));
 
@@ -4224,8 +4224,8 @@ function resolveCellKernel(cellId, c) {
   return makeCellKernelResolver(c)(cellId);
 }
 function resolveKernelCellsInCanvas(kernelId, c) {
-  const resolve6 = makeCellKernelResolver(c);
-  return c.nodes.filter((n) => n.type === "code" && resolve6(n.id) === kernelId).map((n) => n.id);
+  const resolve7 = makeCellKernelResolver(c);
+  return c.nodes.filter((n) => n.type === "code" && resolve7(n.id) === kernelId).map((n) => n.id);
 }
 function kernelById(c, id) {
   const rec = c.metadata?.kernels?.find((k) => k.id === id);
@@ -4240,8 +4240,8 @@ function upstreamCellsForRun(targetId, c) {
   const isCode = (id) => byId3.get(id)?.type === "code";
   if (resolveBoundKernel(targetId, c.edges, isKernel))
     return resolveUpstreamChain(targetId, c.edges, isKernel, isCode);
-  const resolve6 = makeCellKernelResolver(c);
-  const kernel = resolve6(targetId);
+  const resolve7 = makeCellKernelResolver(c);
+  const kernel = resolve7(targetId);
   if (!kernel)
     return [];
   const seen = /* @__PURE__ */ new Set([targetId]);
@@ -6288,8 +6288,191 @@ function merge3(base, ours, theirs) {
   }
   out.nodes ??= [];
   out.edges ??= [];
-  return { canvas: out, kept };
+  const merged = out;
+  const canvas = tidy(merged, new Set(theirs.nodes.map((n) => n.id)));
+  return { canvas, kept: canvas === merged ? kept : !same(canvas, theirs) };
 }
+function tidyParts(nodes, edges, sections) {
+  const ids = new Set(nodes.map((n) => n.id));
+  const keptEdges = edges.filter((e) => ids.has(e.fromNode) && ids.has(e.toNode));
+  const nextNodes = nodes.some((n) => n.outputNodeId && !ids.has(n.outputNodeId)) ? nodes.map((n) => {
+    const oid = n.outputNodeId;
+    if (!oid || ids.has(oid))
+      return n;
+    const { outputNodeId: _gone, ...rest } = n;
+    return rest;
+  }) : nodes;
+  const nextSections = sections?.some((s) => s.folded?.some((id) => !ids.has(id))) ? sections.map((s) => s.folded?.some((id) => !ids.has(id)) ? { ...s, folded: s.folded.filter((id) => ids.has(id)) } : s) : sections;
+  return { nodes: nextNodes, edges: keptEdges.length === edges.length ? edges : keptEdges, sections: nextSections };
+}
+function uniqueLabels(nodes, theirsIds) {
+  const used = /* @__PURE__ */ new Set();
+  const keeps = /* @__PURE__ */ new Set();
+  for (const n of nodes)
+    if (theirsIds.has(n.id) && n.nodeLabel && !used.has(n.nodeLabel)) {
+      used.add(n.nodeLabel);
+      keeps.add(n);
+    }
+  let changed = false;
+  const out = nodes.map((n) => {
+    if (!n.nodeLabel || keeps.has(n))
+      return n;
+    if (!theirsIds.has(n.id) && !used.has(n.nodeLabel)) {
+      used.add(n.nodeLabel);
+      return n;
+    }
+    changed = true;
+    const label = nextLabel(nodeLabelPrefix(n), /* @__PURE__ */ new Set([...used, ...nodes.map((x) => x.nodeLabel ?? "")]));
+    used.add(label);
+    return { ...n, nodeLabel: label };
+  });
+  return changed ? out : nodes;
+}
+function tidy(c, theirsIds) {
+  const nodes = uniqueLabels(c.nodes, theirsIds);
+  const parts = tidyParts(nodes, c.edges, c.metadata?.sections);
+  let metadata = c.metadata;
+  if (parts.sections !== c.metadata?.sections)
+    metadata = { ...metadata, sections: parts.sections };
+  const kernelIds = /* @__PURE__ */ new Set([...(metadata?.kernels ?? []).map((k) => k.id), ...parts.nodes.filter((n) => n.type === "kernel").map((n) => n.id)]);
+  if (metadata?.sections?.some((s) => s.kernelId && !kernelIds.has(s.kernelId))) {
+    metadata = {
+      ...metadata,
+      sections: metadata.sections.map((s) => {
+        if (!s.kernelId || kernelIds.has(s.kernelId))
+          return s;
+        const { kernelId: _gone, ...rest } = s;
+        return rest;
+      })
+    };
+  }
+  if (nodes === c.nodes && parts.nodes === c.nodes && parts.edges === c.edges && metadata === c.metadata)
+    return c;
+  return { ...c, nodes: parts.nodes, edges: parts.edges, ...metadata ? { metadata } : {} };
+}
+
+// src/extension/canvasLock.ts
+var fs = __toESM(require("fs/promises"));
+var os = __toESM(require("os"));
+var path2 = __toESM(require("path"));
+var import_crypto = require("crypto");
+var LOCK_WAIT_MS = 15e3;
+var LOCK_STALE_MS = 1e4;
+var CanvasLockTimeout = class extends Error {
+};
+async function lockPathFor(fsPath) {
+  const abs = path2.resolve(fsPath);
+  try {
+    return `${await fs.realpath(abs)}.lock`;
+  } catch {
+    let dir = path2.dirname(abs);
+    try {
+      dir = await fs.realpath(dir);
+    } catch {
+    }
+    return `${path2.join(dir, path2.basename(abs))}.lock`;
+  }
+}
+function alive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === "EPERM";
+  }
+}
+async function readLock(lock) {
+  try {
+    const [raw, st] = await Promise.all([fs.readFile(lock, "utf-8"), fs.stat(lock)]);
+    let holder = null;
+    try {
+      holder = JSON.parse(raw);
+    } catch {
+    }
+    return { raw, holder, mtime: st.mtimeMs };
+  } catch {
+    return null;
+  }
+}
+function stale(l, staleMs, now) {
+  const at = l.holder?.at ?? l.mtime;
+  if (now - at > staleMs)
+    return true;
+  return !!l.holder && l.holder.host === os.hostname() && !alive(l.holder.pid);
+}
+async function breakLock(lock, seen, token) {
+  const aside = `${lock}.${token}.broken`;
+  try {
+    await fs.rename(lock, aside);
+  } catch {
+    return;
+  }
+  const moved = await fs.readFile(aside, "utf-8").catch(() => seen);
+  if (moved !== seen)
+    await fs.link(aside, lock).catch(() => void 0);
+  await fs.rm(aside, { force: true });
+}
+function describe(h) {
+  return h ? `${h.by} (pid ${h.pid} on ${h.host}, since ${new Date(h.at).toISOString()})` : "an unknown writer";
+}
+async function withCanvasLock(fsPath, by, fn, opts = {}) {
+  const waitMs = opts.waitMs ?? LOCK_WAIT_MS;
+  const staleMs = opts.staleMs ?? LOCK_STALE_MS;
+  const lock = await lockPathFor(fsPath);
+  const token = `${process.pid}-${(0, import_crypto.randomUUID)()}`;
+  const deadline = Date.now() + waitMs;
+  for (let pause = 2; ; pause = Math.min(pause * 2, 50)) {
+    try {
+      const h = await fs.open(lock, "wx");
+      try {
+        const me = { pid: process.pid, host: os.hostname(), at: Date.now(), by, token };
+        await h.writeFile(JSON.stringify(me));
+      } finally {
+        await h.close();
+      }
+      break;
+    } catch (e) {
+      if (e.code !== "EEXIST")
+        throw e;
+    }
+    const held = await readLock(lock);
+    if (held && stale(held, staleMs, Date.now())) {
+      await breakLock(lock, held.raw, token);
+      continue;
+    }
+    if (Date.now() >= deadline) {
+      throw new CanvasLockTimeout(`${path2.basename(fsPath)} is locked by ${describe(held?.holder ?? null)}; waited ${waitMs} ms, nothing written`);
+    }
+    await new Promise((r) => setTimeout(r, pause));
+  }
+  try {
+    return await fn();
+  } finally {
+    const now = await readLock(lock);
+    if (now?.holder?.token === token)
+      await fs.rm(lock, { force: true });
+  }
+}
+
+// src/extension/canvas-io.ts
+var fs2 = __toESM(require("fs/promises"));
+var path3 = __toESM(require("path"));
+var os2 = __toESM(require("os"));
+function expandHome(p) {
+  return p.startsWith("~/") ? path3.join(os2.homedir(), p.slice(2)) : p;
+}
+async function writeCanvasJson(fsPath, json) {
+  const target = await fs2.realpath(expandHome(fsPath)).catch(() => expandHome(fsPath));
+  const tmp = `${target}.${process.pid}.${Date.now().toString(36)}.${(++tmpSeq).toString(36)}.tmp`;
+  try {
+    await fs2.writeFile(tmp, json, "utf-8");
+    await fs2.rename(tmp, target);
+  } catch (e) {
+    await fs2.rm(tmp, { force: true });
+    throw e;
+  }
+}
+var tmpSeq = 0;
 
 // node_modules/ws/wrapper.mjs
 var import_stream = __toESM(require_stream(), 1);
@@ -6492,13 +6675,13 @@ async function executeCell(server, kernelId, code, ids, onDelta) {
   const url = `${wsBase(server.hubUrl)}/api/kernels/${kernelId}/channels?token=${encodeURIComponent(server.token)}`;
   const ws = new wrapper_default(url, { headers: { Authorization: `token ${server.token}` } });
   const replies = [];
-  return new Promise((resolve6, reject) => {
+  return new Promise((resolve7, reject) => {
     const finish = (out) => {
       try {
         ws.close();
       } catch {
       }
-      resolve6(out);
+      resolve7(out);
     };
     ws.on("open", () => ws.send(JSON.stringify(buildExecuteRequest(code, ids))));
     ws.on("message", (raw) => {
@@ -6512,7 +6695,7 @@ async function executeCell(server, kernelId, code, ids, onDelta) {
       }
     });
     ws.on("error", (err2) => reject(err2));
-    ws.on("close", () => resolve6(collectOutputs(replies, ids.msgId)));
+    ws.on("close", () => resolve7(collectOutputs(replies, ids.msgId)));
   });
 }
 
@@ -6733,9 +6916,9 @@ function renderOutput(out) {
 }
 
 // src/extension/ipcEndpoint.ts
-var fs = __toESM(require("fs"));
-var os = __toESM(require("os"));
-var path2 = __toESM(require("path"));
+var fs3 = __toESM(require("fs"));
+var os3 = __toESM(require("os"));
+var path4 = __toESM(require("path"));
 function hashPath(p) {
   let h = 0;
   for (let i = 0; i < p.length; i++) {
@@ -6745,31 +6928,31 @@ function hashPath(p) {
 }
 function userName() {
   try {
-    return os.userInfo().username;
+    return os3.userInfo().username;
   } catch {
     return "user";
   }
 }
 function endpointDirs(tmp) {
-  const inTmp = path2.join(tmp ?? os.tmpdir(), `skena-${userName()}`);
+  const inTmp = path4.join(tmp ?? os3.tmpdir(), `skena-${userName()}`);
   const xdg = tmp ? void 0 : process.env.XDG_RUNTIME_DIR;
-  return xdg ? [path2.join(xdg, "skena"), inTmp] : [inTmp];
+  return xdg ? [path4.join(xdg, "skena"), inTmp] : [inTmp];
 }
-var fileName = (workspaceDir) => `skena-ipc-${hashPath(path2.resolve(workspaceDir))}.json`;
-function readFile(file, workspaceDir) {
+var fileName = (workspaceDir) => `skena-ipc-${hashPath(path4.resolve(workspaceDir))}.json`;
+function readFile3(file, workspaceDir) {
   try {
     const uid2 = process.getuid?.();
-    if (uid2 !== void 0 && fs.statSync(file).uid !== uid2)
+    if (uid2 !== void 0 && fs3.statSync(file).uid !== uid2)
       return null;
-    const j = JSON.parse(fs.readFileSync(file, "utf-8"));
-    return typeof j.endpoint === "string" && j.workspaceDir === path2.resolve(workspaceDir) ? j.endpoint : null;
+    const j = JSON.parse(fs3.readFileSync(file, "utf-8"));
+    return typeof j.endpoint === "string" && j.workspaceDir === path4.resolve(workspaceDir) ? j.endpoint : null;
   } catch {
     return null;
   }
 }
 function readEndpoint(workspaceDir, tmp) {
   for (const dir of endpointDirs(tmp)) {
-    const endpoint = readFile(path2.join(dir, fileName(workspaceDir)), workspaceDir);
+    const endpoint = readFile3(path4.join(dir, fileName(workspaceDir)), workspaceDir);
     if (endpoint)
       return endpoint;
   }
@@ -6780,7 +6963,7 @@ function readEndpoint(workspaceDir, tmp) {
 var http = __toESM(require("http"));
 var UNREACHABLE = /* @__PURE__ */ new Set(["ECONNREFUSED", "EHOSTUNREACH", "ENETUNREACH", "EADDRNOTAVAIL"]);
 function postExport(port, token, body, timeoutMs) {
-  return new Promise((resolve6) => {
+  return new Promise((resolve7) => {
     const data = JSON.stringify(body);
     let settled = false;
     const done = (o) => {
@@ -6788,7 +6971,7 @@ function postExport(port, token, body, timeoutMs) {
         return;
       settled = true;
       clearTimeout(timer);
-      resolve6(o);
+      resolve7(o);
     };
     const req = http.request({
       host: "127.0.0.1",
@@ -6817,16 +7000,16 @@ function postExport(port, token, body, timeoutMs) {
 }
 
 // src/extension/mcp/vaultLookup.ts
-var fs2 = __toESM(require("fs"));
+var fs4 = __toESM(require("fs"));
 var http2 = __toESM(require("http"));
-var path4 = __toESM(require("path"));
+var path6 = __toESM(require("path"));
 var import_url = require("url");
 
 // src/extension/filePaths.ts
-var path3 = __toESM(require("path"));
+var path5 = __toESM(require("path"));
 function vaultRoot(configured, home) {
-  const expanded = configured.startsWith("~") ? path3.join(home ?? "~", configured.slice(1)) : configured;
-  return path3.resolve(expanded);
+  const expanded = configured.startsWith("~") ? path5.join(home ?? "~", configured.slice(1)) : configured;
+  return path5.resolve(expanded);
 }
 
 // src/extension/mcp/vaultLookup.ts
@@ -6848,14 +7031,14 @@ function normaliseVaults(list, home) {
 }
 var listNote = (vaults) => vaults.length ? `${vaults.length} vault(s): ${vaults.map((v) => v.name).join(", ")}` : "an empty skena.vaults";
 function requestRelayVaults(port, token, timeoutMs, home) {
-  return new Promise((resolve6) => {
+  return new Promise((resolve7) => {
     let settled = false;
     const done = (r) => {
       if (settled)
         return;
       settled = true;
       clearTimeout(timer);
-      resolve6(r);
+      resolve7(r);
     };
     const data = "{}";
     const req = http2.request({
@@ -6908,7 +7091,7 @@ function parseWorkspaceFile(raw, file, home) {
   for (const f of Array.isArray(json.folders) ? json.folders : []) {
     const { path: p, uri } = f ?? {};
     if (typeof p === "string")
-      folders.push(path4.resolve(path4.dirname(file), p));
+      folders.push(path6.resolve(path6.dirname(file), p));
     else if (typeof uri === "string" && uri.startsWith("file:"))
       folders.push((0, import_url.fileURLToPath)(uri));
   }
@@ -6917,23 +7100,23 @@ function parseWorkspaceFile(raw, file, home) {
   return { folders, vaults: Array.isArray(list) ? normaliseVaults(list, home) : null };
 }
 function spellings(p) {
-  const abs = path4.resolve(p);
+  const abs = path6.resolve(p);
   try {
-    const real = fs2.realpathSync(abs);
+    const real = fs4.realpathSync(abs);
     return real === abs ? [abs] : [abs, real];
   } catch {
     return [abs];
   }
 }
-var inside = (file, folder) => file === folder || file.startsWith(folder + path4.sep);
+var inside = (file, folder) => file === folder || file.startsWith(folder + path6.sep);
 function canvasSpellings(canvasPath) {
-  const abs = path4.resolve(canvasPath);
-  const real = spellings(path4.dirname(abs)).map((d) => path4.join(d, path4.basename(abs)));
+  const abs = path6.resolve(canvasPath);
+  const real = spellings(path6.dirname(abs)).map((d) => path6.join(d, path6.basename(abs)));
   return [.../* @__PURE__ */ new Set([abs, ...real])];
 }
 function workspaceFilesIn(dir) {
   try {
-    return fs2.readdirSync(dir).filter((n) => n.endsWith(".code-workspace")).sort().map((n) => path4.join(dir, n));
+    return fs4.readdirSync(dir).filter((n) => n.endsWith(".code-workspace")).sort().map((n) => path6.join(dir, n));
   } catch {
     return [];
   }
@@ -6942,14 +7125,14 @@ function findWorkspaceFile(canvasPath, starts) {
   const canvas = canvasSpellings(canvasPath);
   const seen = /* @__PURE__ */ new Set();
   for (const start of starts) {
-    let dir = path4.resolve(start);
+    let dir = path6.resolve(start);
     for (; ; ) {
       if (!seen.has(dir)) {
         seen.add(dir);
         for (const file of workspaceFilesIn(dir)) {
           let folders;
           try {
-            folders = parseWorkspaceFile(fs2.readFileSync(file, "utf-8"), file, void 0).folders;
+            folders = parseWorkspaceFile(fs4.readFileSync(file, "utf-8"), file, void 0).folders;
           } catch {
             continue;
           }
@@ -6957,7 +7140,7 @@ function findWorkspaceFile(canvasPath, starts) {
             return file;
         }
       }
-      const parent = path4.dirname(dir);
+      const parent = path6.dirname(dir);
       if (parent === dir)
         break;
       dir = parent;
@@ -6967,39 +7150,39 @@ function findWorkspaceFile(canvasPath, starts) {
 }
 function readJson(file) {
   try {
-    return parseSettingsJson(fs2.readFileSync(file, "utf-8"));
+    return parseSettingsJson(fs4.readFileSync(file, "utf-8"));
   } catch {
     return null;
   }
 }
 function settingsFileSource(startDir, home) {
-  let dir = path4.resolve(startDir);
+  let dir = path6.resolve(startDir);
   let top = dir;
   for (let i = 0; i < SETTINGS_LEVELS; i++) {
     top = dir;
-    const basePath = path4.join(dir, ".vscode", "settings.json");
+    const basePath = path6.join(dir, ".vscode", "settings.json");
     const base = readJson(basePath);
     if (base !== null) {
-      const localPath = path4.join(dir, ".vscode", "settings.local.json");
+      const localPath = path6.join(dir, ".vscode", "settings.local.json");
       const local = readJson(localPath);
       const fromLocal = Array.isArray(local?.["skena.vaults"]);
       const list = fromLocal ? local["skena.vaults"] : base["skena.vaults"];
       const vaults = Array.isArray(list) ? normaliseVaults(list, home) : null;
       return { where: fromLocal ? localPath : basePath, vaults, note: vaults ? listNote(vaults) : "no skena.vaults" };
     }
-    const parent = path4.dirname(dir);
+    const parent = path6.dirname(dir);
     if (parent === dir)
       break;
     dir = parent;
   }
-  return { where: ".vscode/settings.json", vaults: null, note: `none in the folders from ${path4.resolve(startDir)} up to ${top}` };
+  return { where: ".vscode/settings.json", vaults: null, note: `none in the folders from ${path6.resolve(startDir)} up to ${top}` };
 }
 function workspaceFileSource(canvasPath, cwd, home) {
-  const file = findWorkspaceFile(canvasPath, [path4.dirname(path4.resolve(canvasPath)), cwd]);
+  const file = findWorkspaceFile(canvasPath, [path6.dirname(path6.resolve(canvasPath)), cwd]);
   if (!file)
     return { where: ".code-workspace", vaults: null, note: `no .code-workspace file above the canvas or ${cwd} lists a folder holding the canvas` };
   try {
-    const { vaults } = parseWorkspaceFile(fs2.readFileSync(file, "utf-8"), file, home);
+    const { vaults } = parseWorkspaceFile(fs4.readFileSync(file, "utf-8"), file, home);
     return { where: file, vaults, note: vaults ? listNote(vaults) : "no skena.vaults in its settings" };
   } catch (e) {
     return { where: file, vaults: null, note: `not readable: ${e instanceof Error ? e.message : String(e)}` };
@@ -7022,7 +7205,7 @@ async function loadVaults(canvasPath, opts) {
   const now = opts.now ?? Date.now();
   return chooseVaults([
     () => relaySource(opts.relay, now, opts.waitMs ?? RELAY_WAIT_MS, opts.home),
-    () => settingsFileSource(path4.dirname(path4.resolve(canvasPath)), opts.home),
+    () => settingsFileSource(path6.dirname(path6.resolve(canvasPath)), opts.home),
     () => workspaceFileSource(canvasPath, opts.cwd, opts.home)
   ]);
 }
@@ -7062,39 +7245,39 @@ async function persistViaHost(ipc, canvasPath, payload) {
   }
 }
 function resolvePath(raw) {
-  const expanded = raw.startsWith("~/") ? path5.join(os2.homedir(), raw.slice(2)) : raw;
-  return path5.resolve(expanded);
+  const expanded = raw.startsWith("~/") ? path7.join(os4.homedir(), raw.slice(2)) : raw;
+  return path7.resolve(expanded);
 }
-function expandHome(p) {
-  return p.startsWith("~/") ? path5.join(os2.homedir(), p.slice(2)) : p;
+function expandHome2(p) {
+  return p.startsWith("~/") ? path7.join(os4.homedir(), p.slice(2)) : p;
 }
 async function resolveVaultUri(uri, canvasPath) {
   const rest = uri.slice("vault://".length);
   const slash = rest.indexOf("/");
   const name = slash === -1 ? rest : rest.slice(0, slash);
   const rel = slash === -1 ? "" : rest.slice(slash + 1);
-  const lookup = await loadVaults(canvasPath, { relay: extensionRelay(canvasPath), cwd: process.cwd(), home: os2.homedir() });
+  const lookup = await loadVaults(canvasPath, { relay: extensionRelay(canvasPath), cwd: process.cwd(), home: os4.homedir() });
   const vault = lookup.vaults.find((v) => v.name === name);
-  return vault ? { fsPath: path5.join(vault.path, rel) } : { notConfigured: notConfiguredText(name, lookup) };
+  return vault ? { fsPath: path7.join(vault.path, rel) } : { notConfigured: notConfiguredText(name, lookup) };
 }
 function normalizeFileUri(fileUri, canvasPath) {
   if (!fileUri || fileUri.startsWith("vault://"))
     return fileUri;
-  if (!path5.isAbsolute(fileUri))
+  if (!path7.isAbsolute(fileUri))
     return fileUri;
-  const canvasDir = path5.dirname(canvasPath);
-  const rel = path5.relative(canvasDir, fileUri).replace(/\\/g, "/");
+  const canvasDir = path7.dirname(canvasPath);
+  const rel = path7.relative(canvasDir, fileUri).replace(/\\/g, "/");
   if (rel.startsWith(".."))
     return fileUri;
   return rel.startsWith("./") ? rel : `./${rel}`;
 }
 function noderefCanvasPath(target, canvasPath) {
-  const abs = expandHome(target);
-  if (!path5.isAbsolute(abs))
+  const abs = expandHome2(target);
+  if (!path7.isAbsolute(abs))
     return target;
-  const root = workspaceDirAbove(path5.dirname(canvasPath));
-  const rel = root ? path5.relative(root, abs) : "";
-  return rel && !rel.startsWith("..") && !path5.isAbsolute(rel) ? rel.split(path5.sep).join("/") : abs;
+  const root = workspaceDirAbove(path7.dirname(canvasPath));
+  const rel = root ? path7.relative(root, abs) : "";
+  return rel && !rel.startsWith("..") && !path7.isAbsolute(rel) ? rel.split(path7.sep).join("/") : abs;
 }
 var _fileLocks = /* @__PURE__ */ new Map();
 function withFileLock(fsPath, fn) {
@@ -7113,7 +7296,7 @@ function withFileLock(fsPath, fn) {
 var _lastText = /* @__PURE__ */ new Map();
 var _lastOurs = /* @__PURE__ */ new Map();
 async function readCanvas(fsPath) {
-  const raw = await fs3.readFile(fsPath, "utf-8");
+  const raw = await fs5.readFile(fsPath, "utf-8");
   const data = canvasFromText(raw);
   _lastText.set(fsPath, raw);
   _lastOurs.set(fsPath, raw);
@@ -7134,20 +7317,31 @@ function holdSection(d, edge) {
   return sectionEngineNodes(d.nodes, d.metadata?.sections ?? [], edge.toNode) ?? toEngineNodes(d.nodes);
 }
 async function writeCanvas(fsPath, data) {
-  let out = data;
-  const lastText = _lastText.get(fsPath), lastOurs = _lastOurs.get(fsPath);
-  if (lastText !== void 0 && lastOurs !== void 0) {
-    try {
-      const ours = lastOurs === lastText ? data : merge3(canvasFromText(lastOurs), data, canvasFromText(lastText)).canvas;
-      const now = await fs3.readFile(fsPath, "utf-8").catch(() => null);
-      out = now !== null && now !== lastText ? merge3(canvasFromText(lastText), ours, canvasFromText(now)).canvas : ours;
-    } catch {
+  const out = await withCanvasLock(fsPath, "mcp", async () => {
+    let merged = data;
+    const lastText = _lastText.get(fsPath), lastOurs = _lastOurs.get(fsPath);
+    if (lastText !== void 0 && lastOurs !== void 0) {
+      try {
+        const ours = lastOurs === lastText ? data : merge3(canvasFromText(lastOurs), data, canvasFromText(lastText)).canvas;
+        const now = await fs5.readFile(fsPath, "utf-8").catch(() => null);
+        merged = now !== null && now !== lastText ? merge3(canvasFromText(lastText), ours, canvasFromText(now)).canvas : ours;
+      } catch {
+      }
+    }
+    const json = JSON.stringify(merged, null, 2);
+    await writeCanvasJson(fsPath, json);
+    _lastText.set(fsPath, json);
+    _lastOurs.set(fsPath, merged === data ? json : JSON.stringify(data, null, 2));
+    return merged;
+  });
+  if (out !== data) {
+    const written = new Map(out.nodes.map((n) => [n.id, n.nodeLabel]));
+    for (const n of data.nodes) {
+      const label = written.get(n.id);
+      if (label !== void 0 && label !== n.nodeLabel)
+        n.nodeLabel = label;
     }
   }
-  const json = JSON.stringify(out, null, 2);
-  await fs3.writeFile(fsPath, json, "utf-8");
-  _lastText.set(fsPath, json);
-  _lastOurs.set(fsPath, out === data ? json : JSON.stringify(data, null, 2));
 }
 async function readCanvasOrEmpty(fsPath) {
   try {
@@ -7159,7 +7353,10 @@ async function readCanvasOrEmpty(fsPath) {
   }
 }
 function findNode(data, ref) {
-  return data.nodes.find((n) => n.nodeLabel === ref) ?? data.nodes.find((n) => n.id === ref);
+  const labelled = data.nodes.filter((n) => n.nodeLabel === ref);
+  if (labelled.length > 1)
+    throw new Error(`${ref} is the label of ${labelled.length} nodes (ids ${labelled.map((n) => n.id).join(", ")}): name the node by its id`);
+  return labelled[0] ?? data.nodes.find((n) => n.id === ref);
 }
 function findEdge(data, ref) {
   if (typeof ref === "string")
@@ -7343,22 +7540,22 @@ async function readFileNodeContent(uri, canvasPath) {
       return `vault URI: ${uri}
 ${resolved.notConfigured}`;
     fsPath = resolved.fsPath;
-  } else if (path5.isAbsolute(uri)) {
+  } else if (path7.isAbsolute(uri)) {
     fsPath = uri;
   } else {
-    fsPath = path5.resolve(path5.dirname(canvasPath), uri);
+    fsPath = path7.resolve(path7.dirname(canvasPath), uri);
   }
   const header = `File: ${fsPath}`;
-  const ext = path5.extname(fsPath).toLowerCase();
+  const ext = path7.extname(fsPath).toLowerCase();
   if (BINARY_EXTS.has(ext)) {
     return `${header}
 (binary file \u2014 content not shown)`;
   }
   try {
-    const stat2 = await fs3.stat(fsPath);
-    if (stat2.size > MAX_READ_BYTES) {
+    const stat3 = await fs5.stat(fsPath);
+    if (stat3.size > MAX_READ_BYTES) {
       const buf = Buffer.alloc(MAX_READ_BYTES);
-      const fd = await fs3.open(fsPath, "r");
+      const fd = await fs5.open(fsPath, "r");
       try {
         const { bytesRead } = await fd.read(buf, 0, MAX_READ_BYTES, 0);
         let text2 = buf.slice(0, bytesRead).toString("utf-8");
@@ -7366,14 +7563,14 @@ ${resolved.notConfigured}`;
         if (lastNl > 0)
           text2 = text2.slice(0, lastNl + 1);
         return `${header}
-(truncated \u2014 showing first ${MAX_READ_BYTES / 1024} KB of ${Math.round(stat2.size / 1024)} KB)
+(truncated \u2014 showing first ${MAX_READ_BYTES / 1024} KB of ${Math.round(stat3.size / 1024)} KB)
 
 ${text2}`;
       } finally {
         await fd.close();
       }
     }
-    const text = await fs3.readFile(fsPath, "utf-8");
+    const text = await fs5.readFile(fsPath, "utf-8");
     return `${header}
 
 ${text}`;
@@ -7411,8 +7608,8 @@ async function canvasList(args) {
     const aiMark = ext.createdBy === "ai" ? " \u{1F916}" : "";
     const tags = ext.tags?.length ? `  [${ext.tags.join(", ")}]` : "";
     const out = links.output.get(n.id), of = links.outputOf.get(n.id);
-    const link = out ? `  (output: ${out.nodeLabel ?? out.id})` : of ? `  (output of: ${of.nodeLabel ?? of.id})` : "";
-    lines.push(`  ${(n.nodeLabel ?? n.id).padEnd(4)}  ${typeLabel(n).padEnd(10)}  ${nodeSnippet(n)}${aiMark}${tags}${link}`);
+    const link2 = out ? `  (output: ${out.nodeLabel ?? out.id})` : of ? `  (output of: ${of.nodeLabel ?? of.id})` : "";
+    lines.push(`  ${(n.nodeLabel ?? n.id).padEnd(4)}  ${typeLabel(n).padEnd(10)}  ${nodeSnippet(n)}${aiMark}${tags}${link2}`);
   }
   if (d.metadata?.sections?.length) {
     lines.push("", "Sections:");
@@ -7597,7 +7794,7 @@ ${resolved.notConfigured}`;
       return `File path: ${resolved.fsPath}
 Vault URI: ${n.file}`;
     }
-    const abs = path5.isAbsolute(n.file) ? n.file : path5.resolve(path5.dirname(p), n.file);
+    const abs = path7.isAbsolute(n.file) ? n.file : path7.resolve(path7.dirname(p), n.file);
     return `File path: ${abs}`;
   }
   if (n.type === "portal") {
@@ -7609,7 +7806,7 @@ ${resolved.notConfigured}`;
       return `Sub-canvas path: ${resolved.fsPath}
 Vault URI: ${n.canvas}`;
     }
-    const abs = path5.isAbsolute(n.canvas) ? n.canvas : path5.resolve(path5.dirname(p), n.canvas);
+    const abs = path7.isAbsolute(n.canvas) ? n.canvas : path7.resolve(path7.dirname(p), n.canvas);
     return `Sub-canvas path: ${abs}`;
   }
   if (n.type === "link") {
@@ -7998,11 +8195,11 @@ async function canvasCreate(args) {
   const p = resolvePath(args.canvasPath);
   return withFileLock(p, async () => {
     try {
-      await fs3.access(p);
+      await fs5.access(p);
       return `Canvas already exists: ${p}`;
     } catch {
     }
-    await fs3.mkdir(path5.dirname(p), { recursive: true });
+    await fs5.mkdir(path7.dirname(p), { recursive: true });
     await writeCanvas(p, { nodes: [], edges: [] });
     return `Created empty canvas: ${p}`;
   });
@@ -8077,8 +8274,8 @@ async function canvasPinOutput(args) {
   });
 }
 function loadKernelServers(canvasPath) {
-  const dirs = [workspaceDirAbove(path5.dirname(canvasPath)), workspaceDirAbove(process.cwd())].filter((d, i, all) => d !== null && all.indexOf(d) === i);
-  const settings = dirs.length ? dirs.flatMap((d) => ["settings.local.json", "settings.json"].map((f) => readSettingsSync(path5.join(d, ".vscode", f)))) : [{ file: ".vscode settings", problem: `no .vscode folder at or above ${path5.dirname(canvasPath)} or ${process.cwd()}` }];
+  const dirs = [workspaceDirAbove(path7.dirname(canvasPath)), workspaceDirAbove(process.cwd())].filter((d, i, all) => d !== null && all.indexOf(d) === i);
+  const settings = dirs.length ? dirs.flatMap((d) => ["settings.local.json", "settings.json"].map((f) => readSettingsSync(path7.join(d, ".vscode", f)))) : [{ file: ".vscode settings", problem: `no .vscode folder at or above ${path7.dirname(canvasPath)} or ${process.cwd()}` }];
   return pickKernelServers(process.env.SKENA_JUPYTER_KERNELS, settings, process.env);
 }
 async function runCellCore(d, cell, kernel, kernelId, server, p, ipc) {
@@ -8219,7 +8416,7 @@ function prepareRun(d, p, cell, kernelRef) {
     return unknownServerText(kernel.server, lookup);
   if (!kernel.kernelId)
     return "error: kernel has no live kernelId (open the canvas so Skena starts it)";
-  return { kernel, kernelId: kernel.kernelId, server, ipc: parseRunIpc(process.env.SKENA_RUN_IPC) };
+  return { kernel, kernelId: kernel.kernelId, server, ipc: extensionRelay(p) };
 }
 async function canvasRunCell(args) {
   const p = resolvePath(args.canvasPath);
@@ -8523,7 +8720,7 @@ function extensionRelay(canvasPath) {
   const fromEnv = parseRunIpc(process.env.SKENA_RUN_IPC);
   if (fromEnv)
     return fromEnv;
-  const dirs = [workspaceDirAbove(path5.dirname(canvasPath)), process.cwd()].filter((d) => !!d);
+  const dirs = [workspaceDirAbove(path7.dirname(canvasPath)), process.cwd()].filter((d) => !!d);
   for (const dir of dirs) {
     const ipc = parseRunIpc(readEndpoint(dir) ?? void 0);
     if (ipc)
@@ -8536,8 +8733,8 @@ async function canvasExportHtml(args) {
   const canvasPath = resolvePath(String(args.canvasPath ?? ""));
   if (!canvasPath.endsWith(".canvas"))
     throw new Error(`not a .canvas file: ${canvasPath}`);
-  await fs3.access(canvasPath);
-  const outPath = typeof args.outPath === "string" && args.outPath.trim() ? path5.resolve(path5.dirname(canvasPath), expandHome(args.outPath.trim())) : void 0;
+  await fs5.access(canvasPath);
+  const outPath = typeof args.outPath === "string" && args.outPath.trim() ? path7.resolve(path7.dirname(canvasPath), expandHome2(args.outPath.trim())) : void 0;
   if (outPath === canvasPath)
     throw new Error(`not writing the page to ${outPath}: it is the canvas being exported`);
   if (outPath && /\.canvas$/i.test(outPath))
@@ -8551,7 +8748,7 @@ async function canvasExportHtml(args) {
   if (res.kind === "closed")
     throw new Error(`the skena extension closed the connection before it answered (${res.message}): was the VS Code window closed or reloaded? Call this again once it is open.`);
   if (res.kind === "timeout") {
-    const target = outPath ?? path5.join(path5.dirname(canvasPath), `${path5.basename(canvasPath, ".canvas")}.html`);
+    const target = outPath ?? path7.join(path7.dirname(canvasPath), `${path7.basename(canvasPath, ".canvas")}.html`);
     throw new Error(`the export is still running in VS Code (no answer after ${EXPORT_WAIT_MS / 6e4} min); the page appears at ${target} when it is done.`);
   }
   if (res.status === 403)

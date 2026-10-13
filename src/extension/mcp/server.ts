@@ -36,6 +36,8 @@ import { parseNodeRef, isSectionLabel } from '../../shared/nodeRef';
 import { youtubeId, YOUTUBE_NODE } from '../../shared/youtube';
 import { ownedOutputId } from '../../shared/outputLink';
 import { merge3 } from '../../shared/canvasMerge';
+import { withCanvasLock } from '../canvasLock';
+import { writeCanvasJson } from '../canvas-io';
 import { executeCell, startKernel, shutdownKernel } from '../jupyter/client';
 import { renderOutput, hasVisibleOutput } from '../jupyter/output';
 import type { CollectedOutput } from '../jupyter/protocol';
@@ -196,27 +198,38 @@ function holdSection(d: CanvasData, edge: CanvasEdge) {
   return sectionEngineNodes(d.nodes, d.metadata?.sections ?? [], edge.toNode) ?? toEngineNodes(d.nodes);
 }
 
+/**
+ * Write the canvas holding its lock (canvasLock.ts), from the read to the rename. Another writer's change
+ * since this operation read the file (the open editor, another agent) is merged in, not written over;
+ * where both changed the same thing, the file wins. Atomic: a temp file renamed onto the canvas. Without
+ * the lock nothing is written and the error reaches the agent.
+ */
 async function writeCanvas(fsPath: string, data: CanvasData): Promise<void> {
-  // - another writer (the open editor, another agent) changed the file since this operation read it:
-  //   its change is merged in, not written over; where both changed the same thing, the file wins
-  let out = data;
-  const lastText = _lastText.get(fsPath), lastOurs = _lastOurs.get(fsPath);
-  if (lastText !== undefined && lastOurs !== undefined) {
-    try {
-      // - an earlier write of this operation merged in a change `data` does not hold: carry it
-      const ours = lastOurs === lastText ? data : merge3(canvasFromText(lastOurs), data, canvasFromText(lastText)).canvas;
-      const now = await fs.readFile(fsPath, 'utf-8').catch(() => null);
-      out = now !== null && now !== lastText ? merge3(canvasFromText(lastText), ours, canvasFromText(now)).canvas : ours;
-    } catch { /* - a file another writer is writing does not parse: written as before */ }
+  const out = await withCanvasLock(fsPath, 'mcp', async () => {
+    let merged = data;
+    const lastText = _lastText.get(fsPath), lastOurs = _lastOurs.get(fsPath);
+    if (lastText !== undefined && lastOurs !== undefined) {
+      try {
+        // - an earlier write of this operation merged in a change `data` does not hold: carry it
+        const ours = lastOurs === lastText ? data : merge3(canvasFromText(lastOurs), data, canvasFromText(lastText)).canvas;
+        const now = await fs.readFile(fsPath, 'utf-8').catch(() => null);
+        merged = now !== null && now !== lastText ? merge3(canvasFromText(lastText), ours, canvasFromText(now)).canvas : ours;
+      } catch { /* - a file another writer is writing in place does not parse: written as before */ }
+    }
+    const json = JSON.stringify(merged, null, 2);
+    await writeCanvasJson(fsPath, json);
+    _lastText.set(fsPath, json);
+    _lastOurs.set(fsPath, merged === data ? json : JSON.stringify(data, null, 2));
+    return merged;
+  });
+  // - a label the merge gave another node (the file's holder kept it) is the one this tool reports
+  if (out !== data) {
+    const written = new Map(out.nodes.map(n => [n.id, n.nodeLabel]));
+    for (const n of data.nodes) {
+      const label = written.get(n.id);
+      if (label !== undefined && label !== n.nodeLabel) n.nodeLabel = label;
+    }
   }
-  const json = JSON.stringify(out, null, 2);
-  // - direct write (no atomic rename) so VS Code's createFileSystemWatcher fires
-  // - onDidChange via inotify IN_CLOSE_WRITE, which triggers the webview reload.
-  // - Atomic rename emits IN_MOVED_TO instead, which VS Code does not always map
-  // - to onDidChange on the target path, leaving the open canvas stale.
-  await fs.writeFile(fsPath, json, 'utf-8');
-  _lastText.set(fsPath, json);
-  _lastOurs.set(fsPath, out === data ? json : JSON.stringify(data, null, 2));
 }
 
 // - read a canvas, or return an empty one if the file doesn't exist yet (create-on-first-write)
@@ -232,8 +245,10 @@ async function readCanvasOrEmpty(fsPath: string): Promise<CanvasData> {
 // ─── node helpers ─────────────────────────────────────────────────────────────
 
 function findNode(data: CanvasData, ref: string): CanvasNode | undefined {
-  // - match by nodeLabel first, then by id
-  return data.nodes.find(n => n.nodeLabel === ref) ?? data.nodes.find(n => n.id === ref);
+  // - match by nodeLabel first, then by id; a label two nodes hold names neither (the agent must use an id)
+  const labelled = data.nodes.filter(n => n.nodeLabel === ref);
+  if (labelled.length > 1) throw new Error(`${ref} is the label of ${labelled.length} nodes (ids ${labelled.map(n => n.id).join(', ')}): name the node by its id`);
+  return labelled[0] ?? data.nodes.find(n => n.id === ref);
 }
 
 // - resolve an edge by id string, or by { from, to } node refs (labels/ids); either endpoint optional
@@ -1380,7 +1395,8 @@ function prepareRun(d: CanvasData, p: string, cell: CanvasNode, kernelRef?: stri
   if (!server) return unknownServerText(kernel.server, lookup);
   if (!kernel.kernelId) return 'error: kernel has no live kernelId (open the canvas so Skena starts it)';
 
-  return { kernel, kernelId: kernel.kernelId, server, ipc: parseRunIpc(process.env.SKENA_RUN_IPC) };
+  // - the relay of the window that has this workspace open, also for an agent started from .mcp.json
+  return { kernel, kernelId: kernel.kernelId, server, ipc: extensionRelay(p) };
 }
 
 async function canvasRunCell(args: Record<string, unknown>): Promise<string> {
