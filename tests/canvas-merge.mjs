@@ -54,9 +54,10 @@ test('a node they deleted that we changed is deleted; a node we deleted that the
 });
 
 test('one node changed on both sides in different fields keeps both changes', () => {
-  const base = canvas([code('a', { lastStatus: 'error' })]);
-  const ours = canvas([code('a', { lastStatus: 'ok', outputNodeId: 'out' })]);   // - a run's result mirrored in the editor
-  const theirs = canvas([code('a', { lastStatus: 'error', code: 'x = 2' })]);    // - the agent's code edit
+  const out = { id: 'out', type: 'cell', content: 'x', x: 800, y: 100, width: 700, height: 300, nodeLabel: 'C1' };
+  const base = canvas([code('a', { lastStatus: 'error' }), out]);
+  const ours = canvas([code('a', { lastStatus: 'ok', outputNodeId: 'out' }), out]);   // - a run's result mirrored in the editor
+  const theirs = canvas([code('a', { lastStatus: 'error', code: 'x = 2' }), out]);    // - the agent's code edit
   const r = merge3(base, ours, theirs);
   assert.deepEqual(byId(r.canvas, 'a'), code('a', { lastStatus: 'ok', outputNodeId: 'out', code: 'x = 2' }));
 });
@@ -140,4 +141,110 @@ test('inputs are not mutated', () => {
   const snap = JSON.stringify([base, ours, theirs]);
   merge3(base, ours, theirs);
   assert.equal(JSON.stringify([base, ours, theirs]), snap);
+});
+
+test('an edge one side drew to a node the other side deleted is dropped', () => {
+  const base = canvas([code('a'), text('n')]);
+  const ours = { ...clone(base), edges: [edge('mine', 'a', 'n')] };
+  const theirs = canvas([code('a')]);
+  const r = merge3(base, ours, theirs);
+  assert.deepEqual(r.canvas.edges, []);
+});
+
+test('fold lists, output links and section kernels that name something gone are cleared', () => {
+  const base = canvas([code('a', { outputNodeId: 'out' }), { id: 'out', type: 'cell', content: 'x', x: 800, y: 100, width: 700, height: 300, nodeLabel: 'C1' }]);
+  base.metadata.kernels = [{ id: 'k1', server: 'local', colorIndex: 0 }];
+  const ours = clone(base);
+  ours.metadata.sections[0].folded = ['a', 'out'];
+  ours.metadata.sections[0].kernelId = 'k1';
+  const theirs = clone(base);
+  theirs.nodes = theirs.nodes.filter(n => n.id !== 'out');
+  delete theirs.nodes[0].outputNodeId;
+  theirs.metadata.kernels = [];
+  const r = merge3(base, ours, theirs);
+  assert.deepEqual(r.canvas.metadata.sections[0].folded, ['a']);
+  assert.equal(r.canvas.metadata.sections[0].kernelId, undefined);
+  assert.equal(byId(r.canvas, 'a').outputNodeId, undefined);
+});
+
+test('a section kernel naming a kernel node stays', () => {
+  const base = canvas([code('a'), { id: 'kn', type: 'kernel', server: 'local', x: 0, y: 0, width: 100, height: 100, nodeLabel: 'K1' }]);
+  const ours = clone(base); ours.metadata.sections[0].kernelId = 'kn';
+  const r = merge3(base, ours, clone(base));
+  assert.equal(r.canvas.metadata.sections[0].kernelId, 'kn');
+});
+
+test('two new nodes with one label: the file keeps it, the other gets the next free one', () => {
+  const base = canvas([text('n', { nodeLabel: 'N1' })]);
+  const ours = canvas([text('n', { nodeLabel: 'N1' }), text('mine', { nodeLabel: 'N2' })]);
+  const theirs = canvas([text('n', { nodeLabel: 'N1' }), text('agent', { nodeLabel: 'N2' })]);
+  const r = merge3(base, ours, theirs);
+  assert.equal(byId(r.canvas, 'agent').nodeLabel, 'N2');
+  assert.equal(byId(r.canvas, 'mine').nodeLabel, 'N3');
+  assert.equal(r.kept, true);
+});
+
+test('undo entries rebased over a deletion hold no edge to the deleted node', () => {
+  const base = { ...canvas([code('a'), text('n')]), edges: [edge('e1', 'a', 'n')] };
+  const theirs = canvas([code('a')]);
+  const entry = { nodes: base.nodes, edges: [edge('e1', 'a', 'n'), edge('mine', 'n', 'a')], sections: base.metadata.sections };
+  const [r] = rebaseHistory([entry], base, theirs);
+  assert.deepEqual(r.edges, []);
+});
+
+// - random canvases, two random edit sets each kept valid by its side, merged: the result is valid
+test('merged canvases hold no reference to anything gone and no label twice', () => {
+  let seed = 7;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  const ri = (n) => Math.floor(rnd() * n);
+  const pick = (xs) => xs[ri(xs.length)];
+  const make = () => {
+    const nodes = [];
+    for (let i = 0; i < 4 + ri(8); i++) {
+      const type = pick(['text', 'code', 'cell']);
+      nodes.push({ id: `b${i}`, type, x: ri(2000), y: ri(2000), width: 700, height: 300, nodeLabel: `${type === 'text' ? 'N' : type === 'code' ? 'E' : 'C'}${i + 1}` });
+    }
+    const cells = nodes.filter(x => x.type === 'cell');
+    for (const c of nodes.filter(x => x.type === 'code')) if (cells.length && rnd() < 0.5) c.outputNodeId = pick(cells).id;
+    const edges = [];
+    for (let i = 0; i < nodes.length; i++) if (rnd() < 0.6) { const a = pick(nodes).id, b = pick(nodes).id; if (a !== b) edges.push({ id: `be${i}`, fromNode: a, toNode: b }); }
+    return { nodes, edges, metadata: { sections: [{ id: 's0', y: 0, createdAt: 1, kernelId: 'k0' }, { id: 's1', y: 1000, createdAt: 2, folded: [nodes[0].id] }], kernels: [{ id: 'k0', server: 'l', colorIndex: 0 }, { id: 'k1', server: 'l', colorIndex: 1 }] }, viewport: { x: 0, y: 0, zoom: 1 } };
+  };
+  const edit = (c, side) => {
+    let n = 0;
+    const del = (id) => {
+      c.nodes = c.nodes.filter(x => x.id !== id);
+      c.edges = c.edges.filter(e => e.fromNode !== id && e.toNode !== id);
+      for (const s of c.metadata.sections) if (s.folded) s.folded = s.folded.filter(m => m !== id);
+      for (const x of c.nodes) if (x.outputNodeId === id) delete x.outputNodeId;
+    };
+    const used = () => new Set(c.nodes.map(x => x.nodeLabel));
+    for (let k = 0; k < 1 + ri(6); k++) {
+      const op = pick(['del', 'add', 'edge', 'fold', 'kDel', 'kBind', 'out']);
+      const node = c.nodes.length ? pick(c.nodes) : null;
+      if (op === 'del' && node) del(node.id);
+      else if (op === 'add') { let i = 1; while (used().has(`N${i}`)) i++; c.nodes.push({ id: `${side}n${++n}`, type: 'text', x: 0, y: 0, width: 700, height: 300, nodeLabel: `N${i}` }); }
+      else if (op === 'edge' && c.nodes.length > 1) { const a = pick(c.nodes).id, b = pick(c.nodes).id; if (a !== b) c.edges.push({ id: `${side}e${++n}`, fromNode: a, toNode: b }); }
+      else if (op === 'fold' && node) { const s = pick(c.metadata.sections); s.folded = [...(s.folded ?? []), node.id]; }
+      else if (op === 'kDel' && c.metadata.kernels.length) { const kr = pick(c.metadata.kernels); c.metadata.kernels = c.metadata.kernels.filter(x => x !== kr); for (const s of c.metadata.sections) if (s.kernelId === kr.id) delete s.kernelId; }
+      else if (op === 'kBind' && c.metadata.kernels.length) pick(c.metadata.sections).kernelId = pick(c.metadata.kernels).id;
+      else if (op === 'out' && node?.type === 'code') { const cells = c.nodes.filter(x => x.type === 'cell'); if (cells.length) node.outputNodeId = pick(cells).id; }
+    }
+  };
+  const problems = [];
+  for (let t = 0; t < 3000; t++) {
+    const base = make(), ours = clone(base), theirs = clone(base);
+    edit(ours, 'o'); edit(theirs, 't');
+    const m = merge3(base, ours, theirs).canvas;
+    const ids = new Set(m.nodes.map(x => x.id));
+    const kernelIds = new Set([...(m.metadata?.kernels ?? []).map(k => k.id), ...m.nodes.filter(x => x.type === 'kernel').map(x => x.id)]);
+    if (ids.size !== m.nodes.length) problems.push(`${t}: node id twice`);
+    if (m.edges.some(e => !ids.has(e.fromNode) || !ids.has(e.toNode))) problems.push(`${t}: edge to a missing node`);
+    if ((m.metadata?.sections ?? []).some(s => s.folded?.some(id => !ids.has(id)))) problems.push(`${t}: fold names a missing node`);
+    if ((m.metadata?.sections ?? []).some(s => s.kernelId && !kernelIds.has(s.kernelId))) problems.push(`${t}: section kernel missing`);
+    if (m.nodes.some(x => x.outputNodeId && !ids.has(x.outputNodeId))) problems.push(`${t}: output link to a missing node`);
+    const labels = m.nodes.map(x => x.nodeLabel);
+    if (new Set(labels).size !== labels.length) problems.push(`${t}: label twice`);
+  }
+  assert.deepEqual(problems.slice(0, 5), []);
 });

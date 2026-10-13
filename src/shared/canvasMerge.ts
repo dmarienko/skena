@@ -8,9 +8,14 @@
  * merged field by field; where both sides changed the same field, or one side deleted an item the
  * other changed, `theirs` wins. Every other key is one value, merged the same way, except
  * `creationCounter`, which takes the larger of the two.
+ *
+ * Each side keeps its own copy whole, but the two together need not be: the result is tidied so that
+ * nothing names what is gone (an edge to a deleted node, a fold or an output link to one, a section's
+ * kernel) and no label is held twice (a node theirs has keeps its label, the other gets the next free one).
  */
 import type { CanvasData, CanvasEdge, CanvasNode } from './types';
 import type { SectionLane } from './sectionLanes';
+import { nextLabel, nodeLabelPrefix } from './nodeLabels';
 
 type Obj = Record<string, unknown>;
 type Item = { id: string };
@@ -151,7 +156,67 @@ export function merge3(base: CanvasData, ours: CanvasData, theirs: CanvasData): 
   }
   out.nodes ??= [];
   out.edges ??= [];
-  return { canvas: out as unknown as CanvasData, kept };
+  const merged = out as unknown as CanvasData;
+  const canvas = tidy(merged, new Set(theirs.nodes.map(n => n.id)));
+  // - what the tidying took away or relabelled decides afresh whether the result still differs from theirs
+  return { canvas, kept: canvas === merged ? kept : !same(canvas, theirs) };
+}
+
+// - nodes and edges with nothing naming a node that is not there; the arrays come back unchanged when nothing does
+function tidyParts(nodes: CanvasNode[], edges: CanvasEdge[], sections: SectionLane[] | undefined) {
+  const ids = new Set(nodes.map(n => n.id));
+  const keptEdges = edges.filter(e => ids.has(e.fromNode) && ids.has(e.toNode));
+  const nextNodes = nodes.some(n => (n as { outputNodeId?: string }).outputNodeId && !ids.has((n as { outputNodeId: string }).outputNodeId))
+    ? nodes.map(n => {
+      const oid = (n as { outputNodeId?: string }).outputNodeId;
+      if (!oid || ids.has(oid)) return n;
+      const { outputNodeId: _gone, ...rest } = n as CanvasNode & { outputNodeId?: string };
+      return rest as CanvasNode;
+    })
+    : nodes;
+  const nextSections = sections?.some(s => s.folded?.some(id => !ids.has(id)))
+    ? sections.map(s => (s.folded?.some(id => !ids.has(id)) ? { ...s, folded: s.folded.filter(id => ids.has(id)) } : s))
+    : sections;
+  return { nodes: nextNodes, edges: keptEdges.length === edges.length ? edges : keptEdges, sections: nextSections };
+}
+
+// - labels made unique: the nodes `theirs` holds keep theirs (the first of them, should theirs hold one
+//   twice), any other node holding a label already taken gets the next free one
+function uniqueLabels(nodes: CanvasNode[], theirsIds: Set<string>): CanvasNode[] {
+  const used = new Set<string>();
+  const keeps = new Set<CanvasNode>();
+  for (const n of nodes) if (theirsIds.has(n.id) && n.nodeLabel && !used.has(n.nodeLabel)) { used.add(n.nodeLabel); keeps.add(n); }
+  let changed = false;
+  const out = nodes.map(n => {
+    if (!n.nodeLabel || keeps.has(n)) return n;
+    if (!theirsIds.has(n.id) && !used.has(n.nodeLabel)) { used.add(n.nodeLabel); return n; }
+    changed = true;
+    const label = nextLabel(nodeLabelPrefix(n), new Set([...used, ...nodes.map(x => x.nodeLabel ?? '')]));
+    used.add(label);
+    return { ...n, nodeLabel: label };
+  });
+  return changed ? out : nodes;
+}
+
+function tidy(c: CanvasData, theirsIds: Set<string>): CanvasData {
+  const nodes = uniqueLabels(c.nodes, theirsIds);
+  const parts = tidyParts(nodes, c.edges, c.metadata?.sections);
+  let metadata = c.metadata;
+  if (parts.sections !== c.metadata?.sections) metadata = { ...metadata, sections: parts.sections };
+  // - a section's kernel is a kernel record or a kernel node
+  const kernelIds = new Set([...(metadata?.kernels ?? []).map(k => k.id), ...parts.nodes.filter(n => n.type === 'kernel').map(n => n.id)]);
+  if (metadata?.sections?.some(s => s.kernelId && !kernelIds.has(s.kernelId))) {
+    metadata = {
+      ...metadata,
+      sections: metadata.sections.map(s => {
+        if (!s.kernelId || kernelIds.has(s.kernelId)) return s;
+        const { kernelId: _gone, ...rest } = s;
+        return rest;
+      }),
+    };
+  }
+  if (nodes === c.nodes && parts.nodes === c.nodes && parts.edges === c.edges && metadata === c.metadata) return c;
+  return { ...c, nodes: parts.nodes, edges: parts.edges, ...(metadata ? { metadata } : {}) };
 }
 
 /** - one undo or redo step: the nodes, edges and sections it restores */
@@ -168,10 +233,11 @@ export function rebaseHistory<E extends HistoryEntry>(entries: E[], base: Canvas
   const de = listDelta(base.edges, theirs.edges);
   const ds = listDelta(bs, ts);
   if (dn.size === 0 && de.size === 0 && ds.size === 0) return entries;
-  return entries.map(e => ({
-    ...e,
-    nodes: dn.size ? applyListDelta(base.nodes, e.nodes, dn, false).v : e.nodes,
-    edges: de.size ? applyListDelta(base.edges, e.edges, de, false).v : e.edges,
-    sections: ds.size ? applyListDelta(bs, e.sections, ds, false).v : e.sections,
-  }));
+  return entries.map(e => {
+    const nodes = dn.size ? applyListDelta(base.nodes, e.nodes, dn, false).v : e.nodes;
+    const edges = de.size ? applyListDelta(base.edges, e.edges, de, false).v : e.edges;
+    const sections = ds.size ? applyListDelta(bs, e.sections, ds, false).v : e.sections;
+    const t = tidyParts(nodes, edges, sections);
+    return { ...e, nodes: t.nodes, edges: t.edges, sections: t.sections ?? [] };
+  });
 }

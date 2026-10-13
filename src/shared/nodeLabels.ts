@@ -57,7 +57,7 @@ function usedLabels(nodes: CanvasNode[]): Set<string> {
 }
 
 // - next unused label for a given prefix
-function nextLabel(prefix: string, used: Set<string>): string {
+export function nextLabel(prefix: string, used: Set<string>): string {
   let i = 1;
   while (used.has(`${prefix}${i}`)) i++;
   return `${prefix}${i}`;
