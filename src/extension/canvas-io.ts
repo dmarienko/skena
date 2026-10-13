@@ -15,7 +15,11 @@ function expandHome(p: string): string {
 
 /** - read and parse a .canvas file */
 export async function readCanvas(fsPath: string): Promise<CanvasData> {
-  const raw     = await fs.readFile(expandHome(fsPath), 'utf-8');
+  return parseCanvas(await fs.readFile(expandHome(fsPath), 'utf-8'));
+}
+
+/** - the canvas a .canvas file's text holds; throws on text that is not JSON */
+export function parseCanvas(raw: string): CanvasData {
   const trimmed = raw.trim();
   // - empty file (e.g. newly created by VS Code "New File") → treat as blank canvas
   if (!trimmed) {
@@ -39,7 +43,11 @@ export async function readCanvas(fsPath: string): Promise<CanvasData> {
  * watcher reload needs IN_CLOSE_WRITE; the webview's empty-reload guard covers that rarer path.)
  */
 export async function writeCanvas(fsPath: string, data: CanvasData): Promise<void> {
-  const json = JSON.stringify(data, null, 2);
+  await writeCanvasJson(fsPath, JSON.stringify(data, null, 2));
+}
+
+/** - writeCanvas for a canvas already serialised */
+export async function writeCanvasJson(fsPath: string, json: string): Promise<void> {
   const target = expandHome(fsPath);
   // - ATOMIC write: a reader (the file-watcher) must never see a truncated/partial file. writeFile
   //   truncates then streams, so a concurrent read of this large .canvas can catch it empty → the
