@@ -16,6 +16,7 @@ import * as fs from 'fs/promises';
 import { randomUUID } from 'crypto';
 import { readCanvas, writeCanvas, writeCanvasJson } from './canvas-io';
 import { CanvasFile, type Committed } from './canvasFile';
+import { uniqueLabels, labelsOf } from '../shared/canvasMerge';
 import { withCanvasLock, CanvasLockTimeout } from './canvasLock';
 import { FileResolver } from './file-resolver';
 import { urisForChangedFile } from './filePaths';
@@ -1044,6 +1045,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     sendLoaded: (canvas: CanvasData, version: number) => void,
   ): Promise<void> {
     // - built once the file is checked, from the host's canvas as it is then
+    let relabelled = false;
     const build = (): CanvasData => {
       // - the webview snapshot is nodes/edges only; it does NOT own canvas metadata (aiModel is
       // - set host-side via pickModel). Keep the host's metadata authoritative, else this
@@ -1053,11 +1055,14 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       // - duplicate. If the host still has the link AND the output cell is present, preserve it.
       const hostById = new Map(document.canvas.nodes.map(n => [n.id, n]));
       const msgIds   = new Set(msg.canvas.nodes.map(n => n.id));
-      const mergedNodes = msg.canvas.nodes.map(n => {
+      const linkedNodes = msg.canvas.nodes.map(n => {
         if (n.type !== 'code' || (n as CodeNode).outputNodeId) return n;
         const hostOid = (hostById.get(n.id) as CodeNode | undefined)?.outputNodeId;
         return hostOid && msgIds.has(hostOid) ? { ...(n as CodeNode), outputNodeId: hostOid } : n;
       });
+      // - a label the file gives a node is never written onto another one (an undo can bring one back)
+      const mergedNodes = uniqueLabels(linkedNodes, labelsOf(document.canvas.nodes));
+      relabelled = mergedNodes !== linkedNodes;
       return {
         ...msg.canvas,
         nodes: mergedNodes,
@@ -1077,7 +1082,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     try {
       const r = await file.save(msg.baseVersion, build);
       // - refused (its base is older than the file): the webview merges its changes into the current canvas and saves again
-      if (r.written) sendSaved(msg.seq ?? 0, r.version, r.prevVersion);
+      // - written as it was: the webview's base moves on; relabelled: it is sent what was written
+      if (r.written && !relabelled) sendSaved(msg.seq ?? 0, r.version, r.prevVersion);
+      else if (r.written) sendLoaded(document.canvas, r.version);
       else sendLoaded(r.canvas, r.version);
     } catch (e) {
       vscode.window.showErrorMessage(`Skena: failed to save canvas: ${e}`);

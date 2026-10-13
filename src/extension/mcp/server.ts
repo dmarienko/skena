@@ -244,6 +244,9 @@ async function readCanvasOrEmpty(fsPath: string): Promise<CanvasData> {
 
 // ─── node helpers ─────────────────────────────────────────────────────────────
 
+// - in the tools that change a node: why to name one by id
+const ID_OVER_LABEL = 'A label can pass to another node when another writer (the open editor) adds one at the same moment; an id never changes, so name a node this session created by the id its reply printed.';
+
 function findNode(data: CanvasData, ref: string): CanvasNode | undefined {
   // - match by nodeLabel first, then by id; a label two nodes hold names neither (the agent must use an id)
   const labelled = data.nodes.filter(n => n.nodeLabel === ref);
@@ -1841,7 +1844,7 @@ const TOOLS = [
       type: 'object',
       properties: {
         canvasPath: { type: 'string', description: 'Path to the .canvas file' },
-        ref:        { type: 'string', description: 'Node label or ID to update' },
+        ref:        { type: 'string', description: `Node label or ID to update. ${ID_OVER_LABEL}` },
         content:    { type: 'string', description: 'New text of a text note or a cell, or new code of a code cell' },
         tags:       { type: 'array',  items: { type: 'string' }, description: 'Replace tags list' },
         color:      { type: 'string', description: 'New accent color (1-6)' },
@@ -1952,7 +1955,7 @@ const TOOLS = [
       type: 'object',
       properties: {
         canvasPath: { type: 'string', description: 'Path to the .canvas file' },
-        ref:        { oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }], description: 'Node label, node ID, or array of labels/IDs to delete' },
+        ref:        { oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }], description: `Node label, node ID, or array of labels/IDs to delete. ${ID_OVER_LABEL}` },
       },
       required: ['canvasPath', 'ref'],
     },
@@ -2089,7 +2092,7 @@ const TOOLS = [
       type: 'object',
       properties: {
         canvasPath: { type: 'string', description: 'absolute path to the .canvas file' },
-        cellRef:    { type: 'string', description: 'label or id of the code node to run' },
+        cellRef:    { type: 'string', description: `label or id of the code node to run. ${ID_OVER_LABEL}` },
         kernelRef:  { type: 'string', description: 'optional: a kernel record id or display name, or a kernel node label/id; defaults to the resolved one' },
       },
       required: ['canvasPath', 'cellRef'],

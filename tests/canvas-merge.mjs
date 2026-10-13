@@ -1,7 +1,7 @@
 // - run: npx esbuild src/shared/canvasMerge.ts --bundle --format=esm --outfile=tests/.build/canvasMerge.mjs && node --test tests/canvas-merge.mjs
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { merge3, rebaseHistory } from './.build/canvasMerge.mjs';
+import { merge3, rebaseHistory, uniqueLabels } from './.build/canvasMerge.mjs';
 
 const code = (id, extra = {}) => ({ id, type: 'code', code: 'x = 1', x: 0, y: 100, width: 700, height: 300, nodeLabel: 'E1', ...extra });
 const text = (id, extra = {}) => ({ id, type: 'text', text: 'note', x: 1600, y: 100, width: 700, height: 300, nodeLabel: 'N1', ...extra });
@@ -247,4 +247,33 @@ test('merged canvases hold no reference to anything gone and no label twice', ()
     if (new Set(labels).size !== labels.length) problems.push(`${t}: label twice`);
   }
   assert.deepEqual(problems.slice(0, 5), []);
+});
+
+test('an undo entry rebased over a node the file gave a label to: the entry\'s other node gets a new label', () => {
+  // - the entry holds the user's unsaved node N2; the file now gives N2 to the agent's node
+  const base = canvas([text('n', { nodeLabel: 'N1' })]);
+  const theirs = canvas([text('n', { nodeLabel: 'N1' }), text('agent', { nodeLabel: 'N2' })]);
+  const entry = { nodes: [text('n', { nodeLabel: 'N1' }), text('mine', { nodeLabel: 'N2' })], edges: [], sections: base.metadata.sections };
+  const [r] = rebaseHistory([entry], base, theirs);
+  assert.equal(r.nodes.find(n => n.id === 'agent').nodeLabel, 'N2');
+  assert.equal(r.nodes.find(n => n.id === 'mine').nodeLabel, 'N3');
+});
+
+test('labels the file holds never move: a node not holding its own file label gives way, wherever it stands', () => {
+  const file = new Map([['agent', 'N2'], ['n', 'N1']]);
+  // - the user's node comes first in the list and claims N2; the agent's node is the file's N2
+  const nodes = [text('mine', { nodeLabel: 'N2' }), text('n', { nodeLabel: 'N1' }), text('agent', { nodeLabel: 'N2' })];
+  const out = uniqueLabels(nodes, file);
+  assert.deepEqual(out.map(n => n.nodeLabel), ['N3', 'N1', 'N2']);
+});
+
+test('a label the file gives a node that is not in the list is still not handed to another node', () => {
+  const file = new Map([['gone', 'N2']]);
+  const out = uniqueLabels([text('mine', { nodeLabel: 'N2' })], file);
+  assert.equal(out[0].nodeLabel, 'N1');   // - the lowest free one, as every new label is
+});
+
+test('nothing to change: the same array comes back', () => {
+  const nodes = [text('a', { nodeLabel: 'N1' }), text('b', { nodeLabel: 'N2' })];
+  assert.equal(uniqueLabels(nodes, new Map([['a', 'N1']])), nodes);
 });

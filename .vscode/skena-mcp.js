@@ -6289,9 +6289,15 @@ function merge3(base, ours, theirs) {
   out.nodes ??= [];
   out.edges ??= [];
   const merged = out;
-  const canvas = tidy(merged, new Set(theirs.nodes.map((n) => n.id)));
-  return { canvas, kept: canvas === merged ? kept : !same(canvas, theirs) };
+  const canvas = tidy(merged, labelsOf(theirs.nodes));
+  return { canvas, kept: canvas === merged ? kept : !same(byIdOrder(canvas), byIdOrder(theirs)) };
 }
+function byIdOrder(c) {
+  const sort = (xs) => xs && [...xs].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  const m = c.metadata;
+  return { ...c, nodes: sort(c.nodes) ?? [], edges: sort(c.edges) ?? [], ...m ? { metadata: { ...m, sections: sort(m.sections), kernels: sort(m.kernels) } } : {} };
+}
+var labelsOf = (nodes) => new Map(nodes.map((n) => [n.id, n.nodeLabel]));
 function tidyParts(nodes, edges, sections) {
   const ids = new Set(nodes.map((n) => n.id));
   const keptEdges = edges.filter((e) => ids.has(e.fromNode) && ids.has(e.toNode));
@@ -6305,31 +6311,38 @@ function tidyParts(nodes, edges, sections) {
   const nextSections = sections?.some((s) => s.folded?.some((id) => !ids.has(id))) ? sections.map((s) => s.folded?.some((id) => !ids.has(id)) ? { ...s, folded: s.folded.filter((id) => ids.has(id)) } : s) : sections;
   return { nodes: nextNodes, edges: keptEdges.length === edges.length ? edges : keptEdges, sections: nextSections };
 }
-function uniqueLabels(nodes, theirsIds) {
-  const used = /* @__PURE__ */ new Set();
+function uniqueLabels(nodes, fileLabels) {
+  const holderOf = /* @__PURE__ */ new Map();
+  for (const [id, label] of fileLabels)
+    if (label && !holderOf.has(label))
+      holderOf.set(label, id);
   const keeps = /* @__PURE__ */ new Set();
-  for (const n of nodes)
-    if (theirsIds.has(n.id) && n.nodeLabel && !used.has(n.nodeLabel)) {
-      used.add(n.nodeLabel);
+  const used = /* @__PURE__ */ new Set();
+  for (const n of nodes) {
+    if (n.nodeLabel && holderOf.get(n.nodeLabel) === n.id && !used.has(n.nodeLabel)) {
       keeps.add(n);
+      used.add(n.nodeLabel);
     }
+  }
+  const taken = /* @__PURE__ */ new Set([...holderOf.keys(), ...nodes.map((n) => n.nodeLabel ?? "")]);
   let changed = false;
   const out = nodes.map((n) => {
     if (!n.nodeLabel || keeps.has(n))
       return n;
-    if (!theirsIds.has(n.id) && !used.has(n.nodeLabel)) {
+    const holder = holderOf.get(n.nodeLabel);
+    if (!used.has(n.nodeLabel) && (holder === void 0 || holder === n.id)) {
       used.add(n.nodeLabel);
       return n;
     }
     changed = true;
-    const label = nextLabel(nodeLabelPrefix(n), /* @__PURE__ */ new Set([...used, ...nodes.map((x) => x.nodeLabel ?? "")]));
+    const label = nextLabel(nodeLabelPrefix(n), /* @__PURE__ */ new Set([...taken, ...used]));
     used.add(label);
     return { ...n, nodeLabel: label };
   });
   return changed ? out : nodes;
 }
-function tidy(c, theirsIds) {
-  const nodes = uniqueLabels(c.nodes, theirsIds);
+function tidy(c, fileLabels) {
+  const nodes = uniqueLabels(c.nodes, fileLabels);
   const parts = tidyParts(nodes, c.edges, c.metadata?.sections);
   let metadata = c.metadata;
   if (parts.sections !== c.metadata?.sections)
@@ -7352,6 +7365,7 @@ async function readCanvasOrEmpty(fsPath) {
     throw e;
   }
 }
+var ID_OVER_LABEL = "A label can pass to another node when another writer (the open editor) adds one at the same moment; an id never changes, so name a node this session created by the id its reply printed.";
 function findNode(data, ref) {
   const labelled = data.nodes.filter((n) => n.nodeLabel === ref);
   if (labelled.length > 1)
@@ -8859,7 +8873,7 @@ var TOOLS = [
       type: "object",
       properties: {
         canvasPath: { type: "string", description: "Path to the .canvas file" },
-        ref: { type: "string", description: "Node label or ID to update" },
+        ref: { type: "string", description: `Node label or ID to update. ${ID_OVER_LABEL}` },
         content: { type: "string", description: "New text of a text note or a cell, or new code of a code cell" },
         tags: { type: "array", items: { type: "string" }, description: "Replace tags list" },
         color: { type: "string", description: "New accent color (1-6)" },
@@ -8972,7 +8986,7 @@ var TOOLS = [
       type: "object",
       properties: {
         canvasPath: { type: "string", description: "Path to the .canvas file" },
-        ref: { oneOf: [{ type: "string" }, { type: "array", items: { type: "string" } }], description: "Node label, node ID, or array of labels/IDs to delete" }
+        ref: { oneOf: [{ type: "string" }, { type: "array", items: { type: "string" } }], description: `Node label, node ID, or array of labels/IDs to delete. ${ID_OVER_LABEL}` }
       },
       required: ["canvasPath", "ref"]
     }
@@ -9109,7 +9123,7 @@ var TOOLS = [
       type: "object",
       properties: {
         canvasPath: { type: "string", description: "absolute path to the .canvas file" },
-        cellRef: { type: "string", description: "label or id of the code node to run" },
+        cellRef: { type: "string", description: `label or id of the code node to run. ${ID_OVER_LABEL}` },
         kernelRef: { type: "string", description: "optional: a kernel record id or display name, or a kernel node label/id; defaults to the resolved one" }
       },
       required: ["canvasPath", "cellRef"]

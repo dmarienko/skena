@@ -11,7 +11,8 @@
  *
  * Each side keeps its own copy whole, but the two together need not be: the result is tidied so that
  * nothing names what is gone (an edge to a deleted node, a fold or an output link to one, a section's
- * kernel) and no label is held twice (a node theirs has keeps its label, the other gets the next free one).
+ * kernel) and no label is held twice (a label theirs, the file, gives a node stays with it; another node
+ * holding it gets the next free one).
  */
 import type { CanvasData, CanvasEdge, CanvasNode } from './types';
 import type { SectionLane } from './sectionLanes';
@@ -157,10 +158,20 @@ export function merge3(base: CanvasData, ours: CanvasData, theirs: CanvasData): 
   out.nodes ??= [];
   out.edges ??= [];
   const merged = out as unknown as CanvasData;
-  const canvas = tidy(merged, new Set(theirs.nodes.map(n => n.id)));
+  const canvas = tidy(merged, labelsOf(theirs.nodes));
   // - what the tidying took away or relabelled decides afresh whether the result still differs from theirs
-  return { canvas, kept: canvas === merged ? kept : !same(canvas, theirs) };
+  return { canvas, kept: canvas === merged ? kept : !same(byIdOrder(canvas), byIdOrder(theirs)) };
 }
+
+// - the canvas with its id lists sorted by id: two canvases holding the same items in another order compare equal
+function byIdOrder(c: CanvasData): CanvasData {
+  const sort = <T extends Item>(xs: T[] | undefined) => xs && [...xs].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const m = c.metadata;
+  return { ...c, nodes: sort(c.nodes) ?? [], edges: sort(c.edges) ?? [], ...(m ? { metadata: { ...m, sections: sort(m.sections), kernels: sort(m.kernels) } } : {}) };
+}
+
+/** - node id → label, as uniqueLabels takes them */
+export const labelsOf = (nodes: CanvasNode[]): Map<string, string | undefined> => new Map(nodes.map(n => [n.id, n.nodeLabel]));
 
 // - nodes and edges with nothing naming a node that is not there; the arrays come back unchanged when nothing does
 function tidyParts(nodes: CanvasNode[], edges: CanvasEdge[], sections: SectionLane[] | undefined) {
@@ -180,26 +191,36 @@ function tidyParts(nodes: CanvasNode[], edges: CanvasEdge[], sections: SectionLa
   return { nodes: nextNodes, edges: keptEdges.length === edges.length ? edges : keptEdges, sections: nextSections };
 }
 
-// - labels made unique: the nodes `theirs` holds keep theirs (the first of them, should theirs hold one
-//   twice), any other node holding a label already taken gets the next free one
-function uniqueLabels(nodes: CanvasNode[], theirsIds: Set<string>): CanvasNode[] {
-  const used = new Set<string>();
+/**
+ * Labels made unique the way the file sees them: a label the file gives a node stays that node's (the
+ * first such node, should the file hold one twice) and is never handed to another node, present in
+ * `nodes` or not; every other node keeps its label while it is free and gets the next free one otherwise.
+ * `fileLabels` = node id → label in the file. The same array comes back when nothing changes.
+ */
+export function uniqueLabels(nodes: CanvasNode[], fileLabels: Map<string, string | undefined>): CanvasNode[] {
+  const holderOf = new Map<string, string>();
+  for (const [id, label] of fileLabels) if (label && !holderOf.has(label)) holderOf.set(label, id);
   const keeps = new Set<CanvasNode>();
-  for (const n of nodes) if (theirsIds.has(n.id) && n.nodeLabel && !used.has(n.nodeLabel)) { used.add(n.nodeLabel); keeps.add(n); }
+  const used = new Set<string>();
+  for (const n of nodes) {
+    if (n.nodeLabel && holderOf.get(n.nodeLabel) === n.id && !used.has(n.nodeLabel)) { keeps.add(n); used.add(n.nodeLabel); }
+  }
+  const taken = new Set<string>([...holderOf.keys(), ...nodes.map(n => n.nodeLabel ?? '')]);
   let changed = false;
   const out = nodes.map(n => {
     if (!n.nodeLabel || keeps.has(n)) return n;
-    if (!theirsIds.has(n.id) && !used.has(n.nodeLabel)) { used.add(n.nodeLabel); return n; }
+    const holder = holderOf.get(n.nodeLabel);
+    if (!used.has(n.nodeLabel) && (holder === undefined || holder === n.id)) { used.add(n.nodeLabel); return n; }
     changed = true;
-    const label = nextLabel(nodeLabelPrefix(n), new Set([...used, ...nodes.map(x => x.nodeLabel ?? '')]));
+    const label = nextLabel(nodeLabelPrefix(n), new Set([...taken, ...used]));
     used.add(label);
     return { ...n, nodeLabel: label };
   });
   return changed ? out : nodes;
 }
 
-function tidy(c: CanvasData, theirsIds: Set<string>): CanvasData {
-  const nodes = uniqueLabels(c.nodes, theirsIds);
+function tidy(c: CanvasData, fileLabels: Map<string, string | undefined>): CanvasData {
+  const nodes = uniqueLabels(c.nodes, fileLabels);
   const parts = tidyParts(nodes, c.edges, c.metadata?.sections);
   let metadata = c.metadata;
   if (parts.sections !== c.metadata?.sections) metadata = { ...metadata, sections: parts.sections };
@@ -233,8 +254,9 @@ export function rebaseHistory<E extends HistoryEntry>(entries: E[], base: Canvas
   const de = listDelta(base.edges, theirs.edges);
   const ds = listDelta(bs, ts);
   if (dn.size === 0 && de.size === 0 && ds.size === 0) return entries;
+  const fileLabels = labelsOf(theirs.nodes);
   return entries.map(e => {
-    const nodes = dn.size ? applyListDelta(base.nodes, e.nodes, dn, false).v : e.nodes;
+    const nodes = uniqueLabels(dn.size ? applyListDelta(base.nodes, e.nodes, dn, false).v : e.nodes, fileLabels);
     const edges = de.size ? applyListDelta(base.edges, e.edges, de, false).v : e.edges;
     const sections = ds.size ? applyListDelta(bs, e.sections, ds, false).v : e.sections;
     const t = tidyParts(nodes, edges, sections);

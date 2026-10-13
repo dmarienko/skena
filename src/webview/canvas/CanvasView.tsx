@@ -85,7 +85,7 @@ import { MarksPanel, type SectionEntry } from './MarksPanel';
 import { LanesContext } from './LanesContext';
 import { KernelsContext } from './KernelsContext';
 import { EdgeRoutesContext } from './EdgeRoutesContext';
-import { merge3, rebaseHistory } from '../../shared/canvasMerge';
+import { merge3, rebaseHistory, uniqueLabels, labelsOf } from '../../shared/canvasMerge';
 import { borderPoint, LANE_STEP, routeSection, sideOfHandle, type RouteEdge, type RouteNode, type RoutedEdge, type Side } from '../../shared/edgeRouting';
 
 const NODE_TYPES: NodeTypes = {
@@ -1369,10 +1369,12 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
   // - restore nodes/edges/sections from a history entry
   const applyHistoryState = useCallback((entry: HistoryEntry) => {
     fromHistoryRef.current = true;
-    canvasRef.current = { ...canvasRef.current, nodes: entry.nodes, edges: entry.edges, metadata: { ...canvasRef.current.metadata, sections: entry.sections } };
+    // - a label the file has given another node since this step is not taken back by undoing it
+    const nodes = uniqueLabels(entry.nodes, labelsOf(baseRef.current.nodes));
+    canvasRef.current = { ...canvasRef.current, nodes, edges: entry.edges, metadata: { ...canvasRef.current.metadata, sections: entry.sections } };
     setLanes(entry.sections);
-    setNodes(toFlowNodes(entry.nodes));
-    setEdges(toFlowEdges(entry.edges, entry.nodes));
+    setNodes(toFlowNodes(nodes));
+    setEdges(toFlowEdges(entry.edges, nodes));
     scheduleSave();
   }, [setNodes, setEdges, scheduleSave]);
 
