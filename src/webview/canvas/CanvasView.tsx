@@ -4003,7 +4003,11 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
         const edges = d.edge && !cr.edges.some(x => x.id === d.edge!.id) ? [...cr.edges, d.edge] : cr.edges;
         return { ...cr, nodes, edges };
       };
-      canvasRef.current = mirror(canvasRef.current);
+      const beforeRun = canvasRef.current;
+      canvasRef.current = mirror(beforeRun);
+      // - the run's result is not the user's step: undo and redo keep it, as they keep another writer's change
+      undoStackRef.current = rebaseHistory(undoStackRef.current, beforeRun, canvasRef.current);
+      redoStackRef.current = rebaseHistory(redoStackRef.current, beforeRun, canvasRef.current);
       // - the host wrote exactly this to the file, from the version this view is based on: the view is
       //   at the new version too, and its next save is based on it
       if (d.version !== undefined && d.prevVersion === baseVersionRef.current) {
