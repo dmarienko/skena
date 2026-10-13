@@ -82,3 +82,14 @@ test('a node added while the file gave its label to another node is reported und
   assert.match(reply, /\bN3\b/);
   assert.equal(readdirSync(DIR).filter(f => f.endsWith('.tmp')).length, 0);
 });
+
+test('canvas_create over an existing canvas refuses and leaves it as it was', async () => {
+  const p = canvasFile('exists', [text('a', 'N1', 'keep me')]);
+  const before = readFileSync(p, 'utf8');
+  const reply = await call('canvas_create', { canvasPath: p });
+  assert.match(reply, /already exists/);
+  assert.equal(readFileSync(p, 'utf8'), before);
+  const fresh = join(DIR, 'brand-new.canvas');
+  assert.match(await call('canvas_create', { canvasPath: fresh }), /Created empty canvas/);
+  assert.deepEqual(read(fresh), { nodes: [], edges: [] });
+});

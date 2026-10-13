@@ -37,7 +37,7 @@ import { youtubeId, YOUTUBE_NODE } from '../../shared/youtube';
 import { ownedOutputId } from '../../shared/outputLink';
 import { merge3 } from '../../shared/canvasMerge';
 import { withCanvasLock, lockWasLost } from '../canvasLock';
-import { writeCanvasJson } from '../canvas-io';
+import { writeCanvasJson, createCanvasJson, CanvasExists } from '../canvas-io';
 import { executeCell, startKernel, shutdownKernel } from '../jupyter/client';
 import { renderOutput, hasVisibleOutput } from '../jupyter/output';
 import type { CollectedOutput } from '../jupyter/protocol';
@@ -1138,9 +1138,14 @@ async function canvasLayout(args: Record<string, unknown>): Promise<string> {
 async function canvasCreate(args: Record<string, unknown>): Promise<string> {
   const p = resolvePath(args.canvasPath as string);
   return withFileLock(p, async () => {
-    try { await fs.access(p); return `Canvas already exists: ${p}`; } catch { /* - create it */ }
     await fs.mkdir(path.dirname(p), { recursive: true });
-    await writeCanvas(p, { nodes: [], edges: [] });
+    // - never over an existing canvas, not even one created after a check: the create itself refuses
+    try {
+      await withCanvasLock(p, 'mcp', () => createCanvasJson(p, JSON.stringify({ nodes: [], edges: [] }, null, 2)));
+    } catch (e) {
+      if (e instanceof CanvasExists) return `Canvas already exists: ${p}`;
+      throw e;
+    }
     return `Created empty canvas: ${p}`;
   }); // - withFileLock
 }

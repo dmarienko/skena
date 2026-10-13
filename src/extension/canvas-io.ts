@@ -71,6 +71,26 @@ export async function writeCanvasJson(fsPath: string, json: string, held?: () =>
 // - two writes of one process in the same millisecond get different temp files
 let tmpSeq = 0;
 
+/** - createCanvasJson found a file where the new canvas was to go */
+export class CanvasExists extends Error {}
+
+/**
+ * A new .canvas file holding `json`, never over an existing one: written to a temp sibling, then
+ * hard-linked to its name, which fails when the name is taken (CanvasExists); the existing file is untouched.
+ */
+export async function createCanvasJson(fsPath: string, json: string): Promise<void> {
+  const target = expandHome(fsPath);
+  const tmp = `${target}.${process.pid}.${Date.now().toString(36)}.${(++tmpSeq).toString(36)}.tmp`;
+  try {
+    await fs.writeFile(tmp, json, 'utf-8');
+    await fs.link(tmp, target).catch(e => {
+      throw (e as NodeJS.ErrnoException).code === 'EEXIST' ? new CanvasExists(`${path.basename(target)} already exists`) : e;
+    });
+  } finally {
+    await fs.rm(tmp, { force: true });
+  }
+}
+
 /** - create a new empty canvas file */
 export async function createCanvas(fsPath: string): Promise<void> {
   const empty: CanvasData = { nodes: [], edges: [] };

@@ -14,7 +14,8 @@ import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs/promises';
 import { randomUUID } from 'crypto';
-import { readCanvas, writeCanvas, writeCanvasJson } from './canvas-io';
+import { readCanvas, writeCanvasJson, createCanvasJson } from './canvas-io';
+import { existsSync } from 'fs';
 import { CanvasFile, type Committed } from './canvasFile';
 import { uniqueLabels, labelsOf } from '../shared/canvasMerge';
 import { withCanvasLock, CanvasLockTimeout } from './canvasLock';
@@ -1525,15 +1526,16 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     canvasDir: string,
     send:      (m: HostToWebview) => void,
   ): Promise<void> {
+    // - auto-append .canvas if the user didn't include it
+    const fileOf = (v: string) => (v.trim().endsWith('.canvas') ? v.trim() : `${v.trim()}.canvas`);
     const name = await vscode.window.showInputBox({
       prompt:        'New canvas name',
       placeHolder:   'sub-canvas',
-      validateInput: v => v.trim() ? undefined : 'Name cannot be empty',
+      validateInput: v => !v.trim() ? 'Name cannot be empty'
+        : existsSync(path.join(canvasDir, fileOf(v))) ? `${fileOf(v)} already exists here` : undefined,
     });
     if (!name) return; // - user cancelled
-
-    // - auto-append .canvas if the user didn't include it
-    const filename = name.trim().endsWith('.canvas') ? name.trim() : `${name.trim()}.canvas`;
+    const filename = fileOf(name);
 
     // - normalize node positions so they start near (40, 40) in the new canvas
     const minX = Math.min(...msg.nodes.map(n => n.x));
@@ -1542,8 +1544,14 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const moved = new Map(msg.nodes.map(n => [n.id, n.id]));
     const normalized = msg.nodes.map(n => ({ ...copyNode(n, moved), x: n.x - minX + 40, y: n.y - minY + 40 }));
 
+    // - never over an existing canvas (one may appear after the name was checked): refused, nothing moves
     const newCanvasPath = path.join(canvasDir, filename);
-    await writeCanvas(newCanvasPath, { nodes: normalized, edges: msg.edges });
+    try {
+      await withCanvasLock(newCanvasPath, 'extension', () => createCanvasJson(newCanvasPath, JSON.stringify({ nodes: normalized, edges: msg.edges }, null, 2)));
+    } catch (e) {
+      void vscode.window.showErrorMessage(`Skena: ${e instanceof Error ? e.message : String(e)}; nothing was moved.`);
+      return;
+    }
 
     const relPath = `./${filename}`;
     const nodeId  = `node-${Date.now()}`;

@@ -6536,6 +6536,20 @@ async function writeCanvasJson(fsPath, json, held) {
   }
 }
 var tmpSeq = 0;
+var CanvasExists = class extends Error {
+};
+async function createCanvasJson(fsPath, json) {
+  const target = expandHome(fsPath);
+  const tmp = `${target}.${process.pid}.${Date.now().toString(36)}.${(++tmpSeq).toString(36)}.tmp`;
+  try {
+    await fs2.writeFile(tmp, json, "utf-8");
+    await fs2.link(tmp, target).catch((e) => {
+      throw e.code === "EEXIST" ? new CanvasExists(`${path3.basename(target)} already exists`) : e;
+    });
+  } finally {
+    await fs2.rm(tmp, { force: true });
+  }
+}
 
 // node_modules/ws/wrapper.mjs
 var import_stream = __toESM(require_stream(), 1);
@@ -7682,8 +7696,8 @@ async function canvasList(args) {
     const aiMark = ext.createdBy === "ai" ? " \u{1F916}" : "";
     const tags = ext.tags?.length ? `  [${ext.tags.join(", ")}]` : "";
     const out = links.output.get(n.id), of = links.outputOf.get(n.id);
-    const link2 = out ? `  (output: ${out.nodeLabel ?? out.id})` : of ? `  (output of: ${of.nodeLabel ?? of.id})` : "";
-    lines.push(`  ${(n.nodeLabel ?? n.id).padEnd(4)}  ${typeLabel(n).padEnd(10)}  ${nodeSnippet(n)}${aiMark}${tags}${link2}`);
+    const link3 = out ? `  (output: ${out.nodeLabel ?? out.id})` : of ? `  (output of: ${of.nodeLabel ?? of.id})` : "";
+    lines.push(`  ${(n.nodeLabel ?? n.id).padEnd(4)}  ${typeLabel(n).padEnd(10)}  ${nodeSnippet(n)}${aiMark}${tags}${link3}`);
   }
   if (d.metadata?.sections?.length) {
     lines.push("", "Sections:");
@@ -8268,13 +8282,14 @@ async function canvasLayout(args) {
 async function canvasCreate(args) {
   const p = resolvePath(args.canvasPath);
   return withFileLock(p, async () => {
-    try {
-      await fs5.access(p);
-      return `Canvas already exists: ${p}`;
-    } catch {
-    }
     await fs5.mkdir(path7.dirname(p), { recursive: true });
-    await writeCanvas(p, { nodes: [], edges: [] });
+    try {
+      await withCanvasLock(p, "mcp", () => createCanvasJson(p, JSON.stringify({ nodes: [], edges: [] }, null, 2)));
+    } catch (e) {
+      if (e instanceof CanvasExists)
+        return `Canvas already exists: ${p}`;
+      throw e;
+    }
     return `Created empty canvas: ${p}`;
   });
 }
