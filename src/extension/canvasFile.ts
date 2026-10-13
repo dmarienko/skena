@@ -21,15 +21,15 @@ export interface CanvasFileIO {
 }
 
 export interface Loaded { canvas: CanvasData; version: number }
+export interface Committed { canvas: CanvasData; version: number; prevVersion: number; merged: boolean }
+export type Saved =
+  | { written: true; version: number; prevVersion: number }
+  | { written: false; canvas: CanvasData; version: number };
 
 // - a file another writer is writing in place (the MCP server truncates, then writes) is read again
 //   this often, this far apart, until it parses
 const SETTLE_TRIES = 40;
 const SETTLE_MS = 25;
-export interface Committed { canvas: CanvasData; version: number; prevVersion: number; merged: boolean }
-export type Saved =
-  | { written: true; version: number; prevVersion: number }
-  | { written: false; canvas: CanvasData; version: number };
 
 export class CanvasFile {
   private version = 0;
@@ -47,8 +47,6 @@ export class CanvasFile {
     private readonly get: () => CanvasData,
     private readonly set: (c: CanvasData) => void,
   ) {}
-
-  get current(): number { return this.version; }
 
   private serial<T>(fn: () => Promise<T>): Promise<T> {
     const p = this.chain.then(fn, fn);
