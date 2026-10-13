@@ -39,8 +39,8 @@ export function parseCanvas(raw: string): CanvasData {
  * truncated file: writeFile truncates then streams, so a concurrent read of this large .canvas
  * can catch it empty and the webview would take an empty reload. We write a PID+timestamp-named
  * temp sibling, then rename (atomic on the same filesystem), so readers only ever see the
- * complete old or complete new file. (The MCP server writes non-atomically on purpose — its
- * watcher reload needs IN_CLOSE_WRITE; the webview's empty-reload guard covers that rarer path.)
+ * complete old or complete new file. The MCP server writes through here too; the editor's watcher
+ * takes a rename onto the canvas (a create event) as a change.
  */
 export async function writeCanvas(fsPath: string, data: CanvasData): Promise<void> {
   await writeCanvasJson(fsPath, JSON.stringify(data, null, 2));
@@ -48,15 +48,24 @@ export async function writeCanvas(fsPath: string, data: CanvasData): Promise<voi
 
 /** - writeCanvas for a canvas already serialised */
 export async function writeCanvasJson(fsPath: string, json: string): Promise<void> {
-  const target = expandHome(fsPath);
+  // - through a symlinked canvas to its real file: the rename would replace the link itself
+  const target = await fs.realpath(expandHome(fsPath)).catch(() => expandHome(fsPath));
   // - ATOMIC write: a reader (the file-watcher) must never see a truncated/partial file. writeFile
   //   truncates then streams, so a concurrent read of this large .canvas can catch it empty → the
   //   webview gets an empty reload and collapses/loses nodes. Write a temp sibling, then rename
   //   (atomic on the same filesystem) so readers only ever see the complete old or complete new file.
-  const tmp = `${target}.${process.pid}.${Date.now().toString(36)}.tmp`;
-  await fs.writeFile(tmp, json, 'utf-8');
-  await fs.rename(tmp, target);
+  const tmp = `${target}.${process.pid}.${Date.now().toString(36)}.${(++tmpSeq).toString(36)}.tmp`;
+  try {
+    await fs.writeFile(tmp, json, 'utf-8');
+    await fs.rename(tmp, target);
+  } catch (e) {
+    await fs.rm(tmp, { force: true });
+    throw e;
+  }
 }
+
+// - two writes of one process in the same millisecond get different temp files
+let tmpSeq = 0;
 
 /** - create a new empty canvas file */
 export async function createCanvas(fsPath: string): Promise<void> {
