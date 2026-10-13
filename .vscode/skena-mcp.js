@@ -4077,9 +4077,9 @@ function pruneFoldedIds(lanes, removed) {
 function sectionByRef(lanes, ref) {
   const r = ref.trim();
   const sorted = sortLanes(lanes);
-  const byId2 = sorted.find((l) => l.id === r);
-  if (byId2)
-    return byId2;
+  const byId3 = sorted.find((l) => l.id === r);
+  if (byId3)
+    return byId3;
   const m = /^s(\d+)$/i.exec(r);
   return m ? sorted[Number(m[1]) - 1] ?? null : null;
 }
@@ -4205,16 +4205,16 @@ function makeSectionKernelResolver(c) {
   };
 }
 function makeCellKernelResolver(c) {
-  const byId2 = new Map(c.nodes.map((n) => [n.id, n]));
+  const byId3 = new Map(c.nodes.map((n) => [n.id, n]));
   const memo = /* @__PURE__ */ new Map();
-  const isKernel = (id) => byId2.get(id)?.type === "kernel";
+  const isKernel = (id) => byId3.get(id)?.type === "kernel";
   const sectionKernel = makeSectionKernelResolver(c);
   return (cellId) => {
     const hit = memo.get(cellId);
     if (hit !== void 0)
       return hit;
     const viaEdge = resolveBoundKernel(cellId, c.edges, isKernel);
-    const cell = byId2.get(cellId);
+    const cell = byId3.get(cellId);
     const out = viaEdge ?? (cell ? sectionKernel(cell) : null);
     memo.set(cellId, out);
     return out;
@@ -4235,9 +4235,9 @@ function kernelById(c, id) {
   return node ? node : null;
 }
 function upstreamCellsForRun(targetId, c) {
-  const byId2 = new Map(c.nodes.map((n) => [n.id, n]));
-  const isKernel = (id) => byId2.get(id)?.type === "kernel";
-  const isCode = (id) => byId2.get(id)?.type === "code";
+  const byId3 = new Map(c.nodes.map((n) => [n.id, n]));
+  const isKernel = (id) => byId3.get(id)?.type === "kernel";
+  const isCode = (id) => byId3.get(id)?.type === "code";
   if (resolveBoundKernel(targetId, c.edges, isKernel))
     return resolveUpstreamChain(targetId, c.edges, isKernel, isCode);
   const resolve6 = makeCellKernelResolver(c);
@@ -4257,7 +4257,7 @@ function upstreamCellsForRun(targetId, c) {
     }
   }
   const pos = (id) => {
-    const n = byId2.get(id);
+    const n = byId3.get(id);
     return { y: n?.y ?? 0, x: n?.x ?? 0 };
   };
   const t = pos(targetId);
@@ -4265,7 +4265,7 @@ function upstreamCellsForRun(targetId, c) {
   return [...seen].filter((id) => id !== targetId).filter((id) => {
     const p = pos(id);
     return p.y < t.y || p.y === t.y && p.x < t.x;
-  }).filter((id) => laneKernel(byId2.get(id)) === kernel).sort((a, b) => {
+  }).filter((id) => laneKernel(byId3.get(id)) === kernel).sort((a, b) => {
     const pa = pos(a), pb = pos(b);
     return pa.y - pb.y || pa.x - pb.x;
   });
@@ -6138,6 +6138,159 @@ function ownedOutputId(nodes, edges, cell) {
   return nodes.some((n) => n.type === "code" && n.id !== cell.id && n.outputNodeId === id) ? void 0 : id;
 }
 
+// src/shared/canvasMerge.ts
+function same(a, b) {
+  if (a === b)
+    return true;
+  if (a === null || b === null || typeof a !== "object" || typeof b !== "object")
+    return false;
+  if (Array.isArray(a) !== Array.isArray(b))
+    return false;
+  if (Array.isArray(a)) {
+    const bb = b;
+    if (a.length !== bb.length)
+      return false;
+    for (let i = 0; i < a.length; i++)
+      if (!same(a[i], bb[i]))
+        return false;
+    return true;
+  }
+  const ao = a, bo = b;
+  let na = 0;
+  for (const k in ao) {
+    if (ao[k] === void 0)
+      continue;
+    na++;
+    if (!same(ao[k], bo[k]))
+      return false;
+  }
+  let nb = 0;
+  for (const k in bo)
+    if (bo[k] !== void 0)
+      nb++;
+  return na === nb;
+}
+function pick(b, o, t) {
+  if (same(o, t) || same(o, b))
+    return { v: t, kept: false };
+  if (same(t, b))
+    return { v: o, kept: true };
+  return { v: t, kept: false };
+}
+function mergeItem(b, o, t) {
+  if (same(o, t) || same(o, b))
+    return { v: t, kept: false };
+  if (same(t, b))
+    return { v: o, kept: true };
+  if (!b || !o || !t)
+    return { v: t, kept: false };
+  const bo = b, oo = o, to = t;
+  const out = {};
+  let kept = false;
+  for (const k of /* @__PURE__ */ new Set([...Object.keys(to), ...Object.keys(oo)])) {
+    const r = pick(bo[k], oo[k], to[k]);
+    if (r.v !== void 0)
+      out[k] = r.v;
+    kept ||= r.kept;
+  }
+  return { v: out, kept };
+}
+var byId2 = (xs) => new Map(xs.map((x) => [x.id, x]));
+function listDelta(b, t) {
+  const bm = byId2(b), tm = byId2(t);
+  const d = /* @__PURE__ */ new Map();
+  for (const x of t) {
+    const bx = bm.get(x.id);
+    if (!bx || !same(bx, x))
+      d.set(x.id, x);
+  }
+  for (const x of b)
+    if (!tm.has(x.id))
+      d.set(x.id, void 0);
+  return d;
+}
+function applyListDelta(b, o, d, wantKept) {
+  const bm = byId2(b);
+  const out = [];
+  const seen = /* @__PURE__ */ new Set();
+  let kept = false;
+  for (const x of o) {
+    seen.add(x.id);
+    if (d.has(x.id)) {
+      const r = mergeItem(bm.get(x.id), x, d.get(x.id));
+      if (r.v)
+        out.push(r.v);
+      kept ||= r.kept;
+    } else {
+      out.push(x);
+      if (wantKept && !kept)
+        kept = !same(bm.get(x.id), x);
+    }
+  }
+  for (const [id, tx] of d) {
+    if (seen.has(id) || !tx)
+      continue;
+    const r = mergeItem(bm.get(id), void 0, tx);
+    if (r.v)
+      out.push(r.v);
+    kept ||= r.kept;
+  }
+  if (wantKept && !kept) {
+    for (const x of b)
+      if (!seen.has(x.id) && !d.has(x.id)) {
+        kept = true;
+        break;
+      }
+  }
+  return { v: out, kept };
+}
+function mergeList(b, o, t) {
+  if (b === void 0 && o === void 0 && t === void 0)
+    return { v: void 0, kept: false };
+  const r = applyListDelta(b ?? [], o ?? [], listDelta(b ?? [], t ?? []), true);
+  return t === void 0 && r.v.length === 0 && !r.kept ? { v: void 0, kept: false } : r;
+}
+var LIST_KEYS = /* @__PURE__ */ new Set(["sections", "kernels"]);
+function mergeMetadata(b, o, t) {
+  if (same(o, t) || same(o, b))
+    return { v: t, kept: false };
+  if (same(t, b))
+    return { v: o, kept: true };
+  const out = {};
+  let kept = false;
+  for (const k of /* @__PURE__ */ new Set([...Object.keys(t ?? {}), ...Object.keys(o ?? {})])) {
+    const r = LIST_KEYS.has(k) ? mergeList(b?.[k], o?.[k], t?.[k]) : pick(b?.[k], o?.[k], t?.[k]);
+    if (r.v !== void 0)
+      out[k] = r.v;
+    kept ||= r.kept;
+  }
+  return { v: out, kept };
+}
+function merge3(base, ours, theirs) {
+  const b = base, o = ours, t = theirs;
+  const out = {};
+  let kept = false;
+  for (const k of /* @__PURE__ */ new Set([...Object.keys(t), ...Object.keys(o)])) {
+    let r;
+    if (k === "nodes" || k === "edges")
+      r = mergeList(b[k], o[k], t[k]);
+    else if (k === "metadata")
+      r = mergeMetadata(b[k], o[k], t[k]);
+    else if (k === "creationCounter") {
+      const ov = typeof o[k] === "number" ? o[k] : -Infinity;
+      const tv = typeof t[k] === "number" ? t[k] : -Infinity;
+      r = { v: Math.max(ov, tv) === -Infinity ? void 0 : Math.max(ov, tv), kept: ov > tv };
+    } else
+      r = pick(b[k], o[k], t[k]);
+    if (r.v !== void 0)
+      out[k] = r.v;
+    kept ||= r.kept;
+  }
+  out.nodes ??= [];
+  out.edges ??= [];
+  return { canvas: out, kept };
+}
+
 // node_modules/ws/wrapper.mjs
 var import_stream = __toESM(require_stream(), 1);
 var import_extension = __toESM(require_extension(), 1);
@@ -6946,14 +7099,27 @@ function noderefCanvasPath(target, canvasPath) {
 var _fileLocks = /* @__PURE__ */ new Map();
 function withFileLock(fsPath, fn) {
   const prev = _fileLocks.get(fsPath) ?? Promise.resolve();
-  const next = prev.then(() => fn(), () => fn());
+  const run = () => {
+    _lastText.delete(fsPath);
+    _lastOurs.delete(fsPath);
+    return fn();
+  };
+  const next = prev.then(run, run);
   _fileLocks.set(fsPath, next.then(() => {
   }, () => {
   }));
   return next;
 }
+var _lastText = /* @__PURE__ */ new Map();
+var _lastOurs = /* @__PURE__ */ new Map();
 async function readCanvas(fsPath) {
   const raw = await fs3.readFile(fsPath, "utf-8");
+  const data = canvasFromText(raw);
+  _lastText.set(fsPath, raw);
+  _lastOurs.set(fsPath, raw);
+  return data;
+}
+function canvasFromText(raw) {
   const parsed = JSON.parse(raw);
   const data = {
     ...parsed,
@@ -6968,7 +7134,20 @@ function holdSection(d, edge) {
   return sectionEngineNodes(d.nodes, d.metadata?.sections ?? [], edge.toNode) ?? toEngineNodes(d.nodes);
 }
 async function writeCanvas(fsPath, data) {
-  await fs3.writeFile(fsPath, JSON.stringify(data, null, 2), "utf-8");
+  let out = data;
+  const lastText = _lastText.get(fsPath), lastOurs = _lastOurs.get(fsPath);
+  if (lastText !== void 0 && lastOurs !== void 0) {
+    try {
+      const ours = lastOurs === lastText ? data : merge3(canvasFromText(lastOurs), data, canvasFromText(lastText)).canvas;
+      const now = await fs3.readFile(fsPath, "utf-8").catch(() => null);
+      out = now !== null && now !== lastText ? merge3(canvasFromText(lastText), ours, canvasFromText(now)).canvas : ours;
+    } catch {
+    }
+  }
+  const json = JSON.stringify(out, null, 2);
+  await fs3.writeFile(fsPath, json, "utf-8");
+  _lastText.set(fsPath, json);
+  _lastOurs.set(fsPath, out === data ? json : JSON.stringify(data, null, 2));
 }
 async function readCanvasOrEmpty(fsPath) {
   try {
@@ -7204,12 +7383,12 @@ ${text}`;
   }
 }
 function outputLinks(d) {
-  const byId2 = new Map(d.nodes.map((n) => [n.id, n]));
+  const byId3 = new Map(d.nodes.map((n) => [n.id, n]));
   const output = /* @__PURE__ */ new Map(), outputOf = /* @__PURE__ */ new Map();
   for (const n of d.nodes) {
     if (n.type !== "code")
       continue;
-    const o = byId2.get(ownedOutputId(d.nodes, d.edges, n) ?? "");
+    const o = byId3.get(ownedOutputId(d.nodes, d.edges, n) ?? "");
     if (!o)
       continue;
     output.set(n.id, o);

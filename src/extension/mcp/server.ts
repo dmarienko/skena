@@ -35,6 +35,7 @@ import { readSettingsSync, workspaceDirAbove } from '../settingsFiles';
 import { parseNodeRef, isSectionLabel } from '../../shared/nodeRef';
 import { youtubeId, YOUTUBE_NODE } from '../../shared/youtube';
 import { ownedOutputId } from '../../shared/outputLink';
+import { merge3 } from '../../shared/canvasMerge';
 import { executeCell, startKernel, shutdownKernel } from '../jupyter/client';
 import { renderOutput, hasVisibleOutput } from '../jupyter/output';
 import type { CollectedOutput } from '../jupyter/protocol';
@@ -148,7 +149,9 @@ const _fileLocks = new Map<string, Promise<void>>();
 function withFileLock<T>(fsPath: string, fn: () => Promise<T>): Promise<T> {
   // - chain onto the previous operation for this path (or a resolved promise)
   const prev  = _fileLocks.get(fsPath) ?? Promise.resolve();
-  const next  = prev.then(() => fn(), () => fn()); // - run fn regardless of prev outcome
+  // - a write merges against what THIS operation read, never what an earlier one did
+  const run   = () => { _lastText.delete(fsPath); _lastOurs.delete(fsPath); return fn(); };
+  const next  = prev.then(run, run); // - run fn regardless of prev outcome
   // - store a void chain so errors don't leak into future callers
   _fileLocks.set(fsPath, next.then(() => {}, () => {}));
   return next;
@@ -156,8 +159,22 @@ function withFileLock<T>(fsPath: string, fn: () => Promise<T>): Promise<T> {
 
 // ─── canvas I/O ───────────────────────────────────────────────────────────────
 
+// - per canvas, within one locked operation: the file's text when the operation last read or wrote it,
+//   and the operation's own canvas then (the two differ only after a write that merged in another
+//   writer's change). A tool can hold a canvas for the length of a cell run; a write finding other text
+//   in the file merges that change in (merge3) instead of writing over it.
+const _lastText = new Map<string, string>();
+const _lastOurs = new Map<string, string>();
+
 async function readCanvas(fsPath: string): Promise<CanvasData> {
-  const raw    = await fs.readFile(fsPath, 'utf-8');
+  const raw = await fs.readFile(fsPath, 'utf-8');
+  const data = canvasFromText(raw);
+  _lastText.set(fsPath, raw);
+  _lastOurs.set(fsPath, raw);
+  return data;
+}
+
+function canvasFromText(raw: string): CanvasData {
   const parsed = JSON.parse(raw) as Partial<CanvasData>;
   // - spread first: metadata (sections, aiModel) and any Obsidian-owned field must
   //   survive the round trip — writeCanvas serialises this object, so a dropped key is a deleted key
@@ -180,11 +197,26 @@ function holdSection(d: CanvasData, edge: CanvasEdge) {
 }
 
 async function writeCanvas(fsPath: string, data: CanvasData): Promise<void> {
+  // - another writer (the open editor, another agent) changed the file since this operation read it:
+  //   its change is merged in, not written over; where both changed the same thing, the file wins
+  let out = data;
+  const lastText = _lastText.get(fsPath), lastOurs = _lastOurs.get(fsPath);
+  if (lastText !== undefined && lastOurs !== undefined) {
+    try {
+      // - an earlier write of this operation merged in a change `data` does not hold: carry it
+      const ours = lastOurs === lastText ? data : merge3(canvasFromText(lastOurs), data, canvasFromText(lastText)).canvas;
+      const now = await fs.readFile(fsPath, 'utf-8').catch(() => null);
+      out = now !== null && now !== lastText ? merge3(canvasFromText(lastText), ours, canvasFromText(now)).canvas : ours;
+    } catch { /* - a file another writer is writing does not parse: written as before */ }
+  }
+  const json = JSON.stringify(out, null, 2);
   // - direct write (no atomic rename) so VS Code's createFileSystemWatcher fires
   // - onDidChange via inotify IN_CLOSE_WRITE, which triggers the webview reload.
   // - Atomic rename emits IN_MOVED_TO instead, which VS Code does not always map
   // - to onDidChange on the target path, leaving the open canvas stale.
-  await fs.writeFile(fsPath, JSON.stringify(data, null, 2), 'utf-8');
+  await fs.writeFile(fsPath, json, 'utf-8');
+  _lastText.set(fsPath, json);
+  _lastOurs.set(fsPath, out === data ? json : JSON.stringify(data, null, 2));
 }
 
 // - read a canvas, or return an empty one if the file doesn't exist yet (create-on-first-write)
