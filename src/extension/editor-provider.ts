@@ -1830,9 +1830,9 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         format, content, createdBy: 'ai',
       };
       const edge: CanvasEdge = { id: `e-${liveOutputId}`, fromNode: cn.id, fromSide: 'right', toNode: liveOutputId, toSide: 'left', toEnd: 'arrow' };
-      const sendFrame = (step: { version?: number; prevVersion?: number } = {}) => {
+      const sendFrame = (step: { version?: number; prevVersion?: number } = {}, written?: CellNode) => {
         try {
-          send({ type: 'runOutput', codeNodeId: codeNode.id, lastStatus: 'running', kernelNodeId: kernel.id, kernelId, outputNode, edge, ...step });
+          send({ type: 'runOutput', codeNodeId: codeNode.id, lastStatus: 'running', kernelNodeId: kernel.id, kernelId, outputNode: written ?? outputNode, edge, ...step });
         } catch { /* - webview disposed mid-run; disk write at completion still happens */ }
       };
       // - persist the output node to disk ONCE (first creation) so a close+reopen mid-run keeps it —
@@ -1843,16 +1843,17 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         persisting = true;
         void commit(c => {
           const cnDisk = c.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code') as CodeNode | undefined;
-          if (!cnDisk || ownedOutputId(c.nodes, c.edges, cnDisk)) return false;
+          if (!cnDisk || ownedOutputId(c.nodes, c.edges, cnDisk)) return null;
           if (!c.nodes.some(n => n.id === outputNode.id)) c.nodes.push(assignLabel(outputNode, c.nodes) as CellNode);
           cnDisk.outputNodeId = outputNode.id;   // - link first, see above
           if (c.metadata?.sections) c.metadata = { ...c.metadata, sections: pinOutputToLane(c.metadata.sections, cnDisk.id, outputNode.id) };   // - an output of a folded cell stays folded
           const own = layoutAround(c, cnDisk.id, { moverIds: [outputNode.id] }, [outputNode.id]);
           Object.assign(c, applyLaneFit(c, Date.now(), own));   // - c IS document.canvas, the one commit writes: assign into it, never reassign c
           if (!c.edges.some(e => e.id === edge.id)) c.edges.push(edge);
-          return true;
-        }, { step: wrote => wrote })
-          .then(r => sendFrame(r.step), () => sendFrame())   // - not written: the end-of-run write persists it
+          // - as written: labelled, and where the engine put it
+          return c.nodes.find(n => n.id === outputNode.id) as CellNode;
+        }, { step: written => written !== null })
+          .then(r => sendFrame(r.step, r.result ?? undefined), () => sendFrame())   // - not written: the end-of-run write persists it
           .finally(() => { persisting = false; if (!finished && latest) flushDelta(); });
         return;
       }
