@@ -1,11 +1,14 @@
 /**
  * An open editor's hold on its .canvas file. Every write of the file by the editor host goes through
- * `commit` or `save`, every reload through `absorb`, and they run one at a time.
+ * `commit` or `save`, every reload through `absorb`, and they run one at a time. A host change to its
+ * canvas is made inside `commit`, on the canvas as it is then, so no save can replace it unwritten.
  *
  * The rule: the host remembers the exact text it last wrote to or read from the file, and a version
  * number that moves on with each. Before writing, it reads the file again. Text other than what it
  * remembers means another writer (the MCP server, git, Obsidian) changed the file since, and that
  * change is merged into the host's canvas (merge3) before anything is written, never written over.
+ * The read and the write happen holding the canvas's lock file (canvasLock.ts), which every other
+ * writer takes too, so nothing lands between them.
  * The webview's save carries the version its canvas is based on, and a save based on any version
  * but the current one is refused: the webview is sent the current canvas instead, merges its own
  * changes into it and saves again.
@@ -18,10 +21,12 @@ export interface CanvasFileIO {
   /** - the file's text, or null when it cannot be read */
   read(fsPath: string): Promise<string | null>;
   write(fsPath: string, json: string): Promise<void>;
+  /** - runs `fn` holding the canvas's lock (withCanvasLock); rejects, without running it, when the lock cannot be had */
+  lock<T>(fsPath: string, fn: () => Promise<T>): Promise<T>;
 }
 
 export interface Loaded { canvas: CanvasData; version: number }
-export interface Committed { canvas: CanvasData; version: number; prevVersion: number; merged: boolean }
+export interface Committed<R = void> { canvas: CanvasData; version: number; prevVersion: number; merged: boolean; result: R }
 export type Saved =
   | { written: true; version: number; prevVersion: number }
   | { written: false; canvas: CanvasData; version: number };
@@ -113,16 +118,20 @@ export class CanvasFile {
   }
 
   /**
-   * Write the host's canvas. What another writer changed in the file since is merged in first, and
-   * `merged` then says the editor has to be sent the result: it has not seen that change.
+   * Make a host change with `change` and write the host's canvas. What another writer changed in the
+   * file since is merged in first, so `change` sees it; `merged` then says the editor has to be sent the
+   * result: it has not seen that change. `result` is what `change` returned.
    */
-  commit(): Promise<Committed> {
-    return this.serial(async () => {
+  commit<R = void>(change?: (c: CanvasData) => R): Promise<Committed<R>> {
+    return this.serial(() => this.io.lock(this.fsPath, async () => {
       const absorbed = await this.absorbNow();
       const c = this.get();
-      const { version, prevVersion } = await this.writeNow(c);
-      return { canvas: c, version, prevVersion, merged: absorbed !== null };
-    });
+      const result = change ? change(c) : (undefined as R);
+      // - a change may have replaced the canvas object rather than edited it
+      const written = this.get();
+      const { version, prevVersion } = await this.writeNow(written);
+      return { canvas: written, version, prevVersion, merged: absorbed !== null, result };
+    }));
   }
 
   /**
@@ -131,13 +140,13 @@ export class CanvasFile {
    * comes back for the webview.
    */
   save(baseVersion: number | undefined, build: () => CanvasData): Promise<Saved> {
-    return this.serial(async () => {
+    return this.serial(() => this.io.lock(this.fsPath, async () => {
       await this.absorbNow();
       if (baseVersion !== this.version) return { written: false, canvas: this.get(), version: this.version };
       const c = build();
       const v = await this.writeNow(c);
       this.set(c);
-      return { written: true, ...v };
-    });
+      return { written: true, ...v } as Saved;
+    }));
   }
 }

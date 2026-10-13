@@ -13,6 +13,7 @@ function setup(initial) {
   const io = {
     read: async () => disk.text,
     write: async (_p, json) => { disk.text = json; disk.writes++; },
+    lock: (_p, fn) => fn(),
   };
   const doc = { canvas: null };
   const file = new CanvasFile(P, io, c => c, () => doc.canvas, c => { doc.canvas = c; });
@@ -107,7 +108,7 @@ test('a host write while another writer is mid-write waits for the file to parse
   const reads = [before, '', after.slice(0, 40), after];
   let written = null;
   const doc = { canvas: null };
-  const io = { read: async () => (reads.length > 1 ? reads.shift() : reads[0]), write: async (_p, json) => { written = json; } };
+  const io = { read: async () => (reads.length > 1 ? reads.shift() : reads[0]), write: async (_p, json) => { written = json; }, lock: (_p, fn) => fn() };
   const file = new CanvasFile(P, io, c => c, () => doc.canvas, c => { doc.canvas = c; });
   await file.load();
   doc.canvas.nodes[1].text = 'host change';
@@ -115,4 +116,69 @@ test('a host write while another writer is mid-write waits for the file to parse
   const onDisk = JSON.parse(written);
   assert.equal(onDisk.nodes[0].code, 'x = 2');
   assert.equal(onDisk.nodes[1].text, 'host change');
+});
+
+test('a host change made while a save is reading the file is written along with the save', async () => {
+  const s = setup({ nodes: [code('a'), text('n')], edges: [] });
+  // - the save's read of the file is slow; the run's output reaches the host meanwhile
+  let release, slowNext = false;
+  const slow = new Promise(r => { release = r; });
+  const io = {
+    read: async () => { if (slowNext) { slowNext = false; await slow; } return s.disk.text; },
+    write: async (_p, json) => { s.disk.text = json; },
+    lock: (_p, fn) => fn(),
+  };
+  const doc = s.doc;
+  const file = new CanvasFile(P, io, c => c, () => doc.canvas, c => { doc.canvas = c; });
+  const v = await file.load();
+  slowNext = true;
+  const saving = file.save(v.version, () => ({ nodes: [code('a'), text('n', { text: 'typed' })], edges: [] }));
+  const run = file.commit(c => { c.nodes.find(n => n.id === 'a').lastStatus = 'ok'; });
+  release();
+  await Promise.all([saving, run]);
+  const onDisk = JSON.parse(s.disk.text);
+  assert.equal(onDisk.nodes.find(n => n.id === 'n').text, 'typed');
+  assert.equal(onDisk.nodes.find(n => n.id === 'a').lastStatus, 'ok');
+});
+
+test('a host change is made on the canvas as the file holds it, another writer\'s change included', async () => {
+  const s = setup({ nodes: [code('a'), text('n')], edges: [] });
+  await s.file.load();
+  s.external({ nodes: [code('a'), text('n'), text('agent')], edges: [] });
+  let seen = null;
+  const r = await s.file.commit(c => { seen = c.nodes.map(n => n.id); c.nodes[0].lastStatus = 'ok'; return 'done'; });
+  assert.deepEqual(seen, ['a', 'n', 'agent']);
+  assert.equal(r.result, 'done');
+  assert.equal(r.merged, true);
+});
+
+test('the read the write is based on and the write itself happen holding the lock', async () => {
+  const s = setup({ nodes: [text('n')], edges: [] });
+  await s.file.load();
+  const trace = [];
+  let held = false;
+  const io = {
+    read: async () => { trace.push(`read ${held}`); return s.disk.text; },
+    write: async (_p, json) => { trace.push(`write ${held}`); s.disk.text = json; },
+    lock: async (_p, fn) => { held = true; try { return await fn(); } finally { held = false; } },
+  };
+  const doc = s.doc;
+  const file = new CanvasFile(P, io, c => c, () => doc.canvas, c => { doc.canvas = c; });
+  const v = await file.load();
+  trace.length = 0;
+  await file.commit(c => { c.nodes[0].text = 'x'; });
+  await file.save(v.version + 1, () => ({ nodes: [text('n', { text: 'y' })], edges: [] }));
+  assert.deepEqual(trace, ['read true', 'write true', 'read true', 'write true']);
+});
+
+test('no lock to be had: nothing is written and the caller gets the error', async () => {
+  const s = setup({ nodes: [text('n')], edges: [] });
+  const io = { read: async () => s.disk.text, write: async () => { throw new Error('written without the lock'); }, lock: async () => { throw new Error('locked by mcp'); } };
+  const doc = s.doc;
+  const file = new CanvasFile(P, io, c => c, () => doc.canvas, c => { doc.canvas = c; });
+  const v = await file.load();
+  await assert.rejects(file.commit(c => { c.nodes[0].text = 'x'; }), /locked by mcp/);
+  await assert.rejects(file.save(v.version, () => doc.canvas), /locked by mcp/);
+  // - the queue is not stuck behind a failure
+  assert.equal(await file.absorb(), null);
 });

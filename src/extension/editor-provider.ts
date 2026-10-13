@@ -16,6 +16,7 @@ import * as fs from 'fs/promises';
 import { randomUUID } from 'crypto';
 import { readCanvas, writeCanvas, writeCanvasJson } from './canvas-io';
 import { CanvasFile, type Committed } from './canvasFile';
+import { withCanvasLock, CanvasLockTimeout } from './canvasLock';
 import { FileResolver } from './file-resolver';
 import { urisForChangedFile } from './filePaths';
 import { VaultIndexer } from './vault-indexer';
@@ -108,8 +109,15 @@ function openedCanvas(raw: CanvasData, was?: CanvasData): CanvasData {
   return edges === canvas.edges ? canvas : { ...canvas, edges };
 }
 
-/** - writes the host's canvas of one open editor (canvasFile.ts); `tell` sends the webview the result */
-type Commit = (opts?: { tell?: boolean }) => Promise<Committed>;
+/**
+ * Makes a host change (`change`, run on the canvas as the file holds it) and writes the canvas of one
+ * open editor (canvasFile.ts). Every write is announced to the webview: as the whole canvas, or, when
+ * `step` says the caller sends the change itself (a runOutput), as a version step `step` returns. A
+ * step is only handed out when it follows the version last announced and nothing was merged in;
+ * otherwise the whole canvas is sent and `step` is empty.
+ */
+type Commit = <R = void>(change?: (c: CanvasData) => R, opts?: { step?: boolean | ((result: R) => boolean) }) =>
+  Promise<Committed<R> & { step: { version?: number; prevVersion?: number } }>;
 
 // - where a run's output cell goes: its pair's output column, its code cell's y. The fallback covers
 //   a canvas with no sections; a code cell inside one is always in a column, so it cannot miss there.
@@ -247,7 +255,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     //   the file's is refused (canvasFile.ts)
     const file = new CanvasFile(
       document.uri.fsPath,
-      { read: p => fs.readFile(p, 'utf-8').catch(() => null), write: writeCanvasJson },
+      { read: p => fs.readFile(p, 'utf-8').catch(() => null), write: writeCanvasJson, lock: (p, fn) => withCanvasLock(p, 'extension', fn) },
       (fromFile, was) => openedCanvas(fromFile, was),
       () => document.canvas,
       c => document.updateFromDisk(c),
@@ -282,14 +290,31 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       if (panelDisposed) return;
       try { panel.webview.postMessage(msg); } catch { /* - panel disposed mid-async */ }
     };
-    const sendLoaded = (canvas: CanvasData, version: number) =>
+    // - the last file version the webview was told about (canvasLoaded, canvasSaved or a step)
+    let announced = 0;
+    const sendLoaded = (canvas: CanvasData, version: number) => {
+      announced = version;
       send({ type: 'canvasLoaded', canvas, canvasPath: document.uri.fsPath, refPath: this.refPathFor(document), version });
-    // - write document.canvas; the webview gets the result when another writer's change was merged in
-    //   (it has not seen that change) or when `tell` asks for it (a change it does not mirror itself)
-    const commit: Commit = async (opts = {}) => {
-      const r = await file.commit();
-      if (r.merged || opts.tell) sendLoaded(r.canvas, r.version);
-      return r;
+    };
+    const sendSaved = (seq: number, version: number, prevVersion: number) => {
+      announced = version;
+      send({ type: 'canvasSaved', seq, version, prevVersion });
+    };
+    const commit: Commit = async <R,>(change?: (c: CanvasData) => R, opts: { step?: boolean | ((result: R) => boolean) } = {}) => {
+      try {
+        const r = await file.commit(change);
+        const wantsStep = typeof opts.step === 'function' ? opts.step(r.result) : !!opts.step;
+        if (wantsStep && !r.merged && r.prevVersion === announced) {
+          announced = r.version;
+          return { ...r, step: { version: r.version, prevVersion: r.prevVersion } };
+        }
+        sendLoaded(r.canvas, r.version);
+        return { ...r, step: {} };
+      } catch (e) {
+        // - nothing was written: say so, and let the caller stop as for any failed write
+        if (e instanceof CanvasLockTimeout) void vscode.window.showErrorMessage(`Skena: ${e.message}`);
+        throw e;
+      }
     };
 
     // - one Jupyter kernel manager per panel; pushes status to the webview.
@@ -395,7 +420,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           break;
         }
         case 'requestFile':  await this.handleRequestFile(msg, panel, document, resolver, canvasDir); break;
-        case 'saveCanvas':   await this.handleSaveCanvas(msg, document, file, send, sendLoaded); break;
+        case 'saveCanvas':   await this.handleSaveCanvas(msg, document, file, sendSaved, sendLoaded); break;
         case 'openFile':     await this.handleOpenFile(msg, resolver, canvasDir); break;
         case 'searchVault':  {
           const results = this.indexer.search(msg.query);
@@ -422,12 +447,12 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         }
         case 'floatingChatAddNote': {
           // - same path as the agent's add_note tool: a text node right of the focused node, with an edge
-          const added = this.addNoteToCanvas(document, msg.activeNodeId, msg.content);
+          let added: ReturnType<SkenaEditorProvider['addNoteToCanvas']> = null;
+          try {
+            added = (await commit(() => this.addNoteToCanvas(document, msg.activeNodeId, msg.content))).result;
+          } catch { break; /* - not written: the error was shown */ }
           if (!added) break;
           send({ type: 'floatingChatNodeAdded', node: added.node, edge: added.edge, turnKey: msg.turnKey, moved: added.moved, sections: document.canvas.metadata?.sections });
-          try {
-            await commit();
-          } catch { /* - the webview already holds the node; its next save writes it */ }
           break;
         }
         case 'pickModel': {
@@ -467,8 +492,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             if (ep) effort = ep.label === 'default' ? undefined : ep.label;
           }
           // - persist in the .canvas file (portable), respawn so the new model and effort take effect
-          document.canvas.metadata = { ...(document.canvas.metadata ?? {}), aiModel: chosen, aiEffort: effort };
-          await commit();
+          await commit(c => { c.metadata = { ...(c.metadata ?? {}), aiModel: chosen, aiEffort: effort }; });
           this._llmClient?.resetSession?.(document.uri.fsPath);
           send(this.chatModelInfo(document));
           break;
@@ -1016,7 +1040,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     msg:        MsgSaveCanvas,
     document:   SkenaDocument,
     file:       CanvasFile,
-    send:       (m: HostToWebview) => void,
+    sendSaved:  (seq: number, version: number, prevVersion: number) => void,
     sendLoaded: (canvas: CanvasData, version: number) => void,
   ): Promise<void> {
     // - built once the file is checked, from the host's canvas as it is then
@@ -1053,7 +1077,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     try {
       const r = await file.save(msg.baseVersion, build);
       // - refused (its base is older than the file): the webview merges its changes into the current canvas and saves again
-      if (r.written) send({ type: 'canvasSaved', seq: msg.seq ?? 0, version: r.version, prevVersion: r.prevVersion });
+      if (r.written) sendSaved(msg.seq ?? 0, r.version, r.prevVersion);
       else sendLoaded(r.canvas, r.version);
     } catch (e) {
       vscode.window.showErrorMessage(`Skena: failed to save canvas: ${e}`);
@@ -1548,77 +1572,77 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     document:       SkenaDocument,
     commit:         Commit,
   ): Promise<AgentRunPersistResult> {
+    // - resolve the CURRENT panel on every send (a run can outlive close+reopen), like runOneCell
+    const send = (m: HostToWebview) => {
+      const p = SkenaEditorProvider.panelsByPath.get(document.uri.fsPath) ?? panel;
+      try { p.webview.postMessage(m); } catch { /* panel disposed */ }
+    };
     try {
-      const c  = document.canvas;
-      const cn = c.nodes.find(n => n.id === payload.cellNodeId && n.type === 'code') as CodeNode | undefined;
-      if (!cn) return { handled: true };   // - cell deleted mid-run; nothing to write, but we DID handle it
-
-      // - resolve the CURRENT panel on every send (a run can outlive close+reopen), like runOneCell
-      const send = (m: HostToWebview) => {
-        const p = SkenaEditorProvider.panelsByPath.get(document.uri.fsPath) ?? panel;
-        try { p.webview.postMessage(m); } catch { /* panel disposed */ }
-      };
-
-      const kn = kernelById(c, payload.kernelNodeId);
-      if (kn && payload.kernelId !== kn.kernelId) kn.kernelId = payload.kernelId;   // - reuse this kernel next run
-
-      // - the version step the webview may take with the runOutput; none when the write merged in
-      //   another writer's change (the webview was sent the whole canvas then)
-      const persist = async (): Promise<{ version?: number; prevVersion?: number }> => {
-        const r = await commit();
-        return r.merged ? {} : { version: r.version, prevVersion: r.prevVersion };
-      };
-
       if (payload.phase === 'start') {
-        cn.lastStatus = 'running';
-        // - do NOT set cn.outputNodeId yet — only commit it once there is output (matches applyAndPersist)
-        const outId = ownedOutputId(c.nodes, c.edges, cn) ?? `ai-${Date.now().toString(36)}`;
-        const step = await persist();
-        send({ type: 'runOutput', codeNodeId: cn.id, lastStatus: 'running', kernelNodeId: payload.kernelNodeId, kernelId: payload.kernelId, source: 'host', ...step });
-        return { handled: true, outputNodeId: outId };
+        // - made on the canvas as it is when written (commit), so a save in flight cannot drop it
+        const r = await commit(c => {
+          const cn = c.nodes.find(n => n.id === payload.cellNodeId && n.type === 'code') as CodeNode | undefined;
+          if (!cn) return null;   // - cell deleted mid-run
+          const kn = kernelById(c, payload.kernelNodeId);
+          if (kn && payload.kernelId !== kn.kernelId) kn.kernelId = payload.kernelId;   // - reuse this kernel next run
+          cn.lastStatus = 'running';
+          // - do NOT set cn.outputNodeId yet — only commit it once there is output (matches applyAndPersist)
+          return { outId: ownedOutputId(c.nodes, c.edges, cn) ?? `ai-${Date.now().toString(36)}` };
+        }, { step: res => res !== null });
+        if (!r.result) return { handled: true };
+        send({ type: 'runOutput', codeNodeId: payload.cellNodeId, lastStatus: 'running', kernelNodeId: payload.kernelNodeId, kernelId: payload.kernelId, source: 'host', ...r.step });
+        return { handled: true, outputNodeId: r.result.outId };
       }
 
-      cn.lastStatus = payload.status ?? 'ok';
-      cn.lastRun    = Date.now();
-      let outputNode: CellNode | undefined;
-      let edge:       CanvasEdge | undefined;
-      if (payload.output) {
-        const outId    = payload.outputNodeId ?? ownedOutputId(c.nodes, c.edges, cn) ?? `ai-${Date.now().toString(36)}`;
-        const existing = c.nodes.find(n => n.id === outId && n.type === 'cell') as CellNode | undefined;
-        if (existing) {
-          existing.format  = payload.output.format;
-          existing.content = payload.output.content;
-          outputNode = existing;
-          // - match by node pair so an old `edge-out-` edge on a pre-fix canvas isn't duplicated
-          edge = c.edges.find(e => e.fromNode === cn.id && e.toNode === outId);
-          if (!edge) {
+      const r = await commit(c => {
+        const cn = c.nodes.find(n => n.id === payload.cellNodeId && n.type === 'code') as CodeNode | undefined;
+        if (!cn) return null;   // - cell deleted mid-run
+        const kn = kernelById(c, payload.kernelNodeId);
+        if (kn && payload.kernelId !== kn.kernelId) kn.kernelId = payload.kernelId;
+        cn.lastStatus = payload.status ?? 'ok';
+        cn.lastRun    = Date.now();
+        let outputNode: CellNode | undefined;
+        let edge:       CanvasEdge | undefined;
+        if (payload.output) {
+          const outId    = payload.outputNodeId ?? ownedOutputId(c.nodes, c.edges, cn) ?? `ai-${Date.now().toString(36)}`;
+          const existing = c.nodes.find(n => n.id === outId && n.type === 'cell') as CellNode | undefined;
+          if (existing) {
+            existing.format  = payload.output.format;
+            existing.content = payload.output.content;
+            outputNode = existing;
+            // - match by node pair so an old `edge-out-` edge on a pre-fix canvas isn't duplicated
+            edge = c.edges.find(e => e.fromNode === cn.id && e.toNode === outId);
+            if (!edge) {
+              edge = { id: `e-${outId}`, fromNode: cn.id, fromSide: 'right', toNode: outId, toSide: 'left', toEnd: 'arrow' };
+              c.edges.push(edge);
+            }
+          } else {
+            const cellBase: CellNode = {
+              id: outId, type: 'cell',
+              ...outputGeomFor(c, cn),
+              format: payload.output.format, content: payload.output.content, createdBy: 'ai',
+            };
+            outputNode = assignLabel(cellBase, c.nodes) as CellNode;
+            c.nodes.push(outputNode);
+            cn.outputNodeId = outId;   // - before the engine: the link is what makes the new cell this code cell's output rather than a free node
+            if (c.metadata?.sections) c.metadata = { ...c.metadata, sections: pinOutputToLane(c.metadata.sections, cn.id, outputNode.id) };   // - an output of a folded cell stays folded
+            const own = layoutAround(c, cn.id, { moverIds: [outId] }, [outId]);
+            Object.assign(c, applyLaneFit(c, Date.now(), own));   // - c IS document.canvas, the one commit writes: assign into it, never reassign c
+            outputNode = c.nodes.find(n => n.id === outId) as CellNode;   // - the engine and the fit replace every node they move; the webview creates the node at the geometry this message carries
             edge = { id: `e-${outId}`, fromNode: cn.id, fromSide: 'right', toNode: outId, toSide: 'left', toEnd: 'arrow' };
             c.edges.push(edge);
           }
-        } else {
-          const cellBase: CellNode = {
-            id: outId, type: 'cell',
-            ...outputGeomFor(c, cn),
-            format: payload.output.format, content: payload.output.content, createdBy: 'ai',
-          };
-          outputNode = assignLabel(cellBase, c.nodes) as CellNode;
-          c.nodes.push(outputNode);
-          cn.outputNodeId = outId;   // - before the engine: the link is what makes the new cell this code cell's output rather than a free node
-          if (c.metadata?.sections) c.metadata = { ...c.metadata, sections: pinOutputToLane(c.metadata.sections, cn.id, outputNode.id) };   // - an output of a folded cell stays folded
-          const own = layoutAround(c, cn.id, { moverIds: [outId] }, [outId]);
-          Object.assign(c, applyLaneFit(c, Date.now(), own));   // - c IS document.canvas and persist() captured that reference: assign into it, never reassign c
-          outputNode = c.nodes.find(n => n.id === outId) as CellNode;   // - the engine and the fit replace every node they move; the webview creates the node at the geometry this message carries
-          edge = { id: `e-${outId}`, fromNode: cn.id, fromSide: 'right', toNode: outId, toSide: 'left', toEnd: 'arrow' };
-          c.edges.push(edge);
         }
-      }
-      const step = await persist();
+        return { outputNode, edge };
+      }, { step: res => res !== null });
+      if (!r.result) return { handled: true };
+      const { outputNode, edge } = r.result;
       send({
-        type: 'runOutput', codeNodeId: cn.id, lastStatus: payload.status ?? 'ok',
+        type: 'runOutput', codeNodeId: payload.cellNodeId, lastStatus: payload.status ?? 'ok',
         kernelNodeId: payload.kernelNodeId, kernelId: payload.kernelId, source: 'host',
         ...(outputNode ? { outputNode } : {}),
         ...(edge ? { edge } : {}),
-        ...step,
+        ...r.step,
       });
       return { handled: true };
     } catch {
@@ -1681,35 +1705,43 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     // - finishing after this panel closed — shows the cell in-progress instead of its previous
     // - status. The end-of-run write overwrites it with ok/error.
     try {
-      const c = document.canvas;
-      const cn = c.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code') as CodeNode | undefined;
-      if (cn) {
+      const r = await commit(c => {
+        const cn = c.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code') as CodeNode | undefined;
+        if (!cn) return false;
         cn.code = msg.code;
         cn.lastStatus = 'running';
-        const r = await commit();
-        if (!r.merged) send({ type: 'runOutput', codeNodeId: cn.id, lastStatus: 'running', kernelNodeId: kernel.id, version: r.version, prevVersion: r.prevVersion });
-      }
+        return true;
+      }, { step: found => found });
+      if (r.result) send({ type: 'runOutput', codeNodeId: msg.cellNodeId, lastStatus: 'running', kernelNodeId: kernel.id, ...r.step });
     } catch { /* - best-effort marker */ }
 
-    // - apply the run's mutations to the CURRENT document.canvas, persist (our own write: no watcher
-    // - reload), and return the output node/edge so the caller can push a TARGETED runOutput update
-    // - to the webview, with the version step when the write merged nothing in.
+    // - apply the run's changes to the canvas as it is when written (commit), persist (our own write: no
+    // - watcher reload), and return the output node/edge so the caller can push a TARGETED runOutput
+    // - update to the webview, with the version step when the write merged nothing in.
     // - This avoids a full canvas reload (which re-syncs every node → focus jump + shift).
-    // - The run awaits for seconds; a debounced saveCanvas can swap document._canvas
-    // - meanwhile, so we re-resolve nodes by id here rather than writing a captured object.
     const applyAndPersist = async (
       status: 'ok' | 'error',
       output: { format: 'markdown' | 'image' | 'html' | 'plotly'; content: string } | null,
       presetId?: string,
     ): Promise<{ outputNode?: CellNode; edge?: CanvasEdge; version?: number; prevVersion?: number }> => {
-      const c  = document.canvas;
+      const r = await commit(c => applyRun(c, status, output, presetId), { step: res => res !== null });
+      if (!r.result) return {};
+      return { ...r.result, ...r.step };
+    };
+    const applyRun = (
+      c:      CanvasData,
+      status: 'ok' | 'error',
+      output: { format: 'markdown' | 'image' | 'html' | 'plotly'; content: string } | null,
+      presetId?: string,
+    ): { outputNode?: CellNode; edge?: CanvasEdge } | null => {
       const cn = c.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code') as CodeNode | undefined;
-      if (!cn) return {};                         // - cell deleted mid-run
+      if (!cn) return null;                       // - cell deleted mid-run
       cn.code       = msg.code;                   // - persist the code that actually ran (edits are debounced)
       cn.lastStatus = status;
       cn.lastRun    = Date.now();
       const k = kernelById(c, kernel.id);
       if (k && kernelId !== k.kernelId) k.kernelId = kernelId;   // - reuse this kernel next run
+      if (k && spec && !k.spec) k.spec = spec;                   // - healed from the server's specs, see below
       let outputNode: CellNode | undefined;
       let edge:       CanvasEdge | undefined;
       if (output) {
@@ -1740,14 +1772,13 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           cn.outputNodeId = id;   // - link first, see above
           if (c.metadata?.sections) c.metadata = { ...c.metadata, sections: pinOutputToLane(c.metadata.sections, cn.id, outputNode.id) };   // - an output of a folded cell stays folded
           const own = layoutAround(c, cn.id, { moverIds: [id] }, [id]);
-          Object.assign(c, applyLaneFit(c, Date.now(), own));   // - c IS document.canvas and persist() captured that reference: assign into it, never reassign c
+          Object.assign(c, applyLaneFit(c, Date.now(), own));   // - c IS document.canvas, the one commit writes: assign into it, never reassign c
           outputNode = c.nodes.find(n => n.id === id) as CellNode;   // - the engine and the fit replace every node they move; the caller sends this node on to the webview
           edge = { id: `e-${id}`, fromNode: cn.id, fromSide: 'right', toNode: id, toSide: 'left', toEnd: 'arrow' };
           c.edges.push(edge);
         }
       }
-      const r = await commit();
-      return { outputNode, edge, ...(r.merged ? {} : { version: r.version, prevVersion: r.prevVersion }) };
+      return { outputNode, edge };
     };
 
     // - relaunch the SAME environment on a restart via the kernel's kernelspec. Older kernel nodes
@@ -1758,7 +1789,6 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       try {
         const specs = await listKernelSpecs(server);
         spec = specs.find(s => s.displayName === kernel.displayName || s.name === kernel.displayName)?.name;
-        if (spec) kernel.spec = spec;
       } catch { /* - specs unavailable; ensureKernel falls back to python3 */ }
     }
     let kernelId: string;
@@ -1782,9 +1812,10 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     // - otherwise send a 'running' after the final 'ok' and leave the cell stuck showing running.
     let finished = false;
     let livePersisted = false;   // - output node written to disk once so it survives a close+reopen mid-run
+    let persisting = false;      // - that write is in flight: later frames wait for it, so none overtakes it
     const flushDelta = () => {
       deltaTimer = null;
-      if (finished || !latest) return;
+      if (finished || !latest || persisting) return;
       if (!hasVisibleOutput(latest)) return;   // - skip style/script-only + whitespace: no empty node
       const cn = document.canvas.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code') as CodeNode | undefined;
       if (!cn) return;
@@ -1799,25 +1830,34 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
         format, content, createdBy: 'ai',
       };
       const edge: CanvasEdge = { id: `e-${liveOutputId}`, fromNode: cn.id, fromSide: 'right', toNode: liveOutputId, toSide: 'left', toEnd: 'arrow' };
-      try {
-        send({ type: 'runOutput', codeNodeId: codeNode.id, lastStatus: 'running', kernelNodeId: kernel.id, kernelId, outputNode, edge });
-      } catch { /* - webview disposed mid-run; disk write at completion still happens */ }
+      const sendFrame = (step: { version?: number; prevVersion?: number } = {}) => {
+        try {
+          send({ type: 'runOutput', codeNodeId: codeNode.id, lastStatus: 'running', kernelNodeId: kernel.id, kernelId, outputNode, edge, ...step });
+        } catch { /* - webview disposed mid-run; disk write at completion still happens */ }
+      };
       // - persist the output node to disk ONCE (first creation) so a close+reopen mid-run keeps it —
       // - the live frames are otherwise UI-only. Re-runs already have it on disk, so this is skipped.
-      if (!livePersisted) {
+      // - The first frame goes out after that write, carrying its version step.
+      if (!livePersisted && !ownedOutputId(document.canvas.nodes, document.canvas.edges, cn)) {
         livePersisted = true;
-        const c = document.canvas;
-        const cnDisk = c.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code') as CodeNode | undefined;
-        if (cnDisk && !ownedOutputId(c.nodes, c.edges, cnDisk)) {
+        persisting = true;
+        void commit(c => {
+          const cnDisk = c.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code') as CodeNode | undefined;
+          if (!cnDisk || ownedOutputId(c.nodes, c.edges, cnDisk)) return false;
           if (!c.nodes.some(n => n.id === outputNode.id)) c.nodes.push(assignLabel(outputNode, c.nodes) as CellNode);
           cnDisk.outputNodeId = outputNode.id;   // - link first, see above
-          if (c.metadata?.sections) c.metadata = { ...c.metadata, sections: pinOutputToLane(c.metadata.sections, cn.id, outputNode.id) };   // - an output of a folded cell stays folded
-          const own = layoutAround(c, cn.id, { moverIds: [outputNode.id] }, [outputNode.id]);
-          Object.assign(c, applyLaneFit(c, Date.now(), own));   // - c IS document.canvas, written below: assign into it, never reassign c
+          if (c.metadata?.sections) c.metadata = { ...c.metadata, sections: pinOutputToLane(c.metadata.sections, cnDisk.id, outputNode.id) };   // - an output of a folded cell stays folded
+          const own = layoutAround(c, cnDisk.id, { moverIds: [outputNode.id] }, [outputNode.id]);
+          Object.assign(c, applyLaneFit(c, Date.now(), own));   // - c IS document.canvas, the one commit writes: assign into it, never reassign c
           if (!c.edges.some(e => e.id === edge.id)) c.edges.push(edge);
-          void commit().catch(() => { /* - the end-of-run write persists it */ });
-        }
+          return true;
+        }, { step: wrote => wrote })
+          .then(r => sendFrame(r.step), () => sendFrame())   // - not written: the end-of-run write persists it
+          .finally(() => { persisting = false; if (!finished && latest) flushDelta(); });
+        return;
       }
+      livePersisted = true;
+      sendFrame();
     };
     const onDelta = (partial: CollectedOutput) => {
       latest = partial;
@@ -1993,29 +2033,32 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
   // - kernel's SERVER responded to the poll but the kernelId is absent (a fully unreachable server
   // - is ambiguous — a live kernel could just be momentarily unreported — so it's left alone).
   private async reconcileRunFlags(document: SkenaDocument, kernels: KernelStatusEntry[], commit: Commit): Promise<void> {
-    const canvas           = document.canvas;
     const liveIds          = new Set(kernels.map(k => k.kernelId));
     const reachableServers = new Set(kernels.map(k => k.server));
-    let changed = false;
     // - both kinds of kernel: the nodes on the canvas and the records in its metadata
-    const all: KernelLike[] = [
+    const kernelsOf = (canvas: CanvasData): KernelLike[] => [
       ...canvas.nodes.filter((n): n is KernelNode => n.type === 'kernel'),
       ...(canvas.metadata?.kernels ?? []),
     ];
-    for (const k of all) {
-      if (!k.kernelId || !reachableServers.has(k.server) || liveIds.has(k.kernelId)) continue;
-      const bound = new Set(resolveKernelCellsInCanvas(k.id, cellKernelView(canvas)));
-      for (const n of canvas.nodes) {
-        if (n.type === 'code' && bound.has(n.id) && (n as CodeNode).lastStatus !== undefined) {
-          (n as CodeNode).lastStatus = undefined;
-          changed = true;
+    const dead = (k: KernelLike) => !!k.kernelId && reachableServers.has(k.server) && !liveIds.has(k.kernelId);
+    const clear = (canvas: CanvasData): boolean => {
+      let changed = false;
+      for (const k of kernelsOf(canvas)) {
+        if (!dead(k)) continue;
+        const bound = new Set(resolveKernelCellsInCanvas(k.id, cellKernelView(canvas)));
+        for (const n of canvas.nodes) {
+          if (n.type === 'code' && bound.has(n.id) && (n as CodeNode).lastStatus !== undefined) {
+            (n as CodeNode).lastStatus = undefined;
+          }
         }
+        k.kernelId = undefined;   // - drop the dead id so the next run starts a fresh kernel
+        changed = true;
       }
-      k.kernelId = undefined;   // - drop the dead id so the next run starts a fresh kernel
-      changed = true;
-    }
-    // - the webview does not clear these itself: it is sent the result
-    if (changed) await commit({ tell: true });
+      return changed;
+    };
+    // - the change itself is made on the canvas as it is when written
+    if (!kernelsOf(document.canvas).some(dead)) return;
+    await commit(clear);
   }
 
   /**
@@ -2058,35 +2101,33 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           } catch { /* - specs unavailable → ensureKernel falls back to python3 */ }
         }
         const liveId = await manager.ensureKernel(server, undefined, spec);
-        // - re-read after the awaits: a save may have replaced document.canvas meanwhile
-        const canvas = document.canvas;
-        const fresh  = kernelById(canvas, msg.kernelNodeId);
-        if (!fresh) return;   // - removed while the kernel was starting
-        fresh.kernelId = liveId;
-        if (spec && fresh.spec !== spec) fresh.spec = spec;   // - heal older kernels
-        await commit({ tell: true });
+        // - made on the canvas as it is when written
+        const started = await commit(canvas => {
+          const fresh = kernelById(canvas, msg.kernelNodeId);
+          if (!fresh) return false;   // - removed while the kernel was starting
+          fresh.kernelId = liveId;
+          if (spec && fresh.spec !== spec) fresh.spec = spec;   // - heal older kernels
+          return true;
+        });
+        if (!started.result) return;
         void vscode.window.showInformationMessage(`Skena: started ${name}.`);
         return;
       }
       if (!kernel.kernelId) return;   // - restart / interrupt / shutdown need a live kernel
       if (msg.action === 'restart') {
         await manager.restart(server, kernel.kernelId);
-        // - re-read after the awaits: a save may have replaced document.canvas meanwhile
-        const canvas = document.canvas;
-        resetBoundCellFlags(canvas);
-        await commit({ tell: true });
+        await commit(resetBoundCellFlags);
         void vscode.window.showInformationMessage(`Skena: restarted ${name} — cell run-flags reset.`);
       } else if (msg.action === 'interrupt') {
         await manager.interrupt(server, kernel.kernelId);
         void vscode.window.showInformationMessage(`Skena: interrupted ${name}.`);
       } else {
         await manager.shutdown(server, kernel.kernelId);
-        // - re-read after the awaits: a save may have replaced document.canvas meanwhile
-        const canvas = document.canvas;
-        const fresh  = kernelById(canvas, msg.kernelNodeId);
-        if (fresh) fresh.kernelId = undefined;
-        resetBoundCellFlags(canvas);
-        await commit({ tell: true });   // - also persists the cleared kernelId
+        await commit(canvas => {
+          const fresh = kernelById(canvas, msg.kernelNodeId);
+          if (fresh) fresh.kernelId = undefined;   // - persisted with the cleared flags
+          resetBoundCellFlags(canvas);
+        });
         void vscode.window.showInformationMessage(`Skena: shut down ${name} — cell run-flags reset.`);
       }
     } catch (e) {
@@ -2120,25 +2161,26 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     if (server && kernel.kernelId) {
       try { await manager.shutdown(server, kernel.kernelId); } catch { /* - already gone */ }
     }
-    // - re-read after the awaits: a save may have replaced document.canvas meanwhile
-    const canvas = document.canvas;
-    // - its namespace is gone with it: every cell that ran on it is un-run (as handleKernelAction's shutdown does).
-    //   Resolved BEFORE the rewrite below, while the lanes still point at this kernel.
-    const bound = new Set(resolveKernelCellsInCanvas(msg.kernelRef, cellKernelView(canvas)));
-    for (const n of canvas.nodes) {
-      if (n.type === 'code' && bound.has(n.id)) (n as CodeNode).lastStatus = undefined;
-    }
-    canvas.metadata = {
-      ...canvas.metadata,
-      kernels:  canvas.metadata?.kernels?.filter(k => k.id !== msg.kernelRef),
-      // - drop the key entirely rather than persisting `kernelId: undefined` on the lane
-      sections: canvas.metadata?.sections?.map(l => {
-        if (l.kernelId !== msg.kernelRef) return l;
-        const { kernelId: _unbound, ...rest } = l;
-        return rest;
-      }),
-    };
-    await commit();
+    // - made on the canvas as it is when written
+    const { result: bound } = await commit(canvas => {
+      // - its namespace is gone with it: every cell that ran on it is un-run (as handleKernelAction's shutdown does).
+      //   Resolved BEFORE the rewrite below, while the lanes still point at this kernel.
+      const unran = new Set(resolveKernelCellsInCanvas(msg.kernelRef, cellKernelView(canvas)));
+      for (const n of canvas.nodes) {
+        if (n.type === 'code' && unran.has(n.id)) (n as CodeNode).lastStatus = undefined;
+      }
+      canvas.metadata = {
+        ...canvas.metadata,
+        kernels:  canvas.metadata?.kernels?.filter(k => k.id !== msg.kernelRef),
+        // - drop the key entirely rather than persisting `kernelId: undefined` on the lane
+        sections: canvas.metadata?.sections?.map(l => {
+          if (l.kernelId !== msg.kernelRef) return l;
+          const { kernelId: _unbound, ...rest } = l;
+          return rest;
+        }),
+      };
+      return unran;
+    });
     send({ type: 'kernelRemoved', kernelRef: msg.kernelRef, unranCells: [...bound] });
   }
 
@@ -2245,25 +2287,26 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     if (!pick.server) return;
 
     if (msg.forSection) {
-      // - a section's kernel is a record in the canvas file, not a node.
-      //   Read after the QuickPick/startKernel awaits: a save may have replaced document.canvas meanwhile.
-      const canvas   = document.canvas;
-      const existing = (canvas.metadata?.kernels?.length ?? 0) + canvas.nodes.filter(n => n.type === 'kernel').length;
-      const kernel: KernelRecord = {
-        id: `k-${Date.now().toString(36)}`,
-        server: pick.server,
-        kernelId,
-        displayName,
-        spec: pick.specName ?? pick.display,
-        colorIndex: nextKernelColorIndex(existing),
-      };
-      // - written by the host first: a run on the section can resolve it at once, and a started kernel
-      //   is never orphaned if the webview fails to save
-      canvas.metadata = { ...canvas.metadata, kernels: [...(canvas.metadata?.kernels ?? []), kernel] };
-      // - the lane can be gone (deleted while the QuickPick was open); the record is still kept, unbound
-      const lane = canvas.metadata.sections?.find(l => l.id === msg.forSection);
-      if (lane) lane.kernelId = kernel.id;
-      await commit();
+      // - a section's kernel is a record in the canvas file, not a node; made on the canvas as it is when
+      //   written. Written by the host first: a run on the section can resolve it at once, and a started
+      //   kernel is never orphaned if the webview fails to save
+      const server = pick.server;
+      const { result: kernel } = await commit(canvas => {
+        const existing = (canvas.metadata?.kernels?.length ?? 0) + canvas.nodes.filter(n => n.type === 'kernel').length;
+        const record: KernelRecord = {
+          id: `k-${Date.now().toString(36)}`,
+          server,
+          kernelId,
+          displayName,
+          spec: pick.specName ?? pick.display,
+          colorIndex: nextKernelColorIndex(existing),
+        };
+        canvas.metadata = { ...canvas.metadata, kernels: [...(canvas.metadata?.kernels ?? []), record] };
+        // - the lane can be gone (deleted while the QuickPick was open); the record is still kept, unbound
+        const lane = canvas.metadata.sections?.find(l => l.id === msg.forSection);
+        if (lane) lane.kernelId = record.id;
+        return record;
+      });
       send({ type: 'kernelAdded', sectionId: msg.forSection, kernel });
       return;
     }
@@ -2389,14 +2432,14 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       onToolUse: async (tool) => {
         if (tool.name === 'add_note') {
           const content = (tool.input['content'] as string) ?? '';
-          const addResult = this.addNoteToCanvas(document, msg.activeNodeId, content);
+          // - made on the canvas as it is when written
+          let addResult: ReturnType<SkenaEditorProvider['addNoteToCanvas']> = null;
+          try {
+            addResult = (await commit(() => this.addNoteToCanvas(document, msg.activeNodeId, content))).result;
+          } catch { return 'The canvas could not be written; the note was not added.'; }
           if (addResult) {
             send({ type: 'floatingChatNodeAdded', node: addResult.node, edge: addResult.edge, moved: addResult.moved, sections: document.canvas.metadata?.sections });
           }
-          // - save canvas to disk
-          try {
-            await commit();
-          } catch { /* non-fatal */ }
           return content ? 'Note added to canvas.' : 'No content provided.';
         }
 
