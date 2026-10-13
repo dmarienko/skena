@@ -16,13 +16,15 @@
 import type { CanvasData } from '../shared/types';
 import { merge3 } from '../shared/canvasMerge';
 import { parseCanvas } from './canvas-io';
+import { lockWasLost } from './canvasLock';
 
 export interface CanvasFileIO {
   /** - the file's text, or null when it cannot be read */
   read(fsPath: string): Promise<string | null>;
-  write(fsPath: string, json: string): Promise<void>;
+  /** - `held`, when given, is called right before the rename and throws when the lock is no longer ours */
+  write(fsPath: string, json: string, held?: () => Promise<void>): Promise<void>;
   /** - runs `fn` holding the canvas's lock (withCanvasLock); rejects, without running it, when the lock cannot be had */
-  lock<T>(fsPath: string, fn: () => Promise<T>): Promise<T>;
+  lock<T>(fsPath: string, fn: (held: () => Promise<void>) => Promise<T>): Promise<T>;
 }
 
 export interface Loaded { canvas: CanvasData; version: number }
@@ -30,6 +32,9 @@ export interface Committed<R = void> { canvas: CanvasData; version: number; prev
 export type Saved =
   | { written: true; version: number; prevVersion: number }
   | { written: false; canvas: CanvasData; version: number };
+
+// - a write whose lock was taken over before its rename is made again holding a new one, this many times in all
+const LOCK_ATTEMPTS = 3;
 
 // - a file another writer is writing in place (the MCP server truncates, then writes) is read again
 //   this often, this far apart, until it parses
@@ -52,6 +57,17 @@ export class CanvasFile {
     private readonly get: () => CanvasData,
     private readonly set: (c: CanvasData) => void,
   ) {}
+
+  // - `fn` holding the lock; again, holding a new lock, when the lock was lost before its write
+  private async locked<T>(fn: (held: () => Promise<void>) => Promise<T>): Promise<T> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.io.lock(this.fsPath, fn);
+      } catch (e) {
+        if (!lockWasLost(e) || attempt >= LOCK_ATTEMPTS) throw e;
+      }
+    }
+  }
 
   private serial<T>(fn: () => Promise<T>): Promise<T> {
     const p = this.chain.then(fn, fn);
@@ -108,9 +124,9 @@ export class CanvasFile {
     return { canvas: merged, version: ++this.version };
   }
 
-  private async writeNow(c: CanvasData): Promise<{ version: number; prevVersion: number }> {
+  private async writeNow(c: CanvasData, held?: () => Promise<void>): Promise<{ version: number; prevVersion: number }> {
     const json = JSON.stringify(c, null, 2);
-    await this.io.write(this.fsPath, json);
+    await this.io.write(this.fsPath, json, held);
     this.knownRaw = json;
     this.knownJson = json;
     const prevVersion = this.version;
@@ -123,15 +139,19 @@ export class CanvasFile {
    * result: it has not seen that change. `result` is what `change` returned.
    */
   commit<R = void>(change?: (c: CanvasData) => R): Promise<Committed<R>> {
-    return this.serial(() => this.io.lock(this.fsPath, async () => {
-      const absorbed = await this.absorbNow();
-      const c = this.get();
-      const result = change ? change(c) : (undefined as R);
-      // - a change may have replaced the canvas object rather than edited it
-      const written = this.get();
-      const { version, prevVersion } = await this.writeNow(written);
-      return { canvas: written, version, prevVersion, merged: absorbed !== null, result };
-    }));
+    return this.serial(() => {
+      // - made once: a write made again (its lock lost) writes the canvas the change was made on
+      let made = false, merged = false;
+      let result = undefined as R;
+      return this.locked(async held => {
+        if (await this.absorbNow()) merged = true;
+        if (!made) { result = change ? change(this.get()) : (undefined as R); made = true; }
+        // - a change may have replaced the canvas object rather than edited it
+        const written = this.get();
+        const { version, prevVersion } = await this.writeNow(written, held);
+        return { canvas: written, version, prevVersion, merged, result };
+      });
+    });
   }
 
   /**
@@ -140,11 +160,11 @@ export class CanvasFile {
    * comes back for the webview.
    */
   save(baseVersion: number | undefined, build: () => CanvasData): Promise<Saved> {
-    return this.serial(() => this.io.lock(this.fsPath, async () => {
+    return this.serial(() => this.locked(async held => {
       await this.absorbNow();
       if (baseVersion !== this.version) return { written: false, canvas: this.get(), version: this.version };
       const c = build();
-      const v = await this.writeNow(c);
+      const v = await this.writeNow(c, held);
       this.set(c);
       return { written: true, ...v } as Saved;
     }));

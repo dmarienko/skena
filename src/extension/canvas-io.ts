@@ -46,8 +46,11 @@ export async function writeCanvas(fsPath: string, data: CanvasData): Promise<voi
   await writeCanvasJson(fsPath, JSON.stringify(data, null, 2));
 }
 
-/** - writeCanvas for a canvas already serialised */
-export async function writeCanvasJson(fsPath: string, json: string): Promise<void> {
+/**
+ * writeCanvas for a canvas already serialised. `held`, when given, is asked right before the rename
+ * whether the canvas lock is still ours; when it throws nothing is written.
+ */
+export async function writeCanvasJson(fsPath: string, json: string, held?: () => Promise<void>): Promise<void> {
   // - through a symlinked canvas to its real file: the rename would replace the link itself
   const target = await fs.realpath(expandHome(fsPath)).catch(() => expandHome(fsPath));
   // - ATOMIC write: a reader (the file-watcher) must never see a truncated/partial file. writeFile
@@ -57,6 +60,7 @@ export async function writeCanvasJson(fsPath: string, json: string): Promise<voi
   const tmp = `${target}.${process.pid}.${Date.now().toString(36)}.${(++tmpSeq).toString(36)}.tmp`;
   try {
     await fs.writeFile(tmp, json, 'utf-8');
+    await held?.();
     await fs.rename(tmp, target);
   } catch (e) {
     await fs.rm(tmp, { force: true });

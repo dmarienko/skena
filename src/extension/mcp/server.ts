@@ -36,7 +36,7 @@ import { parseNodeRef, isSectionLabel } from '../../shared/nodeRef';
 import { youtubeId, YOUTUBE_NODE } from '../../shared/youtube';
 import { ownedOutputId } from '../../shared/outputLink';
 import { merge3 } from '../../shared/canvasMerge';
-import { withCanvasLock } from '../canvasLock';
+import { withCanvasLock, lockWasLost } from '../canvasLock';
 import { writeCanvasJson } from '../canvas-io';
 import { executeCell, startKernel, shutdownKernel } from '../jupyter/client';
 import { renderOutput, hasVisibleOutput } from '../jupyter/output';
@@ -205,7 +205,18 @@ function holdSection(d: CanvasData, edge: CanvasEdge) {
  * the lock nothing is written and the error reaches the agent.
  */
 async function writeCanvas(fsPath: string, data: CanvasData): Promise<void> {
-  const out = await withCanvasLock(fsPath, 'mcp', async () => {
+  // - a write whose lock was taken over before its rename is not made; it is made again holding a new lock
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await writeCanvasLocked(fsPath, data);
+    } catch (e) {
+      if (!lockWasLost(e) || attempt >= 3) throw e;
+    }
+  }
+}
+
+async function writeCanvasLocked(fsPath: string, data: CanvasData): Promise<void> {
+  const out = await withCanvasLock(fsPath, 'mcp', async held => {
     let merged = data;
     const lastText = _lastText.get(fsPath), lastOurs = _lastOurs.get(fsPath);
     if (lastText !== undefined && lastOurs !== undefined) {
@@ -217,7 +228,7 @@ async function writeCanvas(fsPath: string, data: CanvasData): Promise<void> {
       } catch { /* - a file another writer is writing in place does not parse: written as before */ }
     }
     const json = JSON.stringify(merged, null, 2);
-    await writeCanvasJson(fsPath, json);
+    await writeCanvasJson(fsPath, json, held);
     _lastText.set(fsPath, json);
     _lastOurs.set(fsPath, merged === data ? json : JSON.stringify(data, null, 2));
     return merged;

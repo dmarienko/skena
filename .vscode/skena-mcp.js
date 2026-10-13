@@ -6371,8 +6371,17 @@ var path2 = __toESM(require("path"));
 var import_crypto = require("crypto");
 var LOCK_WAIT_MS = 15e3;
 var LOCK_STALE_MS = 1e4;
+var LOCK_HEARTBEAT_MS = 1e3;
+var BREAK_STALE_MS = 2e3;
 var CanvasLockTimeout = class extends Error {
 };
+var CanvasLockLost = class extends Error {
+  constructor() {
+    super(...arguments);
+    this.name = "CanvasLockLost";
+  }
+};
+var lockWasLost = (e) => e?.name === "CanvasLockLost";
 async function lockPathFor(fsPath) {
   const abs = path2.resolve(fsPath);
   try {
@@ -6394,9 +6403,10 @@ function alive(pid) {
     return e.code === "EPERM";
   }
 }
-async function readLock(lock) {
+async function inspectLock(lock) {
   try {
-    const [raw, st] = await Promise.all([fs.readFile(lock, "utf-8"), fs.stat(lock)]);
+    const st = await fs.stat(lock);
+    const raw = await fs.readFile(lock, "utf-8");
     let holder = null;
     try {
       holder = JSON.parse(raw);
@@ -6408,22 +6418,48 @@ async function readLock(lock) {
   }
 }
 function stale(l, staleMs, now) {
-  const at = l.holder?.at ?? l.mtime;
-  if (now - at > staleMs)
+  if (now - l.mtime > staleMs)
     return true;
   return !!l.holder && l.holder.host === os.hostname() && !alive(l.holder.pid);
 }
-async function breakLock(lock, seen, token) {
-  const aside = `${lock}.${token}.broken`;
+var sameFile = (a, b) => !!a && a.raw === b.raw && a.mtime === b.mtime;
+async function breakStale(lock, seen, token) {
+  const brk = `${lock}.break`;
   try {
-    await fs.rename(lock, aside);
-  } catch {
-    return;
+    await (await fs.open(brk, "wx")).close();
+  } catch (e) {
+    if (e.code !== "EEXIST")
+      return false;
+    try {
+      const st = await fs.stat(brk);
+      if (Date.now() - st.mtimeMs > BREAK_STALE_MS)
+        await fs.rm(brk, { force: true });
+    } catch {
+    }
+    return false;
   }
-  const moved = await fs.readFile(aside, "utf-8").catch(() => seen);
-  if (moved !== seen)
-    await fs.link(aside, lock).catch(() => void 0);
-  await fs.rm(aside, { force: true });
+  try {
+    const now = await inspectLock(lock);
+    if (!now)
+      return true;
+    if (!sameFile(now, seen))
+      return false;
+    const aside = `${lock}.${token}.broken`;
+    try {
+      await fs.rename(lock, aside);
+    } catch {
+      return true;
+    }
+    if (!sameFile(await inspectLock(aside), seen)) {
+      await fs.link(aside, lock).catch(() => void 0);
+      await fs.rm(aside, { force: true });
+      return false;
+    }
+    await fs.rm(aside, { force: true });
+    return true;
+  } finally {
+    await fs.rm(brk, { force: true });
+  }
 }
 function describe(h) {
   return h ? `${h.by} (pid ${h.pid} on ${h.host}, since ${new Date(h.at).toISOString()})` : "an unknown writer";
@@ -6431,6 +6467,7 @@ function describe(h) {
 async function withCanvasLock(fsPath, by, fn, opts = {}) {
   const waitMs = opts.waitMs ?? LOCK_WAIT_MS;
   const staleMs = opts.staleMs ?? LOCK_STALE_MS;
+  const heartbeatMs = opts.heartbeatMs ?? LOCK_HEARTBEAT_MS;
   const lock = await lockPathFor(fsPath);
   const token = `${process.pid}-${(0, import_crypto.randomUUID)()}`;
   const deadline = Date.now() + waitMs;
@@ -6448,21 +6485,33 @@ async function withCanvasLock(fsPath, by, fn, opts = {}) {
       if (e.code !== "EEXIST")
         throw e;
     }
-    const held = await readLock(lock);
-    if (held && stale(held, staleMs, Date.now())) {
-      await breakLock(lock, held.raw, token);
+    const seen = await inspectLock(lock);
+    if (seen && stale(seen, staleMs, Date.now()) && await breakStale(lock, seen, token))
       continue;
-    }
     if (Date.now() >= deadline) {
-      throw new CanvasLockTimeout(`${path2.basename(fsPath)} is locked by ${describe(held?.holder ?? null)}; waited ${waitMs} ms, nothing written`);
+      throw new CanvasLockTimeout(`${path2.basename(fsPath)} is locked by ${describe(seen?.holder ?? null)}; waited ${waitMs} ms, nothing written`);
     }
     await new Promise((r) => setTimeout(r, pause));
   }
+  const ours = async () => (await inspectLock(lock))?.holder?.token === token;
+  const beat = setInterval(() => {
+    void (async () => {
+      if (!await ours())
+        return;
+      const t = /* @__PURE__ */ new Date();
+      await fs.utimes(lock, t, t).catch(() => void 0);
+    })();
+  }, heartbeatMs);
+  beat.unref?.();
+  const held = async () => {
+    if (!await ours())
+      throw new CanvasLockLost(`the lock on ${path2.basename(fsPath)} was taken over; nothing written`);
+  };
   try {
-    return await fn();
+    return await fn(held);
   } finally {
-    const now = await readLock(lock);
-    if (now?.holder?.token === token)
+    clearInterval(beat);
+    if (await ours())
       await fs.rm(lock, { force: true });
   }
 }
@@ -6474,11 +6523,12 @@ var os2 = __toESM(require("os"));
 function expandHome(p) {
   return p.startsWith("~/") ? path3.join(os2.homedir(), p.slice(2)) : p;
 }
-async function writeCanvasJson(fsPath, json) {
+async function writeCanvasJson(fsPath, json, held) {
   const target = await fs2.realpath(expandHome(fsPath)).catch(() => expandHome(fsPath));
   const tmp = `${target}.${process.pid}.${Date.now().toString(36)}.${(++tmpSeq).toString(36)}.tmp`;
   try {
     await fs2.writeFile(tmp, json, "utf-8");
+    await held?.();
     await fs2.rename(tmp, target);
   } catch (e) {
     await fs2.rm(tmp, { force: true });
@@ -7330,7 +7380,17 @@ function holdSection(d, edge) {
   return sectionEngineNodes(d.nodes, d.metadata?.sections ?? [], edge.toNode) ?? toEngineNodes(d.nodes);
 }
 async function writeCanvas(fsPath, data) {
-  const out = await withCanvasLock(fsPath, "mcp", async () => {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await writeCanvasLocked(fsPath, data);
+    } catch (e) {
+      if (!lockWasLost(e) || attempt >= 3)
+        throw e;
+    }
+  }
+}
+async function writeCanvasLocked(fsPath, data) {
+  const out = await withCanvasLock(fsPath, "mcp", async (held) => {
     let merged = data;
     const lastText = _lastText.get(fsPath), lastOurs = _lastOurs.get(fsPath);
     if (lastText !== void 0 && lastOurs !== void 0) {
@@ -7342,7 +7402,7 @@ async function writeCanvas(fsPath, data) {
       }
     }
     const json = JSON.stringify(merged, null, 2);
-    await writeCanvasJson(fsPath, json);
+    await writeCanvasJson(fsPath, json, held);
     _lastText.set(fsPath, json);
     _lastOurs.set(fsPath, merged === data ? json : JSON.stringify(data, null, 2));
     return merged;

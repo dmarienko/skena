@@ -182,3 +182,24 @@ test('no lock to be had: nothing is written and the caller gets the error', asyn
   // - the queue is not stuck behind a failure
   assert.equal(await file.absorb(), null);
 });
+
+test('a write whose lock was taken over is not made; it is made again holding a new lock, the change once', async () => {
+  const { CanvasLockLost } = await import('./.build/canvasLock.mjs');
+  const s = setup({ nodes: [text('n')], edges: [] });
+  let locks = 0, writes = 0;
+  const io = {
+    read: async () => s.disk.text,
+    write: async (_p, json, held) => { await held?.(); writes++; s.disk.text = json; },
+    // - the first lock is lost before the rename
+    lock: async (_p, fn) => { locks++; return fn(locks === 1 ? async () => { throw new CanvasLockLost('taken'); } : async () => {}); },
+  };
+  const doc = s.doc;
+  const file = new CanvasFile(P, io, c => c, () => doc.canvas, c => { doc.canvas = c; });
+  await file.load();
+  let changes = 0;
+  await file.commit(c => { changes++; c.nodes.push(text(`added-${changes}`)); });
+  assert.equal(locks, 2);
+  assert.equal(writes, 1);
+  assert.equal(changes, 1);
+  assert.deepEqual(JSON.parse(s.disk.text).nodes.map(n => n.id), ['n', 'added-1']);
+});
