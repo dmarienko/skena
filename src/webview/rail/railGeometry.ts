@@ -13,6 +13,7 @@ export const BTN_H       = 20;    // - box of the fold / run / delete buttons (w
 export const DOT_BTN_H   = 14;    // - box of the kernel-dot button
 export const DOT_PX      = 9;     // - kernel dot
 export const LABEL_H     = 12;    // - S# drawn horizontally
+export const COMPACT_FOLD_H = 16;  // - the chevron's box in a packed folded segment: the 16 px icon, no margin
 export const TITLE_PX_PER_CHAR = 6.5;   // - 10.5px system font, rotated; average advance
 export const TITLE_MIN_PX = 40;   // - below this the horizontal S# stays instead of a truncated title
 
@@ -80,6 +81,9 @@ export interface RailLayout {
   items: RailItem[];
   /** - px available to the rotated title (0 when no title is shown); the renderer truncates to it */
   titleMaxPx: number;
+  /** - a folded segment too short for the usual column: the chevron (COMPACT_FOLD_H) and S# packed with no
+   *    top padding and no gap, centred */
+  compact?: true;
 }
 
 /**
@@ -89,14 +93,19 @@ export interface RailLayout {
  * buttons (■ ❚❚ ↻ ⏻ ⇄) only take the room the whole title leaves, in that order, so a shorter segment
  * loses them from the end first, before the title is cut; all of them are in the segment's menu.
  *
- * A folded section takes the chevron first: its range is one grid, so at a low zoom its segment is at
- * the 28px floor, which holds exactly one 20px button — and without the chevron there is no way to
- * unfold from the rail. It never shows the kernel buttons.
+ * A folded section takes the chevron first: without it there is no way to unfold from the rail. Its
+ * band is drawn at least 34 px tall (displayOffset.ts), so its segment is at least 28 px; below the
+ * 47 px the usual column needs for the chevron and S#, the two are packed (`compact`). It never shows
+ * the kernel buttons.
  *
  * The heights are the RENDERED boxes (BTN_H, DOT_BTN_H, LABEL_H), not the icons inside them — budget
  * an icon size here and the last control ends up clipped by the column's overflow instead of dropped.
  */
 export function railItems(height: number, titleChars: number, folded = false, kernel: KernelButton[] = []): RailLayout {
+  // - a band cut by the pane's edge can give a shorter segment: the chevron alone, from 16 px
+  if (folded && height >= COMPACT_FOLD_H && height < SEG_PAD_TOP + BTN_H + ITEM_GAP + LABEL_H) {
+    return { items: height >= COMPACT_FOLD_H + LABEL_H ? ['fold', 'label'] : ['fold'], titleMaxPx: 0, compact: true };
+  }
   const titleH = titleChars > 0 ? Math.ceil(titleChars * TITLE_PX_PER_CHAR) : 0;
   const fixed: [RailItem, number][] = folded
     ? [['fold', BTN_H], ['label', LABEL_H], ['run', BTN_H], ['kernel', DOT_BTN_H], ['delete', BTN_H]]

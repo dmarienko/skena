@@ -1,7 +1,7 @@
 // - run: npx esbuild src/webview/rail/railGeometry.ts --bundle --format=esm --outfile=tests/.build/railGeometry.mjs && node --test tests/rail-geometry.mjs
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { railSegments, railItems, kernelButtons, SEG_MIN_H, BTN_H, DOT_BTN_H, LABEL_H } from './.build/railGeometry.mjs';
+import { railSegments, railItems, kernelButtons, SEG_MIN_H, BTN_H, DOT_BTN_H, LABEL_H, COMPACT_FOLD_H } from './.build/railGeometry.mjs';
 
 const lane = (id, top, bottom) => ({ id, top, bottom });
 
@@ -83,9 +83,31 @@ test('railItems: the stacked boxes never exceed the segment (8 top pad, boxes, 7
 });
 
 test('railItems: a folded section takes the chevron first, so the rail can always unfold it', () => {
-  assert.deepEqual(railItems(28, 20, true), { items: ['fold'], titleMaxPx: 0 });
+  assert.deepEqual(railItems(27, 20, true), { items: ['fold'], titleMaxPx: 0, compact: true });   // - a band cut by the pane's edge
+  assert.deepEqual(railItems(15, 20, true).items, []);
   assert.deepEqual(railItems(28, 20).items, ['label']);   // - unfolded: unchanged
   assert.deepEqual(railItems(60, 20, true).items, ['fold', 'label']);
+});
+
+test('railItems: a folded segment of 28 px holds the chevron and S#, packed with no padding or gap', () => {
+  assert.equal(COMPACT_FOLD_H + LABEL_H, SEG_MIN_H);
+  assert.deepEqual(railItems(28, 20, true), { items: ['fold', 'label'], titleMaxPx: 0, compact: true });
+  assert.deepEqual(railItems(46, 20, true), { items: ['fold', 'label'], titleMaxPx: 0, compact: true });
+  // - from 47 px the usual column holds both: 8 + 20 + 7 + 12
+  assert.deepEqual(railItems(47, 20, true), { items: ['fold', 'label'], titleMaxPx: 0 });
+  assert.equal(railItems(28, 20).compact, undefined);   // - an open section never packs
+});
+
+test('railItems: the stacked boxes of a folded section never exceed the segment, packed or not', () => {
+  const box = { label: LABEL_H, fold: BTN_H, title: 0, run: BTN_H, kernel: DOT_BTN_H, delete: BTN_H };
+  for (let h = 10; h <= 400; h++) {
+    const { items, titleMaxPx, compact } = railItems(h, 20, true);
+    const stacked = compact
+      ? COMPACT_FOLD_H + (items.includes('label') ? LABEL_H : 0)
+      : 8 + items.reduce((s, i) => s + (i === 'title' ? titleMaxPx : box[i]), 0) + Math.max(0, items.length - 1) * 7;
+    assert.ok(stacked <= h, `height ${h}: stacked ${stacked}`);
+    if (h >= SEG_MIN_H) assert.ok(items.includes('fold') && (items.includes('label') || items.includes('title')), `height ${h}: ${items}`);
+  }
 });
 
 test('kernelButtons: what an open section offers in each state, in display order', () => {

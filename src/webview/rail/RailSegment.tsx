@@ -1,7 +1,7 @@
 import React from 'react';
 import type { DerivedLane } from '../../shared/sectionLanes';
 import { useKernelState, KERNEL_TEXT_COLOR } from '../hooks/useKernelState';
-import { railItems, kernelButtons, ICON_PX, BTN_H, DOT_BTN_H, DOT_PX, type RailSegment as Seg } from './railGeometry';
+import { railItems, kernelButtons, ICON_PX, BTN_H, DOT_BTN_H, DOT_PX, COMPACT_FOLD_H, LABEL_H, type RailSegment as Seg } from './railGeometry';
 import type { RailKernel } from './SectionRail';
 import { fmtDateTime } from '../../shared/dateTime';
 import { sectionTitleParts, kernelDisplayName } from './sectionTitle';
@@ -70,7 +70,7 @@ export function RailSegment({ lane, seg, color, kernel, current, selected, runna
   // - a kernel with an id the last poll did not call dead: one that can be interrupted, restarted, shut down
   const live = !!kernel?.kernelId && state !== 'dead';
   const buttons = kernelButtons({ folded: !!lane.folded, bound: !!kernel, live, running });
-  const { items, titleMaxPx } = railItems(seg.height, text.length, !!lane.folded, buttons);
+  const { items, titleMaxPx, compact } = railItems(seg.height, text.length, !!lane.folded, buttons);
   // - a record's live state is worth showing; a kernel node already shows its own LED on the canvas
   const kernelName = kernel ? (kernel.kind === 'record' ? `${kernel.label} · ${kernel.server} · ${state}` : `${kernel.label} · ${kernel.name}`) : null;
   // - an untitled section already shows its datetime as the title: do not print it twice
@@ -83,11 +83,12 @@ export function RailSegment({ lane, seg, color, kernel, current, selected, runna
       style={{ position: 'absolute', left: 0, right: 0, top: seg.top, height: seg.height, opacity: lane.folded && !selected ? 0.55 : 1,
         borderRadius: 3, boxShadow: selected ? 'inset 0 0 0 2px var(--skena-focus-ring)' : undefined }}>
       <div style={{ position: 'absolute', left: 6, top: 0, bottom: 0, width: 4, borderRadius: 2, background: color }} />
-      <div style={{ position: 'absolute', left: 10, right: 0, top: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7, paddingTop: 8, overflow: 'hidden', boxSizing: 'border-box' }}>
+      <div style={{ position: 'absolute', left: 10, right: 0, top: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', overflow: 'hidden', boxSizing: 'border-box',
+        ...(compact ? { justifyContent: 'center', gap: 0, paddingTop: 0 } : { gap: 7, paddingTop: 8 }) }}>
         {items.map(item => {
           switch (item) {
             case 'fold':
-              return <button key={item} style={btn} title={lane.folded ? 'unfold section' : 'fold section'} onClick={() => onFold(lane.id)}><Chevron folded={!!lane.folded} /></button>;
+              return <button key={item} style={compact ? { ...btn, height: COMPACT_FOLD_H } : btn} title={lane.folded ? 'unfold section' : 'fold section'} onClick={() => onFold(lane.id)}><Chevron folded={!!lane.folded} /></button>;
             case 'title':
               return (
                 // - vertical-rl puts the text run on the element's height, so maxHeight + overflow hidden
@@ -99,7 +100,7 @@ export function RailSegment({ lane, seg, color, kernel, current, selected, runna
                 </span>
               );
             case 'label':
-              return <span key={item} data-sk-popover-anchor="" onDoubleClick={e => onTitle(lane.id, anchor(e))} style={{ fontFamily: FONT, fontWeight: 700, fontSize: 10, color, userSelect: 'none' }}>{lane.label}</span>;
+              return <span key={item} data-sk-popover-anchor="" data-sk-rail-label="" onDoubleClick={e => onTitle(lane.id, anchor(e))} style={{ fontFamily: FONT, fontWeight: 700, fontSize: 10, lineHeight: compact ? `${LABEL_H}px` : undefined, color, userSelect: 'none' }}>{lane.label}</span>;
             case 'run':
               return (
                 <button key={item} style={{ ...btn, color: runnable ? 'var(--sk-text1)' : 'var(--sk-text3)' }}
