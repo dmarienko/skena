@@ -19,6 +19,7 @@ import {
   OnConnectEnd,
   NodeChange,
   NodePositionChange,
+  NodeProps,
   useNodesState,
   useEdgesState,
   useReactFlow,
@@ -88,17 +89,27 @@ import { EdgeRoutesContext } from './EdgeRoutesContext';
 import { merge3, rebaseHistory, uniqueLabels, labelsOf } from '../../shared/canvasMerge';
 import { borderPoint, LANE_STEP, routeSection, sideOfHandle, type RouteEdge, type RouteNode, type RoutedEdge, type Side } from '../../shared/edgeRouting';
 
+// - no node component reads its position: one that only moved (dragged, or drawn lower under a folded
+//   band) is not rendered again. React Flow's wrapper still moves it.
+function samePropsButPosition(a: NodeProps, b: NodeProps): boolean {
+  for (const k of Object.keys(a) as (keyof NodeProps)[]) {
+    if (k !== 'positionAbsoluteX' && k !== 'positionAbsoluteY' && a[k] !== b[k]) return false;
+  }
+  return Object.keys(b).length === Object.keys(a).length;
+}
+const unmoved = (c: React.ComponentType<NodeProps>) => React.memo(c, samePropsButPosition);
+
 const NODE_TYPES: NodeTypes = {
-  file:   FileNodeComponent,
-  text:   TextNodeComponent,
-  link:   LinkNodeComponent,
-  cell:   CellNodeComponent,
-  chat:   ChatNodeComponent,
-  portal: PortalNodeComponent,
-  noderef: NoderefNodeComponent,
-  kernel: KernelNodeComponent,
-  code:   CodeNodeComponent,
-  knowledge: KnowledgeNodeComponent,
+  file:   unmoved(FileNodeComponent),
+  text:   unmoved(TextNodeComponent),
+  link:   unmoved(LinkNodeComponent),
+  cell:   unmoved(CellNodeComponent),
+  chat:   unmoved(ChatNodeComponent),
+  portal: unmoved(PortalNodeComponent),
+  noderef: unmoved(NoderefNodeComponent),
+  kernel: unmoved(KernelNodeComponent),
+  code:   unmoved(CodeNodeComponent),
+  knowledge: unmoved(KnowledgeNodeComponent),
 };
 
 // - the title is pinned outside the canvas area now, so no zoom is unsafe: back to the original floor
