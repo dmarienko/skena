@@ -4,7 +4,7 @@
  * handles user interactions (drag, connect, delete) and saves back to host.
  */
 
-import React, { useCallback, useState, useEffect, useRef, useMemo } from 'react';
+import React, { useCallback, useState, useEffect, useRef, useMemo, useSyncExternalStore } from 'react';
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -23,6 +23,8 @@ import {
   useNodesState,
   useEdgesState,
   useReactFlow,
+  useStoreApi,
+  getViewportForBounds,
   addEdge,
   NodeTypes,
   EdgeTypes,
@@ -59,6 +61,7 @@ import { LabeledEdgeComponent } from './edges/LabeledEdge';
 import { useZoomVar } from './nodes/nodeShared';
 import { HelperLines } from './HelperLines';
 import { SectionSeparators } from './SectionSeparators';
+import { bandStep, drawnLanes, laneDisplay, toDisplayY, toStoredY, type LaneDisplay } from './displayOffset';
 import { EdgeFollowHints, type EdgeHint, type ShownHints } from './EdgeFollowHints';
 import { cardContent, type CardContent } from './cardContent';
 import { invalidateFileCache, loadedFileText } from '../hooks/useFileContent';
@@ -71,7 +74,7 @@ import { vimSettings } from './vimSettings';
 import { SectionRail, type RailKernel } from '../rail/SectionRail';
 import { fmtDateTime } from '../rail/RailSegment';
 import { refTitle } from '../../shared/nodeRef';
-import { allFolded, deriveLanes, fitLanes, groupIdsByLane, isGroup, laneHidingNode, sortLanes, insertLaneAt, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
+import { allFolded, deriveLanes, fitLanes, groupIdsByLane, isGroup, laneHidingNode, sortLanes, insertLaneAt, parkFirstLaneAtOrigin, pinOutputToLane, pruneFoldedIds, sectionTargetHeight, unfoldLane, type DerivedLane, type SectionLane, type LaneGrowth } from '../../shared/sectionLanes';
 import { applyPatchesToCanvas, codeCellHeight, columnsOfDeleted as columnsOfDeletedIn, directionSlot, forkOf, hangingBelow, insertAfter, keepRowOf, layoutSection, reflowSection, ridersOf, sectionEngineNodes, sectionMembership, toEngineNodes, type EngineNode, type LayoutOpts, type Patches } from '../../shared/layoutEngine';
 import { youtubeId, YOUTUBE_NODE } from '../../shared/youtube';
 import { copyNode, ownedOutputId } from '../../shared/outputLink';
@@ -645,6 +648,24 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
     return () => window.removeEventListener('skena:marksRestored', handler);
   }, []);
 
+  // - what the stored -> drawn conversions read between renders: the lanes and node id → lane index
+  const drawRef = useRef<{ lanes: DerivedLane[]; idx: Map<string, number> }>({ lanes: [], idx: new Map() });
+  // - the per-lane display at a zoom (default: the current one); cheap, a handful of lanes
+  const dispAt = useCallback((zoom?: number): LaneDisplay[] =>
+    laneDisplay(drawRef.current.lanes, bandStep(zoom ?? rfRef.current.getViewport().zoom)), []);
+  // - a drawn flow y back to stored (screen → flow results, view bounds), and a stored y to drawn
+  const storedY = useCallback((y: number): number => toStoredY(drawRef.current.lanes, dispAt(), y), [dispAt]);
+  const drawnY = useCallback((y: number, zoom?: number): number => toDisplayY(drawRef.current.lanes, dispAt(zoom), y), [dispAt]);
+  // - how far a node is drawn below its stored y, at a zoom (default: the current one)
+  const nodeShift = useCallback((id: string, zoom?: number): number =>
+    dispAt(zoom)[drawRef.current.idx.get(id) ?? 0]?.shift ?? 0, [dispAt]);
+  // - the camera y that keeps the content at screen y under it across a zoom change, step change included
+  const anchoredY = useCallback((sy: number, ty: number, zoom: number, newZoom: number): number => {
+    const { lanes: dl } = drawRef.current;
+    const stored = toStoredY(dl, dispAt(zoom), (sy - ty) / zoom);
+    return sy - toDisplayY(dl, dispAt(newZoom), stored) * newZoom;
+  }, [dispAt]);
+
   // - intercept onNodesChange to compute alignment guides + manual grid snap
   // - (snapToGrid is removed from <ReactFlow> so both can coexist cleanly)
   const customOnNodesChange = useCallback((changes: NodeChange[]) => {
@@ -652,6 +673,8 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
       (c): c is NodePositionChange => c.type === 'position' && !!c.position
     );
 
+    // - React Flow moves the nodes as drawn: back to stored y before anything reads a position
+    for (const c of posChanges) c.position = { x: c.position!.x, y: storedY(c.position!.y) };
     if (posChanges.length) {
       const primary  = posChanges[0];
       const dragging = posChanges.some(c => c.dragging);
@@ -660,7 +683,7 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
         //   guides + grid; the rest of a multi-selection snap to grid only — so every dragged node
         //   lands ON the grid on screen and none reverts on reload (all are persisted at drag-stop).
         const { horizontal, vertical, snapX, snapY } = getHelperLines(primary, nodesRef.current);
-        setHelperLines(dragging ? { horizontal, vertical } : {});
+        setHelperLines(dragging ? { horizontal: horizontal === undefined ? undefined : drawnY(horizontal), vertical } : {});
         primary.position = clampToOrigin(
           snapX !== undefined ? snapX : snapGrid(primary.position!.x),
           snapY !== undefined ? snapY : snapGrid(primary.position!.y),
@@ -682,7 +705,7 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
     }
 
     onNodesChange(changes);
-  }, [onNodesChange]); // - nodesRef / lanesRef always current via their own useEffects
+  }, [onNodesChange, storedY, drawnY]); // - nodesRef / lanesRef always current via their own useEffects
 
   // ─── active node tracking (for FloatingChat context) ─────────────────────────
   const activeNodeIdRef = useRef<string | null>(null);
@@ -861,7 +884,7 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
         const h = wrapperRef.current?.clientHeight ?? 0;
         const anyVisible = nodesRef.current.some(n => {
           const sx = n.position.x * zoom + x;
-          const sy = n.position.y * zoom + y;
+          const sy = (n.position.y + nodeShift(n.id)) * zoom + y;
           const sw = Number(n.width ?? n.style?.width ?? 0) * zoom;
           const sh = Number(n.height ?? n.style?.height ?? 0) * zoom;
           return sx + sw > 0 && sx < w && sy + sh > 0 && sy < h;
@@ -904,7 +927,7 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
     return () => clearTimeout(t);
   // - focusNodeById / revealAndFocus / pickViewportNode / fitClamped are stable useCallbacks; declared below
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canvas, canvasPath, setNodes, setEdges]);
+  }, [canvas, canvasPath, setNodes, setEdges, nodeShift]);
 
 
   // - lanes live in canvas metadata; the webview owns fold/create/delete and the host merges them back
@@ -947,15 +970,39 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
     for (const l of lanes) for (const id of l.folded ?? []) ids.add(id);
     return ids;
   }, [lanes]);
-  const rfNodes = useMemo(
-    () => (hiddenByFold.size === 0 ? nodes : nodes.map(n => (hiddenByFold.has(n.id) ? { ...n, hidden: true } : n))),
-    [nodes, hiddenByFold],
-  );
+  // - a folded band is drawn at least BAND_MIN_PX tall on screen (displayOffset.ts): below a zoom it is
+  //   drawn taller and everything below it lower; stored positions stay as they are. The zoom's step is
+  //   read from React Flow's store in the same render as its transform, so a step change and the camera
+  //   land in the same frame (a useState set from a store listener lands one frame later).
+  const flowStore = useStoreApi();
+  const foldStep = useSyncExternalStore(flowStore.subscribe, () => bandStep(flowStore.getState().transform[2]));
+  const laneDisp = useMemo(() => laneDisplay(derivedLanes, foldStep), [derivedLanes, foldStep]);
+  const shownLanes = useMemo(() => drawnLanes(derivedLanes, laneDisp), [derivedLanes, laneDisp]);
+  // - node id → index of its lane (a pinned member: the lane that pins it)
+  const laneIdxOf = useMemo(() => {
+    const m = new Map<string, number>();
+    derivedLanes.forEach((l, i) => { for (const id of l.memberIds) m.set(id, i); });
+    return m;
+  }, [derivedLanes]);
+  // - one drawn copy per stored node object, so a drag frame or a selection change hands React Flow new
+  //   objects only for the nodes that changed
+  const drawnCopies = useRef(new WeakMap<Node, Node>());
+  const rfNodes = useMemo(() => nodes.map(n => {
+    const hid = hiddenByFold.has(n.id);
+    const shift = laneDisp[laneIdxOf.get(n.id) ?? 0]?.shift ?? 0;
+    if (!hid && shift === 0) return n;
+    const was = drawnCopies.current.get(n);
+    if (was && !!was.hidden === hid && was.position.y === n.position.y + shift) return was;
+    const out = { ...n, ...(hid ? { hidden: true } : {}), position: shift ? { x: n.position.x, y: n.position.y + shift } : n.position };
+    drawnCopies.current.set(n, out);
+    return out;
+  }), [nodes, hiddenByFold, laneDisp, laneIdxOf]);
   // - the keydown handler is registered once, so the section keys read both through a ref
   const derivedLanesRef = useRef(derivedLanes);
   useEffect(() => { derivedLanesRef.current = derivedLanes; });
   const hiddenByFoldRef = useRef(hiddenByFold);
   useEffect(() => { hiddenByFoldRef.current = hiddenByFold; });
+  useEffect(() => { drawRef.current = { lanes: derivedLanes, idx: laneIdxOf }; });
 
   // - a folded section picked as the focus in place of a node (Ctrl+D / Ctrl+U onto it, or a fold that
   //   left no open section): its band and rail segment are highlighted and the keys act on it. The ref
@@ -1001,6 +1048,17 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
     return next;
   }, [nodes, edges, derivedLanes, hiddenByFold]);
   useEffect(() => { routesRef.current = edgeRoutes; });
+  // - the routes as drawn: every point moved by its section's shift (a route never leaves its section)
+  const drawnRoutes = useMemo(() => {
+    if (laneDisp.every(d => d.shift === 0)) return edgeRoutes;
+    const sourceOf = new Map(edges.map(e => [e.id, e.source]));
+    const out = new Map<string, RoutedEdge>();
+    for (const [id, r] of edgeRoutes) {
+      const shift = laneDisp[laneIdxOf.get(sourceOf.get(id) ?? '') ?? 0]?.shift ?? 0;
+      out.set(id, shift === 0 ? r : { ...r, points: r.points.map(([x, y]) => [x, y + shift] as [number, number]) });
+    }
+    return out;
+  }, [edgeRoutes, laneDisp, laneIdxOf, edges]);
 
   // - persist a lane edit: update local state, mirror into canvasRef, schedule the save
   const commitLanes = useCallback((next: SectionLane[]) => {
@@ -1251,12 +1309,12 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
       pushHistory();
       commitLanes(next);
       const { x, zoom } = rfRef.current.getViewport();
-      const c = clampCam(x, -flowY * zoom, zoom);
+      const c = clampCam(x, -drawnY(flowY) * zoom, zoom);
       rfRef.current.setViewport({ x: c.x, y: c.y, zoom }, { duration: CAMERA_MS });
     };
     window.addEventListener('skena:newSection', handler);
     return () => window.removeEventListener('skena:newSection', handler);
-  }, [lanes, derivedLanes, nodes, commitLanes, pushHistory]);
+  }, [lanes, derivedLanes, nodes, commitLanes, pushHistory, drawnY]);
 
   const handleDeleteLane = useCallback(async (id: string) => {
     const target = derivedLanes.find(l => l.id === id);
@@ -1449,7 +1507,8 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
     //   patchCanvasNode re-applies the display snap (RF reports the RAW drag position for the grabbed
     //   node; the others read their already-snapped display position from nodesRef).
     const rfById = new Map(nodesRef.current.map(n => [n.id, n]));
-    rfById.set(node.id, node);
+    // - React Flow's node is where it is drawn
+    rfById.set(node.id, { ...node, position: { x: node.position.x, y: storedY(node.position.y) } });
     const moved = new Set<string>([node.id, ...nodesRef.current.filter(n => n.selected).map(n => n.id)]);
     const before = new Map(canvasRef.current.nodes.map(n => [n.id, n]));
     const patched = canvasRef.current.nodes.map(n => {
@@ -1490,7 +1549,7 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
     const all = followers.size === 0 ? moved : new Set([...moved, ...followers.keys()]);
     const from = new Map([...all].flatMap(id => { const was = before.get(id); return was ? [[id, { x: was.x, y: was.y }] as const] : []; }));
     runEngineAfterMove(all, from, node.id);
-  }, [scheduleSave, runEngineAfterMove, setNodes]);
+  }, [scheduleSave, runEngineAfterMove, setNodes, storedY]);
 
   const onNodeDragStart = useCallback(() => {
     pushHistory();
@@ -1513,10 +1572,27 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
   const fitClamped = useCallback(async () => {
     if (rfRef.current.getNodes().length === 0) return;   // - fitView never resolves on an empty canvas; nothing to fit anyway
     await rfRef.current.fitView({ padding: 0.1 });
-    const { x, y, zoom } = rfRef.current.getViewport();
+    let { x, y, zoom } = rfRef.current.getViewport();
+    // - fitView framed the nodes as drawn at the zoom it started from; at the zoom it lands on the bands
+    //   can be drawn taller. Frame them as drawn at the new zoom, until the zoom's step stops changing.
+    const { width, height } = flowStore.getState();
+    const shown = nodesRef.current.filter(n => !hiddenByFoldRef.current.has(n.id));
+    for (let i = 0; i < 4 && shown.length > 0; i++) {
+      const xs: number[] = [], ys: number[] = [];
+      for (const n of shown) {
+        const g = flowGeom(n);
+        const top = g.y + nodeShift(n.id, zoom);
+        xs.push(g.x, g.x + g.width); ys.push(top, top + g.height);
+      }
+      const b = { x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
+      const vp = getViewportForBounds(b, width, height, MIN_ZOOM, MAX_ZOOM, 0.1);
+      const same = bandStep(vp.zoom) === bandStep(zoom);
+      ({ x, y, zoom } = vp);
+      if (same) break;
+    }
     const c = clampCam(x, y, zoom);
     rfRef.current.setViewport({ x: c.x, y: c.y, zoom }, { duration: 0 });
-  }, [clampCam]);
+  }, [clampCam, flowStore, nodeShift]);
 
   // - #4: a kernel may only connect to a code cell or a .py file node (block the drag)
   const isValidConnection = useCallback((c: Connection | Edge) => {
@@ -1582,7 +1658,8 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
       const makeCode = fromType === 'kernel' || fromType === 'code';
       const nw = makeCode ? NODE_SIZE.code.w : NEW_NODE_W;
       const nh = makeCode ? NODE_SIZE.code.h : NEW_NODE_H;
-      const p = screenToFlowPosition({ x: mouseEvent.clientX, y: mouseEvent.clientY });
+      const drop = screenToFlowPosition({ x: mouseEvent.clientX, y: mouseEvent.clientY });
+      const p = { x: drop.x, y: storedY(drop.y) };
       const nodeId = `${makeCode ? 'code' : 'text'}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
       const newNode: CanvasNode = makeCode
         ? { id: nodeId, type: 'code', code: '', language: 'python', x: Math.round(p.x), y: Math.round(p.y - nh / 2), width: nw, height: nh }
@@ -1645,7 +1722,7 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
     canvasRef.current = { ...canvasRef.current, edges: [...kept, edge] };
     scheduleSave();
     runEngineForCells(released);
-  }, [setEdges, scheduleSave, pushHistory, screenToFlowPosition, anchoredBy, runEngineForCells, withKeepRow]);
+  }, [setEdges, scheduleSave, pushHistory, screenToFlowPosition, anchoredBy, runEngineForCells, withKeepRow, storedY]);
 
   const onNodesDelete = useCallback((deleted: Node[]) => {
     pushHistory();
@@ -1774,10 +1851,11 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
     if (uris.length === 0) return;
 
     // - convert screen coords to flow canvas coords
-    const position = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+    const drop = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+    const position = { x: drop.x, y: storedY(drop.y) };
     const focused  = nodesRef.current.find(n => n.selected);
     vscodePostMessage({ type: 'dropFiles', uris, position, connectTo: focused?.id });
-  }, [screenToFlowPosition]);
+  }, [screenToFlowPosition, storedY]);
 
   // - listen for resolved nodes coming back from host after drop
   useEffect(() => {
@@ -1846,7 +1924,11 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
     if (!node) return;
     const nw = (n: Node) => Number(n.style?.width  ?? 200);
     const nh = (n: Node) => Number(n.style?.height ?? 150);
-    const box = (n: Node) => ({ x1: n.position.x, y1: n.position.y, x2: n.position.x + nw(n), y2: n.position.y + nh(n) });
+    // - as drawn at the current zoom; `at` = as drawn at another zoom
+    const box = (n: Node, at?: number) => {
+      const y1 = n.position.y + nodeShift(n.id, at);
+      return { x1: n.position.x, y1, x2: n.position.x + nw(n), y2: y1 + nh(n) };
+    };
     const nodeBox = box(node);
     const outId = (node.data as { outputNodeId?: string } | undefined)?.outputNodeId;
     const out = outId ? lookup(outId) : undefined;
@@ -1861,10 +1943,14 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
     const { x: vx, y: vy, zoom } = rfRef.current.getViewport();
 
     if (forceCenter) {
-      const b = pairBox ?? nodeBox;
+      const sized = pairBox ?? nodeBox;
       const fit = pairBox
-        ? Math.max(MIN_ZOOM, Math.min(zoom, Math.min((area.right - area.left) / (b.x2 - b.x1 + 160), (area.bottom - area.top) / (b.y2 - b.y1 + 160))))
+        ? Math.max(MIN_ZOOM, Math.min(zoom, Math.min((area.right - area.left) / (sized.x2 - sized.x1 + 160), (area.bottom - area.top) / (sized.y2 - sized.y1 + 160))))
         : zoom;
+      // - the pair as drawn at the zoom the jump lands on
+      const nb = box(node, fit);
+      const ob = out ? box(out, fit) : null;
+      const b = ob ? { x1: Math.min(nb.x1, ob.x1), y1: Math.min(nb.y1, ob.y1), x2: Math.max(nb.x2, ob.x2), y2: Math.max(nb.y2, ob.y2) } : nb;
       const cForce = clampCam(
         (area.left + area.right) / 2 - ((b.x1 + b.x2) / 2) * fit,
         (area.top + area.bottom) / 2 - ((b.y1 + b.y2) / 2) * fit,
@@ -1878,7 +1964,7 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
     if (!p) return;
     const cMin = clampCam(p.x, p.y, zoom);
     rfRef.current.setViewport({ x: cMin.x, y: cMin.y, zoom }, { duration: CAMERA_MS });
-  }, [clampCam]); // - nodesRef / rfRef / wrapperRef are always current
+  }, [clampCam, nodeShift]); // - nodesRef / rfRef / wrapperRef are always current
 
   /** Pan, keeping the zoom, by the smallest move that shows the whole box (flow coordinates). */
   const revealBox = useCallback((b: { x1: number; y1: number; x2: number; y2: number }) => {
@@ -1976,26 +2062,27 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
    */
   const pickViewportNode = useCallback((): string | null => {
     const { x: vx, y: vy, zoom } = rfRef.current.getViewport();
-    const centre = { x: (window.innerWidth / 2 - vx) / zoom, y: (window.innerHeight / 2 - vy) / zoom };
+    const centre = { x: (window.innerWidth / 2 - vx) / zoom, y: storedY((window.innerHeight / 2 - vy) / zoom) };
     return nearestVisibleNode(nodesRef.current.map(toNav), hiddenByFoldRef.current, centre);
-  }, []); // - rfRef, nodesRef and hiddenByFoldRef are always current
+  }, [storedY]); // - rfRef, nodesRef and hiddenByFoldRef are always current
 
-  // - the part of the pane a focus lands in (above the chat console), in flow coordinates
+  // - the part of the pane a focus lands in (above the chat console), in stored flow coordinates
   const flowView = useCallback((): { left: number; top: number; right: number; bottom: number } | null => {
     if (!wrapperRef.current) return null;
     const area = paneArea(wrapperRef.current);
     const { x, y, zoom } = rfRef.current.getViewport();
-    return { left: (area.left - x) / zoom, top: (area.top - y) / zoom, right: (area.right - x) / zoom, bottom: (area.bottom - y) / zoom };
-  }, []); // - refs only
+    return { left: (area.left - x) / zoom, top: storedY((area.top - y) / zoom), right: (area.right - x) / zoom, bottom: storedY((area.bottom - y) / zoom) };
+  }, [storedY]); // - refs otherwise
 
   /** Pan, keeping the zoom, by the smallest move that shows a folded section's band. Only y moves: a band spans the pane's width. */
   const revealBand = useCallback((laneId: string) => {
-    const lane = derivedLanesRef.current.find(l => l.id === laneId);
+    const i = derivedLanesRef.current.findIndex(l => l.id === laneId);
     const view = flowView();
-    if (!lane || !view) return;
+    if (i < 0 || !view) return;
+    const lane = drawnLanes(derivedLanesRef.current, dispAt())[i];
     const cx = (view.left + view.right) / 2;
     revealBox({ x1: cx, y1: lane.top, x2: cx, y2: lane.bottom });
-  }, [flowView, revealBox]);
+  }, [flowView, revealBox, dispAt]);
 
   /**
    * Make a folded section's band the focus: no node selected, the band highlighted and panned into
@@ -2115,12 +2202,13 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
 
   // - pan so a section's top sits at the top of the view; x and zoom are kept
   const revealLaneTop = useCallback((id: string) => {
-    const lane = derivedLanesRef.current.find(l => l.id === id);
-    if (!lane || !rfRef.current) return;
+    const i = derivedLanesRef.current.findIndex(l => l.id === id);
+    if (i < 0 || !rfRef.current) return;
     const { x, zoom } = rfRef.current.getViewport();
+    const lane = drawnLanes(derivedLanesRef.current, dispAt(zoom))[i];
     const c = clampCam(x, -lane.top * zoom, zoom);
     rfRef.current.setViewport({ x: c.x, y: c.y, zoom }, { duration: CAMERA_MS });
-  }, [clampCam]);
+  }, [clampCam, dispAt]);
   const revealLaneTopRef = useRef(revealLaneTop);
   useEffect(() => { revealLaneTopRef.current = revealLaneTop; });
 
@@ -2225,7 +2313,7 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
     const handler = () => {
       const { x: vx, y: vy, zoom } = rfRef.current.getViewport();
       const cx = (window.innerWidth  / 2 - vx) / zoom;
-      const cy = (window.innerHeight / 2 - vy) / zoom;
+      const cy = storedY((window.innerHeight / 2 - vy) / zoom);
       vscodePostMessage({ type: 'addKernel', position: { x: Math.round(cx - 70), y: Math.round(cy - 80) } });
     };
     window.addEventListener('skena:addKernelRequest', handler);
@@ -2349,7 +2437,7 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
       const rect = wrapperRef.current.getBoundingClientRect();
       const { x: vx, y: vy, zoom } = rfRef.current.getViewport();
       const cx = (rect.width  / 2 - vx) / zoom - groupW / 2;
-      const cy = (rect.height / 2 - vy) / zoom - groupH / 2;
+      const cy = storedY((rect.height / 2 - vy) / zoom) - groupH / 2;
       target = clampToOrigin(snapGrid(cx), snapGrid(cy));
     }
     const dx = target.x - minX;
@@ -2397,7 +2485,7 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
       }
     }
     if (topLeft) requestAnimationFrame(() => revealNode(topLeft.id));
-  }, [setNodes, setEdges, scheduleSave, pushHistory, revealNode, runEngine]);
+  }, [setNodes, setEdges, scheduleSave, pushHistory, revealNode, runEngine, storedY]);
 
   // - counts the knowledge nodes this canvas has added, so two within the same millisecond differ
   const knowledgeSeq = useRef(0);
@@ -2418,7 +2506,7 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
       const rect = wrapperRef.current.getBoundingClientRect();
       const { x: vx, y: vy, zoom } = rfRef.current.getViewport();
       const cx = (rect.width  / 2 - vx) / zoom - w / 2;
-      const cy = (rect.height / 2 - vy) / zoom - h / 2;
+      const cy = storedY((rect.height / 2 - vy) / zoom) - h / 2;
       target = clampToOrigin(snapGrid(cx), snapGrid(cy));
     }
     const cn: KnowledgeNode = {
@@ -2701,9 +2789,9 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
     e.preventDefault();
     e.stopPropagation();
     const fp = rfRef.current.screenToFlowPosition({ x: e.clientX, y: e.clientY });
-    contextMenuFlowPos.current = { flowX: fp.x, flowY: fp.y }; // - write to ref first
+    contextMenuFlowPos.current = { flowX: fp.x, flowY: storedY(fp.y) }; // - write to ref first
     setContextMenu({ screenX: e.clientX, screenY: e.clientY }); // - state only for re-render
-  }, []);
+  }, [storedY]);
 
   // ─── keyboard navigation ──────────────────────────────────────────────────
 
@@ -2765,7 +2853,8 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
       for (const [side, list] of bySide) list.forEach((c, i) => {
         const at = c.at ?? borderPoint(geom, side, (i - (list.length - 1) / 2) * LANE_STEP);
         const key = `${side}:${c.edgeId ?? c.nodeId}`;
-        hints.push({ key, label: c.label, x: at[0], y: at[1], side });
+        // - a route never leaves its section, so every badge is drawn with the focused node
+        hints.push({ key, label: c.label, x: at[0], y: at[1] + nodeShift(from.id), side });
         const card = cardOf(c.nodeId);
         if (card) cards.set(key, card);
       });
@@ -2815,8 +2904,8 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
       const area = paneArea(wrapperRef.current);
       const { x: vx, y: vy, zoom } = rfRef.current.getViewport();
       const view: Rect = {
-        left: (area.left - vx) / zoom, top: (area.top - vy) / zoom,
-        right: (area.right - vx) / zoom, bottom: (area.bottom - vy) / zoom,
+        left: (area.left - vx) / zoom, top: storedY((area.top - vy) / zoom),
+        right: (area.right - vx) / zoom, bottom: storedY((area.bottom - vy) / zoom),
       };
       const from = focusedNode();
       const f = from ? toNav(from) : null;
@@ -2831,7 +2920,7 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
       const targets = near.slice(0, labels.length);
       jumpRef.current = { labels, ids: targets.map(n => n.id), typed: '' };
       document.documentElement.setAttribute(G_BADGES_ATTR, '1');
-      setJumpShown({ tags: targets.map((n, i) => ({ id: n.id, label: labels[i], x: n.x, y: n.y })), typed: '' });
+      setJumpShown({ tags: targets.map((n, i) => ({ id: n.id, label: labels[i], x: n.x, y: n.y + nodeShift(n.id) })), typed: '' });
     };
 
     // - a key while the tags are shown: a whole label focuses its node as h/j/k/l would, a first
@@ -3127,7 +3216,7 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
         const cx = window.innerWidth  / 2;
         const cy = window.innerHeight / 2;
         let newTx = cx - (cx - tx) * scale;
-        let newTy = cy - (cy - ty) * scale;
+        let newTy = anchoredY(cy, ty, zoom, newZoom);
 
         // - keep the WHOLE focused node in view after zoom-in when it fits (pan just enough); if
         //   it's larger than the viewport on an axis, leave that axis alone (can't fit it)
@@ -3138,9 +3227,10 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
           const M  = 40; // - px margin from the viewport edge
           const W  = window.innerWidth, H = window.innerHeight;
           const nx1 = focused.position.x * newZoom + newTx;
-          const ny1 = focused.position.y * newZoom + newTy;
+          const fy = focused.position.y + nodeShift(focused.id, newZoom);
+          const ny1 = fy * newZoom + newTy;
           const nx2 = (focused.position.x + nw) * newZoom + newTx;
-          const ny2 = (focused.position.y + nh) * newZoom + newTy;
+          const ny2 = (fy + nh) * newZoom + newTy;
           if (nx2 - nx1 <= W - 2 * M) {
             if (nx1 < M)          newTx += M - nx1;
             else if (nx2 > W - M) newTx -= nx2 - (W - M);
@@ -3164,7 +3254,7 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
         const cx = window.innerWidth  / 2;
         const cy = window.innerHeight / 2;
         const zx = cx - (cx - tx) * scale;
-        const zy = cy - (cy - ty) * scale;
+        const zy = anchoredY(cy, ty, zoom, newZoom);
         const c  = clampCam(zx, zy, newZoom);
         rfRef.current.setViewport({ x: c.x, y: c.y, zoom: newZoom });
         return;
@@ -3177,7 +3267,7 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
         const framed = nodesRef.current;
         if (!framed.length) return;
         const minX = Math.min(...framed.map(n => n.position.x));
-        const minY = Math.min(...framed.map(n => n.position.y));
+        const minY = Math.min(...framed.map(n => n.position.y + nodeShift(n.id)));
         const c = clampCam((ORIGIN_GUTTER - minX) * zoom, (ORIGIN_GUTTER - minY) * zoom, zoom);
         rfRef.current.setViewport({ x: c.x, y: c.y, zoom }, { duration: CAMERA_MS });
         return;
@@ -3196,7 +3286,7 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
           const zoom = READABLE_ZOOM;
           const cAltShiftC = clampCam(
             rect.width  / 2 - (focused.position.x + nw / 2) * zoom,
-            rect.height / 2 - (focused.position.y + nh / 2) * zoom,
+            rect.height / 2 - (focused.position.y + nodeShift(focused.id, zoom) + nh / 2) * zoom,
             zoom,
           );
           rfRef.current.setViewport({ x: cAltShiftC.x, y: cAltShiftC.y, zoom }, { duration: CAMERA_MS });
@@ -3216,7 +3306,7 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
           const { zoom } = rfRef.current.getViewport();
           const cShiftC = clampCam(
             rect.width  / 2 - (focused.position.x + nw / 2) * zoom,
-            rect.height / 2 - (focused.position.y + nh / 2) * zoom,
+            rect.height / 2 - (focused.position.y + nodeShift(focused.id) + nh / 2) * zoom,
             zoom,
           );
           rfRef.current.setViewport({ x: cShiftC.x, y: cShiftC.y, zoom }, { duration: CAMERA_MS });
@@ -3680,7 +3770,7 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
       window.removeEventListener('keydown', panCapture, { capture: true });
       window.removeEventListener('keydown', scrollCapture, { capture: true });
     };
-  }, [setNodes, setEdges, focusNodeById, revealAndFocus, focusFromView, flowView, selectBand, setSelectedBand, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, closeKnowledge, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToRegister, engineNodesOf, runEngineAfterMove, anchoredBy, runEngineForCells, withKeepRow, canvasPath, closeG, revealBox, closeJump]); // - nodesRef + spaceSelectedRef carry live state
+  }, [setNodes, setEdges, focusNodeById, revealAndFocus, focusFromView, flowView, selectBand, setSelectedBand, addTextNodeInDirection, undo, redo, scheduleSave, setSearchOpen, setMarksOpen, closeKnowledge, pushHistory, handleCopy, pasteInternalClipboard, deleteSelectedNodes, performDelete, jumpToRegister, engineNodesOf, runEngineAfterMove, anchoredBy, runEngineForCells, withKeepRow, canvasPath, closeG, revealBox, closeJump, storedY, nodeShift, anchoredY]); // - nodesRef + spaceSelectedRef carry live state
 
   // - expose a viewport snapshot for the AI companion (what the user actually sees:
   // - zoom, on-screen node labels, scroll position within the focused node)
@@ -3692,7 +3782,7 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
       for (const cn of canvasRef.current.nodes) {
         if (isGroup(cn)) continue;
         const sx = cn.x * vp.zoom + vp.x;
-        const sy = cn.y * vp.zoom + vp.y;
+        const sy = drawnY(cn.y) * vp.zoom + vp.y;
         const sw = cn.width * vp.zoom, sh = cn.height * vp.zoom;
         if (sx + sw > 0 && sx < W && sy + sh > 0 && sy < H) {
           visibleNodes.push(cn.nodeLabel ?? cn.id.slice(0, 6));
@@ -3749,7 +3839,7 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
     const handler = () => {
       const { x: tx, y: ty, zoom } = rfRef.current.getViewport();
       const rawX = (window.innerWidth  / 2 - tx) / zoom - 200;
-      const rawY = (window.innerHeight / 2 - ty) / zoom - 150;
+      const rawY = storedY((window.innerHeight / 2 - ty) / zoom) - 150;
       // - push right if viewport centre is occupied
       const { x, y } = findFreePosition(nodesRef.current, rawX, rawY, 400, 300, 1, 0);
       vscodePostMessage({ type: 'addNodeRequest', position: { x, y } });
@@ -3847,7 +3937,7 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
       const lx = e.clientX - rect.left;
       const ly = e.clientY - rect.top;
       // - clamp so cursor-centred wheel zoom can't reveal space above/left of the origin
-      const c = clampCam(lx - (lx - tx) * scale, ly - (ly - ty) * scale, newZoom);
+      const c = clampCam(lx - (lx - tx) * scale, anchoredY(ly, ty, zoom, newZoom), newZoom);
       gestureRef.current?.wheel();
       rfRef.current.setViewport({ x: c.x, y: c.y, zoom: newZoom });
     };
@@ -4201,7 +4291,7 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
     } else {
       const { x: vx, y: vy, zoom } = rfRef.current.getViewport();
       const cx = (-vx + window.innerWidth  / 2) / zoom;
-      const cy = (-vy + window.innerHeight / 2) / zoom;
+      const cy = storedY((-vy + window.innerHeight / 2) / zoom);
       x = Math.round(cx - W / 2);
       y = Math.round(cy - H / 2);
     }
@@ -4251,7 +4341,7 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
     } else {
       const { x: vx, y: vy, zoom } = rfRef.current.getViewport();
       x = Math.round((-vx + window.innerWidth / 2) / zoom - nw / 2);
-      y = Math.round((-vy + window.innerHeight / 2) / zoom - nh / 2) + offsetIndex * (nh + GRID);
+      y = Math.round(storedY((-vy + window.innerHeight / 2) / zoom) - nh / 2) + offsetIndex * (nh + GRID);
     }
     const id = `paste-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
     const node: CanvasNode = { ...partial, id, x, y, width: nw, height: nh };
@@ -4262,7 +4352,7 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
     window.dispatchEvent(new CustomEvent('skena:addNodeResult', {
       detail: { type: 'addNodeResult', node, edge, ...(focused ? { anchorId: focused.id } : {}) } satisfies MsgAddNodeResult,
     }));
-  }, [engineNodesOf]); // - reads refs otherwise; engineNodesOf never changes identity
+  }, [engineNodesOf, storedY]); // - reads refs otherwise; engineNodesOf never changes identity
 
   // ─── pin notebook cell output → new CellNode ─────────────────────────────────
   // - fired by NotebookRenderer's 📌 button
@@ -4401,7 +4491,7 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
             const { x: vx, y: vy, zoom } = rfRef.current.getViewport();
             const position = focused
               ? { x: focused.position.x + Number(focused.style?.width ?? 400) + 40, y: focused.position.y }
-              : { x: (-vx + window.innerWidth / 2) / zoom, y: (-vy + window.innerHeight / 2) / zoom };
+              : { x: (-vx + window.innerWidth / 2) / zoom, y: storedY((-vy + window.innerHeight / 2) / zoom) };
             vscodePostMessage({ type: 'dropFiles', uris: fileUris, position, connectTo: focused?.id });
           }
           return;
@@ -4448,7 +4538,7 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
       document.removeEventListener('paste', onPaste);
       verifyTimeouts.forEach(clearTimeout);
     };
-  }, [insertPastedNode, pasteInternalClipboard, addCellNode, refPath]);
+  }, [insertPastedNode, pasteInternalClipboard, addCellNode, refPath, storedY]);
 
   // - handle sub-canvas extraction result from host
   useEffect(() => {
@@ -4563,9 +4653,9 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
     <ZoomLevelProvider>
     <LanesContext.Provider value={lanes}>
     <KernelsContext.Provider value={kernels}>
-    <EdgeRoutesContext.Provider value={edgeRoutes}>
+    <EdgeRoutesContext.Provider value={drawnRoutes}>
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'row' }}>
-    <SectionRail lanes={derivedLanes} kernels={railKernels} selectedNodeId={selectedNodeId} selectedBandId={selectedBand} runningIds={runningSections}
+    <SectionRail lanes={shownLanes} kernels={railKernels} selectedNodeId={selectedNodeId} selectedBandId={selectedBand} runningIds={runningSections}
       onFold={handleFoldLane} onRun={handleRunLane} onStop={handleStopLane} onReflow={handleReflowLane} onDelete={handleDeleteLane}
       onBindKernel={handleBindKernel} onRename={handleRenameLane} onNewSection={handleNewSectionClick}
       onNewKernel={handleNewKernel} onRemoveKernel={handleRemoveKernel} onKernelAction={handleKernelActionForLane}
@@ -4611,7 +4701,7 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
         elevateEdgesOnSelect
       >
         <Background variant={BackgroundVariant.Dots} gap={GRID} size={1} color="var(--vscode-editorIndentGuide-background)" />
-        <SectionSeparators lanes={derivedLanes} kernels={railKernels} selectedBandId={selectedBand} />
+        <SectionSeparators lanes={shownLanes} kernels={railKernels} selectedBandId={selectedBand} onUnfold={handleFoldLane} />
         <EdgeFollowHints shown={gShown} />
         <JumpTags shown={jumpShown} />
         <HelperLines horizontal={helperLines.horizontal} vertical={helperLines.vertical} />
