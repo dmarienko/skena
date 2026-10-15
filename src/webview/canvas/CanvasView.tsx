@@ -1766,8 +1766,9 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
     for (const h of holes) runEngine({ sectionId: h.sectionId }, { columnX: h.columnX });
     runEngineForCells(released);
 
-    // - auto-focus the nearest surviving node so spatial navigation resumes immediately
-    const bestId = nextFocusAfterDelete(deleted, sectionOf);
+    // - auto-focus the nearest surviving node so spatial navigation resumes immediately. React Flow hands
+    //   over the nodes where they are drawn; the survivors are compared where they are stored.
+    const bestId = nextFocusAfterDelete(deleted.map(d => nodesRef.current.find(n => n.id === d.id) ?? d), sectionOf);
 
     // - defer one frame so React Flow finishes removing the deleted nodes first
     if (bestId) {
