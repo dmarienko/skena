@@ -1,7 +1,7 @@
 // - run: npx esbuild src/webview/canvas/displayOffset.ts --bundle --format=esm --outfile=tests/.build/displayOffset.mjs && node --test tests/display-offset.mjs
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { bandStep, laneDisplay, drawnLanes, toStoredY, toDisplayY, BAND_MIN_PX, BAND_FULL_ZOOM } from './.build/displayOffset.mjs';
+import { bandStep, laneDisplay, drawnLanes, toStoredY, toDisplayY, sectionsAsLanes, BAND_MIN_PX, BAND_FULL_ZOOM } from './.build/displayOffset.mjs';
 
 const GRID = 100;
 // - S1 folded, S2 open, S3 folded, S4 folded with a 300-tall node dropped in after the fold, S5 open (last)
@@ -115,4 +115,23 @@ test('a wheel run from zoom 1 to 0.1 changes what is drawn only 3 times', () => 
   let prev = bandStep(1);
   for (let z = 1; z >= 0.1; z *= 0.94) { const s = bandStep(z); if (s !== prev) changes++; prev = s; }
   assert.equal(changes, 3);
+});
+
+test('a drawn y read against the stored sections alone falls in the section the node is stored in', () => {
+  // - what a node component has: React Flow's (drawn) positions and the stored section records. The
+  //   last section is folded and holds a node dropped in after the fold, so its real range is taller
+  //   than the sections alone say.
+  const sections = [{ y: 0, folded: [] }, { y: 100 }, { y: 900, folded: [] }, { y: 1000, folded: [] }, { y: 1400, folded: [] }];
+  const real = [...lanes.slice(0, 4), { top: 1400, bottom: 1700, folded: [] }];
+  const laneOf = y => { let i = 0; sections.forEach((l, k) => { if (l.y <= y) i = k; }); return i; };
+  const fromSections = sectionsAsLanes(sections);
+  for (const z of [0.3, 0.12, 0.06]) {
+    const drawn = laneDisplay(real, bandStep(z));
+    const guess = laneDisplay(fromSections, bandStep(z));
+    for (const l of real) for (const y of [l.top, (l.top + l.bottom) / 2, l.bottom - 1]) {
+      const back = toStoredY(fromSections, guess, toDisplayY(real, drawn, y));
+      assert.equal(laneOf(back), laneOf(y), `zoom ${z} y ${y}`);
+      if (l.top < 1400) assert.equal(back, y, `zoom ${z} y ${y}`);
+    }
+  }
 });

@@ -17,7 +17,8 @@ import { HANDLE_STYLE, ZOOM_WIDTH_CLASS, bandInsetPadding, baseBorderWidth, focu
 import { NodeBorder } from './NodeBorder';
 import { nodeBorderColor } from '../palette';
 import { makeCellKernelResolver } from '../../../shared/kernelBinding';
-import type { SectionLane } from '../../../shared/sectionLanes';
+import { sortLanes, type SectionLane } from '../../../shared/sectionLanes';
+import { bandStep, laneDisplay, sectionsAsLanes, toStoredY } from '../displayOffset';
 import type { KernelRecord } from '../../../shared/types';
 import { useLanes } from '../LanesContext';
 import { useKernels } from '../KernelsContext';
@@ -187,17 +188,20 @@ function overflowWidgetsRoot(): HTMLElement {
 
 // - one resolver per store snapshot: this selector runs once per code node per store change, so the
 //   node index is built once and shared instead of once per node
-let resolverKey: { nodes: unknown; edges: unknown; lanes: unknown; kernels: unknown } | null = null;
+let resolverKey: { nodes: unknown; edges: unknown; lanes: unknown; kernels: unknown; step: number } | null = null;
 let resolverFn: ((cellId: string) => string | null) | null = null;
-function cellKernelResolver(nodes: RFNode[], edges: Edge[], lanes: SectionLane[], kernels: KernelRecord[]): (cellId: string) => string | null {
-  if (!resolverFn || !resolverKey || resolverKey.nodes !== nodes || resolverKey.edges !== edges || resolverKey.lanes !== lanes || resolverKey.kernels !== kernels) {
+function cellKernelResolver(nodes: RFNode[], edges: Edge[], lanes: SectionLane[], kernels: KernelRecord[], step: number): (cellId: string) => string | null {
+  if (!resolverFn || !resolverKey || resolverKey.nodes !== nodes || resolverKey.edges !== edges || resolverKey.lanes !== lanes || resolverKey.kernels !== kernels || resolverKey.step !== step) {
+    // - React Flow holds the drawn positions (displayOffset.ts); the section rule reads the stored ones
+    const asLanes = sectionsAsLanes(sortLanes(lanes));
+    const disp = laneDisplay(asLanes, step);
     resolverFn = makeCellKernelResolver({
-      nodes:    nodes.map(n => ({ id: n.id, type: n.type ?? '', y: n.position.y, x: n.position.x })),
+      nodes:    nodes.map(n => ({ id: n.id, type: n.type ?? '', y: toStoredY(asLanes, disp, n.position.y), x: n.position.x })),
       edges:    edges.map(e => ({ fromNode: e.source, toNode: e.target })),
       sections: lanes,
       kernels,
     });
-    resolverKey = { nodes, edges, lanes, kernels };
+    resolverKey = { nodes, edges, lanes, kernels, step };
   }
   return resolverFn;
 }
@@ -241,7 +245,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   const lanes = useLanes();
   const kernelsCtx = useKernels();
   // - selector returns a primitive (kernel id | null), so default Object.is equality is safe
-  const bound = useStore(s => cellKernelResolver(s.nodes, s.edges, lanes, kernelsCtx)(id));
+  const bound = useStore(s => cellKernelResolver(s.nodes, s.edges, lanes, kernelsCtx, bandStep(s.transform[2]))(id));
 
   const run = useCallback(() => {
     if (!bound) return;

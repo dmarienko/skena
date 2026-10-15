@@ -74,3 +74,13 @@ export function toStoredY(lanes: { top: number }[], disp: LaneDisplay[], y: numb
   const s = y - d.shift;
   return s < lanes[idx].top && y >= lanes[idx].top + d.shift - d.extra ? lanes[idx].top : s;
 }
+
+/**
+ * Lanes bounded the way deriveLanes bounds them, from the stored sections alone (sorted by y): each ends
+ * where the next begins, the last one grid below its top. For a component that has only React Flow's
+ * drawn positions and the section records: toStoredY on these lanes puts a drawn y back in the section
+ * it is stored in. Only the last lane's own height is guessed, and it never moves a drawn section top.
+ */
+export function sectionsAsLanes(sections: { y: number; folded?: string[] }[]): { top: number; bottom: number; folded?: string[] }[] {
+  return sections.map((l, i) => ({ top: l.y, bottom: sections[i + 1]?.y ?? l.y + SECTION_FOLDED_H, folded: l.folded }));
+}
