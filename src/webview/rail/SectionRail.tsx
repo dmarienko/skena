@@ -25,14 +25,17 @@ export function laneColor(lane: { kernelId?: string; index: number }, kernels: R
   return { color: kernelColor(k ? k.colorIndex : lane.index), kernel: k };
 }
 
-export function SectionRail({ lanes, kernels, selectedNodeId, selectedBandId, onFold, onRun, onReflow, onDelete, onBindKernel, onRename, onNewSection, onNewKernel, onRemoveKernel, onKernelAction, onCopyReference }: {
+export function SectionRail({ lanes, kernels, selectedNodeId, selectedBandId, runningIds, onFold, onRun, onStop, onReflow, onDelete, onBindKernel, onRename, onNewSection, onNewKernel, onRemoveKernel, onKernelAction, onCopyReference }: {
   lanes: DerivedLane[];
   kernels: RailKernel[];
   selectedNodeId: string | null;
   /** - a folded section selected as the focus in place of a node */
   selectedBandId: string | null;
+  /** - the sections whose run is in progress */
+  runningIds: ReadonlySet<string>;
   onFold: (id: string) => void;
   onRun: (id: string) => void;
+  onStop: (id: string) => void;
   onReflow: (id: string) => void;
   onDelete: (id: string) => void;
   onBindKernel: (id: string, kernelId: string | null) => void;
@@ -79,8 +82,9 @@ export function SectionRail({ lanes, kernels, selectedNodeId, selectedBandId, on
           // - a dangling kernelId is not runnable either: laneColor resolved it to null
           const runnable = kernel !== null;
           return (
-            <RailSegment key={seg.id} lane={lane} seg={seg} color={color} kernel={kernel} runnable={runnable}
-              current={lane.id === currentId} selected={lane.id === selectedBandId} onFold={onFold} onRun={onRun} onDelete={onDelete} onKernel={openKernel} onTitle={openTitle} onMenu={openMenu} />
+            <RailSegment key={seg.id} lane={lane} seg={seg} color={color} kernel={kernel} runnable={runnable} running={runningIds.has(lane.id)}
+              current={lane.id === currentId} selected={lane.id === selectedBandId} onFold={onFold} onRun={onRun} onStop={onStop} onKernelAction={onKernelAction}
+              onDelete={onDelete} onKernel={openKernel} onTitle={openTitle} onMenu={openMenu} />
           );
         })}
       </div>
@@ -99,8 +103,8 @@ export function SectionRail({ lanes, kernels, selectedNodeId, selectedBandId, on
       )}
       {pop && popLane && pop.kind === 'menu' && (
         // - bound only when the lane's kernelId still names a live kernel; a dangling id offers no-op actions
-        <SegmentMenu key={pop.laneId} anchor={pop.at} folded={!!popLane.folded} kernelBound={kernels.some(k => k.id === popLane.kernelId)}
-          onFold={() => onFold(popLane.id)} onRun={() => onRun(popLane.id)} onReflow={() => onReflow(popLane.id)}
+        <SegmentMenu key={pop.laneId} anchor={pop.at} folded={!!popLane.folded} kernelBound={kernels.some(k => k.id === popLane.kernelId)} running={runningIds.has(popLane.id)}
+          onFold={() => onFold(popLane.id)} onRun={() => onRun(popLane.id)} onStop={() => onStop(popLane.id)} onReflow={() => onReflow(popLane.id)}
           onKernel={() => setPop({ kind: 'kernel', laneId: popLane.id, anchor: pop.anchor })}
           onKernelAction={a => onKernelAction(popLane.id, a)}
           onRename={() => setPop({ kind: 'title', laneId: popLane.id, anchor: pop.anchor })}

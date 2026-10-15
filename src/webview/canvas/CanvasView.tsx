@@ -30,7 +30,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
-import { CanvasData, CanvasNode, CanvasEdge, CanvasViewport, KernelNode, KernelRecord, KnowledgeNode, MsgAddNodeResult, MsgKernelAdded, MsgKernelRemoved, MsgKnowledgeFetchResult, MsgKnowledgeRefresh, MsgKnowledgeRefreshed, MsgKnowledgeServersResult, MsgCanvasSaved, MsgRunOutput, MsgSubCanvasCreated, MsgVerifyPathResult, NodeSide, CanvasMark, ViewportSnapshot } from '../../shared/types';
+import { CanvasData, CanvasNode, CanvasEdge, CanvasViewport, KernelNode, KernelRecord, KnowledgeNode, MsgAddNodeResult, MsgKernelAdded, MsgKernelRemoved, MsgKnowledgeFetchResult, MsgKnowledgeRefresh, MsgKnowledgeRefreshed, MsgKnowledgeServersResult, MsgCanvasSaved, MsgRunOutput, MsgSectionRun, MsgSubCanvasCreated, MsgVerifyPathResult, NodeSide, CanvasMark, ViewportSnapshot } from '../../shared/types';
 import type { KnowledgeHit, KnowledgeText } from '../../shared/knowledge/types';
 import type { RefreshOutcome, RefreshTarget } from '../../shared/knowledge/refresh';
 import { staleTargets } from '../../shared/knowledge/refresh';
@@ -1276,6 +1276,26 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
 
   const handleRunLane = useCallback((id: string) => {
     vscodePostMessage({ type: 'runSection', sectionId: id });
+  }, []);
+
+  const handleStopLane = useCallback((id: string) => {
+    vscodePostMessage({ type: 'stopSection', sectionId: id });
+  }, []);
+
+  // - the sections whose run the host reports in progress: the rail shows their ■
+  const [runningSections, setRunningSections] = useState<ReadonlySet<string>>(() => new Set());
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { sectionId, running } = (e as CustomEvent<MsgSectionRun>).detail;
+      setRunningSections(prev => {
+        if (prev.has(sectionId) === running) return prev;
+        const next = new Set(prev);
+        if (running) next.add(sectionId); else next.delete(sectionId);
+        return next;
+      });
+    };
+    window.addEventListener('skena:sectionRun', handler);
+    return () => window.removeEventListener('skena:sectionRun', handler);
   }, []);
 
   // - the only whole-section move: pack the columns and pairs tight and settle the notes. Its own
@@ -4534,8 +4554,8 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
     <KernelsContext.Provider value={kernels}>
     <EdgeRoutesContext.Provider value={edgeRoutes}>
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'row' }}>
-    <SectionRail lanes={derivedLanes} kernels={railKernels} selectedNodeId={selectedNodeId} selectedBandId={selectedBand}
-      onFold={handleFoldLane} onRun={handleRunLane} onReflow={handleReflowLane} onDelete={handleDeleteLane}
+    <SectionRail lanes={derivedLanes} kernels={railKernels} selectedNodeId={selectedNodeId} selectedBandId={selectedBand} runningIds={runningSections}
+      onFold={handleFoldLane} onRun={handleRunLane} onStop={handleStopLane} onReflow={handleReflowLane} onDelete={handleDeleteLane}
       onBindKernel={handleBindKernel} onRename={handleRenameLane} onNewSection={handleNewSectionClick}
       onNewKernel={handleNewKernel} onRemoveKernel={handleRemoveKernel} onKernelAction={handleKernelActionForLane}
       onCopyReference={handleCopySectionReference} />
