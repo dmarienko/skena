@@ -989,7 +989,8 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
   const drawnCopies = useRef(new WeakMap<Node, Node>());
   const rfNodes = useMemo(() => nodes.map(n => {
     const hid = hiddenByFold.has(n.id);
-    const shift = laneDisp[laneIdxOf.get(n.id) ?? 0]?.shift ?? 0;
+    // - a hidden node is not drawn: leaving it where it is stored spares its wrapper a render per step
+    const shift = hid ? 0 : laneDisp[laneIdxOf.get(n.id) ?? 0]?.shift ?? 0;
     if (!hid && shift === 0) return n;
     const was = drawnCopies.current.get(n);
     if (was && !!was.hidden === hid && was.position.y === n.position.y + shift) return was;
