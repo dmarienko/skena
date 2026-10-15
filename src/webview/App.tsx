@@ -325,6 +325,9 @@ export function App(): JSX.Element {
         case 'runStatus':
           window.dispatchEvent(new CustomEvent('skena:runStatus', { detail: msg }));
           break;
+        case 'sectionRun':
+          window.dispatchEvent(new CustomEvent('skena:sectionRun', { detail: msg }));
+          break;
         case 'runOutput':
           window.dispatchEvent(new CustomEvent('skena:runOutput', { detail: msg }));
           break;

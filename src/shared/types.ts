@@ -380,6 +380,10 @@ export interface MsgPickModel { type: 'pickModel'; }
 export interface MsgRunCell   { type: 'runCell'; cellNodeId: string; code: string; }
 // - run every code cell of a section top to bottom on its resolved kernel; the first error stops it
 export interface MsgRunSection { type: 'runSection'; sectionId: string; }
+// - stop this section's run: its queued cells are not run, the running one is interrupted
+export interface MsgStopSection { type: 'stopSection'; sectionId: string; }
+// - host → webview: a section's run started (running) or ended, however it ended
+export interface MsgSectionRun { type: 'sectionRun'; sectionId: string; running: boolean; }
 export interface MsgAddKernel {
   type: 'addKernel';
   position?: { x: number; y: number };
@@ -556,6 +560,7 @@ export type HostToWebview =
   | MsgKernelAdded
   | MsgKernelRemoved
   | MsgRunStatus
+  | MsgSectionRun
   | MsgRunOutput
   | MsgAddKernelTrigger
   | MsgNewSectionTrigger
@@ -901,6 +906,7 @@ export type WebviewToHost =
   | MsgPickModel
   | MsgRunCell
   | MsgRunSection
+  | MsgStopSection
   | MsgInterruptCell
   | MsgAddKernel
   | MsgKernelAction

@@ -34,6 +34,7 @@ import { kernelById, upstreamCellsForRun, resolveCellKernel, resolveKernelCellsI
 import type { KernelLike } from '../shared/kernelBinding';
 import { nextKernelColorIndex } from '../shared/kernelPalette';
 import { KernelManager } from './jupyter/manager';
+import type { KernelServerConfig } from './jupyter/config';
 import { listKernels, startKernel, listKernelSpecs, listSessions } from './jupyter/client';
 import { canvasSessionName } from './llm-adapters/harness';
 import { formatAttachments } from '../shared/chatAttachments';
@@ -58,6 +59,7 @@ import {
   KernelStatusEntry,
   MsgRunCell,
   MsgRunSection,
+  MsgStopSection,
   MsgInterruptCell,
   HostToWebview,
   WebviewToHost,
@@ -91,6 +93,7 @@ import { normalizeCanvasToOrigin } from '../shared/bounds';
 import { migrateSections, memberCodeCellsInRunOrder, applyLaneFit, outputCellGeom, pinOutputToLane } from '../shared/sectionLanes';
 import { placeOutput, sectionEngineNodes, markKeepRowOnLoad, layoutAround } from '../shared/layoutEngine';
 import { addChatNote } from '../shared/chatNote';
+import { SectionRuns } from '../shared/sectionRuns';
 import { copyNode, ownedOutputId } from '../shared/outputLink';
 import { youtubeId, YOUTUBE_NODE } from '../shared/youtube';
 import { findDefinitions, showDefinitions } from './definition/goToDefinition';
@@ -211,7 +214,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     });
   }
 
-  private runningSections = new Set<string>();   // - one run per section at a time
+  private sectionRuns = new SectionRuns();   // - one run per section at a time
 
   /** - providers for skena.knowledge.servers; reconfigured from settings on every webview ready */
   private knowledge = new KnowledgeService();
@@ -355,6 +358,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
             // - the code cells' colours, before the cells are drawn
             send({ type: 'codeConfig', config: getCodeConfig() });
             sendLoaded(canvas, version);
+            // - a section run outlives a close and reopen: the new webview shows its ■ too
+            for (const sectionId of this.sectionRuns.runningIn(document.uri.fsPath)) send({ type: 'sectionRun', sectionId, running: true });
             // - a cross-canvas reference opened this canvas — focus its target now that the webview
             // - has parsed it (document.canvas isn't ready any earlier than this)
             {
@@ -724,6 +729,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
           break;
         case 'runCell':      await this.handleRunCell(msg, manager, panel, document, commit); break;
         case 'runSection':   await this.handleRunSection(msg, manager, panel, document, commit); break;
+        case 'stopSection':  await this.handleStopSection(msg, manager, document); break;
         case 'addKernel':    await this.handleAddKernel(msg, manager, document, send, commit); break;
         case 'kernelAction': await this.handleKernelAction(msg, manager, document, commit); break;
         case 'removeKernel': await this.handleRemoveKernel(msg, manager, document, send, commit); break;
@@ -1951,7 +1957,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
 
   /**
    * Run every code cell of one section, top to bottom (y, then x), each on its resolved kernel.
-   * Every cell runs regardless of lastStatus; the first error stops the sequence.
+   * Every cell runs regardless of lastStatus; the first error stops the sequence, and so does a stop
+   * (handleStopSection). The webview hears when the run starts and ends, for the rail's ■.
    */
   private async handleRunSection(
     msg:            MsgRunSection,
@@ -1966,27 +1973,39 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       vscode.window.showInformationMessage('Skena: no code cells in this section.');
       return;
     }
-    // - section ids are sec-<timestamp>; two canvases can collide on the id alone
-    const key = `${document.uri.fsPath}::${msg.sectionId}`;
-    if (this.runningSections.has(key)) {
-      vscode.window.showInformationMessage('Skena: this section is already running.');
-      return;
-    }
-    this.runningSections.add(key);
+    // - the current panel on every send: a run can outlive a close and reopen
+    const send = (m: HostToWebview) => {
+      const p = SkenaEditorProvider.panelsByPath.get(document.uri.fsPath) ?? panel;
+      try { void p.webview.postMessage(m); } catch { /* - panel disposed */ }
+    };
+    const result = await this.sectionRuns.run(document.uri.fsPath, msg.sectionId, order, async id => {
+      // - re-read each turn: runOneCell rewrites the document's nodes (output node, flags)
+      const cell = document.canvas.nodes.find(n => n.id === id && n.type === 'code') as CodeNode | undefined;
+      if (!cell) return 'ok';
+      return this.runOneCell({ type: 'runCell', cellNodeId: cell.id, code: cell.code ?? '' }, manager, panel, document, commit);
+    }, running => send({ type: 'sectionRun', sectionId: msg.sectionId, running }));
+    if (result === 'busy') vscode.window.showInformationMessage('Skena: this section is already running.');
+  }
+
+  /** Stop a section's run: its queued cells are not started, and the kernel of the cell running now is interrupted. */
+  private async handleStopSection(msg: MsgStopSection, manager: KernelManager, document: SkenaDocument): Promise<void> {
+    const stopped = this.sectionRuns.stop(document.uri.fsPath, msg.sectionId);
+    if (!stopped?.cellId) return;
+    const live = this.liveKernelOfCell(document.canvas, stopped.cellId, manager);
+    if (!live) return;   // - its kernel is still starting: the cell runs, nothing after it does
     try {
-      for (const id of order) {
-        // - re-read each turn: runOneCell rewrites the document's nodes (output node, flags)
-        const cell = document.canvas.nodes.find(n => n.id === id && n.type === 'code') as CodeNode | undefined;
-        if (!cell) continue;
-        const st = await this.runOneCell(
-          { type: 'runCell', cellNodeId: cell.id, code: cell.code ?? '' },
-          manager, panel, document, commit,
-        );
-        if (st === 'error') return;
-      }
-    } finally {
-      this.runningSections.delete(key);
+      await manager.interrupt(live.server, live.kernelId);
+    } catch (e) {
+      void vscode.window.showErrorMessage(`Skena: interrupt failed: ${e instanceof Error ? e.message : String(e)}`);
     }
+  }
+
+  /** The live kernel a code cell runs on, resolved as a run resolves it (edge-bound kernel, else the section's); null when it has none running. */
+  private liveKernelOfCell(canvas: CanvasData, cellId: string, manager: KernelManager): { server: KernelServerConfig; kernelId: string } | null {
+    const kid = resolveCellKernel(cellId, cellKernelView(canvas));
+    const kernel: KernelLike | null = kid ? kernelById(canvas, kid) : null;
+    const server = kernel ? manager.serverByName(kernel.server) : undefined;
+    return kernel?.kernelId && server ? { server, kernelId: kernel.kernelId } : null;
   }
 
   /**
@@ -2210,10 +2229,8 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     const canvas = document.canvas;
     const cell = canvas.nodes.find(n => n.id === msg.cellNodeId && n.type === 'code') as CodeNode | undefined;
     if (!cell) return;
-    const boundKernelId = resolveCellKernel(cell.id, cellKernelView(canvas));
-    const kernel: KernelLike | null = boundKernelId ? kernelById(canvas, boundKernelId) : null;
-    const server = kernel ? manager.serverByName(kernel.server) : undefined;
-    if (!kernel || !kernel.kernelId || !server) {
+    const live = this.liveKernelOfCell(canvas, cell.id, manager);
+    if (!live) {
       void vscode.window.showWarningMessage('Skena: no running kernel bound to this cell.');
       return;
     }
@@ -2224,7 +2241,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
       if (choice !== 'Interrupt') return;
     }
     try {
-      await manager.interrupt(server, kernel.kernelId);
+      await manager.interrupt(live.server, live.kernelId);
     } catch (e) {
       void vscode.window.showErrorMessage(`Skena: interrupt failed: ${e instanceof Error ? e.message : String(e)}`);
     }
