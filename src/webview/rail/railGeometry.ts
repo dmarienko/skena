@@ -84,9 +84,10 @@ export interface RailLayout {
 
 /**
  * Which controls fit in a segment of `height` px, in display order. The fixed controls are taken in
- * priority order (S#, fold, ▶, the kernel buttons, kernel dot, delete) while they fit, so a shorter
- * segment loses them from the end of that list and keeps ▶ longest; the title is elastic: it replaces
- * the S# label and takes whatever is left, truncated, when that is at least TITLE_MIN_PX.
+ * priority order (S#, fold, run, kernel dot, delete) while they fit; the title is elastic: it replaces
+ * the S# label and takes whatever is left, truncated, when that is at least TITLE_MIN_PX. The kernel
+ * buttons (■ ❚❚ ↻ ⏻ ⇄) only take the room the whole title leaves, in that order, so a shorter segment
+ * loses them from the end first, before the title is cut; all of them are in the segment's menu.
  *
  * A folded section takes the chevron first: its range is one grid, so at a low zoom its segment is at
  * the 28px floor, which holds exactly one 20px button — and without the chevron there is no way to
@@ -97,10 +98,9 @@ export interface RailLayout {
  */
 export function railItems(height: number, titleChars: number, folded = false, kernel: KernelButton[] = []): RailLayout {
   const titleH = titleChars > 0 ? Math.ceil(titleChars * TITLE_PX_PER_CHAR) : 0;
-  const buttons: [RailItem, number][] = folded ? [] : kernel.map(k => [k, BTN_H]);
   const fixed: [RailItem, number][] = folded
     ? [['fold', BTN_H], ['label', LABEL_H], ['run', BTN_H], ['kernel', DOT_BTN_H], ['delete', BTN_H]]
-    : [['label', LABEL_H], ['fold', BTN_H], ['run', BTN_H], ...buttons, ['kernel', DOT_BTN_H], ['delete', BTN_H]];
+    : [['label', LABEL_H], ['fold', BTN_H], ['run', BTN_H], ['kernel', DOT_BTN_H], ['delete', BTN_H]];
   let budget = height - SEG_PAD_TOP;
   const got = new Set<RailItem>();
   for (const [item, h] of fixed) {
@@ -115,6 +115,15 @@ export function railItems(height: number, titleChars: number, folded = false, ke
       got.delete('label');
       got.add('title');
       titleMaxPx = Math.min(titleH, avail);
+      budget = avail - titleMaxPx;
+    }
+  }
+  // - only beside a whole title: a cut title (or S# in its place) means the buttons already went
+  if (!folded && (titleH === 0 || titleMaxPx === titleH)) {
+    for (const k of kernel) {
+      if (budget < BTN_H) break;
+      got.add(k);
+      budget -= BTN_H + ITEM_GAP;
     }
   }
   // - title and label are exclusive

@@ -104,24 +104,30 @@ test('kernelButtons: a folded section shows none of them', () => {
 
 const ALL_K = ['stop', 'interrupt', 'restart', 'shutdown', 'select'];
 
-test('railItems: the kernel buttons sit between ▶ and the kernel dot', () => {
+test('railItems: the kernel buttons are drawn between ▶ and the kernel dot', () => {
   assert.deepEqual(railItems(600, 20, false, ALL_K).items,
     ['fold', 'title', 'run', 'stop', 'interrupt', 'restart', 'shutdown', 'select', 'kernel', 'delete']);
   assert.deepEqual(railItems(600, 20, false, ['select']).items, ['fold', 'title', 'run', 'select', 'kernel', 'delete']);
 });
 
-test('railItems: a shorter segment drops buttons from the end of ▶ ■ ❚❚ ↻ ⏻ ⇄ ● ✕ and keeps ▶', () => {
-  const order = ['run', 'stop', 'interrupt', 'restart', 'shutdown', 'select', 'kernel', 'delete'];
-  let prev = order.length;
+test('railItems: a shorter segment drops the kernel buttons from the end of ■ ❚❚ ↻ ⏻ ⇄, before the title is cut or ▶ ● ✕ go', () => {
+  const kb = ['stop', 'interrupt', 'restart', 'shutdown', 'select'];
+  const titleH = Math.ceil(20 * 6.5);
+  let prev = kb.length;
   // - 74 is the least height that holds S#, the chevron and ▶ (as before the kernel buttons)
   for (let h = 400; h >= 74; h--) {
-    const got = railItems(h, 20, false, ALL_K).items.filter(i => order.includes(i));
-    assert.deepEqual(got, order.slice(0, got.length), `height ${h}: ${got}`);
+    const { items, titleMaxPx } = railItems(h, 20, false, ALL_K);
+    const got = items.filter(i => kb.includes(i));
+    assert.deepEqual(got, kb.slice(0, got.length), `height ${h}: ${items}`);
     assert.ok(got.length <= prev, `height ${h}: grew from ${prev} to ${got.length}`);
-    assert.ok(got.includes('run'), `height ${h}: lost ▶`);
+    assert.ok(items.includes('run'), `height ${h}: lost ▶`);
+    if (got.length > 0) assert.ok(titleMaxPx === titleH && items.includes('kernel') && items.includes('delete'), `height ${h}: a kernel button kept over the title, ● or ✕: ${items} ${titleMaxPx}`);
     prev = got.length;
   }
-  assert.deepEqual(railItems(140, 20, false, ALL_K).items, ['fold', 'label', 'run', 'stop', 'interrupt']);
+  // - the full title first, then as many buttons as fit
+  assert.deepEqual(railItems(300, 20, false, ALL_K), { items: ['fold', 'title', 'run', 'stop', 'interrupt', 'kernel', 'delete'], titleMaxPx: titleH });
+  // - no room for them: exactly the controls of a section without kernel buttons
+  assert.deepEqual(railItems(140, 20, false, ALL_K), railItems(140, 20));
 });
 
 test('railItems: with the kernel buttons the stacked boxes still never exceed the segment', () => {
