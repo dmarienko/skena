@@ -57,7 +57,24 @@ export function railSegments(
   return out;
 }
 
-export type RailItem = 'label' | 'fold' | 'title' | 'run' | 'kernel' | 'delete';
+/** - the kernel controls of an open section, after ▶: stop the section run, interrupt, restart, shut down, select */
+export type KernelButton = 'stop' | 'interrupt' | 'restart' | 'shutdown' | 'select';
+
+export type RailItem = 'label' | 'fold' | 'title' | 'run' | KernelButton | 'kernel' | 'delete';
+
+/**
+ * Which kernel buttons an open section offers, in display order. ■ only while this section's run is
+ * in progress (a section with no kernel of its own still runs the cells that have a kernel edge);
+ * ❚❚ ↻ ⏻ only while the bound kernel is alive; ⇄ always. A folded section shows none of them.
+ */
+export function kernelButtons(s: { folded: boolean; bound: boolean; live: boolean; running: boolean }): KernelButton[] {
+  if (s.folded) return [];
+  const out: KernelButton[] = [];
+  if (s.running) out.push('stop');
+  if (s.bound && s.live) out.push('interrupt', 'restart', 'shutdown');
+  out.push('select');
+  return out;
+}
 
 export interface RailLayout {
   items: RailItem[];
@@ -67,21 +84,23 @@ export interface RailLayout {
 
 /**
  * Which controls fit in a segment of `height` px, in display order. The fixed controls are taken in
- * priority order (S#, fold, run, kernel, delete) while they fit; the title is elastic: it replaces the
- * S# label and takes whatever is left, truncated, when that is at least TITLE_MIN_PX.
+ * priority order (S#, fold, ▶, the kernel buttons, kernel dot, delete) while they fit, so a shorter
+ * segment loses them from the end of that list and keeps ▶ longest; the title is elastic: it replaces
+ * the S# label and takes whatever is left, truncated, when that is at least TITLE_MIN_PX.
  *
  * A folded section takes the chevron first: its range is one grid, so at a low zoom its segment is at
  * the 28px floor, which holds exactly one 20px button — and without the chevron there is no way to
- * unfold from the rail.
+ * unfold from the rail. It never shows the kernel buttons.
  *
  * The heights are the RENDERED boxes (BTN_H, DOT_BTN_H, LABEL_H), not the icons inside them — budget
  * an icon size here and the last control ends up clipped by the column's overflow instead of dropped.
  */
-export function railItems(height: number, titleChars: number, folded = false): RailLayout {
+export function railItems(height: number, titleChars: number, folded = false, kernel: KernelButton[] = []): RailLayout {
   const titleH = titleChars > 0 ? Math.ceil(titleChars * TITLE_PX_PER_CHAR) : 0;
+  const buttons: [RailItem, number][] = folded ? [] : kernel.map(k => [k, BTN_H]);
   const fixed: [RailItem, number][] = folded
     ? [['fold', BTN_H], ['label', LABEL_H], ['run', BTN_H], ['kernel', DOT_BTN_H], ['delete', BTN_H]]
-    : [['label', LABEL_H], ['fold', BTN_H], ['run', BTN_H], ['kernel', DOT_BTN_H], ['delete', BTN_H]];
+    : [['label', LABEL_H], ['fold', BTN_H], ['run', BTN_H], ...buttons, ['kernel', DOT_BTN_H], ['delete', BTN_H]];
   let budget = height - SEG_PAD_TOP;
   const got = new Set<RailItem>();
   for (const [item, h] of fixed) {
@@ -98,6 +117,7 @@ export function railItems(height: number, titleChars: number, folded = false): R
       titleMaxPx = Math.min(titleH, avail);
     }
   }
-  const order: RailItem[] = ['fold', 'title', 'label', 'run', 'kernel', 'delete'];   // - title and label are exclusive
+  // - title and label are exclusive
+  const order: RailItem[] = ['fold', 'title', 'label', 'run', 'stop', 'interrupt', 'restart', 'shutdown', 'select', 'kernel', 'delete'];
   return { items: order.filter(i => got.has(i)), titleMaxPx };
 }

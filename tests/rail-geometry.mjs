@@ -1,7 +1,7 @@
 // - run: npx esbuild src/webview/rail/railGeometry.ts --bundle --format=esm --outfile=tests/.build/railGeometry.mjs && node --test tests/rail-geometry.mjs
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { railSegments, railItems, SEG_MIN_H, BTN_H, DOT_BTN_H, LABEL_H } from './.build/railGeometry.mjs';
+import { railSegments, railItems, kernelButtons, SEG_MIN_H, BTN_H, DOT_BTN_H, LABEL_H } from './.build/railGeometry.mjs';
 
 const lane = (id, top, bottom) => ({ id, top, bottom });
 
@@ -86,4 +86,53 @@ test('railItems: a folded section takes the chevron first, so the rail can alway
   assert.deepEqual(railItems(28, 20, true), { items: ['fold'], titleMaxPx: 0 });
   assert.deepEqual(railItems(28, 20).items, ['label']);   // - unfolded: unchanged
   assert.deepEqual(railItems(60, 20, true).items, ['fold', 'label']);
+});
+
+test('kernelButtons: what an open section offers in each state, in display order', () => {
+  const open = { folded: false, bound: false, live: false, running: false };
+  assert.deepEqual(kernelButtons(open), ['select']);                                        // - no kernel: pick one
+  assert.deepEqual(kernelButtons({ ...open, bound: true }), ['select']);                    // - bound, not started
+  assert.deepEqual(kernelButtons({ ...open, bound: true, live: true }), ['interrupt', 'restart', 'shutdown', 'select']);
+  assert.deepEqual(kernelButtons({ ...open, bound: true, live: true, running: true }), ['stop', 'interrupt', 'restart', 'shutdown', 'select']);
+  assert.deepEqual(kernelButtons({ ...open, running: true }), ['stop', 'select']);          // - cells with a kernel edge run without a section kernel
+});
+
+test('kernelButtons: a folded section shows none of them', () => {
+  assert.deepEqual(kernelButtons({ folded: true, bound: true, live: true, running: true }), []);
+  assert.deepEqual(kernelButtons({ folded: true, bound: false, live: false, running: false }), []);
+});
+
+const ALL_K = ['stop', 'interrupt', 'restart', 'shutdown', 'select'];
+
+test('railItems: the kernel buttons sit between ▶ and the kernel dot', () => {
+  assert.deepEqual(railItems(600, 20, false, ALL_K).items,
+    ['fold', 'title', 'run', 'stop', 'interrupt', 'restart', 'shutdown', 'select', 'kernel', 'delete']);
+  assert.deepEqual(railItems(600, 20, false, ['select']).items, ['fold', 'title', 'run', 'select', 'kernel', 'delete']);
+});
+
+test('railItems: a shorter segment drops buttons from the end of ▶ ■ ❚❚ ↻ ⏻ ⇄ ● ✕ and keeps ▶', () => {
+  const order = ['run', 'stop', 'interrupt', 'restart', 'shutdown', 'select', 'kernel', 'delete'];
+  let prev = order.length;
+  // - 74 is the least height that holds S#, the chevron and ▶ (as before the kernel buttons)
+  for (let h = 400; h >= 74; h--) {
+    const got = railItems(h, 20, false, ALL_K).items.filter(i => order.includes(i));
+    assert.deepEqual(got, order.slice(0, got.length), `height ${h}: ${got}`);
+    assert.ok(got.length <= prev, `height ${h}: grew from ${prev} to ${got.length}`);
+    assert.ok(got.includes('run'), `height ${h}: lost ▶`);
+    prev = got.length;
+  }
+  assert.deepEqual(railItems(140, 20, false, ALL_K).items, ['fold', 'label', 'run', 'stop', 'interrupt']);
+});
+
+test('railItems: with the kernel buttons the stacked boxes still never exceed the segment', () => {
+  const box = { label: LABEL_H, fold: BTN_H, title: 0, run: BTN_H, kernel: DOT_BTN_H, delete: BTN_H, stop: BTN_H, interrupt: BTN_H, restart: BTN_H, shutdown: BTN_H, select: BTN_H };
+  for (let h = 10; h <= 600; h++) {
+    const { items, titleMaxPx } = railItems(h, 20, false, ALL_K);
+    const stacked = 8 + items.reduce((s, i) => s + (i === 'title' ? titleMaxPx : box[i]), 0) + Math.max(0, items.length - 1) * 7;
+    assert.ok(stacked <= h, `height ${h}: stacked ${stacked}`);
+  }
+});
+
+test('railItems: a folded section never shows kernel buttons, even when passed', () => {
+  assert.deepEqual(railItems(600, 20, true, ALL_K).items, ['fold', 'title', 'run', 'kernel', 'delete']);
 });
