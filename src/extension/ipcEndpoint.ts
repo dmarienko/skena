@@ -17,7 +17,7 @@ export function hashPath(p: string): string {
   return (h >>> 0).toString(36);
 }
 
-function userName(): string {
+export function userName(): string {
   try { return os.userInfo().username; } catch { return 'user'; }
 }
 
@@ -37,7 +37,7 @@ export function endpointFile(workspaceDir: string, tmp?: string): string {
 
 // - `dir`, created owner-only when new; refused when it is a link, another user's, or (once chmod
 //   cannot close it) open to others. No owner checks where there are no uids (Windows).
-function ownDir(dir: string): void {
+export function ownDir(dir: string): void {
   try { fs.mkdirSync(dir, { mode: 0o700 }); } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e; }
   const uid = process.getuid?.();
   let st = fs.lstatSync(dir);

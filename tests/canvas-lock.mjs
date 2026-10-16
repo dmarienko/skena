@@ -99,9 +99,38 @@ test('a canvas reached through a symlinked folder has the same lock as by its re
   } finally { fs.rmSync(link, { force: true }); }
 });
 
-test('a canvas that does not exist yet still has a lock path next to it', async () => {
+test('a canvas that does not exist yet has the lock it will have once created', async () => {
   const d = dir();
-  assert.equal(await lockPathFor(path.join(d, 'new.canvas')), path.join(fs.realpathSync(d), 'new.canvas.lock'));
+  const p = path.join(d, 'new.canvas');
+  const before = await lockPathFor(p);
+  fs.writeFileSync(p, '{"nodes":[],"edges":[]}');
+  assert.equal(await lockPathFor(p), before);
+});
+
+test('the lock is not in the canvas folder but in a folder only this user can use', async () => {
+  const p = canvasIn(dir());
+  const lockFolder = path.dirname(await lockPathFor(p));
+  assert.notEqual(lockFolder, path.dirname(fs.realpathSync(p)));
+  const st = fs.lstatSync(lockFolder);
+  assert.ok(st.isDirectory());
+  assert.equal(st.uid, process.getuid());
+  assert.equal(st.mode & 0o077, 0);
+});
+
+test('canvases of the same name in different folders have different locks', async () => {
+  assert.notEqual(await lockPathFor(canvasIn(dir())), await lockPathFor(canvasIn(dir())));
+});
+
+test('a process whose TMPDIR and XDG_RUNTIME_DIR name other folders finds the same lock', async () => {
+  const p = canvasIn(dir());
+  const other = dir();
+  const child = spawn(process.execPath, ['--input-type=module', '-e',
+    `import { lockPathFor } from ${JSON.stringify(BUILD)}; console.log(await lockPathFor(${JSON.stringify(p)}));`],
+    { env: { ...process.env, TMPDIR: other, XDG_RUNTIME_DIR: other } });
+  let out = '';
+  child.stdout.on('data', c => { out += c; });
+  await new Promise(r => child.on('exit', r));
+  assert.equal(out.trim(), await lockPathFor(p));
 });
 
 test('a lock refreshed lately is not stale, however long ago it was taken', async () => {

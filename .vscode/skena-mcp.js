@@ -2309,7 +2309,7 @@ var require_websocket = __commonJS({
     var http3 = require("http");
     var net = require("net");
     var tls = require("tls");
-    var { randomBytes: randomBytes2, createHash } = require("crypto");
+    var { randomBytes: randomBytes2, createHash: createHash2 } = require("crypto");
     var { Duplex, Readable } = require("stream");
     var { URL: URL2 } = require("url");
     var PerMessageDeflate2 = require_permessage_deflate();
@@ -2997,7 +2997,7 @@ var require_websocket = __commonJS({
           abortHandshake(websocket, socket, "Invalid Upgrade header");
           return;
         }
-        const digest = createHash("sha1").update(key + GUID).digest("base64");
+        const digest = createHash2("sha1").update(key + GUID).digest("base64");
         if (res.headers["sec-websocket-accept"] !== digest) {
           abortHandshake(websocket, socket, "Invalid Sec-WebSocket-Accept header");
           return;
@@ -3386,7 +3386,7 @@ var require_websocket_server = __commonJS({
     var EventEmitter = require("events");
     var http3 = require("http");
     var { Duplex } = require("stream");
-    var { createHash } = require("crypto");
+    var { createHash: createHash2 } = require("crypto");
     var extension2 = require_extension();
     var PerMessageDeflate2 = require_permessage_deflate();
     var subprotocol2 = require_subprotocol();
@@ -3701,7 +3701,7 @@ var require_websocket_server = __commonJS({
         }
         if (this._state > RUNNING)
           return abortHandshake(socket, 503);
-        const digest = createHash("sha1").update(key + GUID).digest("base64");
+        const digest = createHash2("sha1").update(key + GUID).digest("base64");
         const headers = [
           "HTTP/1.1 101 Switching Protocols",
           "Upgrade: websocket",
@@ -6365,10 +6365,74 @@ function tidy(c, fileLabels) {
 }
 
 // src/extension/canvasLock.ts
-var fs = __toESM(require("fs/promises"));
+var fs2 = __toESM(require("fs/promises"));
+var os2 = __toESM(require("os"));
+var path3 = __toESM(require("path"));
+var import_crypto = require("crypto");
+
+// src/extension/ipcEndpoint.ts
+var fs = __toESM(require("fs"));
 var os = __toESM(require("os"));
 var path2 = __toESM(require("path"));
-var import_crypto = require("crypto");
+function hashPath(p) {
+  let h = 0;
+  for (let i = 0; i < p.length; i++) {
+    h = h * 31 + p.charCodeAt(i) | 0;
+  }
+  return (h >>> 0).toString(36);
+}
+function userName() {
+  try {
+    return os.userInfo().username;
+  } catch {
+    return "user";
+  }
+}
+function endpointDirs(tmp) {
+  const inTmp = path2.join(tmp ?? os.tmpdir(), `skena-${userName()}`);
+  const xdg = tmp ? void 0 : process.env.XDG_RUNTIME_DIR;
+  return xdg ? [path2.join(xdg, "skena"), inTmp] : [inTmp];
+}
+var fileName = (workspaceDir) => `skena-ipc-${hashPath(path2.resolve(workspaceDir))}.json`;
+function ownDir(dir) {
+  try {
+    fs.mkdirSync(dir, { mode: 448 });
+  } catch (e) {
+    if (e.code !== "EEXIST")
+      throw e;
+  }
+  const uid2 = process.getuid?.();
+  let st = fs.lstatSync(dir);
+  if (!st.isDirectory() || uid2 !== void 0 && st.uid !== uid2)
+    throw new Error(`${dir} is not a folder only this user can use`);
+  if (uid2 !== void 0 && (st.mode & 63) !== 0) {
+    fs.chmodSync(dir, 448);
+    st = fs.lstatSync(dir);
+    if ((st.mode & 63) !== 0)
+      throw new Error(`${dir} is not a folder only this user can use`);
+  }
+}
+function readFile(file, workspaceDir) {
+  try {
+    const uid2 = process.getuid?.();
+    if (uid2 !== void 0 && fs.statSync(file).uid !== uid2)
+      return null;
+    const j = JSON.parse(fs.readFileSync(file, "utf-8"));
+    return typeof j.endpoint === "string" && j.workspaceDir === path2.resolve(workspaceDir) ? j.endpoint : null;
+  } catch {
+    return null;
+  }
+}
+function readEndpoint(workspaceDir, tmp) {
+  for (const dir of endpointDirs(tmp)) {
+    const endpoint = readFile(path2.join(dir, fileName(workspaceDir)), workspaceDir);
+    if (endpoint)
+      return endpoint;
+  }
+  return null;
+}
+
+// src/extension/canvasLock.ts
 var LOCK_WAIT_MS = 15e3;
 var LOCK_STALE_MS = 1e4;
 var LOCK_HEARTBEAT_MS = 1e3;
@@ -6382,18 +6446,32 @@ var CanvasLockLost = class extends Error {
   }
 };
 var lockWasLost = (e) => e?.name === "CanvasLockLost";
-async function lockPathFor(fsPath) {
-  const abs = path2.resolve(fsPath);
+function lockDir() {
+  const uid2 = process.getuid?.();
+  const base = uid2 === void 0 ? path3.join(os2.tmpdir(), `skena-${userName()}`) : path3.join("/tmp", `skena-${uid2}`);
+  ownDir(base);
+  const dir = path3.join(base, "locks");
+  ownDir(dir);
+  return dir;
+}
+async function realCanvasPath(fsPath) {
+  const abs = path3.resolve(fsPath);
   try {
-    return `${await fs.realpath(abs)}.lock`;
+    return await fs2.realpath(abs);
   } catch {
-    let dir = path2.dirname(abs);
+    let dir = path3.dirname(abs);
     try {
-      dir = await fs.realpath(dir);
+      dir = await fs2.realpath(dir);
     } catch {
     }
-    return `${path2.join(dir, path2.basename(abs))}.lock`;
+    return path3.join(dir, path3.basename(abs));
   }
+}
+async function lockPathFor(fsPath) {
+  const real = await realCanvasPath(fsPath);
+  const key = process.platform === "win32" || process.platform === "darwin" ? real.toLowerCase() : real;
+  const hash = (0, import_crypto.createHash)("sha256").update(key).digest("hex").slice(0, 16);
+  return path3.join(lockDir(), `${path3.basename(real).slice(0, 80)}.${hash}.lock`);
 }
 function alive(pid) {
   try {
@@ -6405,8 +6483,8 @@ function alive(pid) {
 }
 async function inspectLock(lock) {
   try {
-    const st = await fs.stat(lock);
-    const raw = await fs.readFile(lock, "utf-8");
+    const st = await fs2.stat(lock);
+    const raw = await fs2.readFile(lock, "utf-8");
     let holder = null;
     try {
       holder = JSON.parse(raw);
@@ -6420,20 +6498,20 @@ async function inspectLock(lock) {
 function stale(l, staleMs, now) {
   if (now - l.mtime > staleMs)
     return true;
-  return !!l.holder && l.holder.host === os.hostname() && !alive(l.holder.pid);
+  return !!l.holder && l.holder.host === os2.hostname() && !alive(l.holder.pid);
 }
 var sameFile = (a, b) => !!a && a.raw === b.raw && a.mtime === b.mtime;
 async function breakStale(lock, seen, token) {
   const brk = `${lock}.break`;
   try {
-    await (await fs.open(brk, "wx")).close();
+    await (await fs2.open(brk, "wx")).close();
   } catch (e) {
     if (e.code !== "EEXIST")
       return false;
     try {
-      const st = await fs.stat(brk);
+      const st = await fs2.stat(brk);
       if (Date.now() - st.mtimeMs > BREAK_STALE_MS)
-        await fs.rm(brk, { force: true });
+        await fs2.rm(brk, { force: true });
     } catch {
     }
     return false;
@@ -6446,19 +6524,19 @@ async function breakStale(lock, seen, token) {
       return false;
     const aside = `${lock}.${token}.broken`;
     try {
-      await fs.rename(lock, aside);
+      await fs2.rename(lock, aside);
     } catch {
       return true;
     }
     if (!sameFile(await inspectLock(aside), seen)) {
-      await fs.link(aside, lock).catch(() => void 0);
-      await fs.rm(aside, { force: true });
+      await fs2.link(aside, lock).catch(() => void 0);
+      await fs2.rm(aside, { force: true });
       return false;
     }
-    await fs.rm(aside, { force: true });
+    await fs2.rm(aside, { force: true });
     return true;
   } finally {
-    await fs.rm(brk, { force: true });
+    await fs2.rm(brk, { force: true });
   }
 }
 function describe(h) {
@@ -6473,9 +6551,9 @@ async function withCanvasLock(fsPath, by, fn, opts = {}) {
   const deadline = Date.now() + waitMs;
   for (let pause = 2; ; pause = Math.min(pause * 2, 50)) {
     try {
-      const h = await fs.open(lock, "wx");
+      const h = await fs2.open(lock, "wx");
       try {
-        const me = { pid: process.pid, host: os.hostname(), at: Date.now(), by, token };
+        const me = { pid: process.pid, host: os2.hostname(), at: Date.now(), by, token };
         await h.writeFile(JSON.stringify(me));
       } finally {
         await h.close();
@@ -6489,7 +6567,7 @@ async function withCanvasLock(fsPath, by, fn, opts = {}) {
     if (seen && stale(seen, staleMs, Date.now()) && await breakStale(lock, seen, token))
       continue;
     if (Date.now() >= deadline) {
-      throw new CanvasLockTimeout(`${path2.basename(fsPath)} is locked by ${describe(seen?.holder ?? null)}; waited ${waitMs} ms, nothing written`);
+      throw new CanvasLockTimeout(`${path3.basename(fsPath)} is locked by ${describe(seen?.holder ?? null)}; waited ${waitMs} ms, nothing written`);
     }
     await new Promise((r) => setTimeout(r, pause));
   }
@@ -6499,39 +6577,39 @@ async function withCanvasLock(fsPath, by, fn, opts = {}) {
       if (!await ours())
         return;
       const t = /* @__PURE__ */ new Date();
-      await fs.utimes(lock, t, t).catch(() => void 0);
+      await fs2.utimes(lock, t, t).catch(() => void 0);
     })();
   }, heartbeatMs);
   beat.unref?.();
   const held = async () => {
     if (!await ours())
-      throw new CanvasLockLost(`the lock on ${path2.basename(fsPath)} was taken over; nothing written`);
+      throw new CanvasLockLost(`the lock on ${path3.basename(fsPath)} was taken over; nothing written`);
   };
   try {
     return await fn(held);
   } finally {
     clearInterval(beat);
     if (await ours())
-      await fs.rm(lock, { force: true });
+      await fs2.rm(lock, { force: true });
   }
 }
 
 // src/extension/canvas-io.ts
-var fs2 = __toESM(require("fs/promises"));
-var path3 = __toESM(require("path"));
-var os2 = __toESM(require("os"));
+var fs3 = __toESM(require("fs/promises"));
+var path4 = __toESM(require("path"));
+var os3 = __toESM(require("os"));
 function expandHome(p) {
-  return p.startsWith("~/") ? path3.join(os2.homedir(), p.slice(2)) : p;
+  return p.startsWith("~/") ? path4.join(os3.homedir(), p.slice(2)) : p;
 }
 async function writeCanvasJson(fsPath, json, held) {
-  const target = await fs2.realpath(expandHome(fsPath)).catch(() => expandHome(fsPath));
+  const target = await fs3.realpath(expandHome(fsPath)).catch(() => expandHome(fsPath));
   const tmp = `${target}.${process.pid}.${Date.now().toString(36)}.${(++tmpSeq).toString(36)}.tmp`;
   try {
-    await fs2.writeFile(tmp, json, "utf-8");
+    await fs3.writeFile(tmp, json, "utf-8");
     await held?.();
-    await fs2.rename(tmp, target);
+    await fs3.rename(tmp, target);
   } catch (e) {
-    await fs2.rm(tmp, { force: true });
+    await fs3.rm(tmp, { force: true });
     throw e;
   }
 }
@@ -6542,12 +6620,12 @@ async function createCanvasJson(fsPath, json) {
   const target = expandHome(fsPath);
   const tmp = `${target}.${process.pid}.${Date.now().toString(36)}.${(++tmpSeq).toString(36)}.tmp`;
   try {
-    await fs2.writeFile(tmp, json, "utf-8");
-    await fs2.link(tmp, target).catch((e) => {
-      throw e.code === "EEXIST" ? new CanvasExists(`${path3.basename(target)} already exists`) : e;
+    await fs3.writeFile(tmp, json, "utf-8");
+    await fs3.link(tmp, target).catch((e) => {
+      throw e.code === "EEXIST" ? new CanvasExists(`${path4.basename(target)} already exists`) : e;
     });
   } finally {
-    await fs2.rm(tmp, { force: true });
+    await fs3.rm(tmp, { force: true });
   }
 }
 
@@ -6990,50 +7068,6 @@ function renderOutput(out) {
   if (out.error)
     parts.push(`<pre class="skena-out-error">${ansiToHtml(out.error)}</pre>`);
   return { format: "html", content: parts.join("\n") };
-}
-
-// src/extension/ipcEndpoint.ts
-var fs3 = __toESM(require("fs"));
-var os3 = __toESM(require("os"));
-var path4 = __toESM(require("path"));
-function hashPath(p) {
-  let h = 0;
-  for (let i = 0; i < p.length; i++) {
-    h = h * 31 + p.charCodeAt(i) | 0;
-  }
-  return (h >>> 0).toString(36);
-}
-function userName() {
-  try {
-    return os3.userInfo().username;
-  } catch {
-    return "user";
-  }
-}
-function endpointDirs(tmp) {
-  const inTmp = path4.join(tmp ?? os3.tmpdir(), `skena-${userName()}`);
-  const xdg = tmp ? void 0 : process.env.XDG_RUNTIME_DIR;
-  return xdg ? [path4.join(xdg, "skena"), inTmp] : [inTmp];
-}
-var fileName = (workspaceDir) => `skena-ipc-${hashPath(path4.resolve(workspaceDir))}.json`;
-function readFile3(file, workspaceDir) {
-  try {
-    const uid2 = process.getuid?.();
-    if (uid2 !== void 0 && fs3.statSync(file).uid !== uid2)
-      return null;
-    const j = JSON.parse(fs3.readFileSync(file, "utf-8"));
-    return typeof j.endpoint === "string" && j.workspaceDir === path4.resolve(workspaceDir) ? j.endpoint : null;
-  } catch {
-    return null;
-  }
-}
-function readEndpoint(workspaceDir, tmp) {
-  for (const dir of endpointDirs(tmp)) {
-    const endpoint = readFile3(path4.join(dir, fileName(workspaceDir)), workspaceDir);
-    if (endpoint)
-      return endpoint;
-  }
-  return null;
 }
 
 // src/extension/mcp/exportRequest.ts

@@ -3,10 +3,11 @@
  * each MCP server (mcp/server.ts). A writer holds it from its read of the file to the end of its write,
  * so no other writer's change can land between the read its merge is based on and the rename.
  *
- * The lock is the file `<canvas real path>.lock`, created with O_EXCL and holding the holder's pid,
- * host name, start time and a token. Next to the canvas, not in a temp or runtime folder: the canvas
- * path is the one thing both processes are sure to agree on (TMPDIR and XDG_RUNTIME_DIR come from each
- * process's own environment); the real path makes a symlinked route to the same file agree too.
+ * The lock is a file in /tmp/skena-<uid>/locks named from the canvas's real path, created with O_EXCL
+ * and holding the holder's pid, host name, start time and a token. The folder is fixed rather than
+ * os.tmpdir() or $XDG_RUNTIME_DIR, which come from each process's own environment: two processes that
+ * named different folders would each take a lock of their own. The real path makes a symlinked route
+ * to the same file agree too. A canvas on a network folder written from two machines is not covered.
  *
  * - Holding: the holder touches the lock file's mtime every LOCK_HEARTBEAT_MS, so a slow live holder
  *   never looks stale. `held()`, given to the work, says whether the lock still holds our token; a
@@ -22,7 +23,8 @@
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
+import { ownDir, userName } from './ipcEndpoint';
 
 export const LOCK_WAIT_MS = 15_000;
 export const LOCK_STALE_MS = 10_000;
@@ -42,16 +44,38 @@ interface Holder { pid: number; host: string; at: number; by: string; token: str
 /** - a lock file as one look at it found it */
 export interface LockSeen { raw: string; holder: Holder | null; mtime: number }
 
-/** - the lock file of a canvas: next to its real path; a canvas not created yet goes by its folder's real path */
-export async function lockPathFor(fsPath: string): Promise<string> {
+/**
+ * - the folder every lock is in, created owner-only; throws when it is a link or another user's.
+ *   Windows has no /tmp and no uids: skena-<user> in its temp folder.
+ */
+export function lockDir(): string {
+  const uid = process.getuid?.();
+  const base = uid === undefined ? path.join(os.tmpdir(), `skena-${userName()}`) : path.join('/tmp', `skena-${uid}`);
+  ownDir(base);
+  const dir = path.join(base, 'locks');
+  ownDir(dir);
+  return dir;
+}
+
+// - a canvas not created yet goes by its folder's real path, so its lock is the same before and after
+async function realCanvasPath(fsPath: string): Promise<string> {
   const abs = path.resolve(fsPath);
   try {
-    return `${await fs.realpath(abs)}.lock`;
+    return await fs.realpath(abs);
   } catch {
     let dir = path.dirname(abs);
     try { dir = await fs.realpath(dir); } catch { /* - folder missing too: the plain path */ }
-    return `${path.join(dir, path.basename(abs))}.lock`;
+    return path.join(dir, path.basename(abs));
   }
+}
+
+/** - the lock file of a canvas: its name, then a hash of its real path */
+export async function lockPathFor(fsPath: string): Promise<string> {
+  const real = await realCanvasPath(fsPath);
+  // - folders that ignore case by default: two spellings must share a lock; sharing one needlessly only makes a writer wait
+  const key = process.platform === 'win32' || process.platform === 'darwin' ? real.toLowerCase() : real;
+  const hash = createHash('sha256').update(key).digest('hex').slice(0, 16);
+  return path.join(lockDir(), `${path.basename(real).slice(0, 80)}.${hash}.lock`);
 }
 
 function alive(pid: number): boolean {

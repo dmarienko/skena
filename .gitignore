@@ -13,7 +13,5 @@ tests/.build/
 # - personal overrides (tokens); see src/extension/settings.ts
 .vscode/settings.local.json
 
-# - a canvas's write lock and break file, and the temp file of a write in progress (src/extension/canvasLock.ts, canvas-io.ts)
-*.canvas.lock
-*.canvas.lock.*
+# - the temp file of a canvas write in progress (src/extension/canvas-io.ts); its lock is in /tmp/skena-<uid>/locks
 *.canvas.*.tmp
