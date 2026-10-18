@@ -6909,7 +6909,19 @@ function renderWidget(modelId, widgets, depth = 0) {
 var MAX_OUTPUT_HTML_BYTES = 4e5;
 var MAX_OUTPUT_HTML_ROWS = 200;
 var MAX_OUTPUT_TEXT_CHARS = 2e5;
+var DATA_IMAGE = /data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=\s]*/gi;
+var STAND_IN = /\u0000skena-img-(\d+)\u0000/g;
 function capOutputHtml(html) {
+  if (html.includes("\0"))
+    return capBareHtml(html);
+  const images = [];
+  const bare = html.replace(DATA_IMAGE, (m) => `\0skena-img-${images.push(m) - 1}\0`);
+  const capped = capBareHtml(bare);
+  if (capped === bare)
+    return html;
+  return capped.replace(STAND_IN, (_, i) => images[Number(i)]);
+}
+function capBareHtml(html) {
   const rows = (html.match(/<\/tr>/gi) ?? []).length;
   if (rows <= MAX_OUTPUT_HTML_ROWS && html.length <= MAX_OUTPUT_HTML_BYTES)
     return html;
@@ -6928,7 +6940,10 @@ function capOutputHtml(html) {
       return html.slice(0, cut) + `</tbody></table><div class="skena-out-truncated">\u26A0 output truncated \u2014 showing first ${MAX_OUTPUT_HTML_ROWS} of ${rows} rows</div>`;
     }
   }
-  return html.slice(0, MAX_OUTPUT_HTML_BYTES) + `<div class="skena-out-truncated">\u26A0 output truncated \u2014 ${Math.round(html.length / 1024)} KB exceeded the ${Math.round(MAX_OUTPUT_HTML_BYTES / 1024)} KB render limit</div>`;
+  let kept = html.slice(0, MAX_OUTPUT_HTML_BYTES);
+  if ((kept.match(/\u0000/g) ?? []).length % 2 === 1)
+    kept = kept.slice(0, kept.lastIndexOf("\0"));
+  return kept + `<div class="skena-out-truncated">\u26A0 output truncated \u2014 ${Math.round(html.length / 1024)} KB exceeded the ${Math.round(MAX_OUTPUT_HTML_BYTES / 1024)} KB render limit</div>`;
 }
 function capOutputText(text) {
   if (text.length <= MAX_OUTPUT_TEXT_CHARS)
