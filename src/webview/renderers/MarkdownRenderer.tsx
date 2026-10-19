@@ -14,8 +14,7 @@
  */
 
 import React, { useMemo, memo } from 'react';
-import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
-import type { UrlTransform } from 'react-markdown';
+import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
@@ -24,6 +23,7 @@ import { useFileContent } from '../hooks/useFileContent';
 import { useMarkdownConfig } from '../context/MarkdownConfigContext';
 import { normalizeMath } from '../../shared/mathDelims';
 import { hrefToOpenTarget } from '../../shared/markdownHref';
+import { markdownUrlTransform } from './markdownUrlTransform';
 
 interface MarkdownRendererProps {
   content: string;
@@ -34,24 +34,6 @@ interface MarkdownRendererProps {
 // - an absolute uri of any scheme: http:, data:, and a knowledge server's own crtx:. None of them
 //   is a path to resolve, so the img renders with the src as written
 const ABSOLUTE = /^[a-z][a-z0-9+.-]*:/i;
-
-// - react-markdown's own defaultUrlTransform drops any src whose scheme is not http(s), ircs,
-//   mailto or xmpp — a knowledge server's own scheme (crtx://…) comes back "", so the img element
-//   never carries the uri knowledgeAssets.ts is waiting to resolve. An img src gets one relaxation:
-//   a data:image/… url, or any other scheme:// that is not javascript:, vbscript: or data:text/html
-//   (the ones defaultUrlTransform already exists to keep out) passes through unchanged. href stays
-//   on the default transform, so a link to a dangerous scheme is still blocked.
-const IMG_SRC_SCHEME = /^([a-z][a-z0-9+.-]*):\/\//i;
-const BLOCKED_IMG_SCHEME = new Set(['data', 'javascript', 'vbscript', 'http', 'https']);
-
-const knowledgeUrlTransform: UrlTransform = (url, key, node) => {
-  if (key === 'src' && node.tagName === 'img') {
-    if (/^data:image\//i.test(url)) return url;
-    const scheme = IMG_SRC_SCHEME.exec(url)?.[1]?.toLowerCase();
-    if (scheme && !BLOCKED_IMG_SCHEME.has(scheme)) return url;
-  }
-  return defaultUrlTransform(url);
-};
 
 function resolveImageSrc(src: string, baseUri: string | undefined): string | null {
   if (!src || ABSOLUTE.test(src)) return null;
@@ -136,7 +118,7 @@ function MarkdownRendererInner({ content, baseUri }: MarkdownRendererProps): JSX
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         rehypePlugins={[rehypeRaw, [rehypeKatex, { output: 'html', throwOnError: false } as any]]}
         components={components}
-        urlTransform={knowledgeUrlTransform}
+        urlTransform={markdownUrlTransform}
       >
         {mdContent}
       </ReactMarkdown>
