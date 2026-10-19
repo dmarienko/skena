@@ -1,6 +1,6 @@
 // - run: npx esbuild src/extension/canvasLock.ts --bundle --format=esm --platform=node --outfile=tests/.build/canvasLock.mjs && node --test tests/canvas-lock.mjs
 import { strict as assert } from 'node:assert';
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -12,6 +12,15 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const dir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'skena-lock-'));
 const canvasIn = (d) => { const p = path.join(d, 't.canvas'); fs.writeFileSync(p, '{"nodes":[],"edges":[]}'); return p; };
 const holderFile = (lock, h) => fs.writeFileSync(lock, JSON.stringify({ pid: process.pid, host: os.hostname(), at: Date.now(), by: 'test', token: 'other', ...h }));
+// - every lock path a test asked for; the folder is shared, so planted locks are removed at the end
+const asked = new Set();
+const lockOf = async (p) => { const l = await lockPathFor(p); asked.add(l); return l; };
+after(() => {
+  for (const l of asked) {
+    const dir = path.dirname(l), base = path.basename(l);
+    for (const f of fs.readdirSync(dir)) if (f === base || f.startsWith(`${base}.`)) fs.rmSync(path.join(dir, f), { force: true });
+  }
+});
 const age = (file, ms) => { const t = new Date(Date.now() - ms); fs.utimesSync(file, t, t); };
 const deadPid = async () => { const gone = spawn(process.execPath, ['-e', '']); await new Promise(r => gone.on('exit', r)); return gone.pid; };
 
@@ -35,18 +44,18 @@ test('a holder in another process makes this one wait, and the lock is free afte
   const t = Date.now();
   await withCanvasLock(p, 'test', async () => {});
   assert.ok(Date.now() - t >= 250, `waited ${Date.now() - t} ms`);
-  assert.equal(fs.existsSync(await lockPathFor(p)), false);
+  assert.equal(fs.existsSync(await lockOf(p)), false);
 });
 
 test('the lock file is removed when the holder throws', async () => {
   const p = canvasIn(dir());
   await assert.rejects(withCanvasLock(p, 'test', async () => { throw new Error('boom'); }), /boom/);
-  assert.equal(fs.existsSync(await lockPathFor(p)), false);
+  assert.equal(fs.existsSync(await lockOf(p)), false);
 });
 
 test('a lock left by a process that is gone, on this host, is broken at once', async () => {
   const p = canvasIn(dir());
-  const lock = await lockPathFor(p);
+  const lock = await lockOf(p);
   const gone = spawn(process.execPath, ['-e', '']);
   await new Promise(r => gone.on('exit', r));
   holderFile(lock, { pid: gone.pid });
@@ -59,7 +68,7 @@ test('a lock left by a process that is gone, on this host, is broken at once', a
 
 test('a lock not refreshed for longer than the stale age is broken even when its process lives', async () => {
   const p = canvasIn(dir());
-  const lock = await lockPathFor(p);
+  const lock = await lockOf(p);
   holderFile(lock);
   age(lock, 5000);
   let ran = false;
@@ -69,7 +78,7 @@ test('a lock not refreshed for longer than the stale age is broken even when its
 
 test('a live lock held past the wait: the work is not done and the error names the holder', async () => {
   const p = canvasIn(dir());
-  const lock = await lockPathFor(p);
+  const lock = await lockOf(p);
   holderFile(lock, { by: 'mcp' });
   let ran = false;
   await assert.rejects(
@@ -82,7 +91,7 @@ test('a live lock held past the wait: the work is not done and the error names t
 
 test('a holder whose lock was broken and taken over does not remove the new holder\'s lock', async () => {
   const p = canvasIn(dir());
-  const lock = await lockPathFor(p);
+  const lock = await lockOf(p);
   await withCanvasLock(p, 'test', async () => { holderFile(lock, { token: 'someone-else' }); });
   assert.ok(fs.existsSync(lock));
   assert.match(fs.readFileSync(lock, 'utf-8'), /someone-else/);
@@ -95,21 +104,21 @@ test('a canvas reached through a symlinked folder has the same lock as by its re
   fs.rmSync(link, { force: true });
   fs.symlinkSync(d, link);
   try {
-    assert.equal(await lockPathFor(path.join(link, 't.canvas')), await lockPathFor(p));
+    assert.equal(await lockOf(path.join(link, 't.canvas')), await lockOf(p));
   } finally { fs.rmSync(link, { force: true }); }
 });
 
 test('a canvas that does not exist yet has the lock it will have once created', async () => {
   const d = dir();
   const p = path.join(d, 'new.canvas');
-  const before = await lockPathFor(p);
+  const before = await lockOf(p);
   fs.writeFileSync(p, '{"nodes":[],"edges":[]}');
-  assert.equal(await lockPathFor(p), before);
+  assert.equal(await lockOf(p), before);
 });
 
 test('the lock is not in the canvas folder but in a folder only this user can use', async () => {
   const p = canvasIn(dir());
-  const lockFolder = path.dirname(await lockPathFor(p));
+  const lockFolder = path.dirname(await lockOf(p));
   assert.notEqual(lockFolder, path.dirname(fs.realpathSync(p)));
   const st = fs.lstatSync(lockFolder);
   assert.ok(st.isDirectory());
@@ -118,7 +127,7 @@ test('the lock is not in the canvas folder but in a folder only this user can us
 });
 
 test('canvases of the same name in different folders have different locks', async () => {
-  assert.notEqual(await lockPathFor(canvasIn(dir())), await lockPathFor(canvasIn(dir())));
+  assert.notEqual(await lockOf(canvasIn(dir())), await lockOf(canvasIn(dir())));
 });
 
 test('a process whose TMPDIR and XDG_RUNTIME_DIR name other folders finds the same lock', async () => {
@@ -130,12 +139,12 @@ test('a process whose TMPDIR and XDG_RUNTIME_DIR name other folders finds the sa
   let out = '';
   child.stdout.on('data', c => { out += c; });
   await new Promise(r => child.on('exit', r));
-  assert.equal(out.trim(), await lockPathFor(p));
+  assert.equal(out.trim(), await lockOf(p));
 });
 
 test('a lock refreshed lately is not stale, however long ago it was taken', async () => {
   const p = canvasIn(dir());
-  const lock = await lockPathFor(p);
+  const lock = await lockOf(p);
   holderFile(lock, { at: Date.now() - 60000 });
   await assert.rejects(withCanvasLock(p, 'test', async () => {}, { waitMs: 300, staleMs: 1000 }), CanvasLockTimeout);
 });
@@ -154,7 +163,7 @@ test('a holder slower than the stale age keeps its lock: its heartbeat keeps the
 
 test('a breaker that looked at a stale lock leaves alone the fresh lock that replaced it', async () => {
   const p = canvasIn(dir());
-  const lock = await lockPathFor(p);
+  const lock = await lockOf(p);
   holderFile(lock, { pid: await deadPid(), token: 'dead' });
   const seen = await inspectLock(lock);
   let release;
@@ -176,7 +185,7 @@ test('a breaker that looked at a stale lock leaves alone the fresh lock that rep
 
 test('many writers on a lock that keeps being left stale: one inside at a time', async () => {
   const p = canvasIn(dir());
-  const lock = await lockPathFor(p);
+  const lock = await lockOf(p);
   const dead = await deadPid();
   let inside = 0, most = 0, stop = false;
   const chaos = (async () => { while (!stop) { try { fs.writeFileSync(lock, JSON.stringify({ pid: dead, host: os.hostname(), at: Date.now(), by: 'dead', token: 'd' }), { flag: 'wx' }); } catch { /* - held */ } await sleep(1); } })();
@@ -191,7 +200,7 @@ test('many writers on a lock that keeps being left stale: one inside at a time',
 
 test('a holder whose lock was taken away is told so before it writes', async () => {
   const p = canvasIn(dir());
-  const lock = await lockPathFor(p);
+  const lock = await lockOf(p);
   await withCanvasLock(p, 'test', async held => {
     await held();   // - still ours
     holderFile(lock, { token: 'someone-else' });
@@ -201,7 +210,7 @@ test('a holder whose lock was taken away is told so before it writes', async () 
 
 test('a break file a crashed breaker left behind is cleared', async () => {
   const p = canvasIn(dir());
-  const lock = await lockPathFor(p);
+  const lock = await lockOf(p);
   holderFile(lock, { pid: await deadPid(), token: 'dead' });
   fs.writeFileSync(`${lock}.break`, '');
   age(`${lock}.break`, 10000);
