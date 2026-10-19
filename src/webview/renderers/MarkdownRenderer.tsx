@@ -23,6 +23,7 @@ import rehypeRaw from 'rehype-raw';
 import { useFileContent } from '../hooks/useFileContent';
 import { useMarkdownConfig } from '../context/MarkdownConfigContext';
 import { normalizeMath } from '../../shared/mathDelims';
+import { hrefToOpenTarget } from '../../shared/markdownHref';
 
 interface MarkdownRendererProps {
   content: string;
@@ -103,7 +104,7 @@ function MarkdownRendererInner({ content, baseUri }: MarkdownRendererProps): JSX
           //   not check defaultPrevented; only stopping the event keeps a link from opening twice
           e.stopPropagation();
           if (href) {
-            (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage({ type: 'openFile', uri: href });
+            (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']?.postMessage({ type: 'openFile', uri: hrefToOpenTarget(href) });
           }
         }}
       >

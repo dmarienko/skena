@@ -23,6 +23,7 @@ import { installThemeVars } from './theme';
 import { setVimSettings } from './canvas/vimSettings';
 import { setCodeTheme } from './canvas/codeCellTheme';
 import { exportThemeVars } from './exportTheme';
+import { hrefToOpenTarget } from '../shared/markdownHref';
 
 type VsCodeApi = { postMessage: (msg: unknown) => void };
 
@@ -120,7 +121,7 @@ export function App(): JSX.Element {
       // - VS Code's webview listener on window (pre/index.html handleInnerClick) would open it again
       e.stopPropagation();
       (window as unknown as Record<string, { postMessage: (m: unknown) => void }>)['vscodeApi']
-        ?.postMessage({ type: 'openFile', uri: href });
+        ?.postMessage({ type: 'openFile', uri: hrefToOpenTarget(href) });
     };
     document.addEventListener('click', onClick);
     return () => document.removeEventListener('click', onClick);
