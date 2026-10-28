@@ -905,9 +905,12 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
         revealLaneTopRef.current(crossLane);
         return;
       }
+      // - a reload keeps the node that is selected now; the stored id is for when none is (a first
+      //   load, a selected node the reload removed)
+      const current = nodesRef.current.find(n => n.selected && !hiddenByFoldRef.current.has(n.id))?.id;
       const stored  = lastFocusedNodeId.get(canvasPath);
       const exists  = stored && nodesRef.current.some(n => n.id === stored) && !hiddenByFoldRef.current.has(stored);
-      const focusId = exists ? stored : pickViewportNode();
+      const focusId = current ?? (exists ? stored : pickViewportNode());
       if (focusId) {
         // - on any RELOAD (or when a viewport is saved) reselect WITHOUT moving the camera, so an
         //   external reload (agent edit, cell-run output write) doesn't pan / steal focus. Skip when
@@ -4027,8 +4030,6 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
     const handler = (e: Event) => {
       const { cellNodeId, state } =
         (e as CustomEvent<{ cellNodeId: string; kernelNodeId: string | null; state: 'running' | 'ok' | 'error' }>).detail;
-      // - keep the run cell as the focus target so the output-write reload re-selects IT
-      lastFocusedNodeId.set(canvasPath, cellNodeId);
       // - just set the cell's status; the running border + edge animation are DERIVED from
       // - lastStatus (below), so they also light up correctly on a canvas reopen.
       setNodes(nds => nds.map(n =>
