@@ -431,7 +431,8 @@ body.vscode-dark, body.vscode-high-contrast {
 /* - a code cell's # %% marks (CodeMarks.tsx). The rows are in screen px; a line or pin in canvas px divides
      its widths by --skena-zoom, which is 1 inside the screen-px box */
 .skena-code-mark {
-  box-sizing: border-box; max-width: 420px; padding: 3px 2px 0; line-height: 16px;
+  /* - room for 100 characters and the ellipsis of a longer title: each takes 1ch plus its letter-spacing */
+  box-sizing: border-box; max-width: calc(102 * (1ch + 0.08em) + 4px); padding: 3px 2px 0; line-height: 16px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   font-family: var(--vscode-editor-font-family, ui-monospace, monospace); font-size: 11.5px; font-weight: 600;
   letter-spacing: 0.08em; text-transform: uppercase;
