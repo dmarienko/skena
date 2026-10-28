@@ -3,6 +3,7 @@
 // - those must NEVER be searchable content or '/' matches garbage inside them.
 
 import { CanvasNode } from '../../shared/types';
+import { codeMarks } from '../../shared/codeMarks';
 
 /** Split "vaultName:rest" from a raw query string. */
 export function parseQuery(raw: string): { vault: string | null; text: string } {
@@ -43,6 +44,8 @@ export function nodeContent(n: CanvasNode): string {
       return (n.format === 'image' || n.format === 'plotly') ? '' : stripDataUris(n.content);
     case 'chat':   return `${n.agent} ${n.title}`;
     case 'portal': return n.canvas;
+    // - a code cell is found by the titles of its # %% lines (codeMarks.ts), not by its code
+    case 'code':   return codeMarks(n.code ?? '').map(m => m.text).join('\n');
     // - the cached copy is what is on screen, so '/' searches it, not the server
     case 'knowledge': return `${n.title} ${stripDataUris(n.text)}`;
     default:       return '';

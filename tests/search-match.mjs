@@ -47,3 +47,11 @@ test('knowledge node: the cached text and the title are searchable', () => {
   assert.equal(matches(n, null, 'log.md'), true);
   assert.equal(matches(n, null, 'nothinghere'), false);
 });
+
+test('code cell: found by the text of its # %% lines, case-insensitive', () => {
+  const n = { id: 'e44', type: 'code', nodeLabel: 'E44', x: 0, y: 0, width: 700, height: 300,
+    code: '# %% Select by correlation, RHO_MAX\nsel = select(x)\n# %% Plot the survivors\nplt.plot(sel)' };
+  assert.equal(matches(n, null, 'rho_max'), true);
+  assert.equal(matches(n, null, 'plot the surv'), true);
+  assert.equal(matches(n, null, 'E44'), true);
+});
