@@ -1927,10 +1927,10 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
   }
 
   /**
-   * Run a cell WITH its upstream: before running the requested cell, run each upstream cell
-   * (closer to the kernel) whose run-flag is clear (never run / errored / edited-since), in
-   * dependency order. Already-run (lastStatus 'ok') cells are skipped. Stops the chain if any
-   * upstream cell errors. Reuses runOneCell verbatim per cell (all its live-output/race logic).
+   * Run a cell; with `msg.upstream`, first run each upstream cell (closer to the kernel) whose run-flag
+   * is clear (never run / errored / edited-since), in dependency order. Already-run (lastStatus 'ok')
+   * cells are skipped. Stops the chain if any upstream cell errors. Reuses runOneCell verbatim per cell
+   * (all its live-output/race logic).
    */
   private async handleRunCell(
     msg:            MsgRunCell,
@@ -1940,7 +1940,7 @@ export class SkenaEditorProvider implements vscode.CustomEditorProvider<SkenaDoc
     commit:         Commit,
   ): Promise<void> {
     const canvas   = document.canvas;
-    const upstream = upstreamCellsForRun(msg.cellNodeId, cellKernelView(canvas));
+    const upstream = msg.upstream ? upstreamCellsForRun(msg.cellNodeId, cellKernelView(canvas)) : [];
     // - run upstream cells that need it (clear flag), in order; stop if one errors
     for (const upId of upstream) {
       const up = canvas.nodes.find(n => n.id === upId && n.type === 'code') as CodeNode | undefined;

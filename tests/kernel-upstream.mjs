@@ -83,3 +83,14 @@ test('upstreamCellsForRun: members resolving to another kernel, or to none, are 
   };
   assert.deepEqual(upstreamCellsForRun('D', c), ['C']);   // - A is on k-1, B has no kernel: neither runs before D
 });
+test('upstreamCellsForRun: a branch beside the target, hanging off a shared cell above, is not run first', () => {
+  // - factors-essentials S6: E35 → E40 → E41 → E37 and E35 → E42 → E43 → E44, E44 above E37 on the canvas
+  const at = { E35: [2600, 1800], E40: [2600, 2550], E41: [2600, 2800], E36: [2600, 3300], E37: [3400, 3600], E42: [5300, 1800], E43: [5300, 2400], E44: [5300, 3400] };
+  const c = {
+    nodes: Object.entries(at).map(([id, [x, y]]) => pcell(id, y, x)),
+    edges: [['E35', 'E40'], ['E40', 'E41'], ['E41', 'E36'], ['E41', 'E37'], ['E35', 'E42'], ['E42', 'E43'], ['E43', 'E44']].map(([fromNode, toNode]) => ({ fromNode, toNode })),
+    sections: [{ id: 's6', y: 500, createdAt: 1, kernelId: 'k-1' }], kernels: [{ id: 'k-1' }],
+  };
+  assert.deepEqual(upstreamCellsForRun('E37', c), ['E35', 'E40', 'E41']);
+  assert.deepEqual(upstreamCellsForRun('E44', c), ['E35', 'E42', 'E43']);
+});

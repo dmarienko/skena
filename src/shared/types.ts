@@ -377,7 +377,8 @@ export interface MsgFocusNode { type: 'focusNode'; id: string; }
 export interface MsgFocusSection { type: 'focusSection'; label: string; }
 /** - webview → host: user clicked the chat title to change this canvas's model */
 export interface MsgPickModel { type: 'pickModel'; }
-export interface MsgRunCell   { type: 'runCell'; cellNodeId: string; code: string; }
+// - upstream: first run the cells feeding it whose status is not ok (Alt+Shift+J); without it only this cell runs
+export interface MsgRunCell   { type: 'runCell'; cellNodeId: string; code: string; upstream?: boolean; }
 // - run every code cell of a section top to bottom on its resolved kernel; the first error stops it
 export interface MsgRunSection { type: 'runSection'; sectionId: string; }
 // - stop this section's run: its queued cells are not run, the running one is interrupted

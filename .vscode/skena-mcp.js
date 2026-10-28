@@ -4244,28 +4244,28 @@ function upstreamCellsForRun(targetId, c) {
   const kernel = resolve7(targetId);
   if (!kernel)
     return [];
+  const pos = (id) => {
+    const n = byId3.get(id);
+    return { y: n?.y ?? 0, x: n?.x ?? 0 };
+  };
+  const before = (a, b) => {
+    const pa = pos(a), pb = pos(b);
+    return pa.y < pb.y || pa.y === pb.y && pa.x < pb.x;
+  };
   const seen = /* @__PURE__ */ new Set([targetId]);
   const queue = [targetId];
   while (queue.length) {
     const cur = queue.shift();
     for (const e of c.edges) {
       const nb = e.fromNode === cur ? e.toNode : e.toNode === cur ? e.fromNode : null;
-      if (nb === null || seen.has(nb) || !isCode(nb))
+      if (nb === null || seen.has(nb) || !isCode(nb) || !before(nb, cur))
         continue;
       seen.add(nb);
       queue.push(nb);
     }
   }
-  const pos = (id) => {
-    const n = byId3.get(id);
-    return { y: n?.y ?? 0, x: n?.x ?? 0 };
-  };
-  const t = pos(targetId);
   const laneKernel = makeSectionKernelResolver(c);
-  return [...seen].filter((id) => id !== targetId).filter((id) => {
-    const p = pos(id);
-    return p.y < t.y || p.y === t.y && p.x < t.x;
-  }).filter((id) => laneKernel(byId3.get(id)) === kernel).sort((a, b) => {
+  return [...seen].filter((id) => id !== targetId).filter((id) => laneKernel(byId3.get(id)) === kernel).sort((a, b) => {
     const pa = pos(a), pb = pos(b);
     return pa.y - pb.y || pa.x - pb.x;
   });

@@ -158,12 +158,12 @@ export function kernelById(c: Pick<CanvasData, 'nodes' | 'metadata'>, id: string
 
 /**
  * The cells to run before `targetId`. With an edge path to a kernel node: the edge chain
- * (`resolveUpstreamChain`). Otherwise, when the target's section supplies the kernel: the target's
- * edge-connected code cells that sit above it, top to bottom then left to right — edges drawn by the
- * user in a section-bound chain have no kernel to orient them, so position does. The component is
- * walked through code cells only (a text node between two cells breaks the chain), and a member
- * resolving to another kernel, or to none, is left out — it would run in the wrong namespace, or
- * abort the run.
+ * (`resolveUpstreamChain`). Otherwise, when the target's section supplies the kernel: the code cells
+ * reached from the target by edges where each step goes to a cell higher on the canvas (or level and to
+ * the left), top to bottom then left to right — edges drawn by the user in a section-bound chain have
+ * no kernel to orient them, so position does. Only code cells are walked (a text node between two
+ * cells breaks the path), and a cell resolving to another kernel, or to none, is left out — it would
+ * run in the wrong namespace, or abort the run.
  */
 export function upstreamCellsForRun(targetId: string, c: CellKernelCanvas): string[] {
   const byId = new Map(c.nodes.map(n => [n.id, n]));
@@ -173,26 +173,25 @@ export function upstreamCellsForRun(targetId: string, c: CellKernelCanvas): stri
   const resolve = makeCellKernelResolver(c);
   const kernel = resolve(targetId);
   if (!kernel) return [];
-  // - the target's connected component, walking through code cells only
+  const pos = (id: string) => { const n = byId.get(id); return { y: n?.y ?? 0, x: n?.x ?? 0 }; };
+  const before = (a: string, b: string) => { const pa = pos(a), pb = pos(b); return pa.y < pb.y || (pa.y === pb.y && pa.x < pb.x); };
+  // - from the target, every step goes to a connected code cell that sits higher (or level and to the
+  //   left): a branch that leaves a shared cell downwards, beside the target's own, is never entered
   const seen = new Set<string>([targetId]);
   const queue = [targetId];
   while (queue.length) {
     const cur = queue.shift() as string;
     for (const e of c.edges) {
       const nb = e.fromNode === cur ? e.toNode : e.toNode === cur ? e.fromNode : null;
-      if (nb === null || seen.has(nb) || !isCode(nb)) continue;
+      if (nb === null || seen.has(nb) || !isCode(nb) || !before(nb, cur)) continue;
       seen.add(nb);
       queue.push(nb);
     }
   }
-  const pos = (id: string) => { const n = byId.get(id); return { y: n?.y ?? 0, x: n?.x ?? 0 }; };
-  const t = pos(targetId);
-  // - inside the code-only component no member reaches a kernel node by edges (the target did not), so
-  //   its kernel is its section's
+  // - no code cell on the walk reaches a kernel node by edges (the target did not), so its kernel is its section's
   const laneKernel = makeSectionKernelResolver(c);
   return [...seen]
     .filter(id => id !== targetId)
-    .filter(id => { const p = pos(id); return p.y < t.y || (p.y === t.y && p.x < t.x); })
     .filter(id => laneKernel(byId.get(id)!) === kernel)
     .sort((a, b) => { const pa = pos(a), pb = pos(b); return pa.y - pb.y || pa.x - pb.x; });
 }

@@ -247,9 +247,10 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   // - selector returns a primitive (kernel id | null), so default Object.is equality is safe
   const bound = useStore(s => cellKernelResolver(s.nodes, s.edges, lanes, kernelsCtx, bandStep(s.transform[2]))(id));
 
-  const run = useCallback(() => {
+  // - upstream: the cells feeding this one run first when their status is not ok (Alt+Shift+J)
+  const run = useCallback((upstream = false) => {
     if (!bound) return;
-    vscodePostMessage({ type: 'runCell', cellNodeId: id, code });
+    vscodePostMessage({ type: 'runCell', cellNodeId: id, code, upstream });
   }, [bound, id, code]);
 
   // - addCommand captures its callback once at mount, so route through a ref
@@ -363,12 +364,13 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
     refreshMagic();
     // - run bindings (per-instance, safe): fire from ANY vim mode and do NOT change it,
     // - so you can type in insert mode, run, and keep typing. Shift+Enter / Ctrl+Enter /
-    // - Alt+R / Alt+J all run the cell.
-    const bindRun = (keybinding: number) => editorInstance.addCommand(keybinding, () => runRef.current());
+    // - Alt+R / Alt+J run the cell alone; Alt+Shift+J runs the cells feeding it first.
+    const bindRun = (keybinding: number, upstream = false) => editorInstance.addCommand(keybinding, () => runRef.current(upstream));
     bindRun(monacoInstance.KeyMod.Shift   | monacoInstance.KeyCode.Enter);
     bindRun(monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.Enter);
     bindRun(monacoInstance.KeyMod.Alt     | monacoInstance.KeyCode.KeyR);
     bindRun(monacoInstance.KeyMod.Alt     | monacoInstance.KeyCode.KeyJ);
+    bindRun(monacoInstance.KeyMod.Alt     | monacoInstance.KeyMod.Shift | monacoInstance.KeyCode.KeyJ, true);
 
     bindSuggestNav(editorInstance, monacoInstance);
     releaseVsCodeKeys(monacoInstance);
@@ -580,6 +582,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
         ((e.ctrlKey || e.metaKey) && !e.altKey && e.key === 'Enter') ||
         (e.shiftKey && !e.altKey && e.key === 'Enter');
       if (runCombo) { e.preventDefault(); e.stopPropagation(); runRef.current(); return; }
+      if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyJ') { e.preventDefault(); e.stopPropagation(); runRef.current(true); return; }
       if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); startEdit(); return; }
       // - vim `o`: open a new code cell below, chained to this one. CanvasView computes a
       // - non-overlapping position (it has the full node list) and creates node + edge.
