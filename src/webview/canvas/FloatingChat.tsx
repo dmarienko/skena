@@ -88,6 +88,13 @@ export function FloatingChat({
     window.addEventListener('mouseup', onUp);
   };
 
+  // - stable, so the turn list (memo) does not re-render every turn when the panel folds or opens
+  const onCopy = useCallback((text: string) => postMessage({ type: 'writeClipboard', text }), [postMessage]);
+  const onAddNote = useCallback(
+    (text: string, turnKey: string) => postMessage({ type: 'floatingChatAddNote', content: text, activeNodeId: activeNodeIdRef.current, turnKey }),
+    [postMessage],
+  );
+
   const { sendMessage } = chat;
   const send = useCallback((text: string) => sendMessage(text, activeNodeIdRef.current), [sendMessage]);
 
@@ -128,8 +135,8 @@ export function FloatingChat({
         onToggleFold={chat.toggleFolded}
         onCompact={() => postMessage({ type: 'floatingChatCompact' })}
         onReset={() => postMessage({ type: 'floatingChatReset' })}
-        onCopy={text => postMessage({ type: 'writeClipboard', text })}
-        onAddNote={(text, turnKey) => postMessage({ type: 'floatingChatAddNote', content: text, activeNodeId: activeNodeIdRef.current, turnKey })}
+        onCopy={onCopy}
+        onAddNote={onAddNote}
       />
       <InputBar
         inputRef={inputRef}

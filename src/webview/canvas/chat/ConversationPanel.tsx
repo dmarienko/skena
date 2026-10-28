@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { ChatItem, ChatTokenUsage } from '../../../shared/types';
 import { clockTime, groupTurns } from './chatTurns';
 import { clearFolds, isAtBottom, isTurnOpen, toggleTurn, turnScroll, type TurnClick } from './turnFold';
@@ -84,12 +84,12 @@ export function ConversationPanel(p: Props): JSX.Element | null {
     }
   }, [visible, p.folded, lastItem, p.streaming, toggled, scrollRef]);
 
-  const onToggle = (key: string) => {
+  const onToggle = useCallback((key: string) => {
     const el   = scrollRef.current;
     const head = el ? turnHead(el, key) : null;
     clickRef.current = { key, opened: !isTurnOpen(toggled, key), offset: el && head ? lineOffset(el, head) : 0 };
     setToggled(t => toggleTurn(t, key));
-  };
+  }, [toggled, scrollRef]);
 
   // - a finer wheel step: the native one jumps too far to follow the text; ctrl+wheel is the host's zoom
   useEffect(() => {

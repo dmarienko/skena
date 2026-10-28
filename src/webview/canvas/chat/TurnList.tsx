@@ -22,7 +22,7 @@ interface TurnListProps {
   onAddNote: (text: string, turnKey: string) => void;
 }
 
-export function TurnList({ turns, toggled, streaming, thinking, working, onToggle, onCopy, onAddNote }: TurnListProps): JSX.Element {
+export const TurnList = memo(function TurnList({ turns, toggled, streaming, thinking, working, onToggle, onCopy, onAddNote }: TurnListProps): JSX.Element {
   const latestKey = turns.length ? turns[turns.length - 1].key : null;
   return (
     <>
@@ -45,7 +45,7 @@ export function TurnList({ turns, toggled, streaming, thinking, working, onToggl
       })}
     </>
   );
-}
+});
 
 function FoldedTurn({ turn, onToggle }: { turn: ChatTurn; onToggle: (key: string) => void }): JSX.Element {
   const prompt = turn.prompt === null ? '(no prompt)' : firstLine(turn.prompt);

@@ -71,7 +71,13 @@
 /* - rows keep their full height and the area scrolls instead: a fold line clips its text (overflow:
      hidden), and a flex item that clips has a minimum height of 0, so it would shrink to nothing
      whenever an open turn is taller than the panel */
-.cc-out-b > * { flex-shrink: 0; }
+.cc-out-b > * {
+  flex-shrink: 0;
+  /* - a row out of view is not laid out, so showing the conversation lays out only what is on screen;
+       while skipped, a row keeps the height it last had */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 160px;
+}
 
 .cc-turn { display: flex; flex-direction: column; gap: 7px; }
 .cc-turn + .cc-turn,
@@ -143,6 +149,9 @@
 .cc-reply p { margin: 0 0 6px; }
 .cc-reply code { font-family: var(--cc-mono); font-size: 12px; background: rgba(255, 255, 255, 0.06); padding: 1px 4px; border-radius: 4px; }
 .cc-reply pre { margin: 4px 0; padding: 6px 8px; background: rgba(0, 0, 0, 0.3); border-radius: 6px; overflow: auto; }
+/* - a row clips what overflows it (content-visibility), so a wide table or formula scrolls by itself */
+.cc-reply table { display: block; max-width: 100%; overflow-x: auto; }
+.cc-reply .katex-display { overflow-x: auto; overflow-y: hidden; }
 .cc-reply pre code { background: none; padding: 0; }
 /* - list markers sit left of the text; the extra indent keeps them inside the panel instead of on its edge */
 .cc-reply ul, .cc-reply ol { padding-left: 28px; margin: 4px 0; }
