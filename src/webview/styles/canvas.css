@@ -13,6 +13,10 @@
   --skena-focus-fill: var(--skena-focus-ring);
   /* - --skena-pinned-tint: the colour laid over a node picked with Space. */
   --skena-pinned-tint: rgba(64, 160, 255, 0.14);
+  /* - a code cell's # %% marks (CodeMarks.tsx): text and line colour, its glow, the pin's fill */
+  --skena-mark: #087d96;
+  --skena-mark-glow: transparent;
+  --skena-mark-pin-fill: #ffffff;
 }
 body.vscode-dark, body.vscode-high-contrast {
   --skena-rail-bg: #050505;
@@ -20,6 +24,9 @@ body.vscode-dark, body.vscode-high-contrast {
   --skena-focus-ring: rgba(247, 67, 2, 0.5);
   --skena-focus-fill: var(--skena-focus-ring);
   --skena-pinned-tint: rgba(201, 207, 27, 0.285);
+  --skena-mark: #6ff3ff;
+  --skena-mark-glow: rgba(80, 230, 255, 0.75);
+  --skena-mark-pin-fill: rgba(0, 30, 40, 0.9);
 }
 
 .react-flow__background { background: var(--vscode-editor-background); }
@@ -420,3 +427,20 @@ body.vscode-dark, body.vscode-high-contrast {
    - that DOM keeps the size it was last laid out at. After the cell was taller (a reference peek) the
    - box then fills the column, the vim status line goes below the cell, and Monaco lays out to that box */
 .skena-code-editor { min-height: 0; }
+
+/* - a code cell's # %% marks (CodeMarks.tsx). The rows are in screen px; a line or pin in canvas px divides
+     its widths by --skena-zoom, which is 1 inside the screen-px box */
+.skena-code-mark {
+  box-sizing: border-box; max-width: 420px; padding: 3px 2px 0; line-height: 16px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace); font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--skena-mark); text-shadow: 0 0 6px var(--skena-mark-glow);
+  border-bottom: 1px solid var(--skena-mark);
+}
+.skena-code-mark-line { background: var(--skena-mark); box-shadow: 0 0 calc(4px / var(--skena-zoom)) var(--skena-mark-glow); }
+.skena-code-mark-pin {
+  box-sizing: border-box; transform: rotate(45deg);
+  border: calc(1px / var(--skena-zoom)) solid var(--skena-mark); background: var(--skena-mark-pin-fill);
+  box-shadow: 0 0 calc(6px / var(--skena-zoom)) var(--skena-mark-glow);
+}

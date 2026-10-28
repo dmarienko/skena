@@ -35,6 +35,8 @@ import {
   CodeCellPreview, firstGlyphRect, previewGuides, previewLineRects, textContentRect,
   type CodeCellFont, type CodeCellMetrics,
 } from './CodeCellPreview';
+import { CodeMarks } from './CodeMarks';
+import { codeMarks } from '../../../shared/codeMarks';
 import { codeGutter, magicRange, LINE_DECORATIONS_WIDTH, LINE_NUMBERS_MIN_CHARS } from '../codeCellView';
 import { defineCodeCellTheme, whenCodeTokenizerReady } from '../codeCellTheme';
 
@@ -213,6 +215,9 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   const selectedStyle = focusRingStyle(selected);
   const borderColor = nodeBorderColor('code', node.accentColor);
   const [code, setCode] = useState(node.code ?? '');
+  const marks = useMemo(() => codeMarks(code), [code]);
+  // - how far the code is scrolled, in canvas px: the pins of the # %% marks follow it
+  const [codeScroll, setCodeScroll] = useState(0);
   // - editing: the editor is mounted. editorShown: it has tokenized and painted its lines, so the
   // - preview laid over it until then can go
   const [editing, setEditing] = useState(false);
@@ -325,6 +330,16 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   const magicDecoRef = useRef<string[]>([]);
   // - the preview's scroll box: the editor opens at its scroll offset so the text does not move
   const previewElRef = useRef<HTMLDivElement | null>(null);
+  // - the shown code's scroll, while there are marks to keep level with their lines
+  const hasMarks = marks.length > 0;
+  useEffect(() => {
+    const el = previewElRef.current;
+    if (!el || !hasMarks) return;
+    const on = () => setCodeScroll(el.scrollTop);
+    on();
+    el.addEventListener('scroll', on, { passive: true });
+    return () => el.removeEventListener('scroll', on);
+  }, [hasMarks, editing, editorShown]);
   // - whether the last editor saw a cursor move: Monaco draws the active indentation guide only after
   // - one, so the preview draws it only then too. Set from the editor's first event, restore included.
   const cursorMovedRef = useRef(false);
@@ -332,6 +347,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   const swapLogRef = useRef<SwapLog | null>(null);
   const onEditorMount = useCallback<OnMount>((editorInstance, monacoInstance) => {
     editorRef.current = editorInstance;
+    editorInstance.onDidScrollChange(e => { if (e.scrollTopChanged) setCodeScroll(e.scrollTop); });
     const mountedAt = performance.now();
     rememberMetrics(editorFont, editorInstance.getOption(monacoInstance.editor.EditorOption.fontInfo));
     cursorMovedRef.current = false;
@@ -630,6 +646,7 @@ function CodeNodeInner({ data, id, selected }: NodeProps): JSX.Element {
   return (
     <>
       <NodeLabelBadge label={node.nodeLabel} createdBy={(node as { createdBy?: string }).createdBy} />
+      <CodeMarks marks={marks} lineHeight={editorFont.lineHeight} scrollTop={codeScroll} height={Number(node.height ?? 0)} zoomVars={zoomVars} />
       <div
         ref={nodeElRef}
         className={`skena-node ${ZOOM_WIDTH_CLASS} skena-node--code${peekBox !== null ? ' skena-code-peek' : ''}`}
