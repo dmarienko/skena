@@ -14,7 +14,7 @@
   /* - --skena-pinned-tint: the colour laid over a node picked with Space. */
   --skena-pinned-tint: rgba(64, 160, 255, 0.14);
   /* - a code cell's # %% marks (CodeMarks.tsx): text and line colour, its glow, the pin's fill */
-  --skena-mark: #087d96;
+  --skena-mark: #c25a00;
   --skena-mark-glow: transparent;
   --skena-mark-pin-fill: #ffffff;
 }
@@ -24,8 +24,8 @@ body.vscode-dark, body.vscode-high-contrast {
   --skena-focus-ring: rgba(247, 67, 2, 0.5);
   --skena-focus-fill: var(--skena-focus-ring);
   --skena-pinned-tint: rgba(201, 207, 27, 0.285);
-  --skena-mark: #6ff3ff;
-  --skena-mark-glow: rgba(80, 230, 255, 0.75);
+  --skena-mark: #ff9a3d;
+  --skena-mark-glow: rgba(255, 140, 50, 0.6);
   --skena-mark-pin-fill: rgba(0, 30, 40, 0.9);
 }
 
