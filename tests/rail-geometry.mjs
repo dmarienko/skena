@@ -164,3 +164,12 @@ test('railItems: with the kernel buttons the stacked boxes still never exceed th
 test('railItems: a folded section never shows kernel buttons, even when passed', () => {
   assert.deepEqual(railItems(600, 20, true, ALL_K).items, ['fold', 'title', 'run', 'kernel', 'delete']);
 });
+
+test('kernelButtons: a running cell adds the jump to it, after the stop; a folded section still shows none', () => {
+  const open = { folded: false, bound: true, live: true, running: true, runningCell: true };
+  assert.deepEqual(kernelButtons(open), ['stop', 'jump', 'interrupt', 'restart', 'shutdown', 'select']);
+  assert.deepEqual(kernelButtons({ ...open, running: false }), ['jump', 'interrupt', 'restart', 'shutdown', 'select']);
+  assert.deepEqual(kernelButtons({ ...open, folded: true }), []);
+  const { items } = railItems(800, 10, false, kernelButtons(open));
+  assert.deepEqual(items.slice(items.indexOf('run'), items.indexOf('run') + 3), ['run', 'stop', 'jump']);
+});

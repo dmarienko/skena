@@ -58,20 +58,22 @@ export function railSegments(
   return out;
 }
 
-/** - the kernel controls of an open section, after ▶: stop the section run, interrupt, restart, shut down, select */
-export type KernelButton = 'stop' | 'interrupt' | 'restart' | 'shutdown' | 'select';
+/** - the kernel controls of an open section, after ▶: stop the section run, jump to the running cell, interrupt, restart, shut down, select */
+export type KernelButton = 'stop' | 'jump' | 'interrupt' | 'restart' | 'shutdown' | 'select';
 
 export type RailItem = 'label' | 'fold' | 'title' | 'run' | KernelButton | 'kernel' | 'delete';
 
 /**
  * Which kernel buttons an open section offers, in display order. ■ only while this section's run is
- * in progress (a section with no kernel of its own still runs the cells that have a kernel edge);
- * ❚❚ ↻ ⏻ only while the bound kernel is alive; ⇄ always. A folded section shows none of them.
+ * in progress (a section with no kernel of its own still runs the cells that have a kernel edge); the
+ * jump to the running cell while one of its cells runs; ❚❚ ↻ ⏻ only while the bound kernel is alive;
+ * ⇄ always. A folded section shows none of them.
  */
-export function kernelButtons(s: { folded: boolean; bound: boolean; live: boolean; running: boolean }): KernelButton[] {
+export function kernelButtons(s: { folded: boolean; bound: boolean; live: boolean; running: boolean; runningCell?: boolean }): KernelButton[] {
   if (s.folded) return [];
   const out: KernelButton[] = [];
   if (s.running) out.push('stop');
+  if (s.runningCell) out.push('jump');
   if (s.bound && s.live) out.push('interrupt', 'restart', 'shutdown');
   out.push('select');
   return out;
@@ -90,7 +92,7 @@ export interface RailLayout {
  * Which controls fit in a segment of `height` px, in display order. The fixed controls are taken in
  * priority order (S#, fold, run, kernel dot, delete) while they fit; the title is elastic: it replaces
  * the S# label and takes whatever is left, truncated, when that is at least TITLE_MIN_PX. The kernel
- * buttons (■ ❚❚ ↻ ⏻ ⇄) only take the room the whole title leaves, in that order, so a shorter segment
+ * buttons (■ ⌖ ❚❚ ↻ ⏻ ⇄) only take the room the whole title leaves, in that order, so a shorter segment
  * loses them from the end first, before the title is cut; all of them are in the segment's menu.
  *
  * A folded section takes the chevron first: without it there is no way to unfold from the rail. Its
@@ -136,6 +138,6 @@ export function railItems(height: number, titleChars: number, folded = false, ke
     }
   }
   // - title and label are exclusive
-  const order: RailItem[] = ['fold', 'title', 'label', 'run', 'stop', 'interrupt', 'restart', 'shutdown', 'select', 'kernel', 'delete'];
+  const order: RailItem[] = ['fold', 'title', 'label', 'run', 'stop', 'jump', 'interrupt', 'restart', 'shutdown', 'select', 'kernel', 'delete'];
   return { items: order.filter(i => got.has(i)), titleMaxPx };
 }

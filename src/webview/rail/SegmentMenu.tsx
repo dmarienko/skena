@@ -8,15 +8,18 @@ const ROW_PX = 26;   // - one row's height, as in KernelPicker
  * Right-click menu for one rail segment: every segment control in one list, so a segment squeezed
  * down to its 28px floor still reaches the controls its column had to drop.
  */
-export function SegmentMenu({ anchor, folded, kernelBound, running, onFold, onRun, onStop, onReflow, onKernel, onKernelAction, onRename, onCopyReference, onDelete, onClose }: {
+export function SegmentMenu({ anchor, folded, kernelBound, running, runningCell, onFold, onRun, onStop, onJump, onReflow, onKernel, onKernelAction, onRename, onCopyReference, onDelete, onClose }: {
   anchor: { x: number; y: number };   // - screen point of the right-click
   folded: boolean;
   kernelBound: boolean;
   /** - the section's run is in progress: the menu offers to stop it */
   running: boolean;
+  /** - a cell of the section is running: the menu offers to jump to it, also from a folded section */
+  runningCell: boolean;
   onFold: () => void;
   onRun: () => void;
   onStop: () => void;
+  onJump: () => void;
   onReflow: () => void;
   onKernel: () => void;
   onKernelAction: (action: 'start' | 'interrupt' | 'restart' | 'shutdown') => void;
@@ -42,8 +45,9 @@ export function SegmentMenu({ anchor, folded, kernelBound, running, onFold, onRu
   }, [onClose]);
 
   const row: React.CSSProperties = { display: 'flex', alignItems: 'center', height: ROW_PX, padding: '0 10px', cursor: 'pointer', fontFamily: FONT, fontSize: 12, color: 'var(--sk-text1)', userSelect: 'none' };
-  // - keep the box on screen: the rows plus the separator; a bound section adds the four kernel actions, a running one the stop
-  const rows = (kernelBound ? 12 : 8) + (running ? 1 : 0);
+  // - keep the box on screen: the rows plus the separator; a bound section adds the four kernel actions, a running one the stop,
+  //   a running cell the jump
+  const rows = (kernelBound ? 12 : 8) + (running ? 1 : 0) + (runningCell ? 1 : 0);
   const top = Math.max(4, Math.min(anchor.y + 4, window.innerHeight - rows * ROW_PX - 8));
 
   return createPortal(
@@ -52,6 +56,7 @@ export function SegmentMenu({ anchor, folded, kernelBound, running, onFold, onRu
       <div style={row} onClick={() => { onFold(); onClose(); }}>{folded ? 'Unfold' : 'Fold'}</div>
       <div style={row} onClick={() => { onRun(); onClose(); }}>Run section</div>
       {running && <div style={row} onClick={() => { onStop(); onClose(); }}>Stop section run</div>}
+      {runningCell && <div style={row} onClick={() => { onJump(); onClose(); }}>Jump to running cell</div>}
       <div style={row} onClick={() => { onReflow(); onClose(); }}>Reflow section</div>
       {/* - Kernel… and Rename… hand over to another popover: closing here would take that popover down with the menu */}
       <div style={row} onClick={onKernel}>Kernel…</div>

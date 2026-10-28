@@ -987,6 +987,21 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
     derivedLanes.forEach((l, i) => { for (const id of l.memberIds) m.set(id, i); });
     return m;
   }, [derivedLanes]);
+  // - section id → a code cell of it that is running, for the rail's jump; the same object while that does not change
+  const runningKey = nodes
+    .filter(n => n.type === 'code' && (n.data as { lastStatus?: string }).lastStatus === 'running')
+    .map(n => `${derivedLanes[laneIdxOf.get(n.id) ?? -1]?.id ?? ''}\u0000${n.id}`)
+    .join('\u0001');
+  const runningCells = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const pair of runningKey ? runningKey.split('\u0001') : []) {
+      const [laneId, cellId] = pair.split('\u0000');
+      if (laneId && !m.has(laneId)) m.set(laneId, cellId);
+    }
+    return m as ReadonlyMap<string, string>;
+  }, [runningKey]);
+  const runningCellsRef = useRef(runningCells);
+  runningCellsRef.current = runningCells;
   // - one drawn copy per stored node object, so a drag frame or a selection change hands React Flow new
   //   objects only for the nodes that changed
   const drawnCopies = useRef(new WeakMap<Node, Node>());
@@ -2048,6 +2063,12 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
     };
     revealWaitRef.current = stop;
   }, [focusNodeById, unfoldHiding]);
+
+  // - the rail's jump to a section's running cell: focused the way every jump is (unfolds, selects, the ` register)
+  const handleJumpToRunning = useCallback((laneId: string) => {
+    const id = runningCellsRef.current.get(laneId);
+    if (id) revealAndFocus(id);
+  }, [revealAndFocus]);
 
   // - a plain click reveals the node it hit, the same pan the keyboard gets. Selection stays React
   //   Flow's, so a modifier click (add to selection) must not pan; React Flow does not fire this
@@ -4659,6 +4680,7 @@ function CanvasViewInner({ canvas, canvasVersion, canvasPath, refPath, onActiveN
     <EdgeRoutesContext.Provider value={drawnRoutes}>
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'row' }}>
     <SectionRail lanes={shownLanes} kernels={railKernels} selectedNodeId={selectedNodeId} selectedBandId={selectedBand} runningIds={runningSections}
+      runningCells={runningCells} onJump={handleJumpToRunning}
       onFold={handleFoldLane} onRun={handleRunLane} onStop={handleStopLane} onReflow={handleReflowLane} onDelete={handleDeleteLane}
       onBindKernel={handleBindKernel} onRename={handleRenameLane} onNewSection={handleNewSectionClick}
       onNewKernel={handleNewKernel} onRemoveKernel={handleRemoveKernel} onKernelAction={handleKernelActionForLane}

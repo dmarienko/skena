@@ -36,6 +36,7 @@ const Stroked = ({ d }: { d: string }) => (
 const Restart  = () => <Stroked d="M13 8a5 5 0 1 1-1.6-3.7M13 2.5v2.5h-2.5" />;
 const Power    = () => <Stroked d="M8 2.5v5M4.8 4.6a5 5 0 1 0 6.4 0" />;
 const Swap     = () => <Stroked d="M3 5.5h9.5M10 3l2.5 2.5L10 8M13 10.5H3.5M6 8l-2.5 2.5L6 13" />;
+const Target   = () => <Stroked d="M8 4.6a3.4 3.4 0 1 0 0 6.8a3.4 3.4 0 1 0 0-6.8M8 1.5v2.2M8 12.3v2.2M1.5 8h2.2M12.3 8h2.2" />;
 
 const btn: React.CSSProperties = {
   background: 'transparent', border: 'none', padding: 0, margin: 0, cursor: 'pointer',
@@ -43,7 +44,7 @@ const btn: React.CSSProperties = {
   width: BTN_H, height: BTN_H, flex: 'none',
 };
 
-export function RailSegment({ lane, seg, color, kernel, current, selected, runnable, running, onFold, onRun, onStop, onKernelAction, onDelete, onKernel, onTitle, onMenu }: {
+export function RailSegment({ lane, seg, color, kernel, current, selected, runnable, running, runningCell, onFold, onRun, onStop, onJump, onKernelAction, onDelete, onKernel, onTitle, onMenu }: {
   lane: DerivedLane;
   seg: Seg;
   color: string;
@@ -55,9 +56,12 @@ export function RailSegment({ lane, seg, color, kernel, current, selected, runna
   runnable: boolean;
   /** - this section's run is in progress: ■ is shown */
   running: boolean;
+  /** - the id of a cell of this section that is running: the jump to it is shown */
+  runningCell: string | null;
   onFold: (id: string) => void;
   onRun: (id: string) => void;
   onStop: (id: string) => void;
+  onJump: (id: string) => void;
   onKernelAction: (id: string, action: 'interrupt' | 'restart' | 'shutdown') => void;
   onDelete: (id: string) => void;
   onKernel: (id: string, anchor: DOMRect) => void;
@@ -69,7 +73,7 @@ export function RailSegment({ lane, seg, color, kernel, current, selected, runna
   const { title, head, kernel: kname, text } = sectionTitleParts(lane, kernelDisplayName(kernel));
   // - a kernel with an id the last poll did not call dead: one that can be interrupted, restarted, shut down
   const live = !!kernel?.kernelId && state !== 'dead';
-  const buttons = kernelButtons({ folded: !!lane.folded, bound: !!kernel, live, running });
+  const buttons = kernelButtons({ folded: !!lane.folded, bound: !!kernel, live, running, runningCell: runningCell !== null });
   const { items, titleMaxPx, compact } = railItems(seg.height, text.length, !!lane.folded, buttons);
   // - a record's live state is worth showing; a kernel node already shows its own LED on the canvas
   const kernelName = kernel ? (kernel.kind === 'record' ? `${kernel.label} · ${kernel.server} · ${state}` : `${kernel.label} · ${kernel.name}`) : null;
@@ -109,6 +113,8 @@ export function RailSegment({ lane, seg, color, kernel, current, selected, runna
               );
             case 'stop':
               return <button key={item} style={{ ...btn, color: 'var(--sk-text1)' }} title="stop the section run: queued cells are not run, the running one is interrupted" onClick={() => onStop(lane.id)}><Stop /></button>;
+            case 'jump':
+              return <button key={item} style={{ ...btn, color: KERNEL_TEXT_COLOR.busy }} title="jump to the running cell" onClick={() => onJump(lane.id)}><Target /></button>;
             case 'interrupt':
               // - always there while the kernel is alive, so the buttons under it do not move; dimmed while idle
               return (

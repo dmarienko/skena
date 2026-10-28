@@ -25,7 +25,7 @@ export function laneColor(lane: { kernelId?: string; index: number }, kernels: R
   return { color: kernelColor(k ? k.colorIndex : lane.index), kernel: k };
 }
 
-export function SectionRail({ lanes, kernels, selectedNodeId, selectedBandId, runningIds, onFold, onRun, onStop, onReflow, onDelete, onBindKernel, onRename, onNewSection, onNewKernel, onRemoveKernel, onKernelAction, onCopyReference }: {
+export function SectionRail({ lanes, kernels, selectedNodeId, selectedBandId, runningIds, runningCells, onFold, onRun, onStop, onJump, onReflow, onDelete, onBindKernel, onRename, onNewSection, onNewKernel, onRemoveKernel, onKernelAction, onCopyReference }: {
   lanes: DerivedLane[];
   kernels: RailKernel[];
   selectedNodeId: string | null;
@@ -33,9 +33,13 @@ export function SectionRail({ lanes, kernels, selectedNodeId, selectedBandId, ru
   selectedBandId: string | null;
   /** - the sections whose run is in progress */
   runningIds: ReadonlySet<string>;
+  /** - section id → a cell of it that is running */
+  runningCells: ReadonlyMap<string, string>;
   onFold: (id: string) => void;
   onRun: (id: string) => void;
   onStop: (id: string) => void;
+  /** - focus the running cell of the section */
+  onJump: (id: string) => void;
   onReflow: (id: string) => void;
   onDelete: (id: string) => void;
   onBindKernel: (id: string, kernelId: string | null) => void;
@@ -83,7 +87,8 @@ export function SectionRail({ lanes, kernels, selectedNodeId, selectedBandId, ru
           const runnable = kernel !== null;
           return (
             <RailSegment key={seg.id} lane={lane} seg={seg} color={color} kernel={kernel} runnable={runnable} running={runningIds.has(lane.id)}
-              current={lane.id === currentId} selected={lane.id === selectedBandId} onFold={onFold} onRun={onRun} onStop={onStop} onKernelAction={onKernelAction}
+              runningCell={runningCells.get(lane.id) ?? null}
+              current={lane.id === currentId} selected={lane.id === selectedBandId} onFold={onFold} onRun={onRun} onStop={onStop} onJump={onJump} onKernelAction={onKernelAction}
               onDelete={onDelete} onKernel={openKernel} onTitle={openTitle} onMenu={openMenu} />
           );
         })}
@@ -104,6 +109,7 @@ export function SectionRail({ lanes, kernels, selectedNodeId, selectedBandId, ru
       {pop && popLane && pop.kind === 'menu' && (
         // - bound only when the lane's kernelId still names a live kernel; a dangling id offers no-op actions
         <SegmentMenu key={pop.laneId} anchor={pop.at} folded={!!popLane.folded} kernelBound={kernels.some(k => k.id === popLane.kernelId)} running={runningIds.has(popLane.id)}
+          runningCell={runningCells.has(popLane.id)} onJump={() => onJump(popLane.id)}
           onFold={() => onFold(popLane.id)} onRun={() => onRun(popLane.id)} onStop={() => onStop(popLane.id)} onReflow={() => onReflow(popLane.id)}
           onKernel={() => setPop({ kind: 'kernel', laneId: popLane.id, anchor: pop.anchor })}
           onKernelAction={a => onKernelAction(popLane.id, a)}
