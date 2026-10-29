@@ -1,5 +1,5 @@
 /**
- * CellNode — standalone output cell (table, image, HTML).
+ * CellNode — standalone output cell (table, image, HTML, plotly; a stacked HTML output may hold plotly figures).
  * Content stored inline in .canvas JSON.
  * Double-click puts its text in select mode (useSelectMode).
  */
@@ -11,6 +11,7 @@ import { capOutputHtml } from '../../../shared/outputCap';
 import { NodeLabelBadge } from '../../components/NodeLabelBadge';
 import { MarkdownRenderer } from '../../renderers/MarkdownRenderer';
 import { PlotlyRenderer } from '../../renderers/PlotlyRenderer';
+import { usePlotlyParts } from '../../renderers/usePlotlyParts';
 import { ScrollableContent } from '../../components/ScrollableContent';
 import { BAND_CLASS, HANDLE_STYLE, ZOOM_WIDTH_CLASS, bandHeldScroller, bandInsetPadding, baseBorderWidth, focusRingStyle, useBandVars, useZoomVars } from './nodeShared';
 import { NodeBorder } from './NodeBorder';
@@ -126,6 +127,8 @@ export function CellNodeComponent({ data, id, selected }: NodeProps): JSX.Elemen
   const cellRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
   const selecting = useSelectMode(cellRef, textRef, selected, node.format === 'html' || node.format === 'markdown');
+  // - the plotly figures a stacked output holds, drawn into their placeholders
+  usePlotlyParts(textRef, node.format === 'html' ? htmlContent : '');
   const textProps = selecting ? { onMouseDown: onTextMouseDown } : {};
   // - dashed, not solid: sets output cells apart from other node types at a glance; solid while its
   //   text is in select mode

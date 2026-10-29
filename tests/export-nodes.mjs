@@ -1,10 +1,11 @@
-// - run: npx esbuild src/extension/export/nodeHtml.ts --bundle --platform=node --format=esm --outfile=tests/.build/exportNodes.mjs && node --test tests/export-nodes.mjs
+// - run: npx esbuild src/extension/export/nodeHtml.ts --bundle --platform=node --format=esm --outfile=tests/.build/exportNodes.mjs && npx esbuild src/shared/plotlyParts.ts --bundle --format=esm --platform=node --outfile=tests/.build/plotlyParts.mjs && node --test tests/export-nodes.mjs
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import {
-  cellFigure, cellNodeHtml, chatNodeHtml, codeNodeHtml, fileNodeHtml, kernelNodeHtml, knowledgeNodeHtml, linkNodeHtml,
+  cellFigure, cellFigures, cellNodeHtml, chatNodeHtml, codeNodeHtml, fileNodeHtml, kernelNodeHtml, knowledgeNodeHtml, linkNodeHtml,
   noderefNodeHtml, notebookHtml, placeNode, portalNodeHtml, textNodeHtml,
 } from './.build/exportNodes.mjs';
+import { plotlyPartHtml } from './.build/plotlyParts.mjs';
 
 const at = { x: 100, y: 200, width: 700, height: 300 };
 
@@ -111,4 +112,18 @@ test('11. an output cell of a format the canvas does not know draws nothing, as 
   assert.ok(!html.includes('hello') && !html.includes('data-plotly') && !html.includes('<script'));
   assert.ok(html.includes('<div class="skena-export-scroll" style="padding:6px 8px"></div>'));
   assert.equal(cellFigure(cell), null);
+});
+
+test('5b. a stacked output with plotly figures: each becomes a page figure box in its place, at its own height', () => {
+  const at2 = { x: 0, y: 0, width: 700, height: 600 };
+  const f1 = JSON.stringify({ data: [{ y: [1] }], layout: { height: 300 } });
+  const f2 = JSON.stringify({ data: [{ y: [2] }], layout: {} });
+  const cell = { id: 'h', type: 'cell', format: 'html', content: `<table><tr><td>1</td></tr></table>${plotlyPartHtml(f1)}<pre>x</pre>${plotlyPartHtml(f2)}`, ...at2 };
+  const out = cellNodeHtml(cell, null);
+  assert.ok(out.includes('data-plotly="skena-fig-h-0"') && out.includes('data-plotly="skena-fig-h-1"'));
+  assert.ok(out.indexOf('<table>') < out.indexOf('skena-fig-h-0') && out.indexOf('<pre>x</pre>') < out.indexOf('skena-fig-h-1'));
+  assert.ok(out.includes('height:300px') && out.includes('height:450px'));
+  assert.ok(!out.includes('data-figure'), 'the figure data goes to the page, not into the box');
+  assert.deepEqual(cellFigures(cell), [{ id: 'skena-fig-h-0', json: f1 }, { id: 'skena-fig-h-1', json: f2 }]);
+  assert.deepEqual(cellFigures({ ...cell, format: 'plotly', content: f1 }), [{ id: 'skena-fig-h', json: f1 }]);
 });

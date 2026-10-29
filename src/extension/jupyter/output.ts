@@ -2,6 +2,7 @@ import type { CollectedOutput } from './protocol';
 import { renderStream } from './protocol';
 import { renderWidget } from './widgets';
 import { capOutputHtml, capOutputText } from '../../shared/outputCap';
+import { plotlyPartHtml } from '../../shared/plotlyParts';
 
 export type OutputFormat = 'markdown' | 'image' | 'html' | 'plotly';
 
@@ -60,7 +61,8 @@ export function ansiToHtml(input: string): string {
 /**
  * Turn a run's collected outputs into a single cell-node payload. A Jupyter cell can emit
  * several outputs (multiple plots, prints + a table); the cell node has one format, so when
- * there is more than one thing to show we stack them as HTML in order. The clean single cases
+ * there is more than one thing to show we stack them as HTML in order, a plotly figure as a
+ * placeholder the cell draws a chart into (plotlyParts.ts). The clean single cases
  * (one plot / one image / just text) keep their native format for interactivity + fidelity.
  */
 // - does a text/html payload render anything the user can see? A cell that only touches
@@ -115,7 +117,8 @@ export function renderOutput(out: CollectedOutput): { format: OutputFormat; cont
     } else if (r.mime === 'text/html') {
       parts.push(`<div>${capOutputHtml(r.data)}</div>`);
     } else if (r.mime === 'application/vnd.plotly.v1+json') {
-      parts.push('<pre class="skena-out-note">[plotly figure — one interactive figure per cell run renders inline; multiple are listed only]</pre>');
+      // - the cell draws an interactive chart into it (CellNode)
+      parts.push(plotlyPartHtml(r.data));
     } else if (r.mime === 'application/vnd.jupyter.widget-view+json') {
       let modelId = '';
       try { modelId = String((JSON.parse(r.data) as { model_id?: string }).model_id ?? ''); } catch { /* ignore */ }

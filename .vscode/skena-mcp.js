@@ -6909,7 +6909,7 @@ function renderWidget(modelId, widgets, depth = 0) {
 var MAX_OUTPUT_HTML_BYTES = 4e5;
 var MAX_OUTPUT_HTML_ROWS = 200;
 var MAX_OUTPUT_TEXT_CHARS = 2e5;
-var DATA_IMAGE = /data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=\s]*/gi;
+var DATA_IMAGE = /data:(?:image\/[a-z0-9.+-]+|application\/json);base64,[A-Za-z0-9+/=\s]*/gi;
 var STAND_IN = /\u0000skena-img-(\d+)\u0000/g;
 function capOutputHtml(html) {
   if (html.includes("\0"))
@@ -6950,6 +6950,20 @@ function capOutputText(text) {
     return text;
   return text.slice(0, MAX_OUTPUT_TEXT_CHARS) + `
 \u2026 [truncated ${Math.round((text.length - MAX_OUTPUT_TEXT_CHARS) / 1024)} KB]`;
+}
+
+// src/shared/plotlyParts.ts
+var PLOTLY_PART_CLASS = "skena-plotly-part";
+var DATA_PREFIX = "data:application/json;base64,";
+function toBase64(text) {
+  const bytes = new TextEncoder().encode(text);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 32768)
+    bin += String.fromCharCode(...bytes.subarray(i, i + 32768));
+  return btoa(bin);
+}
+function plotlyPartHtml(figureJson) {
+  return `<div class="${PLOTLY_PART_CLASS} nowheel nodrag" data-figure="${DATA_PREFIX}${toBase64(figureJson)}"></div>`;
 }
 
 // src/extension/jupyter/output.ts
@@ -7067,7 +7081,7 @@ function renderOutput(out) {
     } else if (r.mime === "text/html") {
       parts.push(`<div>${capOutputHtml(r.data)}</div>`);
     } else if (r.mime === "application/vnd.plotly.v1+json") {
-      parts.push('<pre class="skena-out-note">[plotly figure \u2014 one interactive figure per cell run renders inline; multiple are listed only]</pre>');
+      parts.push(plotlyPartHtml(r.data));
     } else if (r.mime === "application/vnd.jupyter.widget-view+json") {
       let modelId = "";
       try {

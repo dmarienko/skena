@@ -14,6 +14,7 @@ import { nodeBorderColor } from '../../webview/canvas/palette';
 import { canvasColor } from './edges';
 import { escapeHtml } from './html';
 import { capOutputHtml } from '../../shared/outputCap';
+import { plotlyPartFigures, replacePlotlyParts } from '../../shared/plotlyParts';
 import type { CellOutput, ParsedNotebook } from '../notebook-parser';
 
 /** - a node border of 1.5 px through the zoom-invariant scaler at zoom 1 (BORDER_WIDTH_SCALE 1.8) */
@@ -85,7 +86,15 @@ export function cellNodeHtml(node: CellNode, markdownHtml: string | null, mdStyl
   let body: string;
   if (node.format === 'markdown') body = markdownDiv(markdownHtml ?? '', mdStyle);
   else if (node.format === 'image') body = `<img src="${escapeHtml(node.content ?? '')}" alt="cell" style="max-width:100%;max-height:100%;object-fit:contain">`;
-  else if (node.format === 'html') body = `<div class="skena-cell-html">${capOutputHtml(node.content ?? '')}</div>`;
+  else if (node.format === 'html') {
+    // - a plotly figure in a stacked output: a page figure box in its place, the figure's height tall
+    const plotW = node.width - 2 * NODE_BORDER - 16;
+    const html = replacePlotlyParts(capOutputHtml(node.content ?? ''), (json, k) => {
+      const h = figureHeight(json);
+      return `<div style="position:relative;height:${h}px;margin:6px 0">${plotlyEmbed(partFigureId(node, k), plotW, h)}</div>`;
+    });
+    body = `<div class="skena-cell-html">${html}</div>`;
+  }
   else if (node.format === 'plotly') {
     // - the plot fills the scroll box inside the border and its 6px 8px padding, as on the canvas
     body = plotlyEmbed(cellFigureId(node), node.width - 2 * NODE_BORDER - 16, node.height - 2 * NODE_BORDER - 12);
@@ -192,6 +201,23 @@ const cellFigureId = (node: CellNode) => `skena-fig-${node.id}`;
 /** - the figure of a plotly output cell, null for the other formats */
 export function cellFigure(node: CellNode): Figure | null {
   return node.format === 'plotly' ? { id: cellFigureId(node), json: node.content ?? '' } : null;
+}
+
+const partFigureId = (node: CellNode, k: number) => `skena-fig-${node.id}-${k}`;
+
+// - the height a stacked output gives a figure: its layout's, else plotly's default
+function figureHeight(json: string): number {
+  try {
+    const h = (JSON.parse(json) as { layout?: { height?: unknown } }).layout?.height;
+    return typeof h === 'number' && h > 0 ? h : 450;
+  } catch { return 450; }
+}
+
+/** - the figures of an output cell for the page: a plotly cell's one, a stacked output's in order */
+export function cellFigures(node: CellNode): Figure[] {
+  if (node.format === 'plotly') return [{ id: cellFigureId(node), json: node.content ?? '' }];
+  if (node.format === 'html') return plotlyPartFigures(node.content ?? '').map((json, k) => ({ id: partFigureId(node, k), json }));
+  return [];
 }
 
 /** - a node whose html could not be built: its box with the reason, so the rest of the page is still written */

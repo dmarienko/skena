@@ -9,9 +9,10 @@ export const MAX_OUTPUT_HTML_BYTES = 400_000;   // - ~400 KB of HTML
 export const MAX_OUTPUT_HTML_ROWS  = 200;       // - table rows to keep (pandas' own view shows ~60)
 export const MAX_OUTPUT_TEXT_CHARS = 200_000;   // - ~200 K chars of text/plain or stream
 
-// - an inline image's base64 payload: one attribute, no DOM nodes. It does not count toward the byte
-//   limit, and a cut never lands inside one: it is swapped for a short stand-in before the cut and back after
-const DATA_IMAGE = /data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=\s]*/gi;
+// - a base64 payload in an attribute, an inline image's or a plotly figure's (plotlyParts.ts): no DOM nodes.
+//   It does not count toward the byte limit, and a cut never lands inside one: it is swapped for a short
+//   stand-in before the cut and back after
+const DATA_IMAGE = /data:(?:image\/[a-z0-9.+-]+|application\/json);base64,[A-Za-z0-9+/=\s]*/gi;
 const STAND_IN = /\u0000skena-img-(\d+)\u0000/g;
 
 // - keep a large HTML table renderable: cut to the first N rows, close the table, append a note.

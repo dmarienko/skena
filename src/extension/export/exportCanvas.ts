@@ -17,7 +17,7 @@ import { codeCellHtml } from './codeHtml';
 import { escapeHtml, staticHtml } from './html';
 import { fileMarkdownHtml, nodeMarkdownHtml, rendererMarkdownHtml, rendersOnHost } from './markdown';
 import {
-  cellFigure, cellNodeHtml, chatNodeHtml, codeNodeHtml, errorNodeHtml, fileNodeHtml, kernelNodeHtml, knowledgeNodeHtml, linkNodeHtml,
+  cellFigures, cellNodeHtml, chatNodeHtml, codeNodeHtml, errorNodeHtml, fileNodeHtml, kernelNodeHtml, knowledgeNodeHtml, linkNodeHtml,
   NODE_BORDER, noderefNodeHtml, notebookHtml, portalNodeHtml, textNodeHtml, type Figure, type FileView,
 } from './nodeHtml';
 import { buildPage, sectionFrames, type PageTheme } from './page';
@@ -163,8 +163,7 @@ export async function exportCanvasHtml(canvasPath: string, deps: ExportDeps): Pr
       case 'code': return { html: codeNodeHtml(n, codeCellHtml(n.code ?? '', codeTok, editorBg, deps.theme.dark)) };
       case 'cell': {
         const md = n.format === 'markdown' ? await rendererMarkdownHtml(n.content ?? '') : null;
-        const fig = cellFigure(n);
-        return { html: cellNodeHtml(n, md, mdStyle), figures: fig ? [fig] : [] };
+        return { html: cellNodeHtml(n, md, mdStyle), figures: cellFigures(n) };
       }
       case 'file': {
         const view = await fileView(n);
